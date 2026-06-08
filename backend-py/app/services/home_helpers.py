@@ -1,0 +1,146 @@
+from datetime import datetime, timezone
+
+from app.db.models.enums import InboxItemType, TaskStatus
+from app.db.models.home import Task
+
+
+STATUS_LABELS: dict[TaskStatus, str] = {
+    TaskStatus.OPEN: "open",
+    TaskStatus.TODO: "to do",
+    TaskStatus.IN_PROGRESS: "in progress",
+    TaskStatus.DONE: "done",
+}
+
+STATUS_COLORS: dict[TaskStatus, str] = {
+    TaskStatus.IN_PROGRESS: "#4194f6",
+    TaskStatus.TODO: "#87909e",
+    TaskStatus.OPEN: "#5f55ee",
+    TaskStatus.DONE: "#6bc950",
+}
+
+
+def start_of_today() -> datetime:
+    now = datetime.now(timezone.utc)
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def end_of_today() -> datetime:
+    return start_of_today().replace(hour=23, minute=59, second=59, microsecond=999999)
+
+
+def format_due_date(due_date: datetime | None) -> str | None:
+    if not due_date:
+        return None
+    from datetime import timedelta
+
+    today_start = start_of_today()
+    today_end = end_of_today()
+    tomorrow_end = today_end + timedelta(days=1)
+
+    due = due_date if due_date.tzinfo else due_date.replace(tzinfo=timezone.utc)
+    if today_start <= due <= today_end:
+        return "Today"
+    if today_end < due <= tomorrow_end:
+        return "Tomorrow"
+    return f"{due.strftime('%b')} {due.day}"
+
+
+def is_overdue(due_date: datetime | None, status: TaskStatus) -> bool:
+    if not due_date or status == TaskStatus.DONE:
+        return False
+    due = due_date if due_date.tzinfo else due_date.replace(tzinfo=timezone.utc)
+    return due < start_of_today()
+
+
+def relative_time(date: datetime) -> str:
+    diff_ms = (datetime.now(timezone.utc) - (
+        date if date.tzinfo else date.replace(tzinfo=timezone.utc)
+    )).total_seconds() * 1000
+    mins = int(diff_ms // 60000)
+    if mins < 60:
+        return f"{mins}m"
+    hours = mins // 60
+    if hours < 24:
+        return f"{hours}h"
+    days = hours // 24
+    return f"{days}d"
+
+
+def comment_relative_time(date: datetime) -> str:
+    diff_ms = (datetime.now(timezone.utc) - (
+        date if date.tzinfo else date.replace(tzinfo=timezone.utc)
+    )).total_seconds() * 1000
+    hours = int(diff_ms // (1000 * 60 * 60))
+    if hours < 1:
+        return "Just now"
+    if hours < 24:
+        return f"{hours}h ago"
+    days = hours // 24
+    if days == 1:
+        return "Yesterday"
+    return f"{days}d ago"
+
+
+def map_inbox_type(item_type: InboxItemType) -> str:
+    return item_type.value.lower()
+
+
+def map_task(task: Task, current_user_id: str) -> dict:
+    assignee_labels = []
+    for a in task.assignees:
+        name = a.user.full_name.split(" ")[0] if a.user.full_name else "User"
+        assignee_labels.append("You" if a.user_id == current_user_id else name)
+
+    comments = sorted(task.comments, key=lambda c: c.created_at)
+    return {
+        "id": task.id,
+        "name": task.name,
+        "status": STATUS_LABELS.get(task.status, task.status.value.lower()),
+        "statusKey": task.status.value,
+        "statusColor": task.status_color,
+        "assigneeIds": [a.user_id for a in task.assignees],
+        "dueDate": format_due_date(task.due_date),
+        "dueDateIso": task.due_date.isoformat() if task.due_date else None,
+        "assignees": assignee_labels,
+        "list": task.task_list.name,
+        "space": task.task_list.space.name,
+        "priority": task.priority.value.lower() if task.priority else None,
+        "overdue": is_overdue(task.due_date, task.status),
+        "description": task.description,
+        "comments": [
+            {
+                "id": c.id,
+                "author": c.user.full_name,
+                "body": c.body,
+                "at": comment_relative_time(c.created_at),
+            }
+            for c in comments
+        ],
+    }
+
+
+def map_list_entry(list_row, task_count: int) -> dict:
+    return {
+        "id": list_row.id,
+        "name": list_row.name,
+        "taskCount": task_count,
+    }
+
+
+def map_space_row(
+    space,
+    member_count: int,
+    list_count: int,
+    folder_payload: list,
+    standalone_payload: list,
+) -> dict:
+    return {
+        "id": space.id,
+        "name": space.name,
+        "color": space.color,
+        "memberCount": member_count,
+        "listCount": list_count,
+        "description": space.description,
+        "folders": folder_payload,
+        "standaloneLists": standalone_payload,
+    }
