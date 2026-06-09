@@ -22,12 +22,23 @@ export function normalizeMessageForViewer(
   };
 }
 
+function createPendingMessageId() {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return `pending-${crypto.randomUUID()}`;
+    }
+  } catch {
+    // randomUUID requires a secure context (HTTPS); HTTP EC2 IPs need a fallback
+  }
+  return `pending-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export function createOptimisticMessage(
   body: string,
   authorId: string
 ): ChatMessage {
   return {
-    id: `pending-${crypto.randomUUID()}`,
+    id: createPendingMessageId(),
     authorId,
     authorName: "You",
     body,

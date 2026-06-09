@@ -118,16 +118,18 @@ export function MessageComposer({
     setSending(true);
     const messageBody = bodyText.trim();
     const ids = [...attachmentIds];
-    clearMentions();
-    clearPending();
     try {
       if (onSend) {
         await onSend({
           body: messageBody,
           attachmentIds: ids.length ? ids : undefined,
         });
+        clearMentions();
+        clearPending();
       } else {
         toast.success("Message sent (mock)");
+        clearMentions();
+        clearPending();
       }
     } catch (err) {
       restoreMentions(messageBody);

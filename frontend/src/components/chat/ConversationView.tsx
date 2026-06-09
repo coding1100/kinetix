@@ -481,7 +481,12 @@ export function ConversationView({
     body: string;
     attachmentIds?: string[];
   }) => {
-    if (!currentUserId) return;
+    if (!ready || !accessToken || !workspaceId) {
+      throw new ApiError(401, "UNAUTHORIZED", "Session not ready — try refreshing");
+    }
+    if (!currentUserId) {
+      throw new ApiError(401, "UNAUTHORIZED", "You must be signed in to send messages");
+    }
     const optimistic = createOptimisticMessage(
       payload.body || "Shared an attachment",
       currentUserId
