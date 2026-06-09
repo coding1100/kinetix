@@ -1,4 +1,5 @@
 import { fetchDm } from "@/lib/api/chat";
+import { stripMessageHtml } from "@/lib/chat/rich-text/sanitize";
 import { patchChannelActivityInSidebar } from "@/lib/chat/sidebar-channel";
 import { patchDmActivityInSidebar, upsertDmInSidebar } from "@/lib/chat/sidebar-dm";
 import { useChatStore } from "@/stores/chat-store";
@@ -21,7 +22,7 @@ export function applyRealtimeMessageToSidebar(
   if (!currentUserId || event.message.authorId === currentUserId) return;
 
   const { workspaceId, kind, conversationId, message } = event;
-  const lastMessage = message.body;
+  const lastMessage = stripMessageHtml(message.body);
   const lastAt = message.createdAt;
   const bumpUnread = !isActiveConversation(event);
   const cache = useChatStore.getState().sidebarListsCache;

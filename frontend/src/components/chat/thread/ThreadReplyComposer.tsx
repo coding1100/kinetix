@@ -32,8 +32,8 @@ import { CreateDocDialog } from "@/components/chat/attachments/CreateDocDialog";
 import { MediaRecorderDialog } from "@/components/chat/attachments/MediaRecorderDialog";
 import { SHOW_EXTENDED_COMPOSER_TOOLS } from "@/lib/chat/composer-flags";
 import { MentionPickerPopover } from "@/components/chat/mentions/MentionPickerPopover";
-import { MentionComposerField } from "@/components/chat/mentions/MentionComposerField";
-import { useComposerMentionField } from "@/hooks/use-composer-mention-field";
+import { RichComposerField } from "@/components/chat/composer/RichComposerField";
+import { useRichComposerField } from "@/hooks/use-rich-composer-field";
 import { useMentionChannels } from "@/hooks/use-mention-channels";
 
 function ToolbarDivider() {
@@ -55,10 +55,9 @@ export function ThreadReplyComposer({
   const [sending, setSending] = useState(false);
   const {
     segments,
-    draft,
-    setDraft,
+    draftPlain,
     bodyText,
-    inputRef,
+    editorRef,
     pickerOpen,
     setPickerOpen,
     mentionQuery,
@@ -66,9 +65,10 @@ export function ThreadReplyComposer({
     insertMention,
     insertEmoji,
     handleInputKeyDown,
+    syncFromEditor,
     clear: clearMentions,
     restore: restoreMentions,
-  } = useComposerMentionField();
+  } = useRichComposerField();
   const [docOpen, setDocOpen] = useState(false);
   const [videoOpen, setVideoOpen] = useState(false);
   const [clipOpen, setClipOpen] = useState(false);
@@ -130,7 +130,7 @@ export function ThreadReplyComposer({
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     handleInputKeyDown(e, () => void handleSend());
   };
 
@@ -199,11 +199,10 @@ export function ThreadReplyComposer({
           uploadingItem={uploadingItem}
           onRemove={removePending}
         />
-        <MentionComposerField
+        <RichComposerField
           segments={segments}
-          draft={draft}
-          onDraftChange={setDraft}
-          inputRef={inputRef}
+          draftPlain={draftPlain}
+          editorRef={editorRef}
           placeholder="Reply..."
           compact
           mentionAutocompleteOpen={mentionAutocompleteOpen}
@@ -212,6 +211,7 @@ export function ThreadReplyComposer({
           conversationId={conversationId}
           onSelectMention={insertMention}
           onKeyDown={handleKeyDown}
+          onInput={syncFromEditor}
         />
 
         {alsoSendChannelLabel && (
