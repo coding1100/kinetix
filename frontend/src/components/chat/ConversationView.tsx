@@ -11,7 +11,13 @@ import {
   LinkIcon,
   MailIcon,
 } from "lucide-react";
-import type { Channel, ChatMessage, ConversationType, DirectMessage } from "@/lib/types/chat";
+import type {
+  Channel,
+  ChatMessage,
+  ConversationType,
+  DirectMessage,
+  SendMessagePayload,
+} from "@/lib/types/chat";
 import {
   deleteChannel,
   fetchChannel,
@@ -478,10 +484,7 @@ export function ConversationView({
   const dmMeta = type === "dm" ? (dm ?? cachedDm ?? null) : null;
   const otherUserId = dmMeta?.otherUserId;
 
-  const handleSend = async (payload: {
-    body: string;
-    attachmentIds?: string[];
-  }) => {
+  const handleSend = async (payload: SendMessagePayload) => {
     if (!ready || !accessToken || !workspaceId) {
       throw new ApiError(401, "UNAUTHORIZED", "Session not ready — try refreshing");
     }
