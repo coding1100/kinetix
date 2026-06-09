@@ -60,9 +60,9 @@ class Settings(BaseSettings):
 
     @property
     def runtime_database_url(self) -> str:
-        """Prefer direct/session URL in development for stable asyncpg."""
+        """Prefer session/direct URL when set (stable asyncpg on Supabase)."""
         direct = self.direct_database_url.strip()
-        if not self.is_production and direct:
+        if direct:
             return direct
         return self.database_url
 

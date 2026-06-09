@@ -15,6 +15,7 @@ import {
   ChevronDownIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { formatRequestError } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -128,9 +129,11 @@ export function MessageComposer({
       } else {
         toast.success("Message sent (mock)");
       }
-    } catch {
+    } catch (err) {
       restoreMentions(messageBody);
-      toast.error("Failed to send message");
+      const detail = formatRequestError(err);
+      console.error("[send message]", err);
+      toast.error(`Failed to send message — ${detail}`, { duration: 8000 });
     } finally {
       setSending(false);
     }

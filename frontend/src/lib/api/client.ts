@@ -14,6 +14,19 @@ export class ApiError extends Error {
   }
 }
 
+/** Human-readable error for toasts and logs. */
+export function formatRequestError(err: unknown): string {
+  if (err instanceof ApiError) {
+    const status = err.status > 0 ? `HTTP ${err.status}` : err.code;
+    const detail = err.message?.trim() || err.code || "Request failed";
+    return `${status}: ${detail}`;
+  }
+  if (err instanceof Error && err.message.trim()) {
+    return err.message.trim();
+  }
+  return "Request failed (unknown error)";
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -91,6 +104,20 @@ export async function apiFetch<T>(
       return data as T;
     } catch (err) {
       if (err instanceof ApiError) throw err;
+      if (err instanceof DOMException && err.name === "AbortError") {
+        throw new ApiError(
+          504,
+          "TIMEOUT",
+          "Request timed out — API or database may be slow"
+        );
+      }
+      if (err instanceof TypeError) {
+        throw new ApiError(
+          0,
+          "NETWORK_ERROR",
+          err.message || "Network error — could not reach API"
+        );
+      }
       lastError = err;
       if (shouldRetryGet(method, attempt, err)) {
         await sleep(GET_RETRY_DELAY_MS * (attempt + 1));
