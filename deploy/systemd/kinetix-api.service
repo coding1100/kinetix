@@ -1,0 +1,16 @@
+[Unit]
+Description=Kinetix API (FastAPI + Socket.IO)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/clickup/kinetix/backend-py
+Environment=PATH=/opt/clickup/kinetix/backend-py/.venv/bin
+ExecStart=/opt/clickup/kinetix/backend-py/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 4000
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
