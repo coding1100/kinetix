@@ -6,10 +6,23 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_ROOT="${APP_ROOT:-$ROOT}"
 FRONTEND="$APP_ROOT/frontend"
 BACKEND="$APP_ROOT/backend-py"
+DEPLOY_USER="${DEPLOY_USER:-ubuntu}"
 
 log() { echo "==> $*"; }
 
+run_as_user() {
+  local dir="$1"
+  shift
+  if [ "$(id -un)" = "$DEPLOY_USER" ]; then
+    bash -lc "cd '$dir' && $*"
+  else
+    sudo -u "$DEPLOY_USER" -- bash -lc "cd '$dir' && $*"
+  fi
+}
+
 log "App root: $APP_ROOT"
+log "Fix ownership ($DEPLOY_USER — avoids EACCES after sudo deploys)"
+sudo chown -R "$DEPLOY_USER:$DEPLOY_USER" "$FRONTEND" "$BACKEND" 2>/dev/null || true
 cd "$APP_ROOT"
 
 log "Pull latest code"
@@ -46,12 +59,11 @@ fi
 uv sync
 
 log "Frontend production build"
-cd "$FRONTEND"
-rm -rf .next node_modules/.cache
-npm ci
-NODE_ENV=production npm run build
+run_as_user "$FRONTEND" 'rm -rf .next node_modules/.cache'
+run_as_user "$FRONTEND" 'npm ci'
+run_as_user "$FRONTEND" 'NODE_ENV=production npm run build'
 
-if [ ! -d ".next/static/chunks" ]; then
+if [ ! -d "$FRONTEND/.next/static/chunks" ]; then
   echo "ERROR: frontend build missing .next/static/chunks"
   exit 1
 fi
@@ -83,10 +95,20 @@ if ! curl -fsS -o /dev/null -w "%{http_code}" http://127.0.0.1:3000 | grep -qE '
   exit 1
 fi
 
-if curl -fsS http://127.0.0.1:3000 | grep -qi turbopack; then
-  echo "ERROR: Still serving Turbopack (dev mode). Use next start only."
-  sudo journalctl -u kinetix-web -n 40 --no-pager
+if pgrep -af '[n]ext dev' >/dev/null 2>&1; then
+  echo "ERROR: next dev is still running. Use next start only."
+  pgrep -af next || true
   exit 1
+fi
+
+SAMPLE_CHUNK=$(curl -fsS http://127.0.0.1:3000/auth/login | grep -oE '/_next/static/chunks/[^"]+\.js' | head -1)
+if [ -n "$SAMPLE_CHUNK" ]; then
+  CHUNK_CODE=$(curl -fsS -o /dev/null -w "%{http_code}" "http://127.0.0.1:3000$SAMPLE_CHUNK" 2>/dev/null || echo "000")
+  if ! echo "$CHUNK_CODE" | grep -qE '^2'; then
+    echo "ERROR: chunk $SAMPLE_CHUNK returned HTTP $CHUNK_CODE"
+    sudo journalctl -u kinetix-web -n 40 --no-pager
+    exit 1
+  fi
 fi
 
 if ! sudo systemctl is-active --quiet kinetix-api; then
