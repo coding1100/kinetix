@@ -33,14 +33,16 @@ sudo systemctl daemon-reload
 
 log "Backend dependencies"
 cd "$BACKEND"
-if [ ! -d .venv ]; then
-  python3 -m venv .venv
-fi
-# shellcheck disable=SC1091
-source .venv/bin/activate
+export PATH="$HOME/.local/bin:$PATH"
 if ! command -v uv >/dev/null 2>&1; then
-  pip install uv
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  export PATH="$HOME/.local/bin:$PATH"
 fi
+if ! command -v uv >/dev/null 2>&1; then
+  echo "ERROR: uv not found after install (expected in \$HOME/.local/bin)"
+  exit 1
+fi
+# uv sync creates/updates .venv — avoid system pip (PEP 668 on Ubuntu 24.04+)
 uv sync
 
 log "Frontend production build"
