@@ -32,7 +32,10 @@ jobs:
             set -euo pipefail
             export APP_ROOT="${APP_ROOT:-/opt/clickup/kinetix}"
             cd "$APP_ROOT"
-            chmod +x deploy/deploy.sh deploy/setup-services.sh 2>/dev/null || true
+            # Reset before deploy.sh so local edits on the server cannot block CI
+            git fetch origin main
+            git reset --hard origin/main
+            chmod +x deploy/deploy.sh deploy/setup-services.sh deploy/fix-frontend-prod.sh 2>/dev/null || true
             ./deploy/deploy.sh
 
       - name: Summary
