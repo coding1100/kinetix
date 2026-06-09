@@ -20,8 +20,22 @@ export function normalizeMessageForViewer(
   return {
     ...msg,
     isSelf,
-    authorName: isSelf ? "You" : msg.authorName,
   };
+}
+
+export function resolveMessageAuthorName(
+  message: ChatMessage,
+  options?: { currentUserId?: string; currentUserFullName?: string }
+): string {
+  const isSelf =
+    message.isSelf ??
+    (options?.currentUserId
+      ? message.authorId === options.currentUserId
+      : false);
+  const fullName = options?.currentUserFullName?.trim();
+  if (isSelf && fullName) return fullName;
+  if (message.authorName === "You" && fullName) return fullName;
+  return message.authorName;
 }
 
 function createPendingMessageId() {
@@ -38,12 +52,13 @@ function createPendingMessageId() {
 export function createOptimisticMessage(
   body: string,
   authorId: string,
-  attachments?: MessageAttachment[]
+  attachments?: MessageAttachment[],
+  authorName?: string
 ): ChatMessage {
   return {
     id: createPendingMessageId(),
     authorId,
-    authorName: "You",
+    authorName: authorName?.trim() || "You",
     body,
     createdAt: new Date().toISOString(),
     isSelf: true,

@@ -27,6 +27,7 @@ import {
   PencilIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { resolveMessageAuthorName } from "@/lib/chat/messages";
 import { avatarInitialFromName } from "@/lib/user-display";
 import { MessageAttachmentList } from "@/components/chat/attachments/MessageAttachmentList";
 import { MessageBodyWithMentions } from "@/components/chat/thread/MessageBodyWithMentions";
@@ -73,6 +74,7 @@ export function ChatMessageRow({
   highlighted?: boolean;
 }) {
   const currentUserId = useAuthStore((s) => s.user?.id);
+  const currentUserFullName = useAuthStore((s) => s.user?.fullName);
   const activeThreadMessageId = useChatStore((s) => s.activeThreadMessageId);
   const setActiveThread = useChatStore((s) => s.setActiveThread);
   const [editing, setEditing] = useState(false);
@@ -82,8 +84,10 @@ export function ChatMessageRow({
   const threadOpen = activeThreadMessageId === message.id;
   const reactions = message.reactions ?? [];
   const created = new Date(message.createdAt);
-  const displayName =
-    message.authorName === "You" ? "You" : message.authorName;
+  const displayName = resolveMessageAuthorName(message, {
+    currentUserId,
+    currentUserFullName,
+  });
   const canEdit = Boolean(
     currentUserId && message.authorId === currentUserId && onEditMessage
   );

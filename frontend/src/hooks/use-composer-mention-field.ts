@@ -14,7 +14,7 @@ export function useComposerMentionField() {
   const [segments, setSegments] = useState<ComposerSegment[]>([]);
   const [draft, setDraft] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const bodyText = useMemo(
     () => serializeComposerBody(segments, draft),
@@ -66,7 +66,7 @@ export function useComposerMentionField() {
 
   const handleInputKeyDown = useCallback(
     (
-      e: React.KeyboardEvent<HTMLInputElement>,
+      e: React.KeyboardEvent<HTMLTextAreaElement>,
       onEnter?: () => void
     ) => {
       if (e.key === "Backspace" && draft.length === 0 && segments.length > 0) {

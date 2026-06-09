@@ -10,6 +10,7 @@ import type {
   PresenceSyncPayload,
   PresenceUpdatePayload,
 } from "@/lib/types/realtime";
+import { applyRealtimeMessageToSidebar } from "@/lib/chat/sidebar-realtime";
 import { useAuthStore } from "@/stores/auth-store";
 import { useChatStore } from "@/stores/chat-store";
 import { usePresenceStore } from "@/stores/presence-store";
@@ -67,6 +68,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
 
     socket.on("connect", joinWorkspace);
     socket.on("chat:message", (payload: ChatRealtimePayload) => {
+      applyRealtimeMessageToSidebar(payload, userId, accessToken);
       ingestRealtimeEvent(payload);
     });
     socket.on("chat:message:edit", (payload: ChatMessageEditPayload) => {

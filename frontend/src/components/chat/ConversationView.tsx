@@ -122,7 +122,7 @@ export function ConversationView({
   const reactionEvent = useChatStore((s) => s.reactionEvent);
   const clearReactionEvent = useChatStore((s) => s.clearReactionEvent);
   const setConversationUnread = useChatStore((s) => s.setConversationUnread);
-  const bumpConversationUnread = useChatStore((s) => s.bumpConversationUnread);
+  const setActiveConversation = useChatStore((s) => s.setActiveConversation);
   const cachedChannelName = useChatStore((s) =>
     type === "channel"
       ? s.sidebarListsCache?.channels.find((c) => c.id === id)?.name
@@ -226,7 +226,11 @@ export function ConversationView({
           conversationId
         );
         if (conversationId !== id) return;
-        setMessages(msgResult.data);
+        const viewerId = useAuthStore.getState().user?.id;
+        const channelMessages = viewerId
+          ? msgResult.data.map((m) => normalizeMessageForViewer(m, viewerId))
+          : msgResult.data;
+        setMessages(channelMessages);
         setMessagesLoading(false);
 
         let channelMeta = resolveCachedMeta() as Channel | null;
@@ -241,7 +245,7 @@ export function ConversationView({
         }
         setDm(null);
         setConversationCache(workspaceId, type, conversationId, {
-          messages: msgResult.data,
+          messages: channelMessages,
           channel: channelMeta,
           dm: null,
         });
@@ -252,7 +256,11 @@ export function ConversationView({
           conversationId
         );
         if (conversationId !== id) return;
-        setMessages(msgResult.data);
+        const viewerId = useAuthStore.getState().user?.id;
+        const dmMessages = viewerId
+          ? msgResult.data.map((m) => normalizeMessageForViewer(m, viewerId))
+          : msgResult.data;
+        setMessages(dmMessages);
         setMessagesLoading(false);
 
         let dmMeta = resolveCachedMeta() as DirectMessage | null;
@@ -263,7 +271,7 @@ export function ConversationView({
         }
         setChannel(null);
         setConversationCache(workspaceId, type, conversationId, {
-          messages: msgResult.data,
+          messages: dmMessages,
           dm: dmMeta,
           channel: null,
         });
@@ -289,6 +297,7 @@ export function ConversationView({
 
   const markConversationRead = useCallback(async () => {
     if (!ready) return;
+    setConversationUnread(type, id, 0);
     try {
       if (type === "channel") {
         await markChannelRead(accessToken, workspaceId, id);
@@ -330,16 +339,23 @@ export function ConversationView({
   }, [ready, type, accessToken, workspaceId, id]);
 
   useEffect(() => {
+    if (!ready) return;
+    setConversationUnread(type, id, 0);
+  }, [ready, type, id, setConversationUnread]);
+
+  useEffect(() => {
     if (messagesLoading || error || !ready) return;
-    const timer = window.setTimeout(() => {
-      void markConversationRead();
-    }, 400);
-    return () => window.clearTimeout(timer);
+    void markConversationRead();
   }, [messagesLoading, error, ready, markConversationRead]);
 
   useEffect(() => {
     setActiveThread(null);
   }, [type, id, setActiveThread]);
+
+  useEffect(() => {
+    setActiveConversation({ kind: type, id });
+    return () => setActiveConversation(null);
+  }, [type, id, setActiveConversation]);
 
   useEffect(() => {
     if (!realtimeEvent || realtimeEvent.workspaceId !== workspaceId) return;
@@ -371,21 +387,8 @@ export function ConversationView({
     const isActive =
       realtimeEvent.kind === type && realtimeEvent.conversationId === id;
     if (isActive || realtimeEvent.parentId) return;
-    if (realtimeEvent.message.authorId === currentUserId) {
-      clearRealtimeEvent();
-      return;
-    }
-    bumpConversationUnread(realtimeEvent.kind, realtimeEvent.conversationId);
     clearRealtimeEvent();
-  }, [
-    realtimeEvent,
-    workspaceId,
-    type,
-    id,
-    currentUserId,
-    bumpConversationUnread,
-    clearRealtimeEvent,
-  ]);
+  }, [realtimeEvent, workspaceId, type, id, clearRealtimeEvent]);
 
   const applyReactions = useCallback(
     (messageId: string, reactions: { emoji: string; count: number }[]) => {
@@ -494,7 +497,8 @@ export function ConversationView({
     const optimistic = createOptimisticMessage(
       payload.body || ATTACHMENT_PLACEHOLDER,
       currentUserId,
-      payload.optimisticAttachments
+      payload.optimisticAttachments,
+      useAuthStore.getState().user?.fullName
     );
     setMessages((prev) => [...prev, optimistic]);
     try {

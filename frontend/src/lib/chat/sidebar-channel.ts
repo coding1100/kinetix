@@ -44,6 +44,45 @@ export function bumpSidebarRefresh() {
   }));
 }
 
+export function patchChannelActivityInSidebar(
+  workspaceId: string,
+  channelId: string,
+  patch: {
+    lastMessage: string;
+    lastAt: string;
+    bumpUnread?: boolean;
+  }
+) {
+  useChatStore.setState((s) => {
+    const cache = s.sidebarListsCache;
+    if (!cache || cache.workspaceId !== workspaceId) return s;
+
+    const exists = cache.channels.some((c) => c.id === channelId);
+    if (!exists) return s;
+
+    const channels = cache.channels.map((c) =>
+      c.id === channelId
+        ? {
+            ...c,
+            lastMessage: patch.lastMessage,
+            lastAt: patch.lastAt,
+            unread: patch.bumpUnread ? c.unread + 1 : c.unread,
+          }
+        : c
+    );
+    channels.sort(
+      (a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime()
+    );
+
+    return {
+      sidebarListsCache: {
+        ...cache,
+        channels,
+      },
+    };
+  });
+}
+
 export function upsertChannelInSidebar(channel: Channel, workspaceId: string) {
   const normalized: Channel = {
     ...channel,

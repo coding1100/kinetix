@@ -38,6 +38,7 @@ import {
   mergeConfirmedMessage,
   mergeIncomingMessage,
   normalizeMessageForViewer,
+  resolveMessageAuthorName,
 } from "@/lib/chat/messages";
 import type { ChatMessage, SendMessagePayload } from "@/lib/types/chat";
 import { buildMessageRuns } from "@/lib/chat/message-groups";
@@ -45,8 +46,16 @@ import { useAuthStore } from "@/stores/auth-store";
 import { createTaskFromThreadMessage } from "@/lib/spaces/create-task-from-thread";
 import { LinkTaskDialog } from "@/components/spaces/LinkTaskDialog";
 
-function getThreadTitle(authorName: string) {
-  return authorName === "You" ? "Thread" : `Thread with ${authorName}`;
+function getThreadTitle(
+  parent: ChatMessage,
+  currentUserId?: string,
+  currentUserFullName?: string
+) {
+  const name = resolveMessageAuthorName(parent, {
+    currentUserId,
+    currentUserFullName,
+  });
+  return `Thread with ${name}`;
 }
 
 export function ThreadPanel({
@@ -66,6 +75,7 @@ export function ThreadPanel({
 }) {
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const currentUserId = useAuthStore((s) => s.user?.id);
+  const currentUserFullName = useAuthStore((s) => s.user?.fullName);
   const setActiveThread = useChatStore((s) => s.setActiveThread);
   const realtimeEvent = useChatStore((s) => s.realtimeEvent);
   const clearRealtimeEvent = useChatStore((s) => s.clearRealtimeEvent);
@@ -228,7 +238,8 @@ export function ThreadPanel({
     const optimistic = createOptimisticMessage(
       payload.body || ATTACHMENT_PLACEHOLDER,
       currentUserId,
-      payload.optimisticAttachments
+      payload.optimisticAttachments,
+      currentUserFullName
     );
     setBundle((prev) => {
       if (!prev) return prev;
@@ -330,7 +341,7 @@ export function ThreadPanel({
       <header className="shrink-0 px-4 pt-3 pb-2">
         <div className="flex items-start justify-between gap-2">
           <h2 className="text-base font-semibold leading-tight text-foreground">
-            {getThreadTitle(parent.authorName)}
+            {getThreadTitle(parent, currentUserId, currentUserFullName)}
           </h2>
           <Button
             variant="ghost"

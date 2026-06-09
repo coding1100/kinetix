@@ -23,6 +23,7 @@ import {
   PencilIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { resolveMessageAuthorName } from "@/lib/chat/messages";
 import { avatarInitialFromName } from "@/lib/user-display";
 import { MessageAuthorButton } from "@/components/chat/MessageAuthorButton";
 
@@ -53,6 +54,11 @@ export function ThreadMessageRow({
   onEditMessage?: (messageId: string, body: string) => Promise<void>;
 }) {
   const currentUserId = useAuthStore((s) => s.user?.id);
+  const currentUserFullName = useAuthStore((s) => s.user?.fullName);
+  const displayName = resolveMessageAuthorName(message, {
+    currentUserId,
+    currentUserFullName,
+  });
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const reactions = message.reactions ?? [];
@@ -126,17 +132,17 @@ export function ThreadMessageRow({
         {showHeader ? (
           <MessageAuthorButton
             authorId={message.authorId}
-            authorName={message.authorName}
+            authorName={displayName}
             className="shrink-0 rounded-full"
           >
             <Avatar className="size-8">
               <AvatarFallback
                 className={cn(
                   "text-xs font-semibold",
-                  avatarClass(message.authorName)
+                  avatarClass(displayName)
                 )}
               >
-                {avatarInitialFromName(message.authorName)}
+                {avatarInitialFromName(displayName)}
               </AvatarFallback>
             </Avatar>
           </MessageAuthorButton>
@@ -146,10 +152,10 @@ export function ThreadMessageRow({
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
               <MessageAuthorButton
                 authorId={message.authorId}
-                authorName={message.authorName}
+                authorName={displayName}
                 className="text-sm font-semibold text-foreground hover:text-primary"
               >
-                {message.authorName}
+                {displayName}
               </MessageAuthorButton>
               <time
                 className="text-xs text-muted-foreground"

@@ -41,6 +41,11 @@ export type ChannelDetailsView =
 
 export type DmDetailsView = "search" | "replies" | "settings";
 
+export type ActiveConversation = {
+  kind: "channel" | "dm";
+  id: string;
+};
+
 export type PersonProfileTab =
   | "activity"
   | "tasks"
@@ -68,6 +73,7 @@ interface ChatState {
     Partial<Pick<Channel, "name" | "starred">>
   >;
   messageScrollTarget: string | null;
+  activeConversation: ActiveConversation | null;
   setFilter: (f: ChatFilter) => void;
   setLayout: (l: ChatLayout) => void;
   setCollapsed: (v: boolean) => void;
@@ -87,6 +93,7 @@ interface ChatState {
   requestMessageScroll: (messageId: string) => void;
   clearMessageScrollTarget: () => void;
   setSidebarListsCache: (cache: ChatSidebarLists) => void;
+  setActiveConversation: (conversation: ActiveConversation | null) => void;
   setConversationUnread: (
     kind: "channel" | "dm",
     conversationId: string,
@@ -124,6 +131,7 @@ export const useChatStore = create<ChatState>()(
       channelNotifications: {},
       channelMetaOverrides: {},
       messageScrollTarget: null,
+      activeConversation: null,
       setFilter: (filter) => set({ filter }),
       setLayout: (layout) => set({ layout }),
       setCollapsed: (collapsed) => set({ collapsed }),
@@ -180,6 +188,7 @@ export const useChatStore = create<ChatState>()(
         set({ messageScrollTarget: messageId }),
       clearMessageScrollTarget: () => set({ messageScrollTarget: null }),
       setSidebarListsCache: (sidebarListsCache) => set({ sidebarListsCache }),
+      setActiveConversation: (activeConversation) => set({ activeConversation }),
       setConversationUnread: (kind, conversationId, unread) =>
         set((s) => {
           const workspaceId = s.sidebarListsCache?.workspaceId;

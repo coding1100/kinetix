@@ -151,7 +151,7 @@ export function MessageComposer({
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     handleInputKeyDown(e, () => void handleSend());
   };
 

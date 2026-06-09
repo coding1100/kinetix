@@ -16,7 +16,7 @@ def map_message(msg: ChatMessage, current_user_id: str) -> dict:
     return {
         "id": msg.id,
         "authorId": msg.author_id,
-        "authorName": "You" if msg.author_id == current_user_id else msg.author.full_name,
+        "authorName": msg.author.full_name,
         "body": msg.body,
         "createdAt": msg.created_at.isoformat(),
         "isSelf": msg.author_id == current_user_id,

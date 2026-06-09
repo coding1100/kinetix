@@ -113,15 +113,12 @@ export function ChatSidebar() {
 
   const sidebarQuery = useHomeQuery(
     async (token, ws) => {
-      const lists = await loadSidebarLists(token, ws, {
-        force: sidebarRefreshKey !== 0,
-      });
+      const lists = await loadSidebarLists(token, ws, { force: true });
       return { channels: lists.channels, dms: lists.dms };
     },
     [sidebarRefreshKey],
     {
       initialData: initialSidebarData,
-      skipInitialFetch: initialSidebarData != null,
       refreshKey: sidebarRefreshKey,
     }
   );

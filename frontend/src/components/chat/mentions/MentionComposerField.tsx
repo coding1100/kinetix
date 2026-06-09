@@ -1,12 +1,14 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import type { ConversationType } from "@/lib/types/chat";
 import type { ComposerSegment } from "@/lib/chat/mention-types";
 import type { MentionSelection } from "@/lib/chat/mention-types";
 import { cn } from "@/lib/utils";
 import { MentionChip } from "./MentionChip";
 import { MentionAutocompleteDropdown } from "./MentionAutocompleteDropdown";
+
+const MAX_TEXTAREA_HEIGHT_PX = 112;
 
 export function MentionComposerField({
   segments,
@@ -25,7 +27,7 @@ export function MentionComposerField({
   segments: ComposerSegment[];
   draft: string;
   onDraftChange: (value: string) => void;
-  inputRef: React.RefObject<HTMLInputElement | null>;
+  inputRef: React.RefObject<HTMLTextAreaElement | null>;
   placeholder: string;
   compact?: boolean;
   mentionAutocompleteOpen: boolean;
@@ -33,10 +35,38 @@ export function MentionComposerField({
   conversationType?: ConversationType;
   conversationId?: string;
   onSelectMention: (selection: MentionSelection) => void;
-  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 }) {
   const fieldRef = useRef<HTMLDivElement>(null);
   const showPlaceholder = segments.length === 0 && !draft;
+
+  const resizeTextarea = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT_PX)}px`;
+  };
+
+  useEffect(() => {
+    resizeTextarea();
+  }, [draft, inputRef]);
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const text = e.clipboardData.getData("text/plain");
+    if (!text) return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    const start = el.selectionStart ?? draft.length;
+    const end = el.selectionEnd ?? draft.length;
+    const next = `${draft.slice(0, start)}${text}${draft.slice(end)}`;
+    onDraftChange(next);
+    const cursor = start + text.length;
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(cursor, cursor);
+      resizeTextarea();
+    });
+  };
 
   return (
     <div ref={fieldRef} className="relative">
@@ -51,8 +81,8 @@ export function MentionComposerField({
 
       <div
         className={cn(
-          "flex min-h-11 flex-wrap items-center gap-1 bg-card px-3 py-2.5",
-          compact ? "min-h-10 py-2" : "max-h-28 overflow-y-auto"
+          "flex min-h-11 flex-wrap items-start gap-1 bg-card px-3 py-2.5",
+          compact ? "min-h-10 py-2" : "max-h-36 overflow-y-auto"
         )}
       >
         {segments.map((seg, index) =>
@@ -70,17 +100,18 @@ export function MentionComposerField({
         )}
         <div className="relative min-w-[8rem] flex-1">
           {showPlaceholder ? (
-            <span className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+            <span className="pointer-events-none absolute left-0 top-2 text-sm text-muted-foreground">
               {placeholder}
             </span>
           ) : null}
-          <input
+          <textarea
             ref={inputRef}
-            type="text"
             value={draft}
+            rows={1}
             onChange={(e) => onDraftChange(e.target.value)}
             onKeyDown={onKeyDown}
-            className="w-full border-0 bg-transparent p-0 text-sm outline-none"
+            onPaste={handlePaste}
+            className="w-full resize-none border-0 bg-transparent p-0 pt-0.5 text-sm leading-5 outline-none"
             aria-label={placeholder}
           />
         </div>

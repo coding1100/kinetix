@@ -11,7 +11,11 @@ export function findDmByUserId(
   return cache.dms.find((d) => !d.isGroup && d.otherUserId === userId);
 }
 
-export function upsertDmInSidebar(dm: DirectMessage, workspaceId: string) {
+function mergeDmIntoSidebar(
+  dm: DirectMessage,
+  workspaceId: string,
+  options?: { refresh?: boolean }
+) {
   const normalized: DirectMessage = {
     ...dm,
     lastMessage: dm.lastMessage ?? "",
@@ -46,7 +50,53 @@ export function upsertDmInSidebar(dm: DirectMessage, workspaceId: string) {
       },
     };
   });
-  bumpSidebarRefresh();
+
+  if (options?.refresh !== false) {
+    bumpSidebarRefresh();
+  }
+}
+
+export function upsertDmInSidebar(dm: DirectMessage, workspaceId: string) {
+  mergeDmIntoSidebar(dm, workspaceId);
+}
+
+export function patchDmActivityInSidebar(
+  workspaceId: string,
+  dmId: string,
+  patch: {
+    lastMessage: string;
+    lastAt: string;
+    bumpUnread?: boolean;
+  }
+) {
+  useChatStore.setState((s) => {
+    const cache = s.sidebarListsCache;
+    if (!cache || cache.workspaceId !== workspaceId) return s;
+
+    const exists = cache.dms.some((d) => d.id === dmId);
+    if (!exists) return s;
+
+    const dms = cache.dms.map((d) =>
+      d.id === dmId
+        ? {
+            ...d,
+            lastMessage: patch.lastMessage,
+            lastAt: patch.lastAt,
+            unread: patch.bumpUnread ? d.unread + 1 : d.unread,
+          }
+        : d
+    );
+    dms.sort(
+      (a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime()
+    );
+
+    return {
+      sidebarListsCache: {
+        ...cache,
+        dms,
+      },
+    };
+  });
 }
 
 export function patchSidebarDm(

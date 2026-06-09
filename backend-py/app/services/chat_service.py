@@ -695,7 +695,7 @@ def _dm_payload(
     members = None
     if conv.is_group:
         members = [
-            "You" if p.user_id == user_id else p.user.full_name.split(" ")[0]
+            p.user.full_name.split(" ")[0]
             for p in conv.participants
         ]
     other_presence = (
