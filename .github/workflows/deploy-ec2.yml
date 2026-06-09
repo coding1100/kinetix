@@ -1,0 +1,40 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-ec2
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy production
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          APP_ROOT: ${{ secrets.EC2_APP_PATH }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          envs: APP_ROOT
+          script_stop: true
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+            export APP_ROOT="${APP_ROOT:-/opt/clickup/kinetix}"
+            cd "$APP_ROOT"
+            chmod +x deploy/deploy.sh deploy/setup-services.sh 2>/dev/null || true
+            ./deploy/deploy.sh
+
+      - name: Summary
+        if: success()
+        run: echo "Deployed to production EC2"

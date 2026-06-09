@@ -182,6 +182,58 @@ NEXT_PUBLIC_API_URL=http://localhost:4001/api/v1
 
 Implemented: auth, workspaces, invites (same JSON/cookies as Express). Next: home + chat (PY-3/4).
 
+## EC2 production deploy (automated)
+
+Pushes to `main` deploy automatically via GitHub Actions (`.github/workflows/deploy-ec2.yml`).
+
+### One-time EC2 setup
+
+```bash
+sudo apt update
+sudo apt install -y git nginx python3 python3-venv nodejs npm
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+
+sudo mkdir -p /opt/clickup
+sudo chown ubuntu:ubuntu /opt/clickup
+git clone git@github.com:coding1100/kinetix.git /opt/clickup/kinetix
+cd /opt/clickup/kinetix
+
+# Backend env (never commit .env)
+cp backend-py/.env.example backend-py/.env
+nano backend-py/.env
+
+# Frontend env
+nano frontend/.env.local
+# NEXT_PUBLIC_API_URL=/api/v1
+# NEXT_PUBLIC_APP_URL=http://YOUR_EC2_IP
+# NEXT_PUBLIC_SOCKET_URL=http://YOUR_EC2_IP
+
+chmod +x deploy/setup-services.sh deploy/deploy.sh
+./deploy/setup-services.sh
+./deploy/deploy.sh
+```
+
+### GitHub repository secrets
+
+Add in **Settings → Secrets and variables → Actions**:
+
+| Secret | Example |
+|--------|---------|
+| `EC2_HOST` | `3.140.5.67` |
+| `EC2_USER` | `ubuntu` |
+| `EC2_SSH_KEY` | Full contents of your `.pem` private key |
+| `EC2_APP_PATH` | `/opt/clickup/kinetix` (optional; this is the default) |
+
+Allow the deploy key: add the public key that matches `EC2_SSH_KEY` to `~/.ssh/authorized_keys` on EC2 (or use the EC2 instance key pair).
+
+### After secrets are set
+
+- Every `git push` to `main` runs `deploy/deploy.sh` on EC2 (pull, build, health checks, restart).
+- Manual deploy: **Actions → Deploy to EC2 → Run workflow**.
+
+The deploy script stops `next dev`, builds production frontend, reloads nginx, and fails if Turbopack/dev mode is detected.
+
 ## Stack
 
 | Layer | Technology |
