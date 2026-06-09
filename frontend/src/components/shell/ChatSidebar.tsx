@@ -206,7 +206,7 @@ export function ChatSidebar() {
   return (
     <aside className="flex min-h-0 w-[260px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
       <div className="flex items-center justify-between px-3 py-3">
-        <span className="text-sm font-semibold">Chat test</span>
+        <span className="text-sm font-semibold">Chat</span>
         <div className="flex gap-0.5">
           <Button
             variant={listSearchOpen ? "secondary" : "ghost"}
