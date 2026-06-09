@@ -18,8 +18,11 @@ git reset --hard origin/main
 
 log "Stop dev Next.js (prevents Turbopack chunk errors)"
 sudo systemctl stop kinetix-web 2>/dev/null || true
-pkill -f "next dev" 2>/dev/null || true
-sleep 1
+pkill -f '[n]ext dev' 2>/dev/null || true
+if lsof -i :3000 -t >/dev/null 2>&1; then
+  fuser -k 3000/tcp 2>/dev/null || true
+  sleep 2
+fi
 
 log "Install systemd units"
 sudo cp "$ROOT/deploy/systemd/kinetix-api.service" /etc/systemd/system/

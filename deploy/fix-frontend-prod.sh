@@ -7,10 +7,13 @@ FRONTEND="$APP_ROOT/frontend"
 
 echo "==> Stop ALL Next.js processes (dev + prod)"
 sudo systemctl stop kinetix-web 2>/dev/null || true
-sudo pkill -f "next dev" 2>/dev/null || true
-sudo pkill -f "next-server" 2>/dev/null || true
-sudo pkill -f "node.*next" 2>/dev/null || true
+# [n]ext avoids pkill matching its own shell cmdline (see kinetix-web.service)
+sudo pkill -f '[n]ext dev' 2>/dev/null || true
 sleep 2
+if sudo lsof -i :3000 -t >/dev/null 2>&1; then
+  sudo fuser -k 3000/tcp 2>/dev/null || true
+  sleep 2
+fi
 
 if sudo lsof -i :3000 -t >/dev/null 2>&1; then
   echo "ERROR: port 3000 still in use:"
@@ -48,10 +51,10 @@ Group=ubuntu
 WorkingDirectory=$FRONTEND
 Environment=NODE_ENV=production
 Environment=PORT=3000
-ExecStartPre=/bin/sh -c 'pkill -f "next dev" || true'
 ExecStart=$FRONTEND/node_modules/.bin/next start -p 3000 -H 127.0.0.1
 Restart=always
-RestartSec=3
+RestartSec=5
+TimeoutStartSec=120
 
 [Install]
 WantedBy=multi-user.target
