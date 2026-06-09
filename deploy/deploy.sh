@@ -10,6 +10,23 @@ DEPLOY_USER="${DEPLOY_USER:-ubuntu}"
 
 log() { echo "==> $*"; }
 
+wait_for_http() {
+  local url="$1"
+  local label="$2"
+  local attempts="${3:-45}"
+  local i=1
+  while [ "$i" -le "$attempts" ]; do
+    if curl -fsS "$url" >/dev/null 2>&1; then
+      log "$label ready ($url)"
+      return 0
+    fi
+    sleep 2
+    i=$((i + 1))
+  done
+  echo "ERROR: $label not ready after $((attempts * 2))s — $url"
+  return 1
+}
+
 run_as_user() {
   local dir="$1"
   shift
@@ -57,6 +74,7 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 # uv sync creates/updates .venv — avoid system pip (PEP 668 on Ubuntu 24.04+)
 uv sync
+sudo chown -R "$DEPLOY_USER:$DEPLOY_USER" "$BACKEND"
 
 log "Frontend production build"
 run_as_user "$FRONTEND" 'rm -rf .next node_modules/.cache'
@@ -83,17 +101,14 @@ fi
 log "Restart services"
 sudo systemctl enable kinetix-api kinetix-web
 sudo systemctl restart kinetix-api kinetix-web
-sleep 4
 
 log "Health checks"
-if ! curl -fsS http://127.0.0.1:4000/health >/dev/null; then
-  echo "ERROR: API health check failed"
+if ! wait_for_http "http://127.0.0.1:4000/health" "API"; then
   sudo journalctl -u kinetix-api -n 40 --no-pager
   exit 1
 fi
 
-if ! curl -fsS -o /dev/null -w "%{http_code}" http://127.0.0.1:3000 | grep -qE '^[23]'; then
-  echo "ERROR: Web server not responding on :3000"
+if ! wait_for_http "http://127.0.0.1:3000/auth/login" "Web"; then
   sudo journalctl -u kinetix-web -n 40 --no-pager
   exit 1
 fi
