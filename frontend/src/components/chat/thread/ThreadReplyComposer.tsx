@@ -99,18 +99,28 @@ export function ThreadReplyComposer({
     setSending(true);
     const messageBody = bodyText.trim();
     const ids = [...attachmentIds];
+    const optimisticAttachments = pending.map(
+      ({ id, fileName, kind, mimeType, sizeBytes }) => ({
+        id,
+        fileName,
+        kind,
+        mimeType: mimeType ?? "application/octet-stream",
+        sizeBytes: sizeBytes ?? 0,
+      })
+    );
+    clearMentions();
+    clearPending();
     try {
       if (onSend) {
         await onSend({
           body: messageBody,
           attachmentIds: ids.length ? ids : undefined,
+          optimisticAttachments: optimisticAttachments.length
+            ? optimisticAttachments
+            : undefined,
         });
-        clearMentions();
-        clearPending();
       } else {
         toast.success("Reply sent (mock)");
-        clearMentions();
-        clearPending();
       }
     } catch {
       restoreMentions(messageBody);

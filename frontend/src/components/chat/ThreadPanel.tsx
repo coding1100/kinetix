@@ -33,12 +33,13 @@ import { ThreadMessageRow } from "./thread/ThreadMessageRow";
 import { ThreadReplyComposer } from "./thread/ThreadReplyComposer";
 import { PageLoader } from "@/components/ui/page-loader";
 import {
+  ATTACHMENT_PLACEHOLDER,
   createOptimisticMessage,
   mergeConfirmedMessage,
   mergeIncomingMessage,
   normalizeMessageForViewer,
 } from "@/lib/chat/messages";
-import type { ChatMessage } from "@/lib/types/chat";
+import type { ChatMessage, SendMessagePayload } from "@/lib/types/chat";
 import { buildMessageRuns } from "@/lib/chat/message-groups";
 import { useAuthStore } from "@/stores/auth-store";
 import { createTaskFromThreadMessage } from "@/lib/spaces/create-task-from-thread";
@@ -217,10 +218,7 @@ export function ThreadPanel({
     clearReactionEvent();
   }, [reactionEvent, workspaceId, clearReactionEvent]);
 
-  const handleReply = async (payload: {
-    body: string;
-    attachmentIds?: string[];
-  }) => {
+  const handleReply = async (payload: SendMessagePayload) => {
     if (!ready || !accessToken || !workspaceId) {
       throw new ApiError(401, "UNAUTHORIZED", "Session not ready — try refreshing");
     }
@@ -228,8 +226,9 @@ export function ThreadPanel({
       throw new ApiError(401, "UNAUTHORIZED", "You must be signed in to send messages");
     }
     const optimistic = createOptimisticMessage(
-      payload.body || "Shared an attachment",
-      currentUserId
+      payload.body || ATTACHMENT_PLACEHOLDER,
+      currentUserId,
+      payload.optimisticAttachments
     );
     setBundle((prev) => {
       if (!prev) return prev;

@@ -1,4 +1,6 @@
-import type { ChatMessage } from "@/lib/types/chat";
+import type { ChatMessage, MessageAttachment } from "@/lib/types/chat";
+
+export const ATTACHMENT_PLACEHOLDER = "Shared an attachment";
 
 /** Append a message only if its id is not already in the list (REST + socket race). */
 export function appendUniqueMessage<T extends { id: string }>(
@@ -35,7 +37,8 @@ function createPendingMessageId() {
 
 export function createOptimisticMessage(
   body: string,
-  authorId: string
+  authorId: string,
+  attachments?: MessageAttachment[]
 ): ChatMessage {
   return {
     id: createPendingMessageId(),
@@ -46,7 +49,49 @@ export function createOptimisticMessage(
     isSelf: true,
     reactions: [],
     threadCount: 0,
+    attachments: attachments?.length ? attachments : undefined,
   };
+}
+
+function dedupeMessagesById<T extends { id: string }>(messages: T[]): T[] {
+  const seen = new Set<string>();
+  return messages.filter((m) => {
+    if (seen.has(m.id)) return false;
+    seen.add(m.id);
+    return true;
+  });
+}
+
+/** Match optimistic row when REST/socket body differs (e.g. attachment-only sends). */
+function findPendingReplaceIndex<T extends ChatMessage>(
+  prev: T[],
+  incoming: T
+): number {
+  const exactBody = prev.findIndex(
+    (m) =>
+      m.id.startsWith("pending-") &&
+      m.authorId === incoming.authorId &&
+      m.body === incoming.body
+  );
+  if (exactBody >= 0) return exactBody;
+
+  const hasIncomingAttachments = (incoming.attachments?.length ?? 0) > 0;
+  if (!hasIncomingAttachments) return -1;
+
+  for (let i = prev.length - 1; i >= 0; i--) {
+    const m = prev[i];
+    if (
+      m.id.startsWith("pending-") &&
+      m.authorId === incoming.authorId &&
+      (m.body === ATTACHMENT_PLACEHOLDER ||
+        m.body === "" ||
+        (m.attachments?.length ?? 0) > 0)
+    ) {
+      return i;
+    }
+  }
+
+  return -1;
 }
 
 /** Replace pending row or merge by id — avoids blank gap while REST/socket resolve. */
@@ -54,24 +99,21 @@ export function upsertChatMessage<T extends ChatMessage>(
   prev: T[],
   incoming: T
 ): T[] {
-  const pendingIdx = prev.findIndex(
-    (m) =>
-      m.id.startsWith("pending-") &&
-      m.authorId === incoming.authorId &&
-      m.body === incoming.body
-  );
+  const pendingIdx = findPendingReplaceIndex(prev, incoming);
   if (pendingIdx >= 0) {
-    return prev.map((m, i) => (i === pendingIdx ? incoming : m));
+    return dedupeMessagesById(
+      prev.map((m, i) => (i === pendingIdx ? { ...m, ...incoming } : m))
+    );
   }
 
   const existingIdx = prev.findIndex((m) => m.id === incoming.id);
   if (existingIdx >= 0) {
-    return prev.map((m, i) =>
-      i === existingIdx ? { ...m, ...incoming } : m
+    return dedupeMessagesById(
+      prev.map((m, i) => (i === existingIdx ? { ...m, ...incoming } : m))
     );
   }
 
-  return [...prev, incoming];
+  return dedupeMessagesById([...prev, incoming]);
 }
 
 export function mergeConfirmedMessage<T extends ChatMessage>(
@@ -81,7 +123,9 @@ export function mergeConfirmedMessage<T extends ChatMessage>(
 ): T[] {
   const tempIdx = prev.findIndex((m) => m.id === tempId);
   if (tempIdx >= 0) {
-    return prev.map((m, i) => (i === tempIdx ? confirmed : m));
+    return dedupeMessagesById(
+      prev.map((m, i) => (i === tempIdx ? { ...m, ...confirmed } : m))
+    );
   }
   return upsertChatMessage(prev, confirmed);
 }

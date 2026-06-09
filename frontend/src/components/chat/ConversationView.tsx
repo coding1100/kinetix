@@ -58,6 +58,7 @@ import { toast } from "sonner";
 import {
   applyMessageUpdate,
   appendUniqueMessage,
+  ATTACHMENT_PLACEHOLDER,
   createOptimisticMessage,
   mergeConfirmedMessage,
   mergeIncomingMessage,
@@ -488,8 +489,9 @@ export function ConversationView({
       throw new ApiError(401, "UNAUTHORIZED", "You must be signed in to send messages");
     }
     const optimistic = createOptimisticMessage(
-      payload.body || "Shared an attachment",
-      currentUserId
+      payload.body || ATTACHMENT_PLACEHOLDER,
+      currentUserId,
+      payload.optimisticAttachments
     );
     setMessages((prev) => [...prev, optimistic]);
     try {

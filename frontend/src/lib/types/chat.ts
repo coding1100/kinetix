@@ -54,9 +54,16 @@ export interface ChatMessage {
   attachments?: MessageAttachment[];
 }
 
+export type OptimisticAttachment = Pick<
+  MessageAttachment,
+  "id" | "fileName" | "kind" | "mimeType" | "sizeBytes"
+>;
+
 export type SendMessagePayload = {
   body: string;
   attachmentIds?: string[];
+  /** Composer preview rows — shown on the optimistic message until REST/socket confirm. */
+  optimisticAttachments?: OptimisticAttachment[];
 };
 
 export interface ChatSearchHit extends ChatMessage {
