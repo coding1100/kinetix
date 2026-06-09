@@ -1,5 +1,29 @@
 type CharRef = { node: Text; offset: number };
 
+let savedEditorRange: Range | null = null;
+
+export function saveEditorSelection(root: HTMLElement): boolean {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
+  const range = sel.getRangeAt(0);
+  if (!root.contains(range.commonAncestorContainer)) return false;
+  savedEditorRange = range.cloneRange();
+  return true;
+}
+
+export function restoreEditorSelection(): boolean {
+  if (!savedEditorRange) return false;
+  const sel = window.getSelection();
+  if (!sel) return false;
+  sel.removeAllRanges();
+  sel.addRange(savedEditorRange);
+  return true;
+}
+
+export function clearSavedEditorSelection() {
+  savedEditorRange = null;
+}
+
 function collectCharRefs(root: HTMLElement): CharRef[] {
   const refs: CharRef[] = [];
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);

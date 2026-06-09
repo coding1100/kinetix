@@ -3,7 +3,10 @@ import {
   formatChannelMention,
   formatPersonMention,
 } from "@/lib/chat/mention-utils";
-import { sanitizeMessageHtml } from "@/lib/chat/rich-text/sanitize";
+import {
+  messageBodyHasHtml,
+  normalizeComposerHtml,
+} from "@/lib/chat/rich-text/sanitize";
 
 export function serializeRichComposerBody(
   segments: ComposerSegment[],
@@ -17,10 +20,11 @@ export function serializeRichComposerBody(
     })
     .join("");
 
-  const html = sanitizeMessageHtml(draftHtml);
+  const html = normalizeComposerHtml(draftHtml);
   const combined = `${prefix}${html}`.trim();
   if (!combined) return "";
 
   if (!html) return prefix.trim();
+  if (!messageBodyHasHtml(combined) && !prefix) return html.trim();
   return combined;
 }

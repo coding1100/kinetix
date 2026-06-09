@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { getSelectionRect, selectionInside } from "@/lib/chat/rich-text/dom";
+import {
+  clearSavedEditorSelection,
+  getSelectionRect,
+  restoreEditorSelection,
+  saveEditorSelection,
+  selectionInside,
+} from "@/lib/chat/rich-text/dom";
+import { applyLink } from "@/lib/chat/rich-text/commands";
 
 export type FormatToolbarPosition = {
   top: number;
@@ -10,8 +17,12 @@ export type FormatToolbarPosition = {
 
 export function useComposerFormat(editorRef: React.RefObject<HTMLElement | null>) {
   const [position, setPosition] = useState<FormatToolbarPosition | null>(null);
+  const [linkPosition, setLinkPosition] = useState<FormatToolbarPosition | null>(
+    null
+  );
 
   const refresh = useCallback(() => {
+    if (linkPosition) return;
     const editor = editorRef.current;
     if (!editor || !selectionInside(editor)) {
       setPosition(null);
@@ -26,14 +37,54 @@ export function useComposerFormat(editorRef: React.RefObject<HTMLElement | null>
       top: rect.top - 8,
       left: rect.left + rect.width / 2,
     });
-  }, [editorRef]);
+  }, [editorRef, linkPosition]);
 
   const hide = useCallback(() => {
     setPosition(null);
+    setLinkPosition(null);
+    clearSavedEditorSelection();
   }, []);
+
+  const openLinkPopover = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor || !saveEditorSelection(editor)) return;
+
+    const rect = getSelectionRect(editor);
+    if (!rect) {
+      clearSavedEditorSelection();
+      return;
+    }
+
+    setPosition(null);
+    setLinkPosition({
+      top: rect.top - 6,
+      left: rect.left + rect.width / 2,
+    });
+  }, [editorRef]);
+
+  const closeLinkPopover = useCallback(() => {
+    setLinkPosition(null);
+    clearSavedEditorSelection();
+  }, []);
+
+  const submitLink = useCallback(
+    (url: string) => {
+      const editor = editorRef.current;
+      if (!editor) return;
+
+      restoreEditorSelection();
+      applyLink(url);
+      setLinkPosition(null);
+      clearSavedEditorSelection();
+      editor.focus();
+    },
+    [editorRef]
+  );
 
   useEffect(() => {
     const onSelectionChange = () => {
+      if (linkPosition) return;
+
       const editor = editorRef.current;
       if (!editor) return;
       const sel = window.getSelection();
@@ -55,7 +106,15 @@ export function useComposerFormat(editorRef: React.RefObject<HTMLElement | null>
 
     document.addEventListener("selectionchange", onSelectionChange);
     return () => document.removeEventListener("selectionchange", onSelectionChange);
-  }, [editorRef, refresh]);
+  }, [editorRef, refresh, linkPosition]);
 
-  return { position, refresh, hide };
+  return {
+    position,
+    linkPosition,
+    refresh,
+    hide,
+    openLinkPopover,
+    closeLinkPopover,
+    submitLink,
+  };
 }

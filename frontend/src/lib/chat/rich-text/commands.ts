@@ -1,7 +1,31 @@
+import type { BannerVariant, TurnIntoBlockType } from "@/lib/chat/rich-text/block-types";
 import { insertTextAtCursor } from "@/lib/chat/rich-text/dom";
 
 function exec(command: string, value?: string) {
   document.execCommand(command, false, value);
+}
+
+function wrapSelectionInTag(tag: string, className?: string) {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+
+  const range = sel.getRangeAt(0);
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+
+  try {
+    range.surroundContents(el);
+  } catch {
+    const fragment = range.extractContents();
+    el.appendChild(fragment);
+    range.insertNode(el);
+  }
+
+  sel.removeAllRanges();
+  const next = document.createRange();
+  next.selectNodeContents(el);
+  next.collapse(false);
+  sel.addRange(next);
 }
 
 export function applyBold() {
@@ -38,6 +62,57 @@ export function applyIndent() {
 
 export function applyOutdent() {
   exec("outdent");
+}
+
+export function applyStrikethrough() {
+  exec("strikeThrough");
+}
+
+export function applyInlineCode() {
+  wrapSelectionInTag("code");
+}
+
+export function applyTurnInto(type: TurnIntoBlockType) {
+  if (type.startsWith("banner-")) {
+    applyBannerBlock(type.replace("banner-", "") as BannerVariant);
+    return;
+  }
+
+  if (type === "pre") {
+    exec("formatBlock", "<pre>");
+    return;
+  }
+
+  if (type === "blockquote") {
+    exec("formatBlock", "<blockquote>");
+    return;
+  }
+
+  const tag = type === "p" ? "p" : type;
+  exec("formatBlock", `<${tag}>`);
+}
+
+export function applyBannerBlock(variant: BannerVariant) {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+
+  const range = sel.getRangeAt(0);
+  const div = document.createElement("div");
+  div.setAttribute("data-banner", variant);
+
+  try {
+    range.surroundContents(div);
+  } catch {
+    const fragment = range.extractContents();
+    div.appendChild(fragment);
+    range.insertNode(div);
+  }
+
+  sel.removeAllRanges();
+  const next = document.createRange();
+  next.selectNodeContents(div);
+  next.collapse(false);
+  sel.addRange(next);
 }
 
 export function applyLink(url: string) {

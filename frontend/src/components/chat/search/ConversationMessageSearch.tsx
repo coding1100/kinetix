@@ -4,8 +4,13 @@ import { useEffect, useState } from "react";
 import { SearchIcon } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import type { ChatSearchHit } from "@/lib/types/chat";
-import { highlightSearchSnippet } from "@/lib/chat/message-search";
-import { formatRelativeTime } from "@/lib/utils";
+import { formatChatMessageTime } from "@/lib/chat/dates";
+import {
+  highlightSearchSnippet,
+  plainMessageBody,
+} from "@/lib/chat/message-search";
+import { resolveMessageAuthorName } from "@/lib/chat/messages";
+import { useAuthStore } from "@/stores/auth-store";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -29,6 +34,8 @@ export function ConversationMessageSearch({
   loading,
   onSelect,
 }: ConversationMessageSearchProps) {
+  const currentUserId = useAuthStore((s) => s.user?.id);
+  const currentUserFullName = useAuthStore((s) => s.user?.fullName);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -65,6 +72,10 @@ export function ConversationMessageSearch({
         <ul className="space-y-2">
           {results.map((hit) => {
             const snippet = highlightSearchSnippet(hit.body, trimmed);
+            const authorName = resolveMessageAuthorName(hit, {
+              currentUserId,
+              currentUserFullName,
+            });
             return (
               <li key={hit.id}>
                 <button
@@ -76,14 +87,14 @@ export function ConversationMessageSearch({
                   )}
                 >
                   <div className="flex items-center gap-2">
-                    <p className="text-xs font-medium">{hit.authorName}</p>
+                    <p className="text-xs font-medium">{authorName}</p>
                     {hit.inThread ? (
                       <Badge variant="secondary" className="h-4 px-1 text-[10px]">
                         Thread
                       </Badge>
                     ) : null}
-                    <span className="ml-auto text-xs text-muted-foreground">
-                      {formatRelativeTime(new Date(hit.createdAt))}
+                    <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                      {formatChatMessageTime(new Date(hit.createdAt))}
                     </span>
                   </div>
                   <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
@@ -96,7 +107,7 @@ export function ConversationMessageSearch({
                         {snippet.after}
                       </>
                     ) : (
-                      hit.body
+                      plainMessageBody(hit.body)
                     )}
                   </p>
                 </button>

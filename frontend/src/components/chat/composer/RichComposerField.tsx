@@ -8,7 +8,11 @@ import { cn } from "@/lib/utils";
 import { MentionChip } from "@/components/chat/mentions/MentionChip";
 import { MentionAutocompleteDropdown } from "@/components/chat/mentions/MentionAutocompleteDropdown";
 import { ComposerFormatToolbar } from "@/components/chat/composer/ComposerFormatToolbar";
+import { ComposerLinkPopover } from "@/components/chat/composer/ComposerLinkPopover";
 import { useComposerFormat } from "@/hooks/use-composer-format";
+import type { TurnIntoBlockType } from "@/lib/chat/rich-text/block-types";
+import { applyTurnInto } from "@/lib/chat/rich-text/commands";
+import { RICH_TEXT_CONTENT_CLASS } from "@/lib/chat/rich-text/rich-text-styles";
 
 const MAX_EDITOR_HEIGHT_PX = 160;
 
@@ -40,7 +44,14 @@ export function RichComposerField({
   onInput: () => void;
 }) {
   const fieldRef = useRef<HTMLDivElement>(null);
-  const { position, refresh } = useComposerFormat(editorRef);
+  const {
+    position,
+    linkPosition,
+    refresh,
+    openLinkPopover,
+    closeLinkPopover,
+    submitLink,
+  } = useComposerFormat(editorRef);
   const showPlaceholder = segments.length === 0 && !draftPlain.trim();
 
   const resizeEditor = () => {
@@ -54,6 +65,26 @@ export function RichComposerField({
     resizeEditor();
   }, [draftPlain, editorRef]);
 
+  const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.altKey && e.ctrlKey && !e.shiftKey && !e.nativeEvent.isComposing) {
+      const headingMap: Record<string, TurnIntoBlockType> = {
+        "1": "h1",
+        "2": "h2",
+        "3": "h3",
+        "4": "h4",
+      };
+      const turnInto = headingMap[e.key];
+      if (turnInto) {
+        e.preventDefault();
+        applyTurnInto(turnInto);
+        onInput();
+        resizeEditor();
+        return;
+      }
+    }
+    onKeyDown?.(e);
+  };
+
   const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
     const text = e.clipboardData.getData("text/plain");
     if (!text) return;
@@ -65,7 +96,24 @@ export function RichComposerField({
 
   return (
     <>
-      <ComposerFormatToolbar position={position} onFormatApplied={refresh} />
+      {linkPosition ? (
+        <ComposerLinkPopover
+          position={linkPosition}
+          onSubmit={(url) => {
+            submitLink(url);
+            onInput();
+          }}
+          onClose={closeLinkPopover}
+        />
+      ) : null}
+      <ComposerFormatToolbar
+        position={position}
+        onFormatApplied={() => {
+          onInput();
+          refresh();
+        }}
+        onOpenLink={openLinkPopover}
+      />
 
       <div ref={fieldRef} className="relative">
         <MentionAutocompleteDropdown
@@ -113,15 +161,13 @@ export function RichComposerField({
                 onInput();
                 resizeEditor();
               }}
-              onKeyDown={onKeyDown}
+              onKeyDown={handleEditorKeyDown}
               onPaste={handlePaste}
               onMouseUp={refresh}
               onKeyUp={refresh}
               className={cn(
                 "w-full min-h-[1.25rem] border-0 bg-transparent p-0 text-sm leading-5 outline-none",
-                "[&_a]:text-primary [&_a]:underline",
-                "[&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-5",
-                "[&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-5"
+                RICH_TEXT_CONTENT_CLASS
               )}
             />
           </div>

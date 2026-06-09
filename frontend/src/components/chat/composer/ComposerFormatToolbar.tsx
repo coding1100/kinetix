@@ -1,17 +1,16 @@
 "use client";
 
-import { useState } from "react";
 import {
   BoldIcon,
   ItalicIcon,
   UnderlineIcon,
   ListIcon,
-  ListOrderedIcon,
   LinkIcon,
   IndentIncreaseIcon,
   IndentDecreaseIcon,
-  MinusIcon,
   ChevronDownIcon,
+  StrikethroughIcon,
+  CodeIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,17 +26,20 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import type { FormatToolbarPosition } from "@/hooks/use-composer-format";
+import type { TurnIntoBlockType } from "@/lib/chat/rich-text/block-types";
+import { TurnIntoMenu } from "@/components/chat/composer/TurnIntoMenu";
 import {
   applyBold,
   applyItalic,
   applyUnderline,
-  applyOverline,
   applyTextColor,
   applyBulletList,
   applyNumberedList,
   applyIndent,
   applyOutdent,
-  applyLink,
+  applyStrikethrough,
+  applyInlineCode,
+  applyTurnInto,
 } from "@/lib/chat/rich-text/commands";
 
 const TEXT_COLORS = [
@@ -86,13 +88,12 @@ function ToolbarDivider() {
 export function ComposerFormatToolbar({
   position,
   onFormatApplied,
+  onOpenLink,
 }: {
   position: FormatToolbarPosition | null;
   onFormatApplied?: () => void;
+  onOpenLink: () => void;
 }) {
-  const [linkOpen, setLinkOpen] = useState(false);
-  const [linkUrl, setLinkUrl] = useState("");
-
   if (!position) return null;
 
   const run = (fn: () => void) => {
@@ -100,10 +101,8 @@ export function ComposerFormatToolbar({
     onFormatApplied?.();
   };
 
-  const submitLink = () => {
-    applyLink(linkUrl);
-    setLinkUrl("");
-    setLinkOpen(false);
+  const runTurnInto = (type: TurnIntoBlockType) => {
+    applyTurnInto(type);
     onFormatApplied?.();
   };
 
@@ -139,6 +138,8 @@ export function ComposerFormatToolbar({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        <TurnIntoMenu onSelect={runTurnInto} />
 
         <ToolbarDivider />
 
@@ -183,10 +184,11 @@ export function ComposerFormatToolbar({
         <ToolbarButton label="Underline" onClick={() => run(applyUnderline)}>
           <UnderlineIcon className="size-3.5" strokeWidth={2.5} />
         </ToolbarButton>
-        <ToolbarButton label="Overline" onClick={() => run(applyOverline)}>
-          <span className="text-xs font-semibold leading-none [text-decoration:overline]">
-            O
-          </span>
+        <ToolbarButton label="Strikethrough" onClick={() => run(applyStrikethrough)}>
+          <StrikethroughIcon className="size-3.5" strokeWidth={2.5} />
+        </ToolbarButton>
+        <ToolbarButton label="Inline code" onClick={() => run(applyInlineCode)}>
+          <CodeIcon className="size-3.5" strokeWidth={2.5} />
         </ToolbarButton>
 
         <ToolbarDivider />
@@ -200,55 +202,20 @@ export function ComposerFormatToolbar({
 
         <ToolbarDivider />
 
-        <Popover open={linkOpen} onOpenChange={setLinkOpen}>
-          <PopoverTrigger
-            render={
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                className="size-7 text-muted-foreground"
-                onMouseDown={(e) => e.preventDefault()}
-                aria-label="Add link"
-              >
-                <LinkIcon className="size-3.5" strokeWidth={2} />
-              </Button>
-            }
-          />
-          <PopoverContent align="end" className="w-72 space-y-2 p-3">
-            <p className="text-xs font-medium text-foreground">Add link</p>
-            <input
-              type="url"
-              value={linkUrl}
-              onChange={(e) => setLinkUrl(e.target.value)}
-              placeholder="https://example.com"
-              className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  submitLink();
-                }
-              }}
-            />
-            <Button
-              type="button"
-              size="sm"
-              className="h-7 w-full"
-              disabled={!linkUrl.trim()}
-              onClick={submitLink}
-            >
-              Apply
-            </Button>
-          </PopoverContent>
-        </Popover>
-
-        <ToolbarButton
-          label="More"
-          onClick={() => run(applyBulletList)}
-          className="hidden"
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="size-7 text-muted-foreground hover:text-foreground"
+          aria-label="Add link"
+          title="Add link"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onOpenLink();
+          }}
         >
-          <MinusIcon className="size-3.5" />
-        </ToolbarButton>
+          <LinkIcon className="size-3.5" strokeWidth={2} />
+        </Button>
       </div>
     </div>
   );
