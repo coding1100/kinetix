@@ -10,6 +10,7 @@ import {
 } from "@/lib/chat/mention-utils";
 import {
   deleteTextBeforeCursor,
+  exitBlockquoteOnShiftEnter,
   focusEditorEnd,
   getPlainTextBeforeCursor,
   insertTextAtCursor,
@@ -130,12 +131,20 @@ export function useRichComposerField() {
         return;
       }
 
+      if (e.key === "Enter" && e.shiftKey && !e.nativeEvent.isComposing && el) {
+        if (exitBlockquoteOnShiftEnter(el)) {
+          e.preventDefault();
+          syncFromEditor();
+          return;
+        }
+      }
+
       if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
         onEnter?.();
       }
     },
-    [segments.length, removeLastSegment]
+    [segments.length, removeLastSegment, syncFromEditor]
   );
 
   const isEmpty =

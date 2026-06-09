@@ -137,3 +137,72 @@ export function getSelectionRect(root: HTMLElement): DOMRect | null {
   if (!root.contains(range.commonAncestorContainer)) return null;
   return range.getBoundingClientRect();
 }
+
+function isCursorAtEndOf(container: HTMLElement, range: Range): boolean {
+  const probe = range.cloneRange();
+  probe.selectNodeContents(container);
+  probe.setStart(range.endContainer, range.endOffset);
+  return probe.toString().replace(/\u00A0/g, " ").length === 0;
+}
+
+function isElementVisuallyEmpty(el: Element): boolean {
+  const html = el.innerHTML.replace(/<br\s*\/?>/gi, "").trim();
+  const text = (el.textContent ?? "").replace(/\u00A0/g, " ").trim();
+  return !text && !html;
+}
+
+function getBlockquoteBlock(node: Node, blockquote: Element): Element | null {
+  let el: Element | null =
+    node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as Element);
+  while (el && el !== blockquote) {
+    if (el.parentElement === blockquote && /^(DIV|P)$/i.test(el.tagName)) {
+      return el;
+    }
+    el = el.parentElement;
+  }
+  return null;
+}
+
+function placeCursorInBlock(block: HTMLElement): void {
+  const sel = window.getSelection();
+  if (!sel) return;
+  const range = document.createRange();
+  range.selectNodeContents(block);
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+/** Shift+Enter inside a blockquote: exit to a new line after the quote. */
+export function exitBlockquoteOnShiftEnter(root: HTMLElement): boolean {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return false;
+
+  const range = sel.getRangeAt(0);
+  if (!root.contains(range.commonAncestorContainer)) return false;
+
+  let node: Node | null = range.startContainer;
+  if (node.nodeType === Node.TEXT_NODE) node = node.parentNode;
+  const blockquote = (node as Element | null)?.closest?.("blockquote");
+  if (!blockquote || !root.contains(blockquote)) return false;
+
+  const atEnd = isCursorAtEndOf(blockquote as HTMLElement, range);
+  const block = getBlockquoteBlock(range.startContainer, blockquote);
+  const blockEmpty = block ? isElementVisuallyEmpty(block) : false;
+
+  if (!atEnd && !blockEmpty) return false;
+
+  if (blockEmpty && block && block.parentElement === blockquote) {
+    block.remove();
+  }
+
+  const nextBlock = document.createElement("div");
+  nextBlock.appendChild(document.createElement("br"));
+
+  const parent = blockquote.parentNode;
+  if (!parent) return false;
+
+  parent.insertBefore(nextBlock, blockquote.nextSibling);
+  placeCursorInBlock(nextBlock);
+  return true;
+}
