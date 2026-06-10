@@ -37,12 +37,33 @@ from app.socket.emit import (
 )
 from app.socket.presence import get_presence
 
-_MESSAGE_LOAD = (
+_MESSAGE_LIST_LOAD = (
     selectinload(ChatMessage.author),
     selectinload(ChatMessage.reactions),
-    selectinload(ChatMessage.replies),
     selectinload(ChatMessage.attachments),
 )
+
+_MESSAGE_DETAIL_LOAD = _MESSAGE_LIST_LOAD + (selectinload(ChatMessage.replies),)
+
+_MESSAGE_LOAD = _MESSAGE_DETAIL_LOAD
+
+_MESSAGE_SEND_LOAD = _MESSAGE_LIST_LOAD
+
+
+async def _thread_counts_for_messages(
+    session: AsyncSession, message_ids: list[str]
+) -> dict[str, int]:
+    if not message_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(ChatMessage.parent_id, func.count())
+            .where(ChatMessage.parent_id.in_(message_ids))
+            .group_by(ChatMessage.parent_id)
+        )
+    ).all()
+    return {str(row[0]): int(row[1]) for row in rows}
+
 
 def _epoch() -> datetime:
     return datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -488,12 +509,20 @@ async def list_channel_messages(
                 ChatMessage.channel_id == channel_id,
                 ChatMessage.parent_id.is_(None),
             )
-            .options(*_MESSAGE_LOAD)
+            .options(*_MESSAGE_LIST_LOAD)
             .order_by(ChatMessage.created_at.asc())
         )
     ).all()
 
-    return {"data": [map_message(m, user_id) for m in messages]}
+    thread_counts = await _thread_counts_for_messages(
+        session, [m.id for m in messages]
+    )
+    return {
+        "data": [
+            map_message(m, user_id, thread_count=thread_counts.get(m.id, 0))
+            for m in messages
+        ]
+    }
 
 
 async def mark_channel_read(
@@ -550,15 +579,15 @@ async def send_channel_message(
     loaded = await session.scalar(
         select(ChatMessage)
         .where(ChatMessage.id == message.id)
-        .options(*_MESSAGE_LOAD)
+        .options(*_MESSAGE_SEND_LOAD)
     )
-    payload = map_message(loaded, user_id)
+    payload = map_message(loaded, user_id, thread_count=0)
     asyncio.create_task(
         broadcast_chat_message(
             workspace_id=workspace_id,
             kind="channel",
             conversation_id=channel_id,
-            message=map_message_broadcast(loaded),
+            message=map_message_broadcast(loaded, thread_count=0),
         )
     )
     return payload
@@ -650,9 +679,9 @@ async def send_thread_reply(
     loaded = await session.scalar(
         select(ChatMessage)
         .where(ChatMessage.id == message.id)
-        .options(*_MESSAGE_LOAD)
+        .options(*_MESSAGE_SEND_LOAD)
     )
-    payload = map_message(loaded, user_id)
+    payload = map_message(loaded, user_id, thread_count=0)
     conv_id = channel_id or conversation_id
     kind = "channel" if channel_id else "dm"
     if conv_id:
@@ -661,7 +690,7 @@ async def send_thread_reply(
                 workspace_id=workspace_id,
                 kind=kind,
                 conversation_id=conv_id,
-                message=map_message_broadcast(loaded),
+                message=map_message_broadcast(loaded, thread_count=0),
                 parent_id=parent_id,
             )
         )
@@ -874,12 +903,20 @@ async def list_dm_messages(
                 ChatMessage.conversation_id == conversation_id,
                 ChatMessage.parent_id.is_(None),
             )
-            .options(*_MESSAGE_LOAD)
+            .options(*_MESSAGE_LIST_LOAD)
             .order_by(ChatMessage.created_at.asc())
         )
     ).all()
 
-    return {"data": [map_message(m, user_id) for m in messages]}
+    thread_counts = await _thread_counts_for_messages(
+        session, [m.id for m in messages]
+    )
+    return {
+        "data": [
+            map_message(m, user_id, thread_count=thread_counts.get(m.id, 0))
+            for m in messages
+        ]
+    }
 
 
 async def mark_dm_read(
@@ -942,15 +979,15 @@ async def send_dm_message(
     loaded = await session.scalar(
         select(ChatMessage)
         .where(ChatMessage.id == message.id)
-        .options(*_MESSAGE_LOAD)
+        .options(*_MESSAGE_SEND_LOAD)
     )
-    payload = map_message(loaded, user_id)
+    payload = map_message(loaded, user_id, thread_count=0)
     asyncio.create_task(
         broadcast_chat_message(
             workspace_id=workspace_id,
             kind="dm",
             conversation_id=conversation_id,
-            message=map_message_broadcast(loaded),
+            message=map_message_broadcast(loaded, thread_count=0),
         )
     )
     return payload

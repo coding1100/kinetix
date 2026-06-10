@@ -27,6 +27,7 @@ export function RichComposerField({
   conversationType,
   conversationId,
   onSelectMention,
+  onDismissMentionAutocomplete,
   onKeyDown,
   onInput,
 }: {
@@ -40,6 +41,7 @@ export function RichComposerField({
   conversationType?: ConversationType;
   conversationId?: string;
   onSelectMention: (selection: MentionSelection) => void;
+  onDismissMentionAutocomplete: () => void;
   onKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
   onInput: () => void;
 }) {
@@ -123,6 +125,7 @@ export function RichComposerField({
           conversationId={conversationId}
           query={mentionQuery ?? ""}
           onSelect={onSelectMention}
+          onDismiss={onDismissMentionAutocomplete}
         />
 
         <div

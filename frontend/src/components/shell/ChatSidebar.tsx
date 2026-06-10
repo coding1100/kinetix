@@ -18,7 +18,12 @@ import { loadSidebarLists } from "@/lib/chat/sidebar-lists-loader";
 import { useHomeQuery } from "@/hooks/use-home-query";
 import { HomeDataState } from "@/components/home/HomeDataState";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
-import { useChatStore, type ChatFilter } from "@/stores/chat-store";
+import { useAuthStore } from "@/stores/auth-store";
+import {
+  isSidebarCacheForSession,
+  useChatStore,
+  type ChatFilter,
+} from "@/stores/chat-store";
 import { useUiStore } from "@/stores/ui-store";
 import { UnderlineTabBar } from "@/components/shared/Tabs";
 import { cn } from "@/lib/utils";
@@ -99,35 +104,44 @@ export function ChatSidebar() {
   const openModal = useUiStore((s) => s.openModal);
   const { secondaryPanelOpen, setSecondaryPanelOpen } = useShellStore();
   const seedPresence = usePresenceStore((s) => s.seedPresence);
+  const userId = useAuthStore((s) => s.user?.id);
   const { workspaceId, ready } = useWorkspaceApi();
 
+  const cacheValid = isSidebarCacheForSession(
+    sidebarListsCache,
+    userId,
+    workspaceId
+  );
+
   const initialSidebarData = useMemo(() => {
-    if (!ready || sidebarListsCache?.workspaceId !== workspaceId) {
+    if (!ready || !cacheValid || !sidebarListsCache) {
       return null;
     }
     return {
       channels: sidebarListsCache.channels,
       dms: sidebarListsCache.dms,
     };
-  }, [ready, workspaceId, sidebarListsCache]);
+  }, [ready, cacheValid, sidebarListsCache]);
 
   const sidebarQuery = useHomeQuery(
     async (token, ws) => {
-      const lists = await loadSidebarLists(token, ws, { force: true });
+      const lists = await loadSidebarLists(token, ws, {
+        force: sidebarRefreshKey > 0,
+      });
       return { channels: lists.channels, dms: lists.dms };
     },
     [sidebarRefreshKey],
     {
       initialData: initialSidebarData,
       refreshKey: sidebarRefreshKey,
+      skipInitialFetch: Boolean(initialSidebarData) && sidebarRefreshKey === 0,
     }
   );
 
   useEffect(() => {
-    const source =
-      sidebarListsCache?.workspaceId === workspaceId
-        ? sidebarListsCache.dms
-        : sidebarQuery.data?.dms;
+    const source = cacheValid
+      ? sidebarListsCache?.dms
+      : sidebarQuery.data?.dms;
     if (!source?.length) return;
     seedPresence(
       source
@@ -137,27 +151,20 @@ export function ChatSidebar() {
           status: d.presence!,
         }))
     );
-  }, [
-    workspaceId,
-    sidebarListsCache,
-    sidebarQuery.data?.dms,
-    seedPresence,
-  ]);
+  }, [cacheValid, sidebarListsCache, sidebarQuery.data?.dms, seedPresence]);
 
   if (!secondaryPanelOpen) return null;
 
-  const loading = sidebarQuery.loading;
+  const loading = cacheValid ? false : sidebarQuery.loading;
   const error = sidebarQuery.error;
   const workspaceReady = sidebarQuery.ready;
 
   const channelsSource =
-    sidebarListsCache?.workspaceId === workspaceId
-      ? sidebarListsCache.channels
-      : sidebarQuery.data?.channels;
+    sidebarQuery.data?.channels ??
+    (cacheValid ? sidebarListsCache?.channels : undefined);
   const dmsSource =
-    sidebarListsCache?.workspaceId === workspaceId
-      ? sidebarListsCache.dms
-      : sidebarQuery.data?.dms;
+    sidebarQuery.data?.dms ??
+    (cacheValid ? sidebarListsCache?.dms : undefined);
 
   let channels = channelsSource ?? [];
   let dms = dmsSource ?? [];
@@ -340,7 +347,9 @@ function OrganizedList({
                 href={`/chat/c/${c.id}`}
                 active={pathname === `/chat/c/${c.id}`}
                 name={c.name}
-                unread={c.unread}
+                unread={
+                  pathname === `/chat/c/${c.id}` ? 0 : c.unread
+                }
                 privateChannel={c.isPrivate}
                 starred
               />
@@ -360,7 +369,9 @@ function OrganizedList({
               href={`/chat/c/${c.id}`}
               active={pathname === `/chat/c/${c.id}`}
               name={c.name}
-              unread={c.unread}
+              unread={
+                pathname === `/chat/c/${c.id}` ? 0 : c.unread
+              }
               privateChannel={c.isPrivate}
             />
           ))}
@@ -387,7 +398,9 @@ function OrganizedList({
               href={`/chat/dm/${d.id}`}
               active={pathname === `/chat/dm/${d.id}`}
               name={d.name}
-              unread={d.unread}
+              unread={
+                pathname === `/chat/dm/${d.id}` ? 0 : d.unread
+              }
               avatarUrl={d.avatarUrl}
               otherUserId={d.otherUserId}
               presenceFallback={d.presence}

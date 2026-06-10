@@ -33,11 +33,12 @@ export function fetchChannels(token: string, workspaceId: string) {
 export function fetchChannel(
   token: string,
   workspaceId: string,
-  channelId: string
+  channelId: string,
+  init?: RequestInit
 ) {
   return apiFetch<Channel>(
     wsPath(workspaceId, `/chat/channels/${channelId}`),
-    { token }
+    { token, ...init }
   );
 }
 
@@ -195,11 +196,12 @@ export function markDmUnread(
 export function fetchChannelMessages(
   token: string,
   workspaceId: string,
-  channelId: string
+  channelId: string,
+  init?: RequestInit
 ) {
   return apiFetch<{ data: ChatMessage[] }>(
     wsPath(workspaceId, `/chat/channels/${channelId}/messages`),
-    { token }
+    { token, ...init }
   );
 }
 
@@ -266,11 +268,12 @@ export function fetchDms(token: string, workspaceId: string) {
 export function fetchDm(
   token: string,
   workspaceId: string,
-  conversationId: string
+  conversationId: string,
+  init?: RequestInit
 ) {
   return apiFetch<DirectMessage>(
     wsPath(workspaceId, `/chat/dms/${conversationId}`),
-    { token }
+    { token, ...init }
   );
 }
 
@@ -290,11 +293,12 @@ export function createDm(
 export function fetchDmMessages(
   token: string,
   workspaceId: string,
-  conversationId: string
+  conversationId: string,
+  init?: RequestInit
 ) {
   return apiFetch<{ data: ChatMessage[] }>(
     wsPath(workspaceId, `/chat/dms/${conversationId}/messages`),
-    { token }
+    { token, ...init }
   );
 }
 

@@ -189,12 +189,12 @@ export function ChatMessageRow({
         </div>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex items-start gap-3">
         {showHeader ? (
           <MessageAuthorButton
             authorId={message.authorId}
             authorName={displayName}
-            className="shrink-0 rounded-full"
+            className="mt-0.5 shrink-0 self-start rounded-full"
           >
             <Avatar className="size-6">
               <AvatarFallback
@@ -233,7 +233,12 @@ export function ChatMessageRow({
           ) : (
             <>
               {message.body ? (
-                <div className={showHeader ? "mt-0.5" : "mt-0"}>
+                <div
+                  className={showHeader ? "mt-0.5" : "mt-0"}
+                  data-quote-scope="main"
+                  data-message-author-id={message.authorId}
+                  data-message-author-name={displayName}
+                >
                   <MessageBodyWithMentions body={message.body} />
                 </div>
               ) : null}

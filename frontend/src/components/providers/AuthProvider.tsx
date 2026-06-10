@@ -9,6 +9,7 @@ import {
 } from "react";
 import { getMe, refreshSession } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
+import { resetSessionScopedState } from "@/lib/auth/reset-session-scoped-state";
 import { SESSION_COOKIE } from "@/lib/auth/session-cookie";
 import { useAuthStore } from "@/stores/auth-store";
 
@@ -148,6 +149,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!hydrated) return;
     void bootstrap();
   }, [hydrated, bootstrap]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+
+    let prevUserId = useAuthStore.getState().user?.id;
+
+    return useAuthStore.subscribe((state) => {
+      const nextUserId = state.user?.id;
+      if (nextUserId === prevUserId) return;
+      prevUserId = nextUserId;
+      resetSessionScopedState();
+    });
+  }, [hydrated]);
 
   return (
     <AuthContext.Provider

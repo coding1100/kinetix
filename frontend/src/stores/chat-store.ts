@@ -12,10 +12,20 @@ import type {
 } from "@/lib/types/realtime";
 
 export type ChatSidebarLists = {
+  userId: string;
   workspaceId: string;
   channels: Channel[];
   dms: DirectMessage[];
 };
+
+export function isSidebarCacheForSession(
+  cache: ChatSidebarLists | null | undefined,
+  userId: string | null | undefined,
+  workspaceId: string | null | undefined
+): boolean {
+  if (!cache?.userId || !userId || !workspaceId) return false;
+  return cache.userId === userId && cache.workspaceId === workspaceId;
+}
 
 const SIDEBAR_REFRESH_MS = 1200;
 let sidebarRefreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -28,6 +38,12 @@ function scheduleSidebarRefresh() {
     }));
     sidebarRefreshTimer = undefined;
   }, SIDEBAR_REFRESH_MS);
+}
+
+function isActiveConversationEvent(event: ChatRealtimePayload) {
+  const active = useChatStore.getState().activeConversation;
+  if (!active) return false;
+  return active.kind === event.kind && active.id === event.conversationId;
 }
 
 export type ChatFilter = "all" | "unread" | "dms" | "channels";
@@ -52,6 +68,15 @@ export type PersonProfileTab =
   | "comments"
   | "calendar";
 
+export type ComposerQuoteTarget = "main" | "thread";
+
+export type PendingComposerQuote = {
+  quoteText: string;
+  authorId: string;
+  authorName: string;
+  target: ComposerQuoteTarget;
+};
+
 interface ChatState {
   filter: ChatFilter;
   layout: ChatLayout;
@@ -74,6 +99,7 @@ interface ChatState {
   >;
   messageScrollTarget: string | null;
   activeConversation: ActiveConversation | null;
+  pendingComposerQuote: PendingComposerQuote | null;
   setFilter: (f: ChatFilter) => void;
   setLayout: (l: ChatLayout) => void;
   setCollapsed: (v: boolean) => void;
@@ -109,6 +135,9 @@ interface ChatState {
   clearMessageEditEvent: () => void;
   ingestReactionEvent: (event: ChatReactionPayload) => void;
   clearReactionEvent: () => void;
+  requestComposerQuote: (payload: PendingComposerQuote) => void;
+  clearComposerQuote: () => void;
+  resetChatSession: () => void;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -132,6 +161,7 @@ export const useChatStore = create<ChatState>()(
       channelMetaOverrides: {},
       messageScrollTarget: null,
       activeConversation: null,
+      pendingComposerQuote: null,
       setFilter: (filter) => set({ filter }),
       setLayout: (layout) => set({ layout }),
       setCollapsed: (collapsed) => set({ collapsed }),
@@ -217,7 +247,9 @@ export const useChatStore = create<ChatState>()(
           };
         }),
       ingestRealtimeEvent: (event) => {
-        scheduleSidebarRefresh();
+        if (!isActiveConversationEvent(event)) {
+          scheduleSidebarRefresh();
+        }
         set({ realtimeEvent: event });
       },
       clearRealtimeEvent: () => set({ realtimeEvent: null }),
@@ -225,6 +257,26 @@ export const useChatStore = create<ChatState>()(
       clearMessageEditEvent: () => set({ messageEditEvent: null }),
       ingestReactionEvent: (event) => set({ reactionEvent: event }),
       clearReactionEvent: () => set({ reactionEvent: null }),
+      requestComposerQuote: (pendingComposerQuote) =>
+        set({ pendingComposerQuote }),
+      clearComposerQuote: () => set({ pendingComposerQuote: null }),
+      resetChatSession: () =>
+        set({
+          sidebarListsCache: null,
+          realtimeEvent: null,
+          messageEditEvent: null,
+          reactionEvent: null,
+          pendingComposerQuote: null,
+          activeThreadMessageId: null,
+          dmDetailsView: null,
+          channelDetailsView: null,
+          personProfileUserId: null,
+          channelFollowing: {},
+          channelNotifications: {},
+          channelMetaOverrides: {},
+          messageScrollTarget: null,
+          activeConversation: null,
+        }),
     }),
     {
       name: "riseup-chat",

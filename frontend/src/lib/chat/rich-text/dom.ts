@@ -70,6 +70,36 @@ export function getPlainTextBeforeCursor(root: HTMLElement): string {
   return preRange.toString();
 }
 
+const BLOCK_ANCESTOR_RE = /^(DIV|P|LI|BLOCKQUOTE|H[1-6]|PRE)$/i;
+
+function getBlockAncestor(node: Node, root: HTMLElement): HTMLElement {
+  let el: HTMLElement | null =
+    node.nodeType === Node.TEXT_NODE
+      ? node.parentElement
+      : (node as HTMLElement);
+  while (el && el !== root) {
+    if (BLOCK_ANCESTOR_RE.test(el.tagName)) {
+      return el;
+    }
+    el = el.parentElement;
+  }
+  return root;
+}
+
+/** Text in the current block only — avoids stale @ queries after blockquotes/quotes. */
+export function getPlainTextBeforeCursorInBlock(root: HTMLElement): string {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return "";
+  const range = sel.getRangeAt(0);
+  if (!root.contains(range.endContainer)) return "";
+
+  const block = getBlockAncestor(range.endContainer, root);
+  const preRange = range.cloneRange();
+  preRange.selectNodeContents(block);
+  preRange.setEnd(range.endContainer, range.endOffset);
+  return preRange.toString();
+}
+
 export function deleteTextBeforeCursor(root: HTMLElement, charCount: number): void {
   if (charCount <= 0) return;
   const sel = window.getSelection();

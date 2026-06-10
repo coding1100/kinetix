@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ConversationType } from "@/lib/types/chat";
 import type { MentionSelection } from "@/lib/chat/mention-types";
@@ -13,6 +13,7 @@ export function MentionAutocompleteDropdown({
   conversationId,
   query,
   onSelect,
+  onDismiss,
 }: {
   open: boolean;
   anchorRef: React.RefObject<HTMLElement | null>;
@@ -20,9 +21,11 @@ export function MentionAutocompleteDropdown({
   conversationId?: string;
   query: string;
   onSelect: (selection: MentionSelection) => void;
+  onDismiss: () => void;
 }) {
   const [mounted, setMounted] = useState(false);
   const [style, setStyle] = useState<React.CSSProperties>({});
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setMounted(true), []);
 
@@ -55,10 +58,25 @@ export function MentionAutocompleteDropdown({
     };
   }, [open, anchorRef]);
 
+  useEffect(() => {
+    if (!open) return;
+
+    const onMouseDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (dropdownRef.current?.contains(target)) return;
+      onDismiss();
+    };
+
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [open, onDismiss]);
+
   if (!mounted || !open) return null;
 
   return createPortal(
     <div
+      ref={dropdownRef}
+      data-mention-autocomplete-dropdown
       style={style}
       className="overflow-hidden rounded-lg border border-border bg-card shadow-lg"
     >

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useChatStore } from "@/stores/chat-store";
 import {
   PlusIcon,
   PaperclipIcon,
@@ -71,18 +72,23 @@ export function MessageComposer({
     segments,
     draftPlain,
     bodyText,
+    getBodyText,
     editorRef,
     pickerOpen,
     setPickerOpen,
     mentionQuery,
     mentionAutocompleteOpen,
+    dismissMentionAutocomplete,
     insertMention,
+    insertQuote,
     insertEmoji,
     handleInputKeyDown,
     syncFromEditor,
     clear: clearMentions,
     restore: restoreMentions,
   } = useRichComposerField();
+  const pendingComposerQuote = useChatStore((s) => s.pendingComposerQuote);
+  const clearComposerQuote = useChatStore((s) => s.clearComposerQuote);
   const [docOpen, setDocOpen] = useState(false);
   const [videoOpen, setVideoOpen] = useState(false);
   const [clipOpen, setClipOpen] = useState(false);
@@ -113,10 +119,22 @@ export function MessageComposer({
 
   const canSend = Boolean(bodyText.trim() || attachmentIds.length > 0);
 
+  useEffect(() => {
+    if (!pendingComposerQuote || pendingComposerQuote.target !== "main") {
+      return;
+    }
+    insertQuote({
+      quoteText: pendingComposerQuote.quoteText,
+      authorName: pendingComposerQuote.authorName,
+    });
+    clearComposerQuote();
+    editorRef.current?.focus();
+  }, [pendingComposerQuote, insertQuote, clearComposerQuote, editorRef]);
+
   const handleSend = async () => {
     if (!canSend || sending || uploading) return;
     setSending(true);
-    const messageBody = bodyText.trim();
+    const messageBody = getBodyText().trim();
     const ids = [...attachmentIds];
     const optimisticAttachments = pending.map(
       ({ id, fileName, kind, mimeType, sizeBytes }) => ({
@@ -234,6 +252,7 @@ export function MessageComposer({
             conversationType={conversationType}
             conversationId={conversationId}
             onSelectMention={insertMention}
+            onDismissMentionAutocomplete={dismissMentionAutocomplete}
             onKeyDown={handleKeyDown}
             onInput={syncFromEditor}
           />

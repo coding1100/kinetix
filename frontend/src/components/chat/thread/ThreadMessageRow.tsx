@@ -128,12 +128,12 @@ export function ThreadMessageRow({
         </div>
       )}
 
-      <div className="flex gap-2.5 pr-14">
+      <div className="flex items-start gap-2.5 pr-14">
         {showHeader ? (
           <MessageAuthorButton
             authorId={message.authorId}
             authorName={displayName}
-            className="shrink-0 rounded-full"
+            className="shrink-0 self-start rounded-full"
           >
             <Avatar className="size-8">
               <AvatarFallback
@@ -175,7 +175,13 @@ export function ThreadMessageRow({
           ) : (
             <div className={showHeader ? "mt-1" : "mt-0"}>
               {message.body ? (
-                <MessageBodyWithMentions body={message.body} />
+                <div
+                  data-quote-scope="thread"
+                  data-message-author-id={message.authorId}
+                  data-message-author-name={displayName}
+                >
+                  <MessageBodyWithMentions body={message.body} />
+                </div>
               ) : null}
               <MessageAttachmentList attachments={message.attachments ?? []} />
             </div>

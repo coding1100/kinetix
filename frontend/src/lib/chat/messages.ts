@@ -1,4 +1,5 @@
 import type { ChatMessage, MessageAttachment } from "@/lib/types/chat";
+import { stripMessageHtml } from "@/lib/chat/rich-text/sanitize";
 
 export const ATTACHMENT_PLACEHOLDER = "Shared an attachment";
 
@@ -77,6 +78,11 @@ function dedupeMessagesById<T extends { id: string }>(messages: T[]): T[] {
   });
 }
 
+function messageBodiesMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  return stripMessageHtml(a).trim() === stripMessageHtml(b).trim();
+}
+
 /** Match optimistic row when REST/socket body differs (e.g. attachment-only sends). */
 function findPendingReplaceIndex<T extends ChatMessage>(
   prev: T[],
@@ -86,7 +92,7 @@ function findPendingReplaceIndex<T extends ChatMessage>(
     (m) =>
       m.id.startsWith("pending-") &&
       m.authorId === incoming.authorId &&
-      m.body === incoming.body
+      messageBodiesMatch(m.body, incoming.body)
   );
   if (exactBody >= 0) return exactBody;
 
@@ -150,6 +156,32 @@ export function mergeIncomingMessage<T extends ChatMessage>(
   incoming: T
 ): T[] {
   return upsertChatMessage(prev, incoming);
+}
+
+/** Merge API fetch with in-flight optimistic / socket rows without losing history. */
+export function mergeFetchedMessages<T extends ChatMessage>(
+  fetched: T[],
+  existing: T[]
+): T[] {
+  const byId = new Map<string, T>();
+  for (const message of fetched) {
+    byId.set(message.id, message);
+  }
+  for (const message of existing) {
+    if (message.id.startsWith("pending-")) {
+      byId.set(message.id, message);
+      continue;
+    }
+    if (!byId.has(message.id)) {
+      byId.set(message.id, message);
+    }
+  }
+  return dedupeMessagesById(
+    [...byId.values()].sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    )
+  );
 }
 
 export function applyMessageUpdate<T extends ChatMessage>(

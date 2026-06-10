@@ -22,6 +22,7 @@ export function MentionComposerField({
   conversationType,
   conversationId,
   onSelectMention,
+  onDismissMentionAutocomplete,
   onKeyDown,
 }: {
   segments: ComposerSegment[];
@@ -35,6 +36,7 @@ export function MentionComposerField({
   conversationType?: ConversationType;
   conversationId?: string;
   onSelectMention: (selection: MentionSelection) => void;
+  onDismissMentionAutocomplete: () => void;
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 }) {
   const fieldRef = useRef<HTMLDivElement>(null);
@@ -77,6 +79,7 @@ export function MentionComposerField({
         conversationId={conversationId}
         query={mentionQuery ?? ""}
         onSelect={onSelectMention}
+        onDismiss={onDismissMentionAutocomplete}
       />
 
       <div

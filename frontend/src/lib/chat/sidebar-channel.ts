@@ -1,5 +1,10 @@
 import type { Channel } from "@/lib/types/chat";
-import { useChatStore, type ChatSidebarLists } from "@/stores/chat-store";
+import { useAuthStore } from "@/stores/auth-store";
+import {
+  isSidebarCacheForSession,
+  useChatStore,
+  type ChatSidebarLists,
+} from "@/stores/chat-store";
 
 export function patchSidebarChannel(
   channelId: string,
@@ -53,14 +58,16 @@ export function patchChannelActivityInSidebar(
     bumpUnread?: boolean;
   }
 ) {
+  const currentUserId = useAuthStore.getState().user?.id;
+
   useChatStore.setState((s) => {
     const cache = s.sidebarListsCache;
-    if (!cache || cache.workspaceId !== workspaceId) return s;
+    if (!isSidebarCacheForSession(cache, currentUserId, workspaceId)) return s;
 
-    const exists = cache.channels.some((c) => c.id === channelId);
+    const exists = cache!.channels.some((c) => c.id === channelId);
     if (!exists) return s;
 
-    const channels = cache.channels.map((c) =>
+    const channels = cache!.channels.map((c) =>
       c.id === channelId
         ? {
             ...c,
@@ -76,7 +83,7 @@ export function patchChannelActivityInSidebar(
 
     return {
       sidebarListsCache: {
-        ...cache,
+        ...cache!,
         channels,
       },
     };
@@ -84,6 +91,8 @@ export function patchChannelActivityInSidebar(
 }
 
 export function upsertChannelInSidebar(channel: Channel, workspaceId: string) {
+  const currentUserId = useAuthStore.getState().user?.id;
+  if (!currentUserId) return;
   const normalized: Channel = {
     ...channel,
     starred: channel.starred ?? false,
@@ -94,14 +103,18 @@ export function upsertChannelInSidebar(channel: Channel, workspaceId: string) {
   };
 
   useChatStore.setState((s) => {
-    const base =
-      s.sidebarListsCache?.workspaceId === workspaceId
-        ? s.sidebarListsCache
-        : {
-            workspaceId,
-            channels: [] as Channel[],
-            dms: s.sidebarListsCache?.dms ?? [],
-          };
+    const base: ChatSidebarLists = isSidebarCacheForSession(
+      s.sidebarListsCache,
+      currentUserId,
+      workspaceId
+    )
+      ? s.sidebarListsCache!
+      : {
+          userId: currentUserId,
+          workspaceId,
+          channels: [] as Channel[],
+          dms: [],
+        };
 
     const exists = base.channels.some((c) => c.id === normalized.id);
     const channels = exists

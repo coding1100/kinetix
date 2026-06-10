@@ -1,7 +1,8 @@
 /** Same-origin path in dev (proxied by Next.js); absolute URL also supported. */
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
-const GET_RETRY_ATTEMPTS = 3;
+const REQUEST_RETRY_ATTEMPTS = 3;
 const GET_RETRY_DELAY_MS = 500;
+const TRANSIENT_RETRY_DELAYS_MS = [300, 800];
 
 export class ApiError extends Error {
   constructor(
@@ -53,12 +54,27 @@ function parseApiError(
   );
 }
 
-function shouldRetryGet(method: string, attempt: number, err: unknown) {
-  if (method !== "GET" || attempt >= GET_RETRY_ATTEMPTS - 1) return false;
-  if (err instanceof ApiError) {
-    return err.status === 503 || err.status === 502 || err.status === 504;
+function retryDelayMs(method: string, attempt: number) {
+  if (method === "GET") {
+    return GET_RETRY_DELAY_MS * (attempt + 1);
   }
-  return err instanceof TypeError;
+  return TRANSIENT_RETRY_DELAYS_MS[
+    Math.min(attempt, TRANSIENT_RETRY_DELAYS_MS.length - 1)
+  ];
+}
+
+function shouldRetryRequest(method: string, attempt: number, err: unknown) {
+  if (attempt >= REQUEST_RETRY_ATTEMPTS - 1) return false;
+  if (err instanceof ApiError) {
+    if (err.code === "DATABASE_UNAVAILABLE" || err.status === 503) {
+      return true;
+    }
+    if (method === "GET") {
+      return err.status === 502 || err.status === 504;
+    }
+    return false;
+  }
+  return method === "GET" && err instanceof TypeError;
 }
 
 export async function apiFetch<T>(
@@ -78,7 +94,7 @@ export async function apiFetch<T>(
   const method = (init?.method ?? "GET").toUpperCase();
   let lastError: unknown;
 
-  for (let attempt = 0; attempt < GET_RETRY_ATTEMPTS; attempt++) {
+  for (let attempt = 0; attempt < REQUEST_RETRY_ATTEMPTS; attempt++) {
     try {
       const res = await fetch(`${API_BASE}${path}`, {
         ...init,
@@ -93,9 +109,9 @@ export async function apiFetch<T>(
 
       if (!res.ok) {
         const apiError = parseApiError(res, data);
-        if (shouldRetryGet(method, attempt, apiError)) {
+        if (shouldRetryRequest(method, attempt, apiError)) {
           lastError = apiError;
-          await sleep(GET_RETRY_DELAY_MS * (attempt + 1));
+          await sleep(retryDelayMs(method, attempt));
           continue;
         }
         throw apiError;
@@ -105,11 +121,7 @@ export async function apiFetch<T>(
     } catch (err) {
       if (err instanceof ApiError) throw err;
       if (err instanceof DOMException && err.name === "AbortError") {
-        throw new ApiError(
-          504,
-          "TIMEOUT",
-          "Request timed out — API or database may be slow"
-        );
+        throw err;
       }
       if (err instanceof TypeError) {
         throw new ApiError(
@@ -119,8 +131,8 @@ export async function apiFetch<T>(
         );
       }
       lastError = err;
-      if (shouldRetryGet(method, attempt, err)) {
-        await sleep(GET_RETRY_DELAY_MS * (attempt + 1));
+      if (shouldRetryRequest(method, attempt, err)) {
+        await sleep(retryDelayMs(method, attempt));
         continue;
       }
       throw err;

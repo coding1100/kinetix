@@ -398,7 +398,7 @@ export function ThreadPanel({
 
       <Separator />
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto" data-quote-scope="thread">
         <div className="px-4 py-4">
           <ThreadMessageRow
             message={parent}

@@ -2,7 +2,7 @@ import { fetchDm } from "@/lib/api/chat";
 import { stripMessageHtml } from "@/lib/chat/rich-text/sanitize";
 import { patchChannelActivityInSidebar } from "@/lib/chat/sidebar-channel";
 import { patchDmActivityInSidebar, upsertDmInSidebar } from "@/lib/chat/sidebar-dm";
-import { useChatStore } from "@/stores/chat-store";
+import { isSidebarCacheForSession, useChatStore } from "@/stores/chat-store";
 import type { ChatRealtimePayload } from "@/lib/types/realtime";
 
 const pendingDmFetches = new Set<string>();
@@ -29,8 +29,8 @@ export function applyRealtimeMessageToSidebar(
 
   if (kind === "dm") {
     const exists =
-      cache?.workspaceId === workspaceId &&
-      cache.dms.some((d) => d.id === conversationId);
+      isSidebarCacheForSession(cache, currentUserId, workspaceId) &&
+      cache!.dms.some((d) => d.id === conversationId);
 
     if (exists) {
       patchDmActivityInSidebar(workspaceId, conversationId, {
@@ -78,8 +78,8 @@ export function applyRealtimeMessageToSidebar(
 
   if (
     kind === "channel" &&
-    cache?.workspaceId === workspaceId &&
-    cache.channels.some((c) => c.id === conversationId)
+    isSidebarCacheForSession(cache, currentUserId, workspaceId) &&
+    cache!.channels.some((c) => c.id === conversationId)
   ) {
     patchChannelActivityInSidebar(workspaceId, conversationId, {
       lastMessage,

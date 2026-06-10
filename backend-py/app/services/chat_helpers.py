@@ -12,7 +12,12 @@ def _reaction_list(msg: ChatMessage) -> list[dict]:
     ]
 
 
-def map_message(msg: ChatMessage, current_user_id: str) -> dict:
+def map_message(
+    msg: ChatMessage,
+    current_user_id: str,
+    *,
+    thread_count: int | None = None,
+) -> dict:
     return {
         "id": msg.id,
         "authorId": msg.author_id,
@@ -21,7 +26,9 @@ def map_message(msg: ChatMessage, current_user_id: str) -> dict:
         "createdAt": msg.created_at.isoformat(),
         "isSelf": msg.author_id == current_user_id,
         "reactions": _reaction_list(msg),
-        "threadCount": len(msg.replies),
+        "threadCount": (
+            thread_count if thread_count is not None else len(msg.replies)
+        ),
         "attachments": [map_attachment(a) for a in (msg.attachments or [])],
     }
 
@@ -34,7 +41,11 @@ def map_search_message(msg: ChatMessage, current_user_id: str) -> dict:
     return payload
 
 
-def map_message_broadcast(msg: ChatMessage) -> dict:
+def map_message_broadcast(
+    msg: ChatMessage,
+    *,
+    thread_count: int | None = None,
+) -> dict:
     """Neutral wire shape for Socket.IO — each client derives isSelf locally."""
     return {
         "id": msg.id,
@@ -43,7 +54,9 @@ def map_message_broadcast(msg: ChatMessage) -> dict:
         "body": msg.body,
         "createdAt": msg.created_at.isoformat(),
         "reactions": _reaction_list(msg),
-        "threadCount": len(msg.replies),
+        "threadCount": (
+            thread_count if thread_count is not None else len(msg.replies)
+        ),
         "attachments": [map_attachment(a) for a in (msg.attachments or [])],
     }
 

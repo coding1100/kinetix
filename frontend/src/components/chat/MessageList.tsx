@@ -63,7 +63,7 @@ export function MessageList({
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-34">
+    <div className="min-h-0 flex-1 overflow-y-auto px-34" data-quote-scope="main">
       <div className="py-4">
         {dayGroups.map((group) => (
           <div

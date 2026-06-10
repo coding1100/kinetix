@@ -47,13 +47,35 @@ export function mentionSelectionToSegment(
 
 /** Trailing @query in draft input, if user is typing a mention. */
 export function getDraftMentionQuery(draft: string): string | null {
-  const match = draft.match(/@([\w\s]*)$/);
-  if (!match) return null;
-  return match[1];
+  const at = draft.lastIndexOf("@");
+  if (at < 0) return null;
+
+  let query = draft.slice(at + 1);
+  const newline = query.indexOf("\n");
+  if (newline >= 0) {
+    query = query.slice(0, newline);
+  }
+
+  if (query.includes("@") || query.includes("#")) return null;
+  if (query.length > 0 && /[^\w\s.'-]/.test(query)) return null;
+
+  return query;
 }
 
 export function stripDraftMentionQuery(draft: string): string {
-  return draft.replace(/@[\w\s]*$/, "");
+  const at = draft.lastIndexOf("@");
+  if (at < 0) return draft;
+
+  let query = draft.slice(at + 1);
+  const newline = query.indexOf("\n");
+  if (newline >= 0) {
+    query = query.slice(0, newline);
+  }
+
+  if (query.includes("@") || query.includes("#")) return draft;
+  if (query.length > 0 && /[^\w\s.'-]/.test(query)) return draft;
+
+  return draft.slice(0, at);
 }
 
 export function filterMentionMembers<

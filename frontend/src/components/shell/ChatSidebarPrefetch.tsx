@@ -12,7 +12,7 @@ export function ChatSidebarPrefetch() {
 
   useEffect(() => {
     if (!hydrated || !ready) return;
-    void loadSidebarLists(accessToken, workspaceId, { force: true });
+    void loadSidebarLists(accessToken, workspaceId);
   }, [hydrated, ready, accessToken, workspaceId]);
 
   return null;

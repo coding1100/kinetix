@@ -1,14 +1,22 @@
 import type { DirectMessage } from "@/lib/types/chat";
-import { useChatStore, type ChatSidebarLists } from "@/stores/chat-store";
+import { useAuthStore } from "@/stores/auth-store";
+import {
+  isSidebarCacheForSession,
+  useChatStore,
+  type ChatSidebarLists,
+} from "@/stores/chat-store";
 import { bumpSidebarRefresh } from "@/lib/chat/sidebar-channel";
 
 export function findDmByUserId(
   workspaceId: string,
   userId: string
 ): DirectMessage | undefined {
+  const currentUserId = useAuthStore.getState().user?.id;
   const cache = useChatStore.getState().sidebarListsCache;
-  if (cache?.workspaceId !== workspaceId) return undefined;
-  return cache.dms.find((d) => !d.isGroup && d.otherUserId === userId);
+  if (!isSidebarCacheForSession(cache, currentUserId, workspaceId)) {
+    return undefined;
+  }
+  return cache!.dms.find((d) => !d.isGroup && d.otherUserId === userId);
 }
 
 function mergeDmIntoSidebar(
@@ -16,6 +24,9 @@ function mergeDmIntoSidebar(
   workspaceId: string,
   options?: { refresh?: boolean }
 ) {
+  const currentUserId = useAuthStore.getState().user?.id;
+  if (!currentUserId) return;
+
   const normalized: DirectMessage = {
     ...dm,
     lastMessage: dm.lastMessage ?? "",
@@ -25,14 +36,18 @@ function mergeDmIntoSidebar(
   };
 
   useChatStore.setState((s) => {
-    const base: ChatSidebarLists =
-      s.sidebarListsCache?.workspaceId === workspaceId
-        ? s.sidebarListsCache
-        : {
-            workspaceId,
-            channels: s.sidebarListsCache?.channels ?? [],
-            dms: [],
-          };
+    const base: ChatSidebarLists = isSidebarCacheForSession(
+      s.sidebarListsCache,
+      currentUserId,
+      workspaceId
+    )
+      ? s.sidebarListsCache!
+      : {
+          userId: currentUserId,
+          workspaceId,
+          channels: [],
+          dms: [],
+        };
 
     const exists = base.dms.some((d) => d.id === normalized.id);
     const dms = exists
@@ -69,14 +84,16 @@ export function patchDmActivityInSidebar(
     bumpUnread?: boolean;
   }
 ) {
+  const currentUserId = useAuthStore.getState().user?.id;
+
   useChatStore.setState((s) => {
     const cache = s.sidebarListsCache;
-    if (!cache || cache.workspaceId !== workspaceId) return s;
+    if (!isSidebarCacheForSession(cache, currentUserId, workspaceId)) return s;
 
-    const exists = cache.dms.some((d) => d.id === dmId);
+    const exists = cache!.dms.some((d) => d.id === dmId);
     if (!exists) return s;
 
-    const dms = cache.dms.map((d) =>
+    const dms = cache!.dms.map((d) =>
       d.id === dmId
         ? {
             ...d,
@@ -92,7 +109,7 @@ export function patchDmActivityInSidebar(
 
     return {
       sidebarListsCache: {
-        ...cache,
+        ...cache!,
         dms,
       },
     };

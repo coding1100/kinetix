@@ -1,5 +1,6 @@
 /** Shared Tailwind classes for rich message HTML in composer + message view. */
 export const RICH_TEXT_CONTENT_CLASS =
+  "[&_div]:block [&_p]:block [&_br]:content-[''] " +
   "[&_a]:text-primary [&_a]:underline " +
   "[&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-5 " +
   "[&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 " +

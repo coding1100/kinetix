@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComposerSegment } from "@/lib/chat/mention-types";
 import type { MentionSelection } from "@/lib/chat/mention-types";
 import {
@@ -13,12 +13,14 @@ import {
   exitBlockquoteOnShiftEnter,
   focusEditorEnd,
   getPlainTextBeforeCursor,
+  getPlainTextBeforeCursorInBlock,
   insertTextAtCursor,
 } from "@/lib/chat/rich-text/dom";
 import {
   isEmptyComposerHtml,
   sanitizeMessageHtml,
 } from "@/lib/chat/rich-text/sanitize";
+import { buildComposerQuoteHtml } from "@/lib/chat/quote-utils";
 import { serializeRichComposerBody } from "@/lib/chat/rich-text/serialize";
 
 export function useRichComposerField() {
@@ -35,15 +37,43 @@ export function useRichComposerField() {
     setDraftHtml(el.innerHTML);
     const plain = el.innerText;
     setDraftPlain(plain);
-    setMentionQuery(getDraftMentionQuery(getPlainTextBeforeCursor(el)));
+    setMentionQuery(
+      getDraftMentionQuery(getPlainTextBeforeCursorInBlock(el))
+    );
   }, []);
 
-  const bodyText = useMemo(
-    () => serializeRichComposerBody(segments, draftHtml),
+  useEffect(() => {
+    const onSelectionChange = () => {
+      const el = editorRef.current;
+      if (!el || !document.activeElement || !el.contains(document.activeElement)) {
+        return;
+      }
+      setMentionQuery(
+        getDraftMentionQuery(getPlainTextBeforeCursorInBlock(el))
+      );
+    };
+
+    document.addEventListener("selectionchange", onSelectionChange);
+    return () =>
+      document.removeEventListener("selectionchange", onSelectionChange);
+  }, []);
+
+  const getBodyText = useCallback(
+    (html = editorRef.current?.innerHTML ?? draftHtml) =>
+      serializeRichComposerBody(segments, html),
     [segments, draftHtml]
   );
 
+  const bodyText = useMemo(
+    () => getBodyText(draftHtml),
+    [getBodyText, draftHtml]
+  );
+
   const mentionAutocompleteOpen = mentionQuery !== null;
+
+  const dismissMentionAutocomplete = useCallback(() => {
+    setMentionQuery(null);
+  }, []);
 
   const insertMention = useCallback(
     (selection: MentionSelection) => {
@@ -52,7 +82,7 @@ export function useRichComposerField() {
       setSegments((prev) => [...prev, segment]);
 
       if (el) {
-        const before = getPlainTextBeforeCursor(el);
+        const before = getPlainTextBeforeCursorInBlock(el);
         const stripped = stripDraftMentionQuery(before);
         const removeCount = before.length - stripped.length;
         if (removeCount > 0) {
@@ -87,6 +117,31 @@ export function useRichComposerField() {
       editorRef.current.innerHTML = "";
     }
   }, []);
+
+  const insertQuote = useCallback(
+    ({
+      quoteText,
+      authorName,
+    }: {
+      quoteText: string;
+      authorName: string;
+    }) => {
+      const el = editorRef.current;
+      const quoteHtml = buildComposerQuoteHtml(quoteText, authorName);
+      if (!quoteHtml) return;
+
+      if (el) {
+        const existing = el.innerHTML.trim();
+        el.innerHTML = existing ? `${quoteHtml}${existing}` : quoteHtml;
+        focusEditorEnd(el);
+        syncFromEditor();
+      } else {
+        setDraftHtml(quoteHtml);
+        setDraftPlain(`${quoteText.trim()}\n@${authorName.trim()}`);
+      }
+    },
+    [syncFromEditor]
+  );
 
   const restore = useCallback((text: string) => {
     setSegments([]);
@@ -156,12 +211,15 @@ export function useRichComposerField() {
     draftPlain,
     setDraftHtml,
     bodyText,
+    getBodyText,
     editorRef,
     pickerOpen,
     setPickerOpen,
     mentionQuery,
     mentionAutocompleteOpen,
+    dismissMentionAutocomplete,
     insertMention,
+    insertQuote,
     insertEmoji,
     handleInputKeyDown,
     syncFromEditor,

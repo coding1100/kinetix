@@ -5,6 +5,7 @@ import { fetchWorkspaceMembers } from "@/lib/api/chat";
 import type { ConversationType } from "@/lib/types/chat";
 import { useChannelMembers } from "@/hooks/use-channel-members";
 import { useHomeQuery } from "@/hooks/use-home-query";
+import { useChatStore } from "@/stores/chat-store";
 
 export type MentionMember = {
   id: string;
@@ -28,7 +29,13 @@ export function useMentionMembers(
   const workspaceQuery = useHomeQuery(
     (token, ws) => fetchWorkspaceMembers(token, ws).then((r) => r.data),
     [conversationType, conversationId],
-    { initialData: isDm ? [] : null }
+    { initialData: isDm ? null : null }
+  );
+
+  const dmSidebarEntry = useChatStore((s) =>
+    isDm && conversationId
+      ? s.sidebarListsCache?.dms.find((d) => d.id === conversationId)
+      : undefined
   );
 
   const members = useMemo((): MentionMember[] => {
@@ -41,15 +48,30 @@ export function useMentionMembers(
       }));
     }
     if (isDm) {
-      return (workspaceQuery.data ?? []).map((m) => ({
+      const fromWorkspace = (workspaceQuery.data ?? []).map((m) => ({
         id: m.id,
         fullName: m.fullName,
         email: m.email,
         avatarUrl: m.avatarUrl,
       }));
+      if (!dmSidebarEntry?.otherUserId || !dmSidebarEntry.name) {
+        return fromWorkspace;
+      }
+      if (fromWorkspace.some((m) => m.id === dmSidebarEntry.otherUserId)) {
+        return fromWorkspace;
+      }
+      return [
+        ...fromWorkspace,
+        {
+          id: dmSidebarEntry.otherUserId,
+          fullName: dmSidebarEntry.name,
+          email: "",
+          avatarUrl: dmSidebarEntry.avatarUrl,
+        },
+      ];
     }
     return [];
-  }, [isChannel, isDm, channelMembers, workspaceQuery.data]);
+  }, [isChannel, isDm, channelMembers, workspaceQuery.data, dmSidebarEntry]);
 
   const loading = isChannel ? channelLoading : isDm ? workspaceQuery.loading : false;
 

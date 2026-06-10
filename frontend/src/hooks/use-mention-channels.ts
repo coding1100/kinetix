@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { loadSidebarLists } from "@/lib/chat/sidebar-lists-loader";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
-import { useChatStore } from "@/stores/chat-store";
+import { useAuthStore } from "@/stores/auth-store";
+import { isSidebarCacheForSession, useChatStore } from "@/stores/chat-store";
 
 export type MentionChannel = {
   id: string;
@@ -12,18 +13,21 @@ export type MentionChannel = {
 
 export function useMentionChannels() {
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
+  const userId = useAuthStore((s) => s.user?.id);
   const sidebarListsCache = useChatStore((s) => s.sidebarListsCache);
   const [fetched, setFetched] = useState<MentionChannel[] | null>(null);
   const [loading, setLoading] = useState(false);
   const inflight = useRef(false);
 
   const cached = useMemo((): MentionChannel[] | null => {
-    if (sidebarListsCache?.workspaceId !== workspaceId) return null;
-    return sidebarListsCache.channels.map((c) => ({
+    if (!isSidebarCacheForSession(sidebarListsCache, userId, workspaceId)) {
+      return null;
+    }
+    return sidebarListsCache!.channels.map((c) => ({
       id: c.id,
       name: c.name,
     }));
-  }, [sidebarListsCache, workspaceId]);
+  }, [sidebarListsCache, userId, workspaceId]);
 
   useEffect(() => {
     if (!ready || cached || inflight.current) return;

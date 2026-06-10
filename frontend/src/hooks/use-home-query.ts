@@ -16,6 +16,7 @@ export function useHomeQuery<T>(
   }
 ) {
   const hydrated = useAuthStore((s) => s.hydrated);
+  const userId = useAuthStore((s) => s.user?.id);
   const updateSession = useAuthStore((s) => s.updateSession);
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const [data, setData] = useState<T | null>(options?.initialData ?? null);
@@ -25,17 +26,23 @@ export function useHomeQuery<T>(
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
   const prevWorkspaceId = useRef(workspaceId);
+  const prevUserId = useRef(userId);
 
   const depsSignature = JSON.stringify(deps);
   const canFetch = hydrated && ready;
 
   useEffect(() => {
-    if (prevWorkspaceId.current !== workspaceId) {
+    const sessionChanged =
+      prevWorkspaceId.current !== workspaceId ||
+      prevUserId.current !== userId;
+
+    if (sessionChanged) {
       prevWorkspaceId.current = workspaceId;
+      prevUserId.current = userId;
       setData(null);
       setLoading(true);
     }
-  }, [workspaceId]);
+  }, [workspaceId, userId]);
 
   useEffect(() => {
     if (options?.initialData != null && data === null) {

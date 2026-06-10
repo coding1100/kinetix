@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   MoreHorizontalIcon,
@@ -67,6 +67,7 @@ import {
   ATTACHMENT_PLACEHOLDER,
   createOptimisticMessage,
   mergeConfirmedMessage,
+  mergeFetchedMessages,
   mergeIncomingMessage,
   normalizeMessageForViewer,
 } from "@/lib/chat/messages";
@@ -85,6 +86,7 @@ import {
 } from "@/lib/chat/conversation-cache";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { PersonProfilePanel } from "@/components/chat/PersonProfilePanel";
+import { MessageQuoteToolbar } from "@/components/chat/MessageQuoteToolbar";
 
 export function ConversationView({
   type,
@@ -168,6 +170,8 @@ export function ConversationView({
   );
   const [deleteChannelOpen, setDeleteChannelOpen] = useState(false);
   const [deletingChannel, setDeletingChannel] = useState(false);
+  const loadAbortRef = useRef<AbortController | null>(null);
+  const conversationKeyRef = useRef(`${type}:${id}`);
 
   useEffect(() => {
     if (!messageScrollTarget) return;
@@ -189,10 +193,11 @@ export function ConversationView({
     return cached?.dm ?? lists?.dms.find((d) => d.id === id) ?? null;
   }, [workspaceId, type, id]);
 
-  const hydrateFromCache = useCallback(() => {
-    const cached = getConversationCache(workspaceId, type, id);
-    const meta = resolveCachedMeta();
+  useLayoutEffect(() => {
+    conversationKeyRef.current = `${type}:${id}`;
+    setActiveConversation({ kind: type, id });
 
+    const meta = resolveCachedMeta();
     if (type === "channel") {
       setChannel((meta as Channel | null) ?? null);
       setDm(null);
@@ -201,84 +206,122 @@ export function ConversationView({
       setChannel(null);
     }
 
-    if (cached && cached.messages.length > 0) {
+    const cached = getConversationCache(workspaceId, type, id);
+    if (cached?.messages.length) {
       setMessages(cached.messages);
       setMessagesLoading(false);
-      return true;
+    } else {
+      setMessages([]);
+      setMessagesLoading(true);
     }
+    setError(null);
 
-    setMessages([]);
-    setMessagesLoading(true);
-    return false;
-  }, [workspaceId, type, id, resolveCachedMeta]);
+    return () => setActiveConversation(null);
+  }, [type, id, workspaceId, setActiveConversation, resolveCachedMeta]);
 
-  const loadConversation = useCallback(async () => {
+  const loadConversation = useCallback(async (signal: AbortSignal) => {
     if (!ready) return;
     const conversationId = id;
-    setError(null);
-    const hadMessageCache = hydrateFromCache();
+    const loadKey = `${type}:${conversationId}`;
+    const fetchInit = { signal };
 
     try {
-      if (type === "channel") {
-        const msgResult = await fetchChannelMessages(
-          accessToken,
-          workspaceId,
-          conversationId
-        );
-        if (conversationId !== id) return;
-        const viewerId = useAuthStore.getState().user?.id;
-        const channelMessages = viewerId
-          ? msgResult.data.map((m) => normalizeMessageForViewer(m, viewerId))
-          : msgResult.data;
-        setMessages(channelMessages);
-        setMessagesLoading(false);
+      const viewerId = useAuthStore.getState().user?.id;
+      const msgResult =
+        type === "channel"
+          ? await fetchChannelMessages(
+              accessToken,
+              workspaceId,
+              conversationId,
+              fetchInit
+            )
+          : await fetchDmMessages(
+              accessToken,
+              workspaceId,
+              conversationId,
+              fetchInit
+            );
 
+      if (
+        signal.aborted ||
+        conversationId !== id ||
+        conversationKeyRef.current !== loadKey
+      ) {
+        return;
+      }
+
+      const fetched = viewerId
+        ? msgResult.data.map((m) => normalizeMessageForViewer(m, viewerId))
+        : msgResult.data;
+
+      setMessages((prev) => {
+        const next = mergeFetchedMessages(fetched, prev);
+        setConversationCache(workspaceId, type, conversationId, {
+          messages: next,
+        });
+        return next;
+      });
+      setMessagesLoading(false);
+
+      if (type === "channel") {
         let channelMeta = resolveCachedMeta() as Channel | null;
         if (!channelMeta) {
           channelMeta = await fetchChannel(
             accessToken,
             workspaceId,
-            conversationId
+            conversationId,
+            fetchInit
           );
-          if (conversationId !== id) return;
+          if (
+            signal.aborted ||
+            conversationId !== id ||
+            conversationKeyRef.current !== loadKey
+          ) {
+            return;
+          }
           setChannel(channelMeta);
         }
         setDm(null);
         setConversationCache(workspaceId, type, conversationId, {
-          messages: channelMessages,
           channel: channelMeta,
           dm: null,
         });
       } else {
-        const msgResult = await fetchDmMessages(
-          accessToken,
-          workspaceId,
-          conversationId
-        );
-        if (conversationId !== id) return;
-        const viewerId = useAuthStore.getState().user?.id;
-        const dmMessages = viewerId
-          ? msgResult.data.map((m) => normalizeMessageForViewer(m, viewerId))
-          : msgResult.data;
-        setMessages(dmMessages);
-        setMessagesLoading(false);
-
         let dmMeta = resolveCachedMeta() as DirectMessage | null;
         if (!dmMeta) {
-          dmMeta = await fetchDm(accessToken, workspaceId, conversationId);
-          if (conversationId !== id) return;
+          dmMeta = await fetchDm(
+            accessToken,
+            workspaceId,
+            conversationId,
+            fetchInit
+          );
+          if (
+            signal.aborted ||
+            conversationId !== id ||
+            conversationKeyRef.current !== loadKey
+          ) {
+            return;
+          }
           setDm(dmMeta);
         }
         setChannel(null);
         setConversationCache(workspaceId, type, conversationId, {
-          messages: dmMessages,
           dm: dmMeta,
           channel: null,
         });
       }
     } catch (err) {
-      if (conversationId !== id) return;
-      if (!hadMessageCache) {
+      if (
+        signal.aborted ||
+        conversationId !== id ||
+        conversationKeyRef.current !== loadKey
+      ) {
+        return;
+      }
+      if (err instanceof DOMException && err.name === "AbortError") return;
+
+      const cached = getConversationCache(workspaceId, type, conversationId);
+      if (!cached?.messages.length) {
         setError(
           err instanceof ApiError ? err.message : "Failed to load conversation"
         );
@@ -291,7 +334,6 @@ export function ConversationView({
     workspaceId,
     type,
     id,
-    hydrateFromCache,
     resolveCachedMeta,
   ]);
 
@@ -327,7 +369,13 @@ export function ConversationView({
   }, [ready, accessToken, workspaceId, type, id, setConversationUnread]);
 
   useEffect(() => {
-    loadConversation();
+    loadAbortRef.current?.abort();
+    const controller = new AbortController();
+    loadAbortRef.current = controller;
+    void loadConversation(controller.signal);
+    return () => {
+      controller.abort();
+    };
   }, [loadConversation]);
 
   useEffect(() => {
@@ -339,11 +387,6 @@ export function ConversationView({
   }, [ready, type, accessToken, workspaceId, id]);
 
   useEffect(() => {
-    if (!ready) return;
-    setConversationUnread(type, id, 0);
-  }, [ready, type, id, setConversationUnread]);
-
-  useEffect(() => {
     if (messagesLoading || error || !ready) return;
     void markConversationRead();
   }, [messagesLoading, error, ready, markConversationRead]);
@@ -353,25 +396,35 @@ export function ConversationView({
   }, [type, id, setActiveThread]);
 
   useEffect(() => {
-    setActiveConversation({ kind: type, id });
-    return () => setActiveConversation(null);
-  }, [type, id, setActiveConversation]);
-
-  useEffect(() => {
     if (!realtimeEvent || realtimeEvent.workspaceId !== workspaceId) return;
-    const matchesConversation =
-      realtimeEvent.kind === type && realtimeEvent.conversationId === id;
-    if (!matchesConversation || realtimeEvent.parentId) return;
-    if (!currentUserId) return;
+    if (realtimeEvent.kind !== type || realtimeEvent.conversationId !== id) {
+      return;
+    }
+    if (realtimeEvent.parentId || !currentUserId) return;
+
     const incoming = normalizeMessageForViewer(
       realtimeEvent.message,
       currentUserId
     );
-    setMessages((prev) => mergeIncomingMessage(prev, incoming));
+
+    setMessages((prev) => {
+      if (
+        incoming.authorId === currentUserId &&
+        prev.some((m) => m.id === incoming.id)
+      ) {
+        return prev;
+      }
+      const next = mergeIncomingMessage(prev, incoming);
+      setConversationCache(workspaceId, type, id, { messages: next });
+      return next;
+    });
+    setMessagesLoading(false);
+    clearRealtimeEvent();
+
     if (incoming.authorId !== currentUserId) {
+      setConversationUnread(type, id, 0);
       void markConversationRead();
     }
-    clearRealtimeEvent();
   }, [
     realtimeEvent,
     workspaceId,
@@ -379,16 +432,9 @@ export function ConversationView({
     id,
     currentUserId,
     clearRealtimeEvent,
+    setConversationUnread,
     markConversationRead,
   ]);
-
-  useEffect(() => {
-    if (!realtimeEvent || realtimeEvent.workspaceId !== workspaceId) return;
-    const isActive =
-      realtimeEvent.kind === type && realtimeEvent.conversationId === id;
-    if (isActive || realtimeEvent.parentId) return;
-    clearRealtimeEvent();
-  }, [realtimeEvent, workspaceId, type, id, clearRealtimeEvent]);
 
   const applyReactions = useCallback(
     (messageId: string, reactions: { emoji: string; count: number }[]) => {
@@ -500,7 +546,11 @@ export function ConversationView({
       payload.optimisticAttachments,
       useAuthStore.getState().user?.fullName
     );
-    setMessages((prev) => [...prev, optimistic]);
+    setMessages((prev) => {
+      const next = [...prev, optimistic];
+      setConversationCache(workspaceId, type, id, { messages: next });
+      return next;
+    });
     try {
       const msg =
         type === "channel"
@@ -695,7 +745,7 @@ export function ConversationView({
             <div className="flex flex-1 items-center justify-center p-6 text-sm text-destructive">
               {error}
             </div>
-          ) : messagesLoading ? (
+          ) : messagesLoading && messages.length === 0 ? (
             <div className="flex min-h-0 flex-1 flex-col">
               <PageLoader label="Loading messages…" />
             </div>
@@ -777,6 +827,7 @@ export function ConversationView({
           onConfirm={handleDeleteChannel}
         />
       ) : null}
+      <MessageQuoteToolbar />
     </div>
   );
 }

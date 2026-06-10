@@ -14,8 +14,8 @@ function RichTextPart({ html }: { html: string }) {
   if (!safe) return null;
 
   return (
-    <span
-      className={cn(RICH_TEXT_CONTENT_CLASS)}
+    <div
+      className={cn(RICH_TEXT_CONTENT_CLASS, "inline")}
       dangerouslySetInnerHTML={{ __html: safe }}
     />
   );
