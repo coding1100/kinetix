@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import type { ChatMessage, ConversationType } from "@/lib/types/chat";
 import { formatChatMessageTime } from "@/lib/chat/dates";
 import { cn } from "@/lib/utils";
@@ -17,7 +16,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmojiPickerPopover } from "@/components/chat/emoji/EmojiPickerPopover";
-import { MessageEditInline } from "@/components/chat/MessageEditInline";
 import {
   MessageCircleIcon,
   SmilePlusIcon,
@@ -77,8 +75,10 @@ export function ChatMessageRow({
   const currentUserFullName = useAuthStore((s) => s.user?.fullName);
   const activeThreadMessageId = useChatStore((s) => s.activeThreadMessageId);
   const setActiveThread = useChatStore((s) => s.setActiveThread);
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const startComposerEdit = useChatStore((s) => s.startComposerEdit);
+  const editingMessageId = useChatStore((s) =>
+    s.composerEdit?.target === "main" ? s.composerEdit.messageId : null
+  );
 
   const repliesLabel = threadRepliesLabel(message);
   const threadOpen = activeThreadMessageId === message.id;
@@ -92,17 +92,13 @@ export function ChatMessageRow({
     currentUserId && message.authorId === currentUserId && onEditMessage
   );
 
-  const handleSaveEdit = async (body: string) => {
-    if (!onEditMessage) return;
-    setSaving(true);
-    try {
-      await onEditMessage(message.id, body);
-      setEditing(false);
-    } catch {
-      toast.error("Failed to save message");
-    } finally {
-      setSaving(false);
-    }
+  const handleStartEdit = () => {
+    if (!message.body.trim()) return;
+    startComposerEdit({
+      messageId: message.id,
+      body: message.body,
+      target: "main",
+    });
   };
 
   return (
@@ -113,7 +109,8 @@ export function ChatMessageRow({
         showHeader ? "py-1" : "py-0.5",
         "hover:bg-muted/70",
         threadOpen && "bg-muted/50",
-        highlighted && "bg-primary/10 ring-1 ring-primary/30"
+        highlighted && "bg-primary/10 ring-1 ring-primary/30",
+        editingMessageId === message.id && "bg-primary/10 ring-1 ring-primary/30"
       )}
     >
       <div className="pointer-events-none absolute right-2 top-1 z-10 opacity-0 transition-opacity group-hover:opacity-100">
@@ -163,7 +160,7 @@ export function ChatMessageRow({
                 Reply in thread
               </DropdownMenuItem>
               {canEdit && (
-                <DropdownMenuItem onClick={() => setEditing(true)}>
+                <DropdownMenuItem onClick={handleStartEdit}>
                   <PencilIcon className="size-4" />
                   Edit message
                 </DropdownMenuItem>
@@ -223,28 +220,17 @@ export function ChatMessageRow({
               </time>
             </div>
           )}
-          {editing ? (
-            <MessageEditInline
-              initialBody={message.body}
-              saving={saving}
-              onSave={handleSaveEdit}
-              onCancel={() => setEditing(false)}
-            />
-          ) : (
-            <>
-              {message.body ? (
-                <div
-                  className={showHeader ? "mt-0.5" : "mt-0"}
-                  data-quote-scope="main"
-                  data-message-author-id={message.authorId}
-                  data-message-author-name={displayName}
-                >
-                  <MessageBodyWithMentions body={message.body} />
-                </div>
-              ) : null}
-              <MessageAttachmentList attachments={message.attachments ?? []} />
-            </>
-          )}
+          {message.body ? (
+            <div
+              className={showHeader ? "mt-0.5" : "mt-0"}
+              data-quote-scope="main"
+              data-message-author-id={message.authorId}
+              data-message-author-name={displayName}
+            >
+              <MessageBodyWithMentions body={message.body} />
+            </div>
+          ) : null}
+          <MessageAttachmentList attachments={message.attachments ?? []} />
           {reactions.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {reactions.map((r) => (

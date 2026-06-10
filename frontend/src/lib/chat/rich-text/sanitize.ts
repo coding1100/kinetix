@@ -114,6 +114,37 @@ export function messageBodyHasHtml(body: string): boolean {
   return /<[a-z][^>]*>/i.test(body);
 }
 
+/** Load a stored message body into the contenteditable composer without losing line breaks. */
+export function bodyToComposerHtml(body: string): string {
+  const decoded = decodeMessageEntities(body);
+  if (!decoded.trim()) return "";
+
+  if (messageBodyHasHtml(decoded)) {
+    return sanitizeMessageHtml(decoded);
+  }
+
+  if (typeof document === "undefined") {
+    return decoded
+      .split("\n")
+      .map((line) =>
+        line
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+      )
+      .join("<br>");
+  }
+
+  const div = document.createElement("div");
+  decoded.split("\n").forEach((line, index) => {
+    if (index > 0) {
+      div.appendChild(document.createElement("br"));
+    }
+    div.appendChild(document.createTextNode(line));
+  });
+  return div.innerHTML;
+}
+
 /** Normalize contenteditable HTML before send — fixes literal &nbsp; in plain messages. */
 export function normalizeComposerHtml(html: string): string {
   if (!html) return "";

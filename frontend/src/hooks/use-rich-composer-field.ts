@@ -17,8 +17,10 @@ import {
   insertTextAtCursor,
 } from "@/lib/chat/rich-text/dom";
 import {
+  bodyToComposerHtml,
+  decodeMessageEntities,
   isEmptyComposerHtml,
-  sanitizeMessageHtml,
+  messageBodyHasHtml,
 } from "@/lib/chat/rich-text/sanitize";
 import { buildComposerQuoteHtml } from "@/lib/chat/quote-utils";
 import { serializeRichComposerBody } from "@/lib/chat/rich-text/serialize";
@@ -113,6 +115,8 @@ export function useRichComposerField() {
     setSegments([]);
     setDraftHtml("");
     setDraftPlain("");
+    setMentionQuery(null);
+    setPickerOpen(false);
     if (editorRef.current) {
       editorRef.current.innerHTML = "";
     }
@@ -145,7 +149,11 @@ export function useRichComposerField() {
 
   const restore = useCallback((text: string) => {
     setSegments([]);
-    const content = text.includes("<") ? sanitizeMessageHtml(text) : text;
+    const content = bodyToComposerHtml(text);
+    const decoded = decodeMessageEntities(text);
+    const plainFallback = messageBodyHasHtml(decoded)
+      ? decoded.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "")
+      : decoded;
     if (editorRef.current) {
       editorRef.current.innerHTML = content;
       setDraftHtml(editorRef.current.innerHTML);
@@ -153,7 +161,7 @@ export function useRichComposerField() {
       setMentionQuery(getDraftMentionQuery(editorRef.current.innerText));
     } else {
       setDraftHtml(content);
-      setDraftPlain(text);
+      setDraftPlain(plainFallback);
       setMentionQuery(null);
     }
   }, []);

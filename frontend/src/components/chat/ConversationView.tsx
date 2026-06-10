@@ -125,6 +125,7 @@ export function ConversationView({
   const clearReactionEvent = useChatStore((s) => s.clearReactionEvent);
   const setConversationUnread = useChatStore((s) => s.setConversationUnread);
   const setActiveConversation = useChatStore((s) => s.setActiveConversation);
+  const clearComposerEdit = useChatStore((s) => s.clearComposerEdit);
   const cachedChannelName = useChatStore((s) =>
     type === "channel"
       ? s.sidebarListsCache?.channels.find((c) => c.id === id)?.name
@@ -215,9 +216,10 @@ export function ConversationView({
       setMessagesLoading(true);
     }
     setError(null);
+    clearComposerEdit();
 
     return () => setActiveConversation(null);
-  }, [type, id, workspaceId, setActiveConversation, resolveCachedMeta]);
+  }, [type, id, workspaceId, setActiveConversation, resolveCachedMeta, clearComposerEdit]);
 
   const loadConversation = useCallback(async (signal: AbortSignal) => {
     if (!ready) return;
@@ -475,15 +477,36 @@ export function ConversationView({
 
   const handleEditMessage = useCallback(
     async (messageId: string, body: string) => {
-      const updated = await updateChatMessage(
-        accessToken,
-        workspaceId,
-        messageId,
-        body
-      );
-      setMessages((prev) => applyMessageUpdate(prev, updated));
+      let rollback: ChatMessage[] | null = null;
+      setMessages((prev) => {
+        rollback = prev;
+        const next = prev.map((m) =>
+          m.id === messageId ? { ...m, body } : m
+        );
+        setConversationCache(workspaceId, type, id, { messages: next });
+        return next;
+      });
+      try {
+        const updated = await updateChatMessage(
+          accessToken,
+          workspaceId,
+          messageId,
+          body
+        );
+        setMessages((prev) => {
+          const next = applyMessageUpdate(prev, updated);
+          setConversationCache(workspaceId, type, id, { messages: next });
+          return next;
+        });
+      } catch (err) {
+        if (rollback) {
+          setMessages(rollback);
+          setConversationCache(workspaceId, type, id, { messages: rollback });
+        }
+        throw err;
+      }
     },
-    [accessToken, workspaceId]
+    [accessToken, workspaceId, type, id]
   );
 
   const handleToggleReaction = useCallback(
@@ -768,6 +791,7 @@ export function ConversationView({
             conversationType={type}
             conversationId={id}
             onSend={handleSend}
+            onSaveEdit={handleEditMessage}
           />
         </div>
         {activeThreadMessageId && (

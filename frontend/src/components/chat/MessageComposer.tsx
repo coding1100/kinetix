@@ -41,6 +41,7 @@ import { CreateDocDialog } from "@/components/chat/attachments/CreateDocDialog";
 import { MediaRecorderDialog } from "@/components/chat/attachments/MediaRecorderDialog";
 import { SHOW_EXTENDED_COMPOSER_TOOLS } from "@/lib/chat/composer-flags";
 import { MentionPickerPopover } from "@/components/chat/mentions/MentionPickerPopover";
+import { ComposerEditBanner } from "@/components/chat/composer/ComposerEditBanner";
 import { RichComposerField } from "@/components/chat/composer/RichComposerField";
 import { useRichComposerField } from "@/hooks/use-rich-composer-field";
 import { useMentionChannels } from "@/hooks/use-mention-channels";
@@ -56,6 +57,7 @@ type MessageComposerProps = {
   conversationType?: ConversationType;
   conversationId?: string;
   onSend?: (payload: SendMessagePayload) => Promise<void>;
+  onSaveEdit?: (messageId: string, body: string) => Promise<void>;
 };
 
 export function MessageComposer({
@@ -65,6 +67,7 @@ export function MessageComposer({
   conversationType,
   conversationId,
   onSend,
+  onSaveEdit,
 }: MessageComposerProps) {
   const [sending, setSending] = useState(false);
   const [mode, setMode] = useState("message");
@@ -89,6 +92,10 @@ export function MessageComposer({
   } = useRichComposerField();
   const pendingComposerQuote = useChatStore((s) => s.pendingComposerQuote);
   const clearComposerQuote = useChatStore((s) => s.clearComposerQuote);
+  const composerEdit = useChatStore((s) => s.composerEdit);
+  const clearComposerEdit = useChatStore((s) => s.clearComposerEdit);
+  const startComposerEdit = useChatStore((s) => s.startComposerEdit);
+  const isEditing = composerEdit?.target === "main";
   const [docOpen, setDocOpen] = useState(false);
   const [videoOpen, setVideoOpen] = useState(false);
   const [clipOpen, setClipOpen] = useState(false);
@@ -113,11 +120,26 @@ export function MessageComposer({
     clearPending,
   } = useComposerAttachments(context);
 
-  const placeholder = compact
-    ? "Reply in thread..."
-    : `Write to ${recipientLabel}`;
+  const placeholder = isEditing
+    ? "Edit message…"
+    : compact
+      ? "Reply in thread..."
+      : `Write to ${recipientLabel}`;
 
-  const canSend = Boolean(bodyText.trim() || attachmentIds.length > 0);
+  const canSend = isEditing
+    ? Boolean(bodyText.trim())
+    : Boolean(bodyText.trim() || attachmentIds.length > 0);
+
+  const handleCancelEdit = () => {
+    clearMentions();
+    clearComposerEdit();
+  };
+
+  useEffect(() => {
+    if (!composerEdit || composerEdit.target !== "main") return;
+    restoreMentions(composerEdit.body);
+    editorRef.current?.focus();
+  }, [composerEdit, restoreMentions, editorRef]);
 
   useEffect(() => {
     if (!pendingComposerQuote || pendingComposerQuote.target !== "main") {
@@ -133,8 +155,24 @@ export function MessageComposer({
 
   const handleSend = async () => {
     if (!canSend || sending || uploading) return;
-    setSending(true);
     const messageBody = getBodyText().trim();
+
+    if (isEditing && composerEdit && onSaveEdit) {
+      const { messageId } = composerEdit;
+      clearMentions();
+      clearComposerEdit();
+      try {
+        await onSaveEdit(messageId, messageBody);
+      } catch (err) {
+        startComposerEdit({ messageId, body: messageBody, target: "main" });
+        restoreMentions(messageBody);
+        const detail = formatRequestError(err);
+        toast.error(`Failed to save message — ${detail}`, { duration: 8000 });
+      }
+      return;
+    }
+
+    setSending(true);
     const ids = [...attachmentIds];
     const optimisticAttachments = pending.map(
       ({ id, fileName, kind, mimeType, sizeBytes }) => ({
@@ -170,6 +208,11 @@ export function MessageComposer({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape" && isEditing) {
+      e.preventDefault();
+      handleCancelEdit();
+      return;
+    }
     handleInputKeyDown(e, () => void handleSend());
   };
 
@@ -236,11 +279,14 @@ export function MessageComposer({
         )}
       >
         <div className="rounded-md border border-border bg-card">
+          {isEditing ? <ComposerEditBanner onCancel={handleCancelEdit} /> : null}
+          {!isEditing ? (
           <ComposerAttachmentChips
             items={pending}
             uploadingItem={uploadingItem}
             onRemove={removePending}
           />
+          ) : null}
           <RichComposerField
             segments={segments}
             draftPlain={draftPlain}
@@ -374,7 +420,7 @@ export function MessageComposer({
                 )}
                 disabled={!canSend || uploading}
                 loading={sending}
-                aria-label="Send"
+                aria-label={isEditing ? "Save edit" : "Send"}
                 onClick={() => void handleSend()}
               >
                 <SendIcon className="size-4" strokeWidth={1.5} />

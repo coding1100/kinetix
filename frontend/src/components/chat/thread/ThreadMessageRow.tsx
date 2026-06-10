@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import type { ChatMessage } from "@/lib/types/chat";
 import { formatChatMessageTime } from "@/lib/chat/dates";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
+import { useChatStore } from "@/stores/chat-store";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +14,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmojiPickerPopover } from "@/components/chat/emoji/EmojiPickerPopover";
-import { MessageEditInline } from "@/components/chat/MessageEditInline";
 import { MessageBodyWithMentions } from "./MessageBodyWithMentions";
 import { MessageAttachmentList } from "@/components/chat/attachments/MessageAttachmentList";
 import {
@@ -59,32 +58,31 @@ export function ThreadMessageRow({
     currentUserId,
     currentUserFullName,
   });
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const startComposerEdit = useChatStore((s) => s.startComposerEdit);
+  const editingMessageId = useChatStore((s) =>
+    s.composerEdit?.target === "thread" ? s.composerEdit.messageId : null
+  );
   const reactions = message.reactions ?? [];
   const created = new Date(message.createdAt);
   const canEdit = Boolean(
     currentUserId && message.authorId === currentUserId && onEditMessage
   );
 
-  const handleSaveEdit = async (body: string) => {
-    if (!onEditMessage) return;
-    setSaving(true);
-    try {
-      await onEditMessage(message.id, body);
-      setEditing(false);
-    } catch {
-      toast.error("Failed to save message");
-    } finally {
-      setSaving(false);
-    }
+  const handleStartEdit = () => {
+    if (!message.body.trim()) return;
+    startComposerEdit({
+      messageId: message.id,
+      body: message.body,
+      target: "thread",
+    });
   };
 
   return (
     <article
       className={cn(
         "group relative -mx-2 rounded-md px-2 transition-colors hover:bg-muted/70",
-        showHeader ? "py-1" : "py-0.5"
+        showHeader ? "py-1" : "py-0.5",
+        editingMessageId === message.id && "bg-primary/10 ring-1 ring-primary/30"
       )}
     >
       {canEdit && (
@@ -118,7 +116,7 @@ export function ThreadMessageRow({
                 }
               />
               <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuItem onClick={() => setEditing(true)}>
+                <DropdownMenuItem onClick={handleStartEdit}>
                   <PencilIcon className="size-4" />
                   Edit message
                 </DropdownMenuItem>
@@ -165,28 +163,19 @@ export function ThreadMessageRow({
               </time>
             </div>
           )}
-          {editing ? (
-            <MessageEditInline
-              initialBody={message.body}
-              saving={saving}
-              onSave={handleSaveEdit}
-              onCancel={() => setEditing(false)}
-            />
-          ) : (
-            <div className={showHeader ? "mt-1" : "mt-0"}>
-              {message.body ? (
-                <div
-                  data-quote-scope="thread"
-                  data-message-author-id={message.authorId}
-                  data-message-author-name={displayName}
-                >
-                  <MessageBodyWithMentions body={message.body} />
-                </div>
-              ) : null}
-              <MessageAttachmentList attachments={message.attachments ?? []} />
-            </div>
-          )}
-          {!editing && reactions.length > 0 && (
+          <div className={showHeader ? "mt-1" : "mt-0"}>
+            {message.body ? (
+              <div
+                data-quote-scope="thread"
+                data-message-author-id={message.authorId}
+                data-message-author-name={displayName}
+              >
+                <MessageBodyWithMentions body={message.body} />
+              </div>
+            ) : null}
+            <MessageAttachmentList attachments={message.attachments ?? []} />
+          </div>
+          {reactions.length > 0 && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               {reactions.map((r) => (
                 <button
@@ -219,7 +208,7 @@ export function ThreadMessageRow({
               )}
             </div>
           )}
-          {!editing && reactions.length === 0 && !canEdit && (
+          {reactions.length === 0 && !canEdit && (
             <div className="mt-2">
               <EmojiPickerPopover
                 onSelectEmoji={(emoji) =>

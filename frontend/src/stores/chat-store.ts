@@ -77,6 +77,14 @@ export type PendingComposerQuote = {
   target: ComposerQuoteTarget;
 };
 
+export type ComposerEditTarget = ComposerQuoteTarget;
+
+export type ComposerEdit = {
+  messageId: string;
+  body: string;
+  target: ComposerEditTarget;
+};
+
 interface ChatState {
   filter: ChatFilter;
   layout: ChatLayout;
@@ -100,6 +108,7 @@ interface ChatState {
   messageScrollTarget: string | null;
   activeConversation: ActiveConversation | null;
   pendingComposerQuote: PendingComposerQuote | null;
+  composerEdit: ComposerEdit | null;
   setFilter: (f: ChatFilter) => void;
   setLayout: (l: ChatLayout) => void;
   setCollapsed: (v: boolean) => void;
@@ -137,6 +146,8 @@ interface ChatState {
   clearReactionEvent: () => void;
   requestComposerQuote: (payload: PendingComposerQuote) => void;
   clearComposerQuote: () => void;
+  startComposerEdit: (payload: ComposerEdit) => void;
+  clearComposerEdit: () => void;
   resetChatSession: () => void;
 }
 
@@ -162,6 +173,7 @@ export const useChatStore = create<ChatState>()(
       messageScrollTarget: null,
       activeConversation: null,
       pendingComposerQuote: null,
+      composerEdit: null,
       setFilter: (filter) => set({ filter }),
       setLayout: (layout) => set({ layout }),
       setCollapsed: (collapsed) => set({ collapsed }),
@@ -260,6 +272,11 @@ export const useChatStore = create<ChatState>()(
       requestComposerQuote: (pendingComposerQuote) =>
         set({ pendingComposerQuote }),
       clearComposerQuote: () => set({ pendingComposerQuote: null }),
+      startComposerEdit: (composerEdit) => {
+        set({ composerEdit, pendingComposerQuote: null });
+        useChatStore.getState().requestMessageScroll(composerEdit.messageId);
+      },
+      clearComposerEdit: () => set({ composerEdit: null }),
       resetChatSession: () =>
         set({
           sidebarListsCache: null,
@@ -267,6 +284,7 @@ export const useChatStore = create<ChatState>()(
           messageEditEvent: null,
           reactionEvent: null,
           pendingComposerQuote: null,
+          composerEdit: null,
           activeThreadMessageId: null,
           dmDetailsView: null,
           channelDetailsView: null,

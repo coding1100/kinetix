@@ -77,6 +77,7 @@ export function ThreadPanel({
   const currentUserId = useAuthStore((s) => s.user?.id);
   const currentUserFullName = useAuthStore((s) => s.user?.fullName);
   const setActiveThread = useChatStore((s) => s.setActiveThread);
+  const clearComposerEdit = useChatStore((s) => s.clearComposerEdit);
   const realtimeEvent = useChatStore((s) => s.realtimeEvent);
   const clearRealtimeEvent = useChatStore((s) => s.clearRealtimeEvent);
   const messageEditEvent = useChatStore((s) => s.messageEditEvent);
@@ -118,6 +119,7 @@ export function ThreadPanel({
   };
 
   useEffect(() => {
+    clearComposerEdit();
     loadThread();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, accessToken, workspaceId, type, conversationId, messageId]);
@@ -198,16 +200,37 @@ export function ThreadPanel({
   ]);
 
   const handleEditMessage = async (targetId: string, body: string) => {
-    const updated = await updateChatMessage(
-      accessToken,
-      workspaceId,
-      targetId,
-      body
-    );
-    const normalized = currentUserId
-      ? normalizeMessageForViewer(updated, currentUserId)
-      : updated;
-    applyMessageToBundle(normalized);
+    let rollback: ThreadBundle | null = null;
+    setBundle((prev) => {
+      if (!prev) return prev;
+      rollback = prev;
+      if (prev.parent.id === targetId) {
+        return { ...prev, parent: { ...prev.parent, body } };
+      }
+      return {
+        ...prev,
+        replies: prev.replies.map((r) =>
+          r.id === targetId ? { ...r, body } : r
+        ),
+      };
+    });
+    try {
+      const updated = await updateChatMessage(
+        accessToken,
+        workspaceId,
+        targetId,
+        body
+      );
+      const normalized = currentUserId
+        ? normalizeMessageForViewer(updated, currentUserId)
+        : updated;
+      applyMessageToBundle(normalized);
+    } catch (err) {
+      if (rollback) {
+        setBundle(rollback);
+      }
+      throw err;
+    }
   };
 
   useEffect(() => {
@@ -443,6 +466,7 @@ export function ThreadPanel({
         conversationType={type}
         conversationId={conversationId}
         onSend={handleReply}
+        onSaveEdit={handleEditMessage}
       />
       <LinkTaskDialog
         open={linkTaskOpen}
