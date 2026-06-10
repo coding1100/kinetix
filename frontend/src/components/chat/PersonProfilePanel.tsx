@@ -32,24 +32,14 @@ import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { findDmByUserId } from "@/lib/chat/sidebar-dm";
 import { fetchAssignedComments, fetchTasks } from "@/lib/api/home";
 import { mockPersonActivity } from "@/lib/mocks/person-profile";
-import { avatarInitialFromName } from "@/lib/user-display";
+import {
+  avatarColorClassForKey,
+  avatarInitialFromName,
+} from "@/lib/user-display";
 import { ROLE_LABELS } from "@/components/workspace/WorkspaceInviteForm";
 import { cn } from "@/lib/utils";
 import type { Task } from "@/lib/types/task";
 import { PageLoader } from "@/components/ui/page-loader";
-
-const AVATAR_COLORS = [
-  "bg-[#6b7c3f] text-white",
-  "bg-violet-600 text-white",
-  "bg-sky-600 text-white",
-  "bg-emerald-600 text-white",
-  "bg-amber-700 text-white",
-];
-
-function avatarColorForName(name: string) {
-  const hash = [...name].reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
-}
 
 function formatLocalTime() {
   return new Date().toLocaleTimeString(undefined, {
@@ -275,7 +265,7 @@ export function PersonProfilePanel({
                     <AvatarFallback
                       className={cn(
                         "rounded-xl text-2xl font-semibold",
-                        avatarColorForName(displayName)
+                        avatarColorClassForKey(userId, displayName)
                       )}
                     >
                       {avatarInitialFromName(displayName)}

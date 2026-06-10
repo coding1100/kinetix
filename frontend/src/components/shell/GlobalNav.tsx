@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   HomeIcon,
@@ -19,8 +19,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useShellStore } from "@/stores/shell-store";
-import { useAuthStore } from "@/stores/auth-store";
-import { fetchUnreadSummary } from "@/lib/api/home";
+import { useNotificationsUnread } from "@/hooks/use-notifications-unread";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
@@ -31,42 +30,33 @@ type NavItem = {
   href?: string;
   badge?: number | "dot";
   disabled?: boolean;
+  /** Hidden from rail — kept in config for future phases */
+  hidden?: boolean;
 };
 
 const BASE_NAV_ITEMS: NavItem[] = [
   { label: "Home", icon: HomeIcon, href: "/home/inbox" },
   { label: "Chat", icon: MessageSquareIcon, href: "/chat", badge: "dot" },
   { label: "Spaces", icon: BoxesIcon, href: "/spaces" },
-  { label: "Planner", icon: CalendarIcon, disabled: true },
+  { label: "Planner", icon: CalendarIcon, disabled: true, hidden: true },
   { label: "People", icon: UsersIcon, href: "/people" },
-  { label: "Docs", icon: FileTextIcon, disabled: true },
-  { label: "Dashboard", icon: LayoutDashboardIcon, disabled: true },
-  { label: "Forms", icon: ClipboardCheckIcon, disabled: true },
-  { label: "Timesheet", icon: ClockIcon, disabled: true },
-  { label: "More", icon: LayoutGridIcon, disabled: true },
+  { label: "Docs", icon: FileTextIcon, disabled: true, hidden: true },
+  { label: "Dashboard", icon: LayoutDashboardIcon, disabled: true, hidden: true },
+  { label: "Forms", icon: ClipboardCheckIcon, disabled: true, hidden: true },
+  { label: "Timesheet", icon: ClockIcon, disabled: true, hidden: true },
+  { label: "More", icon: LayoutGridIcon, disabled: true, hidden: true },
 ];
 
 export function GlobalNav() {
   const pathname = usePathname();
   const router = useRouter();
   const { secondaryPanelOpen, setSecondaryPanelOpen } = useShellStore();
-  const accessToken = useAuthStore((s) => s.accessToken);
-  const workspaceId = useAuthStore((s) => s.activeWorkspaceId);
-  const [homeUnread, setHomeUnread] = useState<number | undefined>();
-
-  useEffect(() => {
-    if (!accessToken || !workspaceId) return;
-    const timer = window.setTimeout(() => {
-      void fetchUnreadSummary(accessToken, workspaceId)
-        .then((r) => setHomeUnread(r.home > 0 ? r.home : undefined))
-        .catch(() => setHomeUnread(undefined));
-    }, 1200);
-    return () => window.clearTimeout(timer);
-  }, [accessToken, workspaceId]);
+  const { unreadCount } = useNotificationsUnread();
+  const homeUnread = unreadCount > 0 ? unreadCount : undefined;
 
   const navItems = useMemo<NavItem[]>(
     () =>
-      BASE_NAV_ITEMS.map((item) =>
+      BASE_NAV_ITEMS.filter((item) => !item.hidden).map((item) =>
         item.label === "Home" ? { ...item, badge: homeUnread } : item
       ),
     [homeUnread]

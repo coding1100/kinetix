@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import type { ChatMessage, ConversationType } from "@/lib/types/chat";
+import type {
+  ChatMessage,
+  ConversationType,
+  UpdateMessagePayload,
+} from "@/lib/types/chat";
 import {
   groupMessagesByDay,
   resolveJumpDayKey,
@@ -17,6 +21,7 @@ export function MessageList({
   conversationId,
   onToggleReaction,
   onEditMessage,
+  onDeleteMessage,
   onMarkUnread,
   scrollToMessageId,
   highlightMessageId,
@@ -26,7 +31,11 @@ export function MessageList({
   conversationType?: ConversationType;
   conversationId?: string;
   onToggleReaction: (messageId: string, emoji: string) => void | Promise<void>;
-  onEditMessage?: (messageId: string, body: string) => Promise<void>;
+  onEditMessage?: (
+    messageId: string,
+    payload: UpdateMessagePayload
+  ) => Promise<void>;
+  onDeleteMessage?: (messageId: string) => Promise<void>;
   onMarkUnread?: () => void | Promise<void>;
   scrollToMessageId?: string | null;
   highlightMessageId?: string | null;
@@ -88,6 +97,7 @@ export function MessageList({
                       conversationId={conversationId}
                       onToggleReaction={onToggleReaction}
                       onEditMessage={onEditMessage}
+                      onDeleteMessage={onDeleteMessage}
                       onMarkUnread={onMarkUnread}
                       highlighted={highlightMessageId === msg.id}
                     />

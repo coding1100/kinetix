@@ -7,6 +7,7 @@ import type {
   DirectMessage,
   SendMessagePayload,
   ThreadBundle,
+  UpdateMessagePayload,
 } from "@/lib/types/chat";
 
 function serializeMessagePayload(payload: string | SendMessagePayload) {
@@ -358,15 +359,33 @@ export function sendDmThreadReply(
   );
 }
 
+export function deleteChatMessage(
+  token: string,
+  workspaceId: string,
+  messageId: string
+) {
+  return apiFetch<{ ok: boolean; messageId: string }>(
+    wsPath(workspaceId, `/chat/messages/${messageId}`),
+    { method: "DELETE", token }
+  );
+}
+
 export function updateChatMessage(
   token: string,
   workspaceId: string,
   messageId: string,
-  body: string
+  payload: UpdateMessagePayload
 ) {
   return apiFetch<ChatMessage>(
     wsPath(workspaceId, `/chat/messages/${messageId}`),
-    { method: "PATCH", token, body: JSON.stringify({ body }) }
+    {
+      method: "PATCH",
+      token,
+      body: JSON.stringify({
+        body: payload.body,
+        attachmentIds: payload.attachmentIds,
+      }),
+    }
   );
 }
 

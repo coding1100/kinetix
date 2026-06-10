@@ -206,11 +206,15 @@ function FollowersView({ channelId }: { channelId: string }) {
         member.id,
         { isFollowing: following }
       );
-      patchCachedChannelMembers(workspaceId, channelId, (members) =>
-        members.map((m) =>
+      patchCachedChannelMembers(workspaceId, channelId, (members) => {
+        const exists = members.some((m) => m.id === member.id);
+        if (!exists) {
+          return [...members, { ...member, isFollowing: following }];
+        }
+        return members.map((m) =>
           m.id === member.id ? { ...m, isFollowing: following } : m
-        )
-      );
+        );
+      });
       if (following) {
         toast.success(
           member.id === currentUserId

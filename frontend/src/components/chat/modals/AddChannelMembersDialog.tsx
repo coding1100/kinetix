@@ -22,7 +22,10 @@ import {
 } from "@/lib/api/chat";
 import { useAuthStore } from "@/stores/auth-store";
 import { cn } from "@/lib/utils";
-import { avatarInitialFromName } from "@/lib/user-display";
+import {
+  avatarColorClassForKey,
+  avatarInitialFromName,
+} from "@/lib/user-display";
 import { toast } from "sonner";
 import { patchCachedChannelMembers } from "@/lib/chat/channel-members-cache";
 
@@ -97,13 +100,15 @@ export function AddChannelMembersDialog({
         channelId,
         [...selected]
       );
-      if (res.added > 0) {
-        patchCachedChannelMembers(workspaceId, channelId, (members) => {
-          const existingIds = new Set(members.map((m) => m.id));
-          const appended = res.data.filter((m) => !existingIds.has(m.id));
-          return [...members, ...appended];
-        });
+      if (res.added === 0) {
+        toast.info("Selected people are already in this channel");
+        return;
       }
+      patchCachedChannelMembers(workspaceId, channelId, (members) => {
+        const existingIds = new Set(members.map((m) => m.id));
+        const appended = res.data.filter((m) => !existingIds.has(m.id));
+        return [...members, ...appended];
+      });
       toast.success(
         res.added === 1 ? "1 person added" : `${res.added} people added`
       );
@@ -165,7 +170,12 @@ export function AddChannelMembersDialog({
                   ) : null}
                 </span>
                 <Avatar className="size-8">
-                  <AvatarFallback className="text-xs">
+                  <AvatarFallback
+                    className={cn(
+                      "text-xs font-semibold",
+                      avatarColorClassForKey(m.id, m.fullName)
+                    )}
+                  >
                     {avatarInitialFromName(m.fullName)}
                   </AvatarFallback>
                 </Avatar>

@@ -18,8 +18,12 @@ import { getChannelById } from "@/lib/mocks/channel-details";
 import { useChannelMembers } from "@/hooks/use-channel-members";
 import type { Channel } from "@/lib/types/chat";
 import { AddChannelMembersDialog } from "@/components/chat/modals/AddChannelMembersDialog";
-import { avatarInitialFromName } from "@/lib/user-display";
+import {
+  avatarColorClassForKey,
+  avatarInitialFromName,
+} from "@/lib/user-display";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
+import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 
 function accessPermission(role?: string | null) {
@@ -75,7 +79,12 @@ export function ChannelShareDialog() {
                 className="flex items-center gap-2 rounded-md px-1 py-1.5"
               >
                 <Avatar className="size-7">
-                  <AvatarFallback className="text-[10px]">
+                  <AvatarFallback
+                    className={cn(
+                      "text-[10px] font-semibold",
+                      avatarColorClassForKey(u.id, u.fullName)
+                    )}
+                  >
                     {avatarInitialFromName(u.fullName)}
                   </AvatarFallback>
                 </Avatar>

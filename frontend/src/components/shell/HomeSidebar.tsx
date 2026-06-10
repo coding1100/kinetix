@@ -25,6 +25,7 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { useShellStore } from "@/stores/shell-store";
 import { SidebarNavIcon } from "@/components/icons/SidebarNavIcon";
+import { useNotificationsUnread } from "@/hooks/use-notifications-unread";
 
 export function HomeSidebar() {
   const pathname = usePathname();
@@ -32,6 +33,7 @@ export function HomeSidebar() {
   const visibleItems = items.filter((i) => i.pinned);
   const openModal = useUiStore((s) => s.openModal);
   const { secondaryPanelOpen, setSecondaryPanelOpen } = useShellStore();
+  const { unreadCount } = useNotificationsUnread();
 
   if (!secondaryPanelOpen) return null;
 
@@ -121,7 +123,10 @@ export function HomeSidebar() {
                 )}
               >
                 <SidebarNavIcon itemId={item.id} active={active} />
-                {item.label}
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                {item.id === "inbox" && unreadCount > 0 ? (
+                  <span className="size-2 shrink-0 rounded-full bg-primary" />
+                ) : null}
               </Button>
             );
           })}

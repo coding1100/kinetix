@@ -1,10 +1,56 @@
 import { fetchChannels, fetchDms } from "@/lib/api/chat";
+import type { Channel, DirectMessage } from "@/lib/types/chat";
 import {
   isSidebarCacheForSession,
   useChatStore,
   type ChatSidebarLists,
 } from "@/stores/chat-store";
 import { useAuthStore } from "@/stores/auth-store";
+
+function sortByLastAt<T extends { lastAt: string }>(items: T[]) {
+  return [...items].sort(
+    (a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime()
+  );
+}
+
+/** Merge API lists with socket/cache upserts; cache is authoritative for removals. */
+export function mergeSidebarChannels(
+  queryChannels: Channel[] | undefined,
+  cacheChannels: Channel[] | undefined
+): Channel[] {
+  const merged = new Map<string, Channel>();
+  for (const channel of queryChannels ?? []) {
+    merged.set(channel.id, channel);
+  }
+  if (cacheChannels !== undefined) {
+    const cacheIds = new Set(cacheChannels.map((c) => c.id));
+    for (const channel of cacheChannels) {
+      const existing = merged.get(channel.id);
+      merged.set(channel.id, existing ? { ...existing, ...channel } : channel);
+    }
+    for (const id of [...merged.keys()]) {
+      if (!cacheIds.has(id)) {
+        merged.delete(id);
+      }
+    }
+  }
+  return sortByLastAt([...merged.values()]);
+}
+
+export function mergeSidebarDms(
+  queryDms: DirectMessage[] | undefined,
+  cacheDms: DirectMessage[] | undefined
+): DirectMessage[] {
+  const merged = new Map<string, DirectMessage>();
+  for (const dm of queryDms ?? []) {
+    merged.set(dm.id, dm);
+  }
+  for (const dm of cacheDms ?? []) {
+    const existing = merged.get(dm.id);
+    merged.set(dm.id, existing ? { ...existing, ...dm } : dm);
+  }
+  return sortByLastAt([...merged.values()]);
+}
 
 const inflight = new Map<string, Promise<ChatSidebarLists>>();
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { imageFileDisplayName } from "@/lib/chat/composer-image-files";
 import { uploadChatAttachment } from "@/lib/chat/upload-attachment";
 import type { AttachmentKind, ConversationType } from "@/lib/types/chat";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
@@ -132,6 +133,22 @@ export function useComposerAttachments(
     [uploadFile]
   );
 
+  const uploadImageFiles = useCallback(
+    async (files: File[]) => {
+      for (let i = 0; i < files.length; i += 1) {
+        const file = files[i];
+        const fileName = imageFileDisplayName(file, i);
+        await uploadBlob(
+          file,
+          fileName,
+          file.type || "image/png",
+          "file"
+        );
+      }
+    },
+    [uploadBlob]
+  );
+
   const removePending = useCallback(
     (id: string) => {
       setPending((prev) => {
@@ -162,6 +179,7 @@ export function useComposerAttachments(
     onFileInputChange,
     uploadBlob,
     uploadFile,
+    uploadImageFiles,
     removePending,
     clearPending,
   };

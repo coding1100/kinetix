@@ -20,6 +20,7 @@ export interface DirectMessage {
   name: string;
   isGroup: boolean;
   members?: string[];
+  participants?: { id: string; fullName: string }[];
   avatarUrl?: string;
   lastMessage: string;
   lastAt: Date;
@@ -160,9 +161,14 @@ export const MOCK_DMS: DirectMessage[] = [
   },
   {
     id: "d4",
-    name: "Launch Squad",
+    name: "Alex Rivera, Sam Chen, Jordan Lee",
     isGroup: true,
-    members: ["Alex", "Sam", "Jordan", "You"],
+    members: ["Alex", "Sam", "Jordan"],
+    participants: [
+      { id: "u1", fullName: "Alex Rivera" },
+      { id: "u2", fullName: "Sam Chen" },
+      { id: "u3", fullName: "Jordan Lee" },
+    ],
     lastMessage: "Jordan: Draft post is in Kinetix",
     lastAt: new Date(Date.now() - 1000 * 60 * 30),
     unread: 4,

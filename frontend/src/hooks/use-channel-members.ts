@@ -27,14 +27,14 @@ export function useChannelMembers(
     () => 0
   );
 
-  const initialCached =
+  const cachedMembers =
     ready && channelId
       ? getCachedChannelMembers(workspaceId, channelId)
       : undefined;
 
-  const [members, setMembers] = useState<ChannelMember[]>(initialCached ?? []);
+  const [members, setMembers] = useState<ChannelMember[]>(cachedMembers ?? []);
   const [loading, setLoading] = useState(
-    enabled && ready && !!channelId && !initialCached
+    enabled && ready && !!channelId && !cachedMembers
   );
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -94,9 +94,14 @@ export function useChannelMembers(
     revision,
   ]);
 
+  const resolvedMembers =
+    ready && channelId
+      ? (getCachedChannelMembers(workspaceId, channelId) ?? members)
+      : members;
+
   return {
-    members,
-    loading: loading && members.length === 0,
+    members: resolvedMembers,
+    loading: loading && resolvedMembers.length === 0,
     error,
     reload,
   };

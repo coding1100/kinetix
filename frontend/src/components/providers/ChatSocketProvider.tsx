@@ -1,22 +1,36 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
+import { toast } from "sonner";
 import { getSocketBaseUrl } from "@/lib/socket/config";
 import type {
+  ChatChannelJoinedPayload,
+  ChatChannelMemberPayload,
+  ChatChannelRemovedPayload,
+  ChatMessageDeletePayload,
   ChatMessageEditPayload,
   ChatReactionPayload,
   ChatRealtimePayload,
+  HomeNotificationPayload,
   PresenceSyncPayload,
   PresenceUpdatePayload,
 } from "@/lib/types/realtime";
-import { applyRealtimeMessageToSidebar } from "@/lib/chat/sidebar-realtime";
+import { applyHomeNotification } from "@/lib/notifications/realtime";
+import {
+  applyChannelJoinedToSidebar,
+  applyChannelMemberUpdate,
+  applyChannelRemovedFromSidebar,
+  applyRealtimeMessageToSidebar,
+} from "@/lib/chat/sidebar-realtime";
 import { useAuthStore } from "@/stores/auth-store";
 import { useChatStore } from "@/stores/chat-store";
 import { usePresenceStore } from "@/stores/presence-store";
 import { useProfileStore } from "@/stores/profile-store";
 
 export function ChatSocketProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const accessToken = useAuthStore((s) => s.accessToken);
   const userId = useAuthStore((s) => s.user?.id);
   const workspaceId = useAuthStore((s) => s.activeWorkspaceId);
@@ -24,6 +38,9 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
   const presence = useProfileStore((s) => s.presence);
   const ingestRealtimeEvent = useChatStore((s) => s.ingestRealtimeEvent);
   const ingestMessageEditEvent = useChatStore((s) => s.ingestMessageEditEvent);
+  const ingestMessageDeleteEvent = useChatStore(
+    (s) => s.ingestMessageDeleteEvent
+  );
   const ingestReactionEvent = useChatStore((s) => s.ingestReactionEvent);
   const syncPresence = usePresenceStore((s) => s.syncPresence);
   const upsertPresence = usePresenceStore((s) => s.upsertPresence);
@@ -71,8 +88,28 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       applyRealtimeMessageToSidebar(payload, userId, accessToken);
       ingestRealtimeEvent(payload);
     });
+    socket.on("chat:channel:joined", (payload: ChatChannelJoinedPayload) => {
+      applyChannelJoinedToSidebar(payload, userId);
+    });
+    socket.on("chat:channel:removed", (payload: ChatChannelRemovedPayload) => {
+      const viewingRemoved = applyChannelRemovedFromSidebar(payload, userId);
+      if (!viewingRemoved) return;
+      toast.info("This channel is no longer available");
+      const remaining = useChatStore.getState().sidebarListsCache?.channels;
+      const nextChannel = remaining?.[0];
+      router.push(nextChannel ? `/chat/c/${nextChannel.id}` : "/chat");
+    });
+    socket.on("chat:channel:member", (payload: ChatChannelMemberPayload) => {
+      applyChannelMemberUpdate(payload, userId, accessToken);
+    });
+    socket.on("home:notification", (payload: HomeNotificationPayload) => {
+      applyHomeNotification(payload, userId);
+    });
     socket.on("chat:message:edit", (payload: ChatMessageEditPayload) => {
       ingestMessageEditEvent(payload);
+    });
+    socket.on("chat:message:delete", (payload: ChatMessageDeletePayload) => {
+      ingestMessageDeleteEvent(payload);
     });
     socket.on("chat:reaction", (payload: ChatReactionPayload) => {
       ingestReactionEvent(payload);
@@ -90,7 +127,12 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       joinedWorkspaceRef.current = null;
       socket.off("connect", joinWorkspace);
       socket.off("chat:message");
+      socket.off("chat:channel:joined");
+      socket.off("chat:channel:removed");
+      socket.off("chat:channel:member");
+      socket.off("home:notification");
       socket.off("chat:message:edit");
+      socket.off("chat:message:delete");
       socket.off("chat:reaction");
       socket.off("presence:sync");
       socket.off("presence:update");
@@ -107,6 +149,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     ingestReactionEvent,
     syncPresence,
     upsertPresence,
+    router,
   ]);
 
   useEffect(() => {

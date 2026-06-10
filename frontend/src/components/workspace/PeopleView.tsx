@@ -55,7 +55,10 @@ import {
   WorkspaceInviteForm,
 } from "@/components/workspace/WorkspaceInviteForm";
 import { ApiError } from "@/lib/api/client";
-import { avatarInitialFromName } from "@/lib/user-display";
+import {
+  avatarColorClassForKey,
+  avatarInitialFromName,
+} from "@/lib/user-display";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 
@@ -114,7 +117,7 @@ function MemberPresenceAvatar({
       presence={presence}
       avatarClassName="size-8"
       dotSize="sm"
-      fallbackClassName="text-xs"
+      fallbackClassName={avatarColorClassForKey(member.id, member.fullName)}
       fallback={avatarInitialFromName(member.fullName)}
     />
   );

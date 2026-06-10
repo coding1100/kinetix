@@ -57,7 +57,10 @@ import {
 } from "@/stores/profile-store";
 import { useTopBarStore } from "@/stores/topbar-store";
 import { cn } from "@/lib/utils";
-import { avatarInitial } from "@/lib/user-display";
+import {
+  avatarColorClassForKey,
+  avatarInitial,
+} from "@/lib/user-display";
 import { PROFILE_MENU_VISIBILITY } from "@/lib/profile-menu-config";
 import type { AuthUser } from "@/lib/api/auth";
 
@@ -69,13 +72,6 @@ type ToolItem = {
   pinnable?: boolean;
 };
 
-const FALLBACK_AVATAR_COLORS = [
-  "bg-amber-800 text-white",
-  "bg-violet-700 text-white",
-  "bg-sky-700 text-white",
-  "bg-rose-700 text-white",
-];
-
 function displayName(user: AuthUser | null) {
   if (user?.fullName?.trim()) return user.fullName.trim();
   if (user?.email) {
@@ -83,12 +79,6 @@ function displayName(user: AuthUser | null) {
     return local.charAt(0).toUpperCase() + local.slice(1);
   }
   return "User";
-}
-
-function avatarColorClass(user: AuthUser | null) {
-  const key = user?.email ?? user?.fullName ?? "u";
-  const hash = [...key].reduce((a, c) => a + c.charCodeAt(0), 0);
-  return FALLBACK_AVATAR_COLORS[hash % FALLBACK_AVATAR_COLORS.length];
 }
 
 function ProfileAvatar({
@@ -118,7 +108,7 @@ function ProfileAvatar({
           className={cn(
             "text-[10px] font-semibold uppercase",
             size === "lg" && "text-sm",
-            avatarColorClass(user)
+            avatarColorClassForKey(user?.id, user?.fullName ?? user?.email)
           )}
         >
           {avatarInitial(user?.fullName, user?.email)}

@@ -3,6 +3,19 @@ import { stripMessageHtml } from "@/lib/chat/rich-text/sanitize";
 
 export const ATTACHMENT_PLACEHOLDER = "Shared an attachment";
 
+export function normalizeEditableMessageBody(body: string): string {
+  const trimmed = body.trim();
+  if (!trimmed || trimmed === ATTACHMENT_PLACEHOLDER) return "";
+  return body;
+}
+
+export function canEditMessageContent(message: ChatMessage): boolean {
+  return (
+    Boolean(normalizeEditableMessageBody(message.body)) ||
+    (message.attachments?.length ?? 0) > 0
+  );
+}
+
 /** Append a message only if its id is not already in the list (REST + socket race). */
 export function appendUniqueMessage<T extends { id: string }>(
   prev: T[],
@@ -188,7 +201,22 @@ export function applyMessageUpdate<T extends ChatMessage>(
   prev: T[],
   updated: T
 ): T[] {
-  return prev.map((m) => (m.id === updated.id ? { ...m, ...updated } : m));
+  return prev.map((m) => {
+    if (m.id !== updated.id) return m;
+    return {
+      ...m,
+      ...updated,
+      attachments:
+        updated.attachments !== undefined ? updated.attachments : m.attachments,
+    };
+  });
+}
+
+export function removeMessageById<T extends ChatMessage>(
+  prev: T[],
+  messageId: string
+): T[] {
+  return prev.filter((message) => message.id !== messageId);
 }
 
 /** @deprecated Use mergeConfirmedMessage */

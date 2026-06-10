@@ -3,7 +3,10 @@
 import type { MentionMember } from "@/hooks/use-mention-members";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
-import { avatarInitialFromName } from "@/lib/user-display";
+import {
+  avatarColorClassForKey,
+  avatarInitialFromName,
+} from "@/lib/user-display";
 
 export function MentionMemberList({
   members,
@@ -45,7 +48,12 @@ export function MentionMemberList({
             onClick={() => onSelect(member)}
           >
             <Avatar className="size-8 shrink-0">
-              <AvatarFallback className="bg-muted text-xs font-medium">
+              <AvatarFallback
+                className={cn(
+                  "text-xs font-semibold",
+                  avatarColorClassForKey(member.id, member.fullName)
+                )}
+              >
                 {avatarInitialFromName(member.fullName)}
               </AvatarFallback>
             </Avatar>

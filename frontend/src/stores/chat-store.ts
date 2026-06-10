@@ -6,6 +6,7 @@ import {
   patchSidebarConversationUnread,
 } from "@/lib/chat/sidebar-unread";
 import type {
+  ChatMessageDeletePayload,
   ChatMessageEditPayload,
   ChatReactionPayload,
   ChatRealtimePayload,
@@ -55,7 +56,7 @@ export type ChannelDetailsView =
   | "replies"
   | "settings";
 
-export type DmDetailsView = "search" | "replies" | "settings";
+export type DmDetailsView = "members" | "search" | "replies" | "settings";
 
 export type ActiveConversation = {
   kind: "channel" | "dm";
@@ -83,6 +84,7 @@ export type ComposerEdit = {
   messageId: string;
   body: string;
   target: ComposerEditTarget;
+  attachments?: import("@/lib/types/chat").MessageAttachment[];
 };
 
 interface ChatState {
@@ -93,6 +95,7 @@ interface ChatState {
   sidebarListsCache: ChatSidebarLists | null;
   realtimeEvent: ChatRealtimePayload | null;
   messageEditEvent: ChatMessageEditPayload | null;
+  messageDeleteEvent: ChatMessageDeletePayload | null;
   reactionEvent: ChatReactionPayload | null;
   activeThreadMessageId: string | null;
   dmDetailsView: DmDetailsView | null;
@@ -142,6 +145,8 @@ interface ChatState {
   clearRealtimeEvent: () => void;
   ingestMessageEditEvent: (event: ChatMessageEditPayload) => void;
   clearMessageEditEvent: () => void;
+  ingestMessageDeleteEvent: (event: ChatMessageDeletePayload) => void;
+  clearMessageDeleteEvent: () => void;
   ingestReactionEvent: (event: ChatReactionPayload) => void;
   clearReactionEvent: () => void;
   requestComposerQuote: (payload: PendingComposerQuote) => void;
@@ -161,6 +166,7 @@ export const useChatStore = create<ChatState>()(
       sidebarListsCache: null,
       realtimeEvent: null,
       messageEditEvent: null,
+      messageDeleteEvent: null,
       reactionEvent: null,
       activeThreadMessageId: null,
       dmDetailsView: null,
@@ -267,6 +273,8 @@ export const useChatStore = create<ChatState>()(
       clearRealtimeEvent: () => set({ realtimeEvent: null }),
       ingestMessageEditEvent: (event) => set({ messageEditEvent: event }),
       clearMessageEditEvent: () => set({ messageEditEvent: null }),
+      ingestMessageDeleteEvent: (event) => set({ messageDeleteEvent: event }),
+      clearMessageDeleteEvent: () => set({ messageDeleteEvent: null }),
       ingestReactionEvent: (event) => set({ reactionEvent: event }),
       clearReactionEvent: () => set({ reactionEvent: null }),
       requestComposerQuote: (pendingComposerQuote) =>
@@ -282,6 +290,7 @@ export const useChatStore = create<ChatState>()(
           sidebarListsCache: null,
           realtimeEvent: null,
           messageEditEvent: null,
+          messageDeleteEvent: null,
           reactionEvent: null,
           pendingComposerQuote: null,
           composerEdit: null,

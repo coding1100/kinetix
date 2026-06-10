@@ -12,7 +12,8 @@ import { ApiError } from "@/lib/api/client";
 import { useAuthStore } from "@/stores/auth-store";
 import { ROLE_LABELS } from "@/components/workspace/WorkspaceInviteForm";
 import { toast } from "sonner";
-import { avatarInitial } from "@/lib/user-display";
+import { avatarColorClassForKey, avatarInitial } from "@/lib/user-display";
+import { cn } from "@/lib/utils";
 
 export function ProfileView() {
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -106,7 +107,12 @@ export function ProfileView() {
                   {avatarUrl ? (
                     <AvatarImage src={avatarUrl} alt={fullName} />
                   ) : null}
-                  <AvatarFallback className="text-lg">
+                  <AvatarFallback
+                    className={cn(
+                      "text-lg font-semibold",
+                      avatarColorClassForKey(user?.id, fullName || email)
+                    )}
+                  >
                     {avatarInitial(fullName, email)}
                   </AvatarFallback>
                 </Avatar>

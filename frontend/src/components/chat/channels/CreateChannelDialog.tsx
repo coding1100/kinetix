@@ -23,7 +23,10 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { CheckIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { avatarInitialFromName } from "@/lib/user-display";
+import {
+  avatarColorClassForKey,
+  avatarInitialFromName,
+} from "@/lib/user-display";
 import { MessageSquareIcon } from "lucide-react";
 import { upsertChannelInSidebar } from "@/lib/chat/sidebar-channel";
 
@@ -171,7 +174,12 @@ export function CreateChannelDialog() {
                         ) : null}
                       </span>
                       <Avatar className="size-7">
-                        <AvatarFallback className="text-[10px]">
+                        <AvatarFallback
+                          className={cn(
+                            "text-[10px] font-semibold",
+                            avatarColorClassForKey(m.id, m.fullName)
+                          )}
+                        >
                           {avatarInitialFromName(m.fullName)}
                         </AvatarFallback>
                       </Avatar>
@@ -185,7 +193,7 @@ export function CreateChannelDialog() {
             </div>
           ) : null}
 
-          <div className="flex items-center justify-between gap-4 py-1">
+          <div className="flex items-center justify-between gap-4 py-1 hidden">
             <div className="space-y-0.5">
               <p className="text-sm font-medium">Add a List</p>
               <p className="text-xs text-muted-foreground">

@@ -17,11 +17,17 @@ export interface Channel {
   customIconColor?: string;
 }
 
+export interface DmParticipant {
+  id: string;
+  fullName: string;
+}
+
 export interface DirectMessage {
   id: string;
   name: string;
   isGroup: boolean;
   members?: string[];
+  participants?: DmParticipant[];
   avatarUrl?: string;
   lastMessage: string;
   lastAt: string;
@@ -64,6 +70,11 @@ export type SendMessagePayload = {
   attachmentIds?: string[];
   /** Composer preview rows — shown on the optimistic message until REST/socket confirm. */
   optimisticAttachments?: OptimisticAttachment[];
+};
+
+export type UpdateMessagePayload = {
+  body: string;
+  attachmentIds: string[];
 };
 
 export interface ChatSearchHit extends ChatMessage {

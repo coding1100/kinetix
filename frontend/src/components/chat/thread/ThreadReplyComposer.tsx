@@ -17,7 +17,6 @@ import {
   ChevronDownIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatRequestError } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,12 +28,12 @@ import {
 import { EmojiPickerPopover } from "@/components/chat/emoji/EmojiPickerPopover";
 import type { ConversationType, SendMessagePayload } from "@/lib/types/chat";
 import { useComposerAttachments } from "@/hooks/use-composer-attachments";
+import { useComposerImageDropPaste } from "@/hooks/use-composer-image-drop-paste";
 import { ComposerAttachmentChips } from "@/components/chat/attachments/ComposerAttachmentChips";
 import { CreateDocDialog } from "@/components/chat/attachments/CreateDocDialog";
 import { MediaRecorderDialog } from "@/components/chat/attachments/MediaRecorderDialog";
 import { SHOW_EXTENDED_COMPOSER_TOOLS } from "@/lib/chat/composer-flags";
 import { MentionPickerPopover } from "@/components/chat/mentions/MentionPickerPopover";
-import { ComposerEditBanner } from "@/components/chat/composer/ComposerEditBanner";
 import { RichComposerField } from "@/components/chat/composer/RichComposerField";
 import { useRichComposerField } from "@/hooks/use-rich-composer-field";
 import { useMentionChannels } from "@/hooks/use-mention-channels";
@@ -48,13 +47,11 @@ export function ThreadReplyComposer({
   conversationType,
   conversationId,
   onSend,
-  onSaveEdit,
 }: {
   alsoSendChannelLabel?: string;
   conversationType?: ConversationType;
   conversationId?: string;
   onSend?: (payload: SendMessagePayload) => Promise<void>;
-  onSaveEdit?: (messageId: string, body: string) => Promise<void>;
 }) {
   const [alsoSend, setAlsoSend] = useState(true);
   const [sending, setSending] = useState(false);
@@ -79,10 +76,6 @@ export function ThreadReplyComposer({
   } = useRichComposerField();
   const pendingComposerQuote = useChatStore((s) => s.pendingComposerQuote);
   const clearComposerQuote = useChatStore((s) => s.clearComposerQuote);
-  const composerEdit = useChatStore((s) => s.composerEdit);
-  const clearComposerEdit = useChatStore((s) => s.clearComposerEdit);
-  const startComposerEdit = useChatStore((s) => s.startComposerEdit);
-  const isEditing = composerEdit?.target === "thread";
   const [docOpen, setDocOpen] = useState(false);
   const [videoOpen, setVideoOpen] = useState(false);
   const [clipOpen, setClipOpen] = useState(false);
@@ -102,24 +95,18 @@ export function ThreadReplyComposer({
     pickFile,
     onFileInputChange,
     uploadBlob,
+    uploadImageFiles,
     removePending,
     clearPending,
   } = useComposerAttachments(context);
 
-  const canSend = isEditing
-    ? Boolean(bodyText.trim())
-    : Boolean(bodyText.trim() || attachmentIds.length > 0);
+  const imageInputEnabled = Boolean(context) && !uploading;
+  const { dragActive, rootProps } = useComposerImageDropPaste({
+    enabled: imageInputEnabled,
+    onImages: uploadImageFiles,
+  });
 
-  const handleCancelEdit = () => {
-    clearMentions();
-    clearComposerEdit();
-  };
-
-  useEffect(() => {
-    if (!composerEdit || composerEdit.target !== "thread") return;
-    restoreMentions(composerEdit.body);
-    editorRef.current?.focus();
-  }, [composerEdit, restoreMentions, editorRef]);
+  const canSend = Boolean(bodyText.trim() || attachmentIds.length > 0);
 
   useEffect(() => {
     if (!pendingComposerQuote || pendingComposerQuote.target !== "thread") {
@@ -136,21 +123,6 @@ export function ThreadReplyComposer({
   const handleSend = async () => {
     if (!canSend || sending || uploading) return;
     const messageBody = getBodyText().trim();
-
-    if (isEditing && composerEdit && onSaveEdit) {
-      const { messageId } = composerEdit;
-      clearMentions();
-      clearComposerEdit();
-      try {
-        await onSaveEdit(messageId, messageBody);
-      } catch (err) {
-        startComposerEdit({ messageId, body: messageBody, target: "thread" });
-        restoreMentions(messageBody);
-        const detail = formatRequestError(err);
-        toast.error(`Failed to save message — ${detail}`, { duration: 8000 });
-      }
-      return;
-    }
 
     setSending(true);
     const ids = [...attachmentIds];
@@ -186,11 +158,6 @@ export function ThreadReplyComposer({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Escape" && isEditing) {
-      e.preventDefault();
-      handleCancelEdit();
-      return;
-    }
     handleInputKeyDown(e, () => void handleSend());
   };
 
@@ -253,20 +220,31 @@ export function ThreadReplyComposer({
         onRecorded={(blob, name) => handleRecorded(blob, name, "clip")}
       />
 
-      <div className="rounded-md border border-border bg-card">
-        {isEditing ? <ComposerEditBanner onCancel={handleCancelEdit} /> : null}
-        {!isEditing ? (
+      <div
+        className={cn(
+          "relative rounded-md border border-border bg-card transition-shadow",
+          dragActive && "ring-2 ring-primary/40"
+        )}
+        {...rootProps}
+      >
+        {dragActive ? (
+          <div
+            className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-primary/5 text-sm font-medium text-primary"
+            aria-hidden
+          >
+            Drop image to attach
+          </div>
+        ) : null}
         <ComposerAttachmentChips
           items={pending}
           uploadingItem={uploadingItem}
           onRemove={removePending}
         />
-        ) : null}
         <RichComposerField
           segments={segments}
           draftPlain={draftPlain}
           editorRef={editorRef}
-          placeholder={isEditing ? "Edit message…" : "Reply..."}
+          placeholder="Reply..."
           compact
           mentionAutocompleteOpen={mentionAutocompleteOpen}
           mentionQuery={mentionQuery}
@@ -276,9 +254,10 @@ export function ThreadReplyComposer({
           onDismissMentionAutocomplete={dismissMentionAutocomplete}
           onKeyDown={handleKeyDown}
           onInput={syncFromEditor}
+          onPasteFiles={imageInputEnabled ? uploadImageFiles : undefined}
         />
 
-        {alsoSendChannelLabel && !isEditing && (
+        {alsoSendChannelLabel && (
           <label className="flex cursor-pointer items-center gap-2 px-3 pb-1 text-xs text-muted-foreground">
             <input
               type="checkbox"
@@ -421,7 +400,7 @@ export function ThreadReplyComposer({
               )}
               disabled={!canSend || uploading}
               loading={sending}
-              aria-label={isEditing ? "Save edit" : "Send reply"}
+              aria-label="Send reply"
               onClick={() => void handleSend()}
             >
               <SendIcon className="size-4" strokeWidth={1.5} />

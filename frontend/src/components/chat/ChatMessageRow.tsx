@@ -1,6 +1,11 @@
 "use client";
 
-import type { ChatMessage, ConversationType } from "@/lib/types/chat";
+import { useState } from "react";
+import type {
+  ChatMessage,
+  ConversationType,
+  UpdateMessagePayload,
+} from "@/lib/types/chat";
 import { formatChatMessageTime } from "@/lib/chat/dates";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
@@ -23,28 +28,24 @@ import {
   LinkIcon,
   BellIcon,
   PencilIcon,
+  Trash2Icon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { formatRequestError } from "@/lib/api/client";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { resolveMessageAuthorName } from "@/lib/chat/messages";
-import { avatarInitialFromName } from "@/lib/user-display";
+import {
+  avatarColorClassForKey,
+  avatarInitialFromName,
+} from "@/lib/user-display";
 import { MessageAttachmentList } from "@/components/chat/attachments/MessageAttachmentList";
 import { MessageBodyWithMentions } from "@/components/chat/thread/MessageBodyWithMentions";
+import {
+  canEditMessageContent,
+  normalizeEditableMessageBody,
+} from "@/lib/chat/messages";
 import { MessageAuthorButton } from "@/components/chat/MessageAuthorButton";
-
-const AVATAR_BY_AUTHOR: Record<string, string> = {
-  You: "bg-primary text-primary-foreground",
-  "Alex Rivera": "bg-sky-600 text-white",
-  "Jordan Lee": "bg-violet-600 text-white",
-  "Sam Chen": "bg-emerald-600 text-white",
-  "Morgan Blake": "bg-amber-700 text-white",
-};
-
-function avatarClass(authorName: string) {
-  return (
-    AVATAR_BY_AUTHOR[authorName] ??
-    "bg-muted text-xs font-medium text-muted-foreground"
-  );
-}
+import { InlineMessageEdit } from "@/components/chat/InlineMessageEdit";
 
 function threadRepliesLabel(msg: ChatMessage): string | null {
   if (!msg.threadCount || msg.threadCount <= 0) return null;
@@ -59,6 +60,7 @@ export function ChatMessageRow({
   conversationId,
   onToggleReaction,
   onEditMessage,
+  onDeleteMessage,
   onMarkUnread,
   highlighted = false,
 }: {
@@ -67,18 +69,26 @@ export function ChatMessageRow({
   conversationType?: ConversationType;
   conversationId?: string;
   onToggleReaction: (messageId: string, emoji: string) => void | Promise<void>;
-  onEditMessage?: (messageId: string, body: string) => Promise<void>;
+  onEditMessage?: (
+    messageId: string,
+    payload: UpdateMessagePayload
+  ) => Promise<void>;
+  onDeleteMessage?: (messageId: string) => Promise<void>;
   onMarkUnread?: () => void | Promise<void>;
   highlighted?: boolean;
 }) {
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const currentUserId = useAuthStore((s) => s.user?.id);
   const currentUserFullName = useAuthStore((s) => s.user?.fullName);
   const activeThreadMessageId = useChatStore((s) => s.activeThreadMessageId);
   const setActiveThread = useChatStore((s) => s.setActiveThread);
   const startComposerEdit = useChatStore((s) => s.startComposerEdit);
+  const clearComposerEdit = useChatStore((s) => s.clearComposerEdit);
   const editingMessageId = useChatStore((s) =>
     s.composerEdit?.target === "main" ? s.composerEdit.messageId : null
   );
+  const isEditing = editingMessageId === message.id;
 
   const repliesLabel = threadRepliesLabel(message);
   const threadOpen = activeThreadMessageId === message.id;
@@ -89,15 +99,24 @@ export function ChatMessageRow({
     currentUserFullName,
   });
   const canEdit = Boolean(
-    currentUserId && message.authorId === currentUserId && onEditMessage
+    currentUserId &&
+      message.authorId === currentUserId &&
+      onEditMessage &&
+      canEditMessageContent(message)
+  );
+  const canDelete = Boolean(
+    currentUserId &&
+      message.authorId === currentUserId &&
+      onDeleteMessage
   );
 
   const handleStartEdit = () => {
-    if (!message.body.trim()) return;
+    if (!canEditMessageContent(message)) return;
     startComposerEdit({
       messageId: message.id,
-      body: message.body,
+      body: normalizeEditableMessageBody(message.body),
       target: "main",
+      attachments: message.attachments,
     });
   };
 
@@ -113,6 +132,7 @@ export function ChatMessageRow({
         editingMessageId === message.id && "bg-primary/10 ring-1 ring-primary/30"
       )}
     >
+      {!isEditing ? (
       <div className="pointer-events-none absolute right-2 top-1 z-10 opacity-0 transition-opacity group-hover:opacity-100">
         <div className="pointer-events-auto flex items-center gap-1 rounded-md border border-border bg-card px-1.5 py-0.5 shadow-sm">
           <Button
@@ -165,6 +185,15 @@ export function ChatMessageRow({
                   Edit message
                 </DropdownMenuItem>
               )}
+              {canDelete && (
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  <Trash2Icon className="size-4" />
+                  Delete message
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
                 onClick={() => toast.success("Link copied")}
               >
@@ -185,6 +214,7 @@ export function ChatMessageRow({
           </DropdownMenu>
         </div>
       </div>
+      ) : null}
 
       <div className="flex items-start gap-3">
         {showHeader ? (
@@ -195,7 +225,10 @@ export function ChatMessageRow({
           >
             <Avatar className="size-6">
               <AvatarFallback
-                className={cn("text-xs font-semibold", avatarClass(displayName))}
+                className={cn(
+                  "text-xs font-semibold",
+                  avatarColorClassForKey(message.authorId, displayName)
+                )}
               >
                 {avatarInitialFromName(displayName)}
               </AvatarFallback>
@@ -220,18 +253,34 @@ export function ChatMessageRow({
               </time>
             </div>
           )}
-          {message.body ? (
-            <div
+          {isEditing && onEditMessage ? (
+            <InlineMessageEdit
+              message={message}
+              conversationType={conversationType}
+              conversationId={conversationId}
               className={showHeader ? "mt-0.5" : "mt-0"}
-              data-quote-scope="main"
-              data-message-author-id={message.authorId}
-              data-message-author-name={displayName}
-            >
-              <MessageBodyWithMentions body={message.body} />
-            </div>
-          ) : null}
-          <MessageAttachmentList attachments={message.attachments ?? []} />
-          {reactions.length > 0 && (
+              onSave={async (payload) => {
+                await onEditMessage(message.id, payload);
+                clearComposerEdit();
+              }}
+              onCancel={clearComposerEdit}
+            />
+          ) : (
+            <>
+              {message.body ? (
+                <div
+                  className={showHeader ? "mt-0.5" : "mt-0"}
+                  data-quote-scope="main"
+                  data-message-author-id={message.authorId}
+                  data-message-author-name={displayName}
+                >
+                  <MessageBodyWithMentions body={message.body} />
+                </div>
+              ) : null}
+              <MessageAttachmentList attachments={message.attachments ?? []} />
+            </>
+          )}
+          {!isEditing && reactions.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {reactions.map((r) => (
                 <Badge
@@ -246,7 +295,7 @@ export function ChatMessageRow({
               ))}
             </div>
           )}
-          {repliesLabel && (
+          {!isEditing && repliesLabel && (
             <Button
               variant="link"
               className={cn(
@@ -260,6 +309,31 @@ export function ChatMessageRow({
           )}
         </div>
       </div>
+      {canDelete ? (
+        <ConfirmDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title="Delete message?"
+          description="This message will be permanently deleted. This cannot be undone."
+          confirmLabel="Delete message"
+          loading={deleting}
+          onConfirm={async () => {
+            if (!onDeleteMessage) return;
+            setDeleting(true);
+            try {
+              await onDeleteMessage(message.id);
+              setDeleteOpen(false);
+            } catch (err) {
+              toast.error(
+                `Failed to delete message — ${formatRequestError(err)}`,
+                { duration: 8000 }
+              );
+            } finally {
+              setDeleting(false);
+            }
+          }}
+        />
+      ) : null}
     </article>
   );
 }

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -718,6 +718,22 @@ async def list_notifications(
     }
 
 
+async def mark_all_notifications_read(
+    session: AsyncSession, workspace_id: str, user_id: str
+) -> dict:
+    result = await session.execute(
+        update(InboxItem)
+        .where(
+            InboxItem.workspace_id == workspace_id,
+            InboxItem.user_id == user_id,
+            InboxItem.unread.is_(True),
+        )
+        .values(unread=False)
+    )
+    await session.commit()
+    return {"updated": int(result.rowcount or 0)}
+
+
 async def get_unread_summary(
     session: AsyncSession, workspace_id: str, user_id: str
 ) -> dict:
@@ -728,7 +744,6 @@ async def get_unread_summary(
             InboxItem.workspace_id == workspace_id,
             InboxItem.user_id == user_id,
             InboxItem.unread.is_(True),
-            InboxItem.bucket == InboxBucket.ALL,
         )
     )
     return {"home": int(count or 0)}

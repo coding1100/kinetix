@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   ATTACHMENT_PLACEHOLDER,
+  canEditMessageContent,
   createOptimisticMessage,
   mergeConfirmedMessage,
+  normalizeEditableMessageBody,
   upsertChatMessage,
 } from "./messages";
 import type { ChatMessage } from "@/lib/types/chat";
@@ -26,6 +28,28 @@ function confirmed(
     attachments,
   };
 }
+
+describe("message edit helpers", () => {
+  it("treats attachment placeholder as empty editable body", () => {
+    expect(normalizeEditableMessageBody(ATTACHMENT_PLACEHOLDER)).toBe("");
+    expect(normalizeEditableMessageBody("  ")).toBe("");
+    expect(normalizeEditableMessageBody("hello")).toBe("hello");
+  });
+
+  it("allows editing attachment-only messages", () => {
+    const imageOnly = confirmed("msg-1", "", [
+      {
+        id: "att-1",
+        fileName: "photo.png",
+        kind: "file",
+        mimeType: "image/png",
+        sizeBytes: 100,
+      },
+    ]);
+    expect(canEditMessageContent(imageOnly)).toBe(true);
+    expect(canEditMessageContent(confirmed("msg-2", ""))).toBe(false);
+  });
+});
 
 describe("upsertChatMessage", () => {
   it("replaces pending row when attachment body differs from server", () => {

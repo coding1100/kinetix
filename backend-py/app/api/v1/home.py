@@ -152,6 +152,18 @@ async def get_notifications(
     )
 
 
+@router.post("/home/notifications/read-all")
+async def post_notifications_read_all(
+    workspace_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.mark_all_notifications_read(
+        session, workspace_id, user.id
+    )
+
+
 @router.get("/home/unread-summary")
 async def get_unread_summary(
     workspace_id: str,

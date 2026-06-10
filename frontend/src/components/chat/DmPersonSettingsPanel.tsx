@@ -25,24 +25,14 @@ import { useChatStore } from "@/stores/chat-store";
 import { usePersonProfileMember } from "@/hooks/use-person-profile-member";
 import { useUserPresence } from "@/stores/presence-store";
 import type { PresenceStatus } from "@/stores/profile-store";
-import { avatarInitialFromName } from "@/lib/user-display";
+import {
+  avatarColorClassForKey,
+  avatarInitialFromName,
+} from "@/lib/user-display";
 import { patchSidebarDm, removeDmFromSidebar } from "@/lib/chat/sidebar-dm";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { PageLoader } from "@/components/ui/page-loader";
-
-const AVATAR_COLORS = [
-  "bg-[#6b7c3f] text-white",
-  "bg-violet-600 text-white",
-  "bg-sky-600 text-white",
-  "bg-emerald-600 text-white",
-  "bg-amber-700 text-white",
-];
-
-function avatarColorForName(name: string) {
-  const hash = [...name].reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
-}
 
 function formatLocalTime() {
   return new Date().toLocaleTimeString(undefined, {
@@ -223,7 +213,7 @@ function OneToOneSettings({
               <AvatarFallback
                 className={cn(
                   "text-2xl font-semibold",
-                  avatarColorForName(displayName)
+                  avatarColorClassForKey(otherUserId, displayName)
                 )}
               >
                 {avatarInitialFromName(displayName)}
@@ -360,7 +350,7 @@ function GroupSettings({
     (s) => s.sidebarListsCache?.dms.find((d) => d.id === dmId)?.starred
   );
   const starred = sidebarStarred ?? dm.starred ?? false;
-  const memberCount = dm.members?.length ?? 0;
+  const memberCount = dm.participants?.length ?? dm.members?.length ?? 0;
 
   const handleFavorite = () => {
     const next = !starred;
@@ -392,7 +382,13 @@ function GroupSettings({
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-4 px-4 pb-4">
           <div className="text-center">
-            <h2 className="text-lg font-semibold">{dm.name}</h2>
+            <h2 className="text-lg font-semibold">
+              {dm.participants?.length
+                ? dm.participants
+                    .map((p) => p.fullName)
+                    .join(", ")
+                : dm.name}
+            </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {memberCount} member{memberCount === 1 ? "" : "s"}
             </p>

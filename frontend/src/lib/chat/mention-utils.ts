@@ -4,17 +4,23 @@ import type {
   MentionSelection,
 } from "@/lib/chat/mention-types";
 
-/** Up to two words after @ (first + last name). */
-export const MENTION_BODY_RE = /(@[\w]+(?:\s+[\w]+)?)/g;
+/** Separates first/last name inside a picker mention (not a normal word space). */
+export const MENTION_NAME_SEP = "\u00a0";
 
-/** Channel mention token e.g. #general */
-export const CHANNEL_BODY_RE = /(#[\w-]+)/g;
-
+/**
+ * @name or @first\u00a0last from the mention picker; channel #name.
+ * Stops at normal whitespace so "@Husnain hey" only highlights @Husnain.
+ */
 export const MESSAGE_TOKEN_RE =
-  /(@[\w]+(?:\s+[\w]+)?|#[\w-]+)/g;
+  /(@[\w]+(?:\u00a0[\w]+)?|@[\w]+&nbsp;[\w]+|#[\w-]+)(?=\s|$|[.,!?;:])/g;
 
 export function formatPersonMention(label: string) {
-  return `@${label.trim()} `;
+  const normalized = label.trim().replace(/\s+/g, MENTION_NAME_SEP);
+  return `@${normalized} `;
+}
+
+export function displayMentionToken(token: string) {
+  return token.replace(/\u00a0/g, " ").replace(/&nbsp;/gi, " ");
 }
 
 export function formatChannelMention(label: string) {

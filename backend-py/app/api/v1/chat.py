@@ -10,6 +10,7 @@ from app.schemas.chat import (
     SendMessageBody,
     ToggleReactionBody,
     UpdateChannelBody,
+    UpdateMessageBody,
     UpdateChannelMemberBody,
 )
 from app.services import attachment_service, chat_service
@@ -483,7 +484,7 @@ async def post_dm_thread(
 
 @router.patch("/chat/messages/{message_id}")
 async def patch_message(
-    body: SendMessageBody,
+    body: UpdateMessageBody,
     workspace_id: str,
     message_id: str,
     session: DbSession,
@@ -491,7 +492,25 @@ async def patch_message(
     _member: WorkspaceMemberDep,
 ):
     return await chat_service.update_message(
-        session, workspace_id, user.id, message_id, body.body
+        session,
+        workspace_id,
+        user.id,
+        message_id,
+        body.body,
+        body.attachment_ids,
+    )
+
+
+@router.delete("/chat/messages/{message_id}")
+async def delete_message(
+    workspace_id: str,
+    message_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await chat_service.delete_message(
+        session, workspace_id, user.id, message_id
     )
 
 

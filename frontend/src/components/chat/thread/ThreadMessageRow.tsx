@@ -1,6 +1,7 @@
 "use client";
 
-import type { ChatMessage } from "@/lib/types/chat";
+import { useState } from "react";
+import type { ChatMessage, UpdateMessagePayload } from "@/lib/types/chat";
 import { formatChatMessageTime } from "@/lib/chat/dates";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
@@ -20,38 +21,46 @@ import {
   SmilePlusIcon,
   MoreHorizontalIcon,
   PencilIcon,
+  Trash2Icon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { resolveMessageAuthorName } from "@/lib/chat/messages";
-import { avatarInitialFromName } from "@/lib/user-display";
+import { formatRequestError } from "@/lib/api/client";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import {
+  canEditMessageContent,
+  normalizeEditableMessageBody,
+  resolveMessageAuthorName,
+} from "@/lib/chat/messages";
+import {
+  avatarColorClassForKey,
+  avatarInitialFromName,
+} from "@/lib/user-display";
 import { MessageAuthorButton } from "@/components/chat/MessageAuthorButton";
-
-const AVATAR_BY_AUTHOR: Record<string, string> = {
-  "Jordan Lee": "bg-violet-600 text-white",
-  "Alex Rivera": "bg-sky-600 text-white",
-  "Sam Chen": "bg-emerald-600 text-white",
-  "Morgan Blake": "bg-amber-700 text-white",
-  You: "bg-primary text-primary-foreground",
-};
-
-function avatarClass(authorName: string) {
-  return (
-    AVATAR_BY_AUTHOR[authorName] ??
-    "bg-muted text-sm font-medium text-muted-foreground"
-  );
-}
+import { InlineMessageEdit } from "@/components/chat/InlineMessageEdit";
+import type { ConversationType } from "@/lib/types/chat";
 
 export function ThreadMessageRow({
   message,
   showHeader = true,
+  conversationType,
+  conversationId,
   onToggleReaction,
   onEditMessage,
+  onDeleteMessage,
 }: {
   message: ChatMessage;
   showHeader?: boolean;
+  conversationType?: ConversationType;
+  conversationId?: string;
   onToggleReaction: (messageId: string, emoji: string) => void | Promise<void>;
-  onEditMessage?: (messageId: string, body: string) => Promise<void>;
+  onEditMessage?: (
+    messageId: string,
+    payload: UpdateMessagePayload
+  ) => Promise<void>;
+  onDeleteMessage?: (messageId: string) => Promise<void>;
 }) {
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const currentUserId = useAuthStore((s) => s.user?.id);
   const currentUserFullName = useAuthStore((s) => s.user?.fullName);
   const displayName = resolveMessageAuthorName(message, {
@@ -59,21 +68,32 @@ export function ThreadMessageRow({
     currentUserFullName,
   });
   const startComposerEdit = useChatStore((s) => s.startComposerEdit);
+  const clearComposerEdit = useChatStore((s) => s.clearComposerEdit);
   const editingMessageId = useChatStore((s) =>
     s.composerEdit?.target === "thread" ? s.composerEdit.messageId : null
   );
+  const isEditing = editingMessageId === message.id;
   const reactions = message.reactions ?? [];
   const created = new Date(message.createdAt);
   const canEdit = Boolean(
-    currentUserId && message.authorId === currentUserId && onEditMessage
+    currentUserId &&
+      message.authorId === currentUserId &&
+      onEditMessage &&
+      canEditMessageContent(message)
+  );
+  const canDelete = Boolean(
+    currentUserId &&
+      message.authorId === currentUserId &&
+      onDeleteMessage
   );
 
   const handleStartEdit = () => {
-    if (!message.body.trim()) return;
+    if (!canEditMessageContent(message)) return;
     startComposerEdit({
       messageId: message.id,
-      body: message.body,
+      body: normalizeEditableMessageBody(message.body),
       target: "thread",
+      attachments: message.attachments,
     });
   };
 
@@ -85,7 +105,7 @@ export function ThreadMessageRow({
         editingMessageId === message.id && "bg-primary/10 ring-1 ring-primary/30"
       )}
     >
-      {canEdit && (
+      {(canEdit || canDelete) && !isEditing && (
         <div className="pointer-events-none absolute right-1 top-1 z-10 opacity-0 transition-opacity group-hover:opacity-100">
           <div className="pointer-events-auto flex items-center gap-1 rounded-md border border-border bg-card px-1 py-0.5 shadow-sm">
             <EmojiPickerPopover
@@ -115,11 +135,22 @@ export function ThreadMessageRow({
                   </Button>
                 }
               />
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuItem onClick={handleStartEdit}>
-                  <PencilIcon className="size-4" />
-                  Edit message
-                </DropdownMenuItem>
+              <DropdownMenuContent align="end" className="w-44">
+                {canEdit && (
+                  <DropdownMenuItem onClick={handleStartEdit}>
+                    <PencilIcon className="size-4" />
+                    Edit message
+                  </DropdownMenuItem>
+                )}
+                {canDelete && (
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => setDeleteOpen(true)}
+                  >
+                    <Trash2Icon className="size-4" />
+                    Delete message
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -137,7 +168,7 @@ export function ThreadMessageRow({
               <AvatarFallback
                 className={cn(
                   "text-xs font-semibold",
-                  avatarClass(displayName)
+                  avatarColorClassForKey(message.authorId, displayName)
                 )}
               >
                 {avatarInitialFromName(displayName)}
@@ -164,16 +195,31 @@ export function ThreadMessageRow({
             </div>
           )}
           <div className={showHeader ? "mt-1" : "mt-0"}>
-            {message.body ? (
-              <div
-                data-quote-scope="thread"
-                data-message-author-id={message.authorId}
-                data-message-author-name={displayName}
-              >
-                <MessageBodyWithMentions body={message.body} />
-              </div>
-            ) : null}
-            <MessageAttachmentList attachments={message.attachments ?? []} />
+            {isEditing && onEditMessage ? (
+              <InlineMessageEdit
+                message={message}
+                conversationType={conversationType}
+                conversationId={conversationId}
+                onSave={async (payload) => {
+                  await onEditMessage(message.id, payload);
+                  clearComposerEdit();
+                }}
+                onCancel={clearComposerEdit}
+              />
+            ) : (
+              <>
+                {message.body ? (
+                  <div
+                    data-quote-scope="thread"
+                    data-message-author-id={message.authorId}
+                    data-message-author-name={displayName}
+                  >
+                    <MessageBodyWithMentions body={message.body} />
+                  </div>
+                ) : null}
+                <MessageAttachmentList attachments={message.attachments ?? []} />
+              </>
+            )}
           </div>
           {reactions.length > 0 && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -230,6 +276,31 @@ export function ThreadMessageRow({
           )}
         </div>
       </div>
+      {canDelete ? (
+        <ConfirmDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title="Delete message?"
+          description="This message will be permanently deleted. This cannot be undone."
+          confirmLabel="Delete message"
+          loading={deleting}
+          onConfirm={async () => {
+            if (!onDeleteMessage) return;
+            setDeleting(true);
+            try {
+              await onDeleteMessage(message.id);
+              setDeleteOpen(false);
+            } catch (err) {
+              toast.error(
+                `Failed to delete message — ${formatRequestError(err)}`,
+                { duration: 8000 }
+              );
+            } finally {
+              setDeleting(false);
+            }
+          }}
+        />
+      ) : null}
     </article>
   );
 }

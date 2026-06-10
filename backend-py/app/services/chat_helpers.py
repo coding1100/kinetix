@@ -63,14 +63,17 @@ def map_message_broadcast(
 
 def dm_display_name(conversation: DirectConversation, current_user_id: str) -> str:
     if conversation.is_group:
-        if conversation.name:
-            return conversation.name
+        custom = (conversation.name or "").strip()
+        if custom and custom.lower() != "group chat":
+            return custom
         others = [
-            p.user.full_name.split(" ")[0]
+            p.user.full_name
             for p in conversation.participants
             if p.user_id != current_user_id
         ]
-        return ", ".join(others)
+        if others:
+            return ", ".join(others)
+        return "Group chat"
     for p in conversation.participants:
         if p.user_id != current_user_id:
             return p.user.full_name

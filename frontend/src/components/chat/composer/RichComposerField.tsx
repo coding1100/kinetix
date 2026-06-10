@@ -30,6 +30,8 @@ export function RichComposerField({
   onDismissMentionAutocomplete,
   onKeyDown,
   onInput,
+  onPasteFiles,
+  leadingContent,
 }: {
   segments: ComposerSegment[];
   draftPlain: string;
@@ -44,6 +46,8 @@ export function RichComposerField({
   onDismissMentionAutocomplete: () => void;
   onKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
   onInput: () => void;
+  onPasteFiles?: (files: File[]) => void;
+  leadingContent?: React.ReactNode;
 }) {
   const fieldRef = useRef<HTMLDivElement>(null);
   const {
@@ -88,6 +92,21 @@ export function RichComposerField({
   };
 
   const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    if (onPasteFiles) {
+      const items = Array.from(e.clipboardData.items);
+      const imageFiles: File[] = [];
+      for (const item of items) {
+        if (item.kind !== "file" || !item.type.startsWith("image/")) continue;
+        const file = item.getAsFile();
+        if (file) imageFiles.push(file);
+      }
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        onPasteFiles(imageFiles);
+        return;
+      }
+    }
+
     const text = e.clipboardData.getData("text/plain");
     if (!text) return;
     e.preventDefault();
@@ -134,6 +153,7 @@ export function RichComposerField({
             compact ? "min-h-10 py-2" : "max-h-44 overflow-y-auto"
           )}
         >
+          {leadingContent}
           {segments.map((seg, index) =>
             seg.type === "mention" ? (
               <MentionChip

@@ -24,6 +24,15 @@ from app.schemas.chat import (
     UpdateChannelMemberBody,
 )
 from app.services.attachment_service import link_attachments_to_message
+from app.services.notification_service import (
+    create_channel_access_notifications,
+    create_channel_access_removed_notifications,
+    create_channel_deleted_notifications,
+    create_channel_follow_notifications,
+    create_mention_notifications,
+    emit_channel_access_notifications,
+    emit_home_notifications,
+)
 from app.services.chat_helpers import (
     dm_display_name,
     map_message,
@@ -31,7 +40,11 @@ from app.services.chat_helpers import (
     map_search_message,
 )
 from app.socket.emit import (
+    broadcast_channel_joined,
+    broadcast_channel_member_updated,
+    broadcast_channel_removed,
     broadcast_chat_message,
+    broadcast_chat_message_delete,
     broadcast_chat_message_edit,
     broadcast_chat_reaction,
 )
@@ -233,6 +246,85 @@ def _channel_payload(
     }
 
 
+async def _emit_channel_member_update(
+    session: AsyncSession,
+    workspace_id: str,
+    channel_id: str,
+    user_id: str,
+    *,
+    removed: bool = False,
+) -> None:
+    if removed:
+        asyncio.create_task(
+            broadcast_channel_member_updated(
+                workspace_id=workspace_id,
+                channel_id=channel_id,
+                member={"id": user_id},
+                removed=True,
+            )
+        )
+        return
+
+    row = await session.scalar(
+        select(ChatChannelMember)
+        .where(
+            ChatChannelMember.channel_id == channel_id,
+            ChatChannelMember.user_id == user_id,
+        )
+        .options(selectinload(ChatChannelMember.user))
+    )
+    if not row:
+        return
+    roles = await _workspace_role_map(session, workspace_id, [user_id])
+    member_payload = _channel_member_json(row.user, row, roles.get(user_id))
+    asyncio.create_task(
+        broadcast_channel_member_updated(
+            workspace_id=workspace_id,
+            channel_id=channel_id,
+            member=member_payload,
+        )
+    )
+
+
+async def _emit_channel_joined(
+    session: AsyncSession,
+    workspace_id: str,
+    channel: ChatChannel,
+    user_ids: list[str],
+) -> None:
+    unique_ids = list(dict.fromkeys(user_ids))
+    if not unique_ids:
+        return
+
+    member_count = await session.scalar(
+        select(func.count())
+        .select_from(ChatChannelMember)
+        .where(ChatChannelMember.channel_id == channel.id)
+    )
+    last = await _latest_channel_message(session, channel.id)
+    last_at = last.created_at if last else channel.created_at
+    last_message = last.body if last else ""
+    template_member = ChatChannelMember(
+        channel_id=channel.id,
+        user_id=unique_ids[0],
+        starred=False,
+        is_following=False,
+    )
+    channel_payload = _channel_payload(
+        channel,
+        template_member,
+        int(member_count or 0),
+        last_message,
+        last_at,
+        0,
+    )
+    await broadcast_channel_joined(
+        workspace_id=workspace_id,
+        user_ids=unique_ids,
+        channel=channel_payload,
+    )
+
+
 async def _latest_channel_message(
     session: AsyncSession, channel_id: str
 ) -> ChatMessage | None:
@@ -400,6 +492,26 @@ async def delete_channel(
         )
     ).all()
 
+    member_ids = list(
+        (
+            await session.scalars(
+                select(ChatChannelMember.user_id).where(
+                    ChatChannelMember.channel_id == channel_id
+                )
+            )
+        ).all()
+    )
+
+    delete_notifications: list = []
+    if member_ids:
+        delete_notifications = await create_channel_deleted_notifications(
+            session,
+            workspace_id=workspace_id,
+            member_ids=member_ids,
+            actor_user_id=user_id,
+            channel_name=channel.name,
+        )
+
     # Bulk delete so Postgres ON DELETE CASCADE runs; ORM session.delete()
     # tries to null FK columns on ChatChannelMember PK and raises AssertionError.
     await session.execute(
@@ -415,6 +527,18 @@ async def delete_channel(
             await asyncio.to_thread(delete_objects, list(attachment_keys))
         except Exception:
             pass
+
+    if delete_notifications:
+        await emit_home_notifications(session, workspace_id, delete_notifications)
+
+    if member_ids:
+        asyncio.create_task(
+            broadcast_channel_removed(
+                workspace_id=workspace_id,
+                user_ids=member_ids,
+                channel_id=channel_id,
+            )
+        )
 
     return {"ok": True}
 
@@ -476,8 +600,27 @@ async def create_channel(
                 is_following=uid == user_id,
             )
         )
+
+    joined_notify = [uid for uid in member_ids if uid != user_id]
+    access_notifications: list = []
+    if body.isPrivate and joined_notify:
+        access_notifications = await create_channel_access_notifications(
+            session,
+            workspace_id=workspace_id,
+            recipient_ids=joined_notify,
+            actor_user_id=user_id,
+            channel=channel,
+        )
+
     await session.commit()
     await session.refresh(channel)
+
+    if joined_notify:
+        await _emit_channel_joined(session, workspace_id, channel, joined_notify)
+    if access_notifications:
+        await emit_channel_access_notifications(
+            session, workspace_id, access_notifications
+        )
 
     member_count = len(member_ids)
     return _channel_payload(
@@ -574,6 +717,13 @@ async def send_channel_message(
         await link_attachments_to_message(
             session, workspace_id, user_id, message.id, attachment_ids
         )
+    mention_notifications = await create_mention_notifications(
+        session,
+        workspace_id=workspace_id,
+        author_user_id=user_id,
+        body=message.body,
+        channel=member.channel,
+    )
     await session.commit()
 
     loaded = await session.scalar(
@@ -582,6 +732,8 @@ async def send_channel_message(
         .options(*_MESSAGE_SEND_LOAD)
     )
     payload = map_message(loaded, user_id, thread_count=0)
+    if mention_notifications:
+        await emit_home_notifications(session, workspace_id, mention_notifications)
     asyncio.create_task(
         broadcast_chat_message(
             workspace_id=workspace_id,
@@ -674,6 +826,16 @@ async def send_thread_reply(
         await link_attachments_to_message(
             session, workspace_id, user_id, message.id, attachment_ids
         )
+    mention_channel = None
+    if channel_id:
+        mention_channel = await session.get(ChatChannel, channel_id)
+    mention_notifications = await create_mention_notifications(
+        session,
+        workspace_id=workspace_id,
+        author_user_id=user_id,
+        body=message.body,
+        channel=mention_channel,
+    )
     await session.commit()
 
     loaded = await session.scalar(
@@ -682,6 +844,8 @@ async def send_thread_reply(
         .options(*_MESSAGE_SEND_LOAD)
     )
     payload = map_message(loaded, user_id, thread_count=0)
+    if mention_notifications:
+        await emit_home_notifications(session, workspace_id, mention_notifications)
     conv_id = channel_id or conversation_id
     kind = "channel" if channel_id else "dm"
     if conv_id:
@@ -978,6 +1142,13 @@ async def send_dm_message(
         await link_attachments_to_message(
             session, workspace_id, user_id, message.id, attachment_ids
         )
+    mention_notifications = await create_mention_notifications(
+        session,
+        workspace_id=workspace_id,
+        author_user_id=user_id,
+        body=message.body,
+        channel=None,
+    )
     await session.commit()
 
     loaded = await session.scalar(
@@ -986,6 +1157,8 @@ async def send_dm_message(
         .options(*_MESSAGE_SEND_LOAD)
     )
     payload = map_message(loaded, user_id, thread_count=0)
+    if mention_notifications:
+        await emit_home_notifications(session, workspace_id, mention_notifications)
     asyncio.create_task(
         broadcast_chat_message(
             workspace_id=workspace_id,
@@ -1075,16 +1248,51 @@ async def update_message(
     user_id: str,
     message_id: str,
     body: str,
+    attachment_ids: list[str] | None = None,
 ) -> dict:
+    from app.db.models.chat import MessageAttachment
+
     message = await _assert_message_access(
         session, workspace_id, user_id, message_id
     )
     if message.author_id != user_id:
         raise AppError(403, "FORBIDDEN", "Only the author can edit this message")
 
+    if attachment_ids is not None:
+        unique_keep = list(dict.fromkeys(attachment_ids))
+        current_rows = (
+            await session.scalars(
+                select(MessageAttachment).where(
+                    MessageAttachment.message_id == message_id,
+                    MessageAttachment.workspace_id == workspace_id,
+                )
+            )
+        ).all()
+        current_ids = {row.id for row in current_rows}
+        keep_set = set(unique_keep)
+
+        new_ids = [aid for aid in unique_keep if aid not in current_ids]
+        if new_ids:
+            await link_attachments_to_message(
+                session, workspace_id, user_id, message_id, new_ids
+            )
+
+        for row in current_rows:
+            if row.id not in keep_set:
+                row.message_id = None
+
+        await session.flush()
+        session.expire(message, ["attachments"])
+
     trimmed = body.strip()
     if not trimmed:
-        raise AppError(400, "VALIDATION_ERROR", "Message body is required")
+        attachment_count = await session.scalar(
+            select(func.count())
+            .select_from(MessageAttachment)
+            .where(MessageAttachment.message_id == message_id)
+        )
+        if not (attachment_count or 0):
+            raise AppError(400, "VALIDATION_ERROR", "Message body is required")
 
     message.body = trimmed
     await session.commit()
@@ -1093,6 +1301,7 @@ async def update_message(
         select(ChatMessage)
         .where(ChatMessage.id == message_id)
         .options(*_MESSAGE_LOAD)
+        .execution_options(populate_existing=True)
     )
     payload = map_message(loaded, user_id)
     kind = "channel" if loaded.channel_id else "dm"
@@ -1108,6 +1317,38 @@ async def update_message(
             )
         )
     return payload
+
+
+async def delete_message(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    message_id: str,
+) -> dict:
+    message = await _assert_message_access(
+        session, workspace_id, user_id, message_id
+    )
+    if message.author_id != user_id:
+        raise AppError(403, "FORBIDDEN", "Only the author can delete this message")
+
+    kind = "channel" if message.channel_id else "dm"
+    conv_id = message.channel_id or message.conversation_id
+    parent_id = message.parent_id
+
+    await session.delete(message)
+    await session.commit()
+
+    if conv_id:
+        asyncio.create_task(
+            broadcast_chat_message_delete(
+                workspace_id=workspace_id,
+                kind=kind,
+                conversation_id=conv_id,
+                message_id=message_id,
+                parent_id=parent_id,
+            )
+        )
+    return {"ok": True, "messageId": message_id}
 
 
 async def toggle_message_reaction(
@@ -1315,10 +1556,30 @@ async def add_channel_members(
                 is_following=False,
             )
         )
+
+    access_notifications: list = []
+    if channel.is_private and to_add:
+        access_notifications = await create_channel_access_notifications(
+            session,
+            workspace_id=workspace_id,
+            recipient_ids=to_add,
+            actor_user_id=user_id,
+            channel=channel,
+        )
+
     await session.commit()
 
     if not to_add:
         return {"data": [], "added": 0}
+
+    if access_notifications:
+        await emit_channel_access_notifications(
+            session, workspace_id, access_notifications
+        )
+
+    await _emit_channel_joined(session, workspace_id, channel, to_add)
+    for uid in to_add:
+        await _emit_channel_member_update(session, workspace_id, channel_id, uid)
 
     added_rows = (
         await session.scalars(
@@ -1386,8 +1647,35 @@ async def remove_channel_member(
             "Cannot remove the last channel member",
         )
 
+    channel = actor.channel
+    removal_notifications: list = []
+    if channel.is_private:
+        removal_notifications = await create_channel_access_removed_notifications(
+            session,
+            workspace_id=workspace_id,
+            recipient_ids=[target_user_id],
+            actor_user_id=user_id,
+            channel=channel,
+        )
+
     await session.delete(target)
     await session.commit()
+
+    if removal_notifications:
+        await emit_channel_access_notifications(
+            session, workspace_id, removal_notifications
+        )
+
+    asyncio.create_task(
+        broadcast_channel_removed(
+            workspace_id=workspace_id,
+            user_ids=[target_user_id],
+            channel_id=channel_id,
+        )
+    )
+    await _emit_channel_member_update(
+        session, workspace_id, channel_id, target_user_id, removed=True
+    )
     return {"ok": True}
 
 
@@ -1442,6 +1730,7 @@ async def update_channel_member_target(
     if not channel or channel.workspace_id != workspace_id:
         raise AppError(404, "NOT_FOUND", "Channel not found")
 
+    created_membership = False
     target = await session.scalar(
         select(ChatChannelMember).where(
             ChatChannelMember.channel_id == channel_id,
@@ -1468,6 +1757,7 @@ async def update_channel_member_target(
         )
         session.add(target)
         await session.flush()
+        created_membership = True
 
     is_self = target_user_id == user_id
     if not is_self and body.starred is not None:
@@ -1477,12 +1767,38 @@ async def update_channel_member_target(
             "Cannot change starred status for other members",
         )
 
-    if body.is_following is not None:
+    follow_notifications: list = []
+    following_changed = False
+    if body.is_following is not None and target.is_following != body.is_following:
+        following_changed = True
         target.is_following = body.is_following
     if body.starred is not None and is_self:
         target.starred = body.starred
 
+    if following_changed:
+        follow_notifications = await create_channel_follow_notifications(
+            session,
+            workspace_id=workspace_id,
+            actor_user_id=user_id,
+            target_user_id=target_user_id,
+            channel=channel,
+            following=bool(body.is_following),
+        )
+
     await session.commit()
+
+    if created_membership:
+        await _emit_channel_joined(session, workspace_id, channel, [target_user_id])
+
+    if following_changed:
+        await _emit_channel_member_update(
+            session, workspace_id, channel_id, target_user_id
+        )
+        if follow_notifications:
+            await emit_home_notifications(
+                session, workspace_id, follow_notifications
+            )
+
     return {"ok": True}
 
 

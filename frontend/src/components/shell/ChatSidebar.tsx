@@ -13,8 +13,19 @@ import {
   LockIcon,
   StarIcon,
 } from "lucide-react";
-import type { Channel, DirectMessage } from "@/lib/types/chat";
-import { loadSidebarLists } from "@/lib/chat/sidebar-lists-loader";
+import type { Channel, DirectMessage, DmParticipant } from "@/lib/types/chat";
+import { GroupDmAvatarStack } from "@/components/chat/GroupDmAvatarStack";
+import {
+  enrichGroupDms,
+  otherGroupParticipants,
+  resolveGroupDmTitle,
+} from "@/lib/chat/group-dm-display";
+import { fetchWorkspaceMembers } from "@/lib/api/chat";
+import {
+  loadSidebarLists,
+  mergeSidebarChannels,
+  mergeSidebarDms,
+} from "@/lib/chat/sidebar-lists-loader";
 import { useHomeQuery } from "@/hooks/use-home-query";
 import { HomeDataState } from "@/components/home/HomeDataState";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
@@ -27,7 +38,10 @@ import {
 import { useUiStore } from "@/stores/ui-store";
 import { UnderlineTabBar } from "@/components/shared/Tabs";
 import { cn } from "@/lib/utils";
-import { avatarInitialFromName } from "@/lib/user-display";
+import {
+  avatarColorClassForKey,
+  avatarInitialFromName,
+} from "@/lib/user-display";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatarWithPresence } from "@/components/shared/AvatarWithPresence";
@@ -46,26 +60,15 @@ import { matchesQuery } from "@/lib/search/match-query";
 import { useShellStore } from "@/stores/shell-store";
 import { useRouter } from "next/navigation";
 
-const FALLBACK_COLORS = [
-  "bg-violet-600 text-white",
-  "bg-sky-600 text-white",
-  "bg-emerald-600 text-white",
-  "bg-amber-600 text-white",
-  "bg-rose-600 text-white",
-];
-
-function fallbackColorForName(name: string) {
-  const hash = [...name].reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-  return FALLBACK_COLORS[hash % FALLBACK_COLORS.length];
-}
-
 function DmAvatar({
   name,
+  userId,
   avatarUrl,
   presence,
   showPresence = true,
 }: {
   name: string;
+  userId?: string;
   avatarUrl?: string;
   presence: PresenceStatus;
   showPresence?: boolean;
@@ -79,7 +82,10 @@ function DmAvatar({
       avatarClassName="size-6"
       dotSize="sm"
       borderClass="border-white"
-      fallbackClassName={cn("text-[10px] font-semibold", fallbackColorForName(name))}
+      fallbackClassName={cn(
+        "text-[10px] font-semibold",
+        avatarColorClassForKey(userId, name)
+      )}
       fallback={avatarInitialFromName(name)}
     />
   );
@@ -138,6 +144,11 @@ export function ChatSidebar() {
     }
   );
 
+  const membersQuery = useHomeQuery(
+    (token, ws) => fetchWorkspaceMembers(token, ws).then((r) => r.data),
+    []
+  );
+
   useEffect(() => {
     const source = cacheValid
       ? sidebarListsCache?.dms
@@ -159,15 +170,21 @@ export function ChatSidebar() {
   const error = sidebarQuery.error;
   const workspaceReady = sidebarQuery.ready;
 
-  const channelsSource =
-    sidebarQuery.data?.channels ??
-    (cacheValid ? sidebarListsCache?.channels : undefined);
-  const dmsSource =
-    sidebarQuery.data?.dms ??
-    (cacheValid ? sidebarListsCache?.dms : undefined);
+  const channelsSource = mergeSidebarChannels(
+    sidebarQuery.data?.channels,
+    cacheValid ? sidebarListsCache?.channels : undefined
+  );
+  const dmsSource = mergeSidebarDms(
+    sidebarQuery.data?.dms,
+    cacheValid ? sidebarListsCache?.dms : undefined
+  );
 
-  let channels = channelsSource ?? [];
-  let dms = dmsSource ?? [];
+  let channels = channelsSource;
+  let dms = enrichGroupDms(
+    dmsSource,
+    membersQuery.data ?? [],
+    userId
+  );
 
   if (filter === "unread") {
     channels = channels.filter((c) => c.unread > 0);
@@ -196,6 +213,7 @@ export function ChatSidebar() {
         channels={channels}
         dms={dms}
         pathname={pathname}
+        currentUserId={userId}
         onAddChannel={goToAllChannels}
       />
     ) : (
@@ -203,6 +221,7 @@ export function ChatSidebar() {
         channels={channels}
         dms={dms}
         pathname={pathname}
+        currentUserId={userId}
         onAddChannel={goToAllChannels}
       />
     );
@@ -323,11 +342,13 @@ function OrganizedList({
   channels,
   dms,
   pathname,
+  currentUserId,
   onAddChannel,
 }: {
   channels: Channel[];
   dms: DirectMessage[];
   pathname: string;
+  currentUserId?: string | null;
   onAddChannel: () => void;
 }) {
   const favoriteChannels = channels.filter((c) => c.starred);
@@ -398,6 +419,8 @@ function OrganizedList({
               href={`/chat/dm/${d.id}`}
               active={pathname === `/chat/dm/${d.id}`}
               name={d.name}
+              participants={d.participants}
+              currentUserId={currentUserId}
               unread={
                 pathname === `/chat/dm/${d.id}` ? 0 : d.unread
               }
@@ -417,11 +440,13 @@ function RecentsList({
   channels,
   dms,
   pathname,
+  currentUserId,
   onAddChannel,
 }: {
   channels: Channel[];
   dms: DirectMessage[];
   pathname: string;
+  currentUserId?: string | null;
   onAddChannel: () => void;
 }) {
   return (
@@ -429,6 +454,7 @@ function RecentsList({
       channels={channels}
       dms={dms}
       pathname={pathname}
+      currentUserId={currentUserId}
       onAddChannel={onAddChannel}
     />
   );
@@ -482,6 +508,8 @@ function DmRow({
   href,
   active,
   name,
+  participants,
+  currentUserId,
   unread,
   avatarUrl,
   otherUserId,
@@ -491,6 +519,8 @@ function DmRow({
   href: string;
   active: boolean;
   name: string;
+  participants?: DmParticipant[];
+  currentUserId?: string | null;
   unread: number;
   avatarUrl?: string;
   otherUserId?: string;
@@ -501,6 +531,12 @@ function DmRow({
     otherUserId,
     presenceFallback ?? "offline"
   );
+  const groupParticipants = isGroup
+    ? otherGroupParticipants(participants, currentUserId)
+    : [];
+  const displayName = isGroup
+    ? resolveGroupDmTitle({ name, isGroup: true, participants }, currentUserId)
+    : name;
 
   return (
     <Button
@@ -513,13 +549,18 @@ function DmRow({
       )}
     >
       <span className="flex min-w-0 items-center gap-2">
-        <DmAvatar
-          name={name}
-          avatarUrl={avatarUrl}
-          presence={presence}
-          showPresence={!isGroup}
-        />
-        <span className="truncate text-sm font-medium">{name}</span>
+        {isGroup && groupParticipants.length > 0 ? (
+          <GroupDmAvatarStack participants={groupParticipants} />
+        ) : (
+          <DmAvatar
+            name={displayName}
+            userId={otherUserId}
+            avatarUrl={avatarUrl}
+            presence={presence}
+            showPresence={!isGroup}
+          />
+        )}
+        <span className="truncate text-sm font-medium">{displayName}</span>
       </span>
       {unread > 0 ? (
         <Badge className="size-5 min-w-5 justify-center rounded-full px-1 text-[10px]">

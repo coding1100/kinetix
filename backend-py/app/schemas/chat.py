@@ -41,6 +41,27 @@ class SendMessageBody(BaseModel):
         return self
 
 
+class UpdateMessageBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    body: str = Field(default="", max_length=10000)
+    attachment_ids: list[str] | None = Field(
+        default=None,
+        max_length=10,
+        validation_alias=AliasChoices("attachmentIds", "attachment_ids"),
+    )
+
+    @model_validator(mode="after")
+    def require_content(self) -> "UpdateMessageBody":
+        if self.attachment_ids is None:
+            return self
+        has_text = bool(self.body.strip())
+        has_files = bool(self.attachment_ids)
+        if not has_text and not has_files:
+            raise ValueError("Message must include text or attachments")
+        return self
+
+
 class CreateDmBody(BaseModel):
     userIds: list[str] = Field(min_length=1, max_length=20)
     name: str | None = Field(default=None, min_length=1, max_length=80)

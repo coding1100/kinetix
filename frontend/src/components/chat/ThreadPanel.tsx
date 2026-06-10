@@ -8,7 +8,11 @@ import {
   ChevronDownIcon,
   ListTodoIcon,
 } from "lucide-react";
-import type { ConversationType, ThreadBundle } from "@/lib/types/chat";
+import type {
+  ConversationType,
+  ThreadBundle,
+  UpdateMessagePayload,
+} from "@/lib/types/chat";
 import {
   fetchChannelThread,
   fetchDmThread,
@@ -65,6 +69,7 @@ export function ThreadPanel({
   channelLabel,
   onReplySent,
   onToggleReaction,
+  onDeleteMessage,
 }: {
   type: ConversationType;
   conversationId: string;
@@ -72,6 +77,7 @@ export function ThreadPanel({
   channelLabel?: string;
   onReplySent?: () => void;
   onToggleReaction: (messageId: string, emoji: string) => void | Promise<void>;
+  onDeleteMessage: (messageId: string) => Promise<void>;
 }) {
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const currentUserId = useAuthStore((s) => s.user?.id);
@@ -82,6 +88,10 @@ export function ThreadPanel({
   const clearRealtimeEvent = useChatStore((s) => s.clearRealtimeEvent);
   const messageEditEvent = useChatStore((s) => s.messageEditEvent);
   const clearMessageEditEvent = useChatStore((s) => s.clearMessageEditEvent);
+  const messageDeleteEvent = useChatStore((s) => s.messageDeleteEvent);
+  const clearMessageDeleteEvent = useChatStore(
+    (s) => s.clearMessageDeleteEvent
+  );
   const reactionEvent = useChatStore((s) => s.reactionEvent);
   const clearReactionEvent = useChatStore((s) => s.clearReactionEvent);
   const router = useRouter();
@@ -187,7 +197,10 @@ export function ThreadPanel({
       clearMessageEditEvent();
       return;
     }
-    applyMessageToBundle(updated);
+    applyMessageToBundle({
+      ...updated,
+      attachments: updated.attachments ?? [],
+    });
     clearMessageEditEvent();
   }, [
     messageEditEvent,
@@ -199,18 +212,70 @@ export function ThreadPanel({
     clearMessageEditEvent,
   ]);
 
-  const handleEditMessage = async (targetId: string, body: string) => {
+  useEffect(() => {
+    if (!messageDeleteEvent || messageDeleteEvent.workspaceId !== workspaceId) {
+      return;
+    }
+    if (
+      messageDeleteEvent.kind !== type ||
+      messageDeleteEvent.conversationId !== conversationId
+    ) {
+      return;
+    }
+    const deletedId = messageDeleteEvent.messageId;
+    if (deletedId === messageId) {
+      setActiveThread(null);
+      clearComposerEdit();
+      clearMessageDeleteEvent();
+      return;
+    }
+    if (messageDeleteEvent.parentId === messageId) {
+      setBundle((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          replies: prev.replies.filter((reply) => reply.id !== deletedId),
+        };
+      });
+    }
+    clearComposerEdit();
+    clearMessageDeleteEvent();
+  }, [
+    messageDeleteEvent,
+    workspaceId,
+    type,
+    conversationId,
+    messageId,
+    setActiveThread,
+    clearComposerEdit,
+    clearMessageDeleteEvent,
+  ]);
+
+  const handleEditMessage = async (
+    targetId: string,
+    payload: UpdateMessagePayload
+  ) => {
     let rollback: ThreadBundle | null = null;
+    const applyEdit = (message: ThreadBundle["parent"]) => {
+      const keepIds = new Set(payload.attachmentIds);
+      return {
+        ...message,
+        body: payload.body,
+        attachments: (message.attachments ?? []).filter((attachment) =>
+          keepIds.has(attachment.id)
+        ),
+      };
+    };
     setBundle((prev) => {
       if (!prev) return prev;
       rollback = prev;
       if (prev.parent.id === targetId) {
-        return { ...prev, parent: { ...prev.parent, body } };
+        return { ...prev, parent: applyEdit(prev.parent) };
       }
       return {
         ...prev,
-        replies: prev.replies.map((r) =>
-          r.id === targetId ? { ...r, body } : r
+        replies: prev.replies.map((reply) =>
+          reply.id === targetId ? applyEdit(reply) : reply
         ),
       };
     });
@@ -219,16 +284,39 @@ export function ThreadPanel({
         accessToken,
         workspaceId,
         targetId,
-        body
+        payload
       );
       const normalized = currentUserId
         ? normalizeMessageForViewer(updated, currentUserId)
         : updated;
-      applyMessageToBundle(normalized);
+      applyMessageToBundle({
+        ...normalized,
+        attachments: normalized.attachments ?? [],
+      });
     } catch (err) {
       if (rollback) {
         setBundle(rollback);
       }
+      throw err;
+    }
+  };
+
+  const handleDeleteMessage = async (targetId: string) => {
+    let rollback: ThreadBundle | null = bundle;
+    if (!bundle) return;
+    if (bundle.parent.id === targetId) {
+      setBundle(null);
+    } else {
+      setBundle({
+        ...bundle,
+        replies: bundle.replies.filter((reply) => reply.id !== targetId),
+      });
+    }
+    clearComposerEdit();
+    try {
+      await onDeleteMessage(targetId);
+    } catch (err) {
+      setBundle(rollback);
       throw err;
     }
   };
@@ -425,8 +513,11 @@ export function ThreadPanel({
         <div className="px-4 py-4">
           <ThreadMessageRow
             message={parent}
+            conversationType={type}
+            conversationId={conversationId}
             onToggleReaction={onToggleReaction}
             onEditMessage={handleEditMessage}
+            onDeleteMessage={handleDeleteMessage}
           />
 
           {replies.length > 0 && (
@@ -451,8 +542,11 @@ export function ThreadPanel({
                     key={reply.id}
                     message={reply}
                     showHeader={index === 0}
+                    conversationType={type}
+                    conversationId={conversationId}
                     onToggleReaction={onToggleReaction}
                     onEditMessage={handleEditMessage}
+                    onDeleteMessage={handleDeleteMessage}
                   />
                 ))}
               </div>
@@ -466,7 +560,6 @@ export function ThreadPanel({
         conversationType={type}
         conversationId={conversationId}
         onSend={handleReply}
-        onSaveEdit={handleEditMessage}
       />
       <LinkTaskDialog
         open={linkTaskOpen}

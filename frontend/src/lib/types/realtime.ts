@@ -10,11 +10,40 @@ export type ChatRealtimePayload = {
 
 export type ChatMessageEditPayload = ChatRealtimePayload;
 
+export type ChatMessageDeletePayload = {
+  workspaceId: string;
+  kind: "channel" | "dm";
+  conversationId: string;
+  messageId: string;
+  parentId?: string | null;
+};
+
 export type ChatReactionPayload = {
   workspaceId: string;
   messageId: string;
   reactions: { emoji: string; count: number }[];
 };
+
+export type ChatChannelJoinedPayload = {
+  workspaceId: string;
+  userIds: string[];
+  channel: import("@/lib/types/chat").Channel;
+};
+
+export type ChatChannelRemovedPayload = {
+  workspaceId: string;
+  userIds: string[];
+  channelId: string;
+};
+
+export type ChatChannelMemberPayload = {
+  workspaceId: string;
+  channelId: string;
+  member: import("@/lib/types/chat").ChannelMember;
+  removed?: boolean;
+};
+
+export type { HomeNotificationPayload } from "@/lib/notifications/realtime";
 
 export type PresenceSyncPayload = {
   workspaceId: string;

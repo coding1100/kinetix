@@ -1,6 +1,9 @@
 "use client";
 
-import { MESSAGE_TOKEN_RE } from "@/lib/chat/mention-utils";
+import {
+  displayMentionToken,
+  MESSAGE_TOKEN_RE,
+} from "@/lib/chat/mention-utils";
 import { cn } from "@/lib/utils";
 import { RICH_TEXT_CONTENT_CLASS } from "@/lib/chat/rich-text/rich-text-styles";
 import {
@@ -32,7 +35,7 @@ export function MessageBodyWithMentions({ body }: { body: string }) {
           if (part.startsWith("@")) {
             return (
               <span key={i} className="font-medium text-violet-700">
-                {part}
+                {displayMentionToken(part)}
               </span>
             );
           }
@@ -56,7 +59,7 @@ export function MessageBodyWithMentions({ body }: { body: string }) {
         if (part.startsWith("@")) {
           return (
             <span key={i} className="font-medium text-violet-700">
-              {part}
+              {displayMentionToken(part)}
             </span>
           );
         }

@@ -1,9 +1,21 @@
 import { apiFetch } from "./client";
 import type { Task } from "@/lib/types/task";
 
+export type InboxItemType =
+  | "comment"
+  | "mention"
+  | "assignment"
+  | "chat"
+  | "reminder"
+  | "reply"
+  | "reaction"
+  | "sent"
+  | "draft"
+  | "scheduled";
+
 export interface InboxItemDto {
   id: string;
-  type: "comment" | "mention" | "assignment" | "chat" | "reminder";
+  type: InboxItemType;
   title: string;
   preview: string;
   source: string;
@@ -54,12 +66,13 @@ export function fetchInbox(
 
 export interface NotificationDto {
   id: string;
-  type: InboxItemDto["type"];
+  type: InboxItemType;
   title: string;
   preview: string;
   source: string;
   createdAt: string;
   unread: boolean;
+  group?: InboxItemDto["group"];
   href?: string;
 }
 
@@ -78,6 +91,13 @@ export function markNotificationRead(
   return apiFetch<{ id: string; unread: boolean }>(
     wsPath(workspaceId, `/home/inbox/${itemId}`),
     { method: "PATCH", token, body: JSON.stringify({ unread: false }) }
+  );
+}
+
+export function markAllNotificationsRead(token: string, workspaceId: string) {
+  return apiFetch<{ updated: number }>(
+    wsPath(workspaceId, "/home/notifications/read-all"),
+    { method: "POST", token }
   );
 }
 

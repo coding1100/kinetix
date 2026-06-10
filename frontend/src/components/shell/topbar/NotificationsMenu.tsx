@@ -15,54 +15,45 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  fetchNotifications,
-  markNotificationRead,
-  type NotificationDto,
-} from "@/lib/api/home";
+import { InboxItemCard } from "@/components/home/InboxItemCard";
+import { type InboxItemDto, type NotificationDto } from "@/lib/api/home";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
-import { formatRelativeTime } from "@/lib/utils";
-import { cn } from "@/lib/utils";
+import { useNotificationsUnread } from "@/hooks/use-notifications-unread";
+import { resolveInboxHref } from "@/lib/notifications/inbox-item-utils";
+import {
+  markAllNotificationsReadAndSync,
+  markNotificationReadAndSync,
+} from "@/lib/notifications/sync";
 
-function notificationIcon(type: NotificationDto["type"]) {
-  switch (type) {
-    case "mention":
-      return "@";
-    case "assignment":
-      return "✓";
-    case "chat":
-      return "💬";
-    case "comment":
-      return "¶";
-    case "reminder":
-      return "⏰";
-    default:
-      return "•";
-  }
+function toInboxItem(item: NotificationDto): InboxItemDto {
+  return {
+    id: item.id,
+    type: item.type,
+    title: item.title,
+    preview: item.preview,
+    source: item.source,
+    createdAt: item.createdAt,
+    unread: item.unread,
+    group: item.group ?? "today",
+    href: item.href,
+  };
 }
 
 export function NotificationsMenu() {
   const router = useRouter();
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
+  const { unreadCount, items, reload } = useNotificationsUnread();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [items, setItems] = useState<NotificationDto[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
 
   const load = useCallback(async () => {
-    if (!accessToken || !workspaceId) return;
     setLoading(true);
     try {
-      const res = await fetchNotifications(accessToken, workspaceId);
-      setItems(res.data);
-      setUnreadCount(res.unreadCount);
-    } catch {
-      setItems([]);
-      setUnreadCount(0);
+      await reload();
     } finally {
       setLoading(false);
     }
-  }, [accessToken, workspaceId]);
+  }, [reload]);
 
   useEffect(() => {
     if (ready) void load();
@@ -77,21 +68,36 @@ export function NotificationsMenu() {
     if (next && ready) void load();
   };
 
-  const openItem = async (item: NotificationDto) => {
+  const hasUnread = items.some((item) => item.unread);
+
+  const clearAll = async () => {
+    if (!ready || !hasUnread || !accessToken || !workspaceId) return;
+    const unreadIds = items
+      .filter((item) => item.unread)
+      .map((item) => item.id);
+    await markAllNotificationsReadAndSync(
+      accessToken,
+      workspaceId,
+      unreadIds
+    );
+    await load();
+  };
+
+  const clearItem = async (
+    event: React.MouseEvent,
+    item: InboxItemDto
+  ) => {
+    event.stopPropagation();
+    if (!item.unread || !accessToken || !workspaceId) return;
+    await markNotificationReadAndSync(accessToken, workspaceId, item.id);
+  };
+
+  const openItem = async (item: InboxItemDto) => {
     if (item.unread && accessToken && workspaceId) {
-      try {
-        await markNotificationRead(accessToken, workspaceId, item.id);
-        setItems((prev) =>
-          prev.map((n) => (n.id === item.id ? { ...n, unread: false } : n))
-        );
-        setUnreadCount((c) => Math.max(0, c - 1));
-      } catch {
-        /* keep navigation */
-      }
+      await markNotificationReadAndSync(accessToken, workspaceId, item.id);
     }
     setOpen(false);
-    if (item.href) router.push(item.href);
-    else router.push("/home/inbox");
+    router.push(resolveInboxHref(item));
   };
 
   return (
@@ -110,20 +116,32 @@ export function NotificationsMenu() {
           </Button>
         }
       />
-      <DropdownMenuContent align="end" className="w-80 p-0">
+      <DropdownMenuContent align="end" className="w-[min(100vw-2rem,28rem)] p-0">
         <div className="flex items-center justify-between border-b border-border px-3 py-2">
           <span className="text-sm font-semibold">Notifications</span>
-          <Button
-            variant="link"
-            size="sm"
-            className="h-auto px-0 text-xs"
-            nativeButton={false}
-            render={
-              <Link href="/home/inbox" onClick={() => setOpen(false)} />
-            }
-          >
-            View inbox
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-muted-foreground"
+              disabled={!hasUnread || !ready}
+              onClick={() => void clearAll()}
+            >
+              Clear all
+            </Button>
+            <Button
+              variant="link"
+              size="sm"
+              className="h-auto px-0 text-xs"
+              nativeButton={false}
+              render={
+                <Link href="/home/inbox" onClick={() => setOpen(false)} />
+              }
+            >
+              View inbox
+            </Button>
+          </div>
         </div>
         {loading ? (
           <p className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
@@ -135,41 +153,21 @@ export function NotificationsMenu() {
             No notifications yet.
           </p>
         ) : (
-          <ScrollArea className="max-h-[min(360px,60vh)]">
-            <ul className="p-1">
-              {items.map((item) => (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    className={cn(
-                      "flex w-full gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent",
-                      item.unread && "bg-accent/40"
-                    )}
-                    onClick={() => void openItem(item)}
-                  >
-                    <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded bg-muted text-xs">
-                      {notificationIcon(item.type)}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-start justify-between gap-2">
-                        <span className="truncate font-medium">{item.title}</span>
-                        <span className="shrink-0 text-[10px] text-muted-foreground">
-                          {formatRelativeTime(new Date(item.createdAt))}
-                        </span>
-                      </span>
-                      <span className="line-clamp-2 text-xs text-muted-foreground">
-                        {item.preview}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {item.source}
-                      </span>
-                    </span>
-                    {item.unread ? (
-                      <span className="mt-2 size-2 shrink-0 rounded-full bg-primary" />
-                    ) : null}
-                  </button>
-                </li>
-              ))}
+          <ScrollArea className="max-h-[min(420px,60vh)]">
+            <ul className="space-y-2 p-2">
+              {items.map((item) => {
+                const row = toInboxItem(item);
+                return (
+                  <li key={item.id}>
+                    <InboxItemCard
+                      compact
+                      item={row}
+                      onOpen={openItem}
+                      onClear={clearItem}
+                    />
+                  </li>
+                );
+              })}
             </ul>
           </ScrollArea>
         )}

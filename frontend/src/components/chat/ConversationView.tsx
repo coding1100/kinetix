@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   MoreHorizontalIcon,
@@ -17,6 +24,7 @@ import type {
   ConversationType,
   DirectMessage,
   SendMessagePayload,
+  UpdateMessagePayload,
 } from "@/lib/types/chat";
 import {
   deleteChannel,
@@ -30,10 +38,12 @@ import {
   markDmUnread,
   sendChannelMessage,
   sendDmMessage,
+  deleteChatMessage,
   toggleMessageReaction,
   updateChatMessage,
 } from "@/lib/api/chat";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
+import { useHomeQuery } from "@/hooks/use-home-query";
 import { ApiError } from "@/lib/api/client";
 import { PageLoader } from "@/components/ui/page-loader";
 import { MessageList } from "./MessageList";
@@ -50,7 +60,10 @@ import { useChatStore } from "@/stores/chat-store";
 import { useUiStore } from "@/stores/ui-store";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { avatarInitialFromName } from "@/lib/user-display";
+import {
+  avatarColorClassForKey,
+  avatarInitialFromName,
+} from "@/lib/user-display";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -64,6 +77,7 @@ import { toast } from "sonner";
 import {
   applyMessageUpdate,
   appendUniqueMessage,
+  removeMessageById,
   ATTACHMENT_PLACEHOLDER,
   createOptimisticMessage,
   mergeConfirmedMessage,
@@ -72,6 +86,15 @@ import {
   normalizeMessageForViewer,
 } from "@/lib/chat/messages";
 import { optimisticToggleReaction } from "@/lib/chat/reactions";
+import { GroupDmAvatarStack } from "@/components/chat/GroupDmAvatarStack";
+import {
+  enrichGroupDm,
+  otherGroupParticipants,
+  resolveGroupDmTitle,
+} from "@/lib/chat/group-dm-display";
+import { upsertDmInSidebar } from "@/lib/chat/sidebar-dm";
+import { DmGroupMembersPanel } from "@/components/chat/DmGroupMembersPanel";
+import { fetchWorkspaceMembers } from "@/lib/api/chat";
 import { useAuthStore } from "@/stores/auth-store";
 import { ChannelNameLabel } from "@/components/chat/ChannelNameLabel";
 import { useChannelFavorite } from "@/hooks/use-channel-favorite";
@@ -121,6 +144,10 @@ export function ConversationView({
   const clearRealtimeEvent = useChatStore((s) => s.clearRealtimeEvent);
   const messageEditEvent = useChatStore((s) => s.messageEditEvent);
   const clearMessageEditEvent = useChatStore((s) => s.clearMessageEditEvent);
+  const messageDeleteEvent = useChatStore((s) => s.messageDeleteEvent);
+  const clearMessageDeleteEvent = useChatStore(
+    (s) => s.clearMessageDeleteEvent
+  );
   const reactionEvent = useChatStore((s) => s.reactionEvent);
   const clearReactionEvent = useChatStore((s) => s.clearReactionEvent);
   const setConversationUnread = useChatStore((s) => s.setConversationUnread);
@@ -290,7 +317,9 @@ export function ConversationView({
         });
       } else {
         let dmMeta = resolveCachedMeta() as DirectMessage | null;
-        if (!dmMeta) {
+        const needsDmRefresh =
+          !dmMeta || (dmMeta.isGroup && !dmMeta.participants?.length);
+        if (needsDmRefresh) {
           dmMeta = await fetchDm(
             accessToken,
             workspaceId,
@@ -304,6 +333,7 @@ export function ConversationView({
           ) {
             return;
           }
+          upsertDmInSidebar(dmMeta, workspaceId);
           setDm(dmMeta);
         }
         setChannel(null);
@@ -458,7 +488,12 @@ export function ConversationView({
       messageEditEvent.message,
       currentUserId
     );
-    setMessages((prev) => applyMessageUpdate(prev, updated));
+    setMessages((prev) =>
+      applyMessageUpdate(prev, {
+        ...updated,
+        attachments: updated.attachments ?? [],
+      })
+    );
     clearMessageEditEvent();
   }, [
     messageEditEvent,
@@ -470,19 +505,60 @@ export function ConversationView({
   ]);
 
   useEffect(() => {
+    if (!messageDeleteEvent || messageDeleteEvent.workspaceId !== workspaceId) {
+      return;
+    }
+    if (
+      messageDeleteEvent.kind !== type ||
+      messageDeleteEvent.conversationId !== id
+    ) {
+      return;
+    }
+    if (messageDeleteEvent.parentId) return;
+    const deletedId = messageDeleteEvent.messageId;
+    setMessages((prev) => {
+      const next = removeMessageById(prev, deletedId);
+      setConversationCache(workspaceId, type, id, { messages: next });
+      return next;
+    });
+    if (activeThreadMessageId === deletedId) {
+      setActiveThread(null);
+    }
+    clearComposerEdit();
+    clearMessageDeleteEvent();
+  }, [
+    messageDeleteEvent,
+    workspaceId,
+    type,
+    id,
+    activeThreadMessageId,
+    setActiveThread,
+    clearComposerEdit,
+    clearMessageDeleteEvent,
+  ]);
+
+  useEffect(() => {
     if (!reactionEvent || reactionEvent.workspaceId !== workspaceId) return;
     applyReactions(reactionEvent.messageId, reactionEvent.reactions);
     clearReactionEvent();
   }, [reactionEvent, workspaceId, applyReactions, clearReactionEvent]);
 
   const handleEditMessage = useCallback(
-    async (messageId: string, body: string) => {
+    async (messageId: string, payload: UpdateMessagePayload) => {
       let rollback: ChatMessage[] | null = null;
       setMessages((prev) => {
         rollback = prev;
-        const next = prev.map((m) =>
-          m.id === messageId ? { ...m, body } : m
-        );
+        const next = prev.map((m) => {
+          if (m.id !== messageId) return m;
+          const keepIds = new Set(payload.attachmentIds);
+          return {
+            ...m,
+            body: payload.body,
+            attachments: (m.attachments ?? []).filter((attachment) =>
+              keepIds.has(attachment.id)
+            ),
+          };
+        });
         setConversationCache(workspaceId, type, id, { messages: next });
         return next;
       });
@@ -491,10 +567,16 @@ export function ConversationView({
           accessToken,
           workspaceId,
           messageId,
-          body
+          payload
         );
+        const normalized = currentUserId
+          ? normalizeMessageForViewer(updated, currentUserId)
+          : updated;
         setMessages((prev) => {
-          const next = applyMessageUpdate(prev, updated);
+          const next = applyMessageUpdate(prev, {
+            ...normalized,
+            attachments: normalized.attachments ?? [],
+          });
           setConversationCache(workspaceId, type, id, { messages: next });
           return next;
         });
@@ -506,7 +588,41 @@ export function ConversationView({
         throw err;
       }
     },
-    [accessToken, workspaceId, type, id]
+    [accessToken, workspaceId, type, id, currentUserId]
+  );
+
+  const handleDeleteMessage = useCallback(
+    async (messageId: string) => {
+      let rollback: ChatMessage[] | null = null;
+      setMessages((prev) => {
+        rollback = prev;
+        const next = removeMessageById(prev, messageId);
+        setConversationCache(workspaceId, type, id, { messages: next });
+        return next;
+      });
+      if (activeThreadMessageId === messageId) {
+        setActiveThread(null);
+      }
+      clearComposerEdit();
+      try {
+        await deleteChatMessage(accessToken, workspaceId, messageId);
+      } catch (err) {
+        if (rollback) {
+          setMessages(rollback);
+          setConversationCache(workspaceId, type, id, { messages: rollback });
+        }
+        throw err;
+      }
+    },
+    [
+      accessToken,
+      workspaceId,
+      type,
+      id,
+      activeThreadMessageId,
+      setActiveThread,
+      clearComposerEdit,
+    ]
   );
 
   const handleToggleReaction = useCallback(
@@ -542,10 +658,40 @@ export function ConversationView({
 
   const channelName =
     overrideChannelName ?? cachedChannelName ?? channel?.name ?? "Channel";
+  const workspaceMembersQuery = useHomeQuery(
+    (token, ws) => fetchWorkspaceMembers(token, ws).then((r) => r.data),
+    []
+  );
+
+  const dmMetaRaw = type === "dm" ? (dm ?? cachedDm ?? null) : null;
+  const dmMeta = useMemo(() => {
+    if (!dmMetaRaw) return null;
+    if (!dmMetaRaw.isGroup) return dmMetaRaw;
+    return enrichGroupDm(
+      dmMetaRaw,
+      workspaceMembersQuery.data ?? [],
+      currentUserId
+    );
+  }, [dmMetaRaw, workspaceMembersQuery.data, currentUserId]);
+
+  const groupAvatarParticipants = useMemo(
+    () => otherGroupParticipants(dmMeta?.participants, currentUserId),
+    [dmMeta?.participants, currentUserId]
+  );
+
   const title =
     type === "channel"
       ? channelName
-      : (dm?.name ?? cachedDmName ?? "Direct message");
+      : dmMeta?.isGroup
+        ? resolveGroupDmTitle(
+            {
+              name: dmMeta.name ?? cachedDmName ?? "",
+              isGroup: true,
+              participants: dmMeta.participants,
+            },
+            currentUserId
+          )
+        : (dmMeta?.name ?? cachedDmName ?? "Direct message");
   const channelStarred =
     overrideChannelStarred ?? cachedChannelStarred ?? channel?.starred ?? false;
   const { starred, toggleFavorite } = useChannelFavorite(
@@ -553,7 +699,6 @@ export function ConversationView({
     channelStarred
   );
   const recipientLabel = type === "channel" ? `#${title}` : title;
-  const dmMeta = type === "dm" ? (dm ?? cachedDm ?? null) : null;
   const otherUserId = dmMeta?.otherUserId;
 
   const handleSend = async (payload: SendMessagePayload) => {
@@ -661,18 +806,30 @@ export function ConversationView({
             </div>
           ) : (
             <>
-              <Avatar className="size-8 shrink-0">
-                <AvatarFallback className="bg-primary text-sm text-primary-foreground">
-                  {avatarInitialFromName(title)}
-                </AvatarFallback>
-              </Avatar>
+              {dmMeta?.isGroup && groupAvatarParticipants.length > 0 ? (
+                <GroupDmAvatarStack
+                  participants={groupAvatarParticipants}
+                  size="md"
+                />
+              ) : (
+                <Avatar className="size-8 shrink-0">
+                  <AvatarFallback
+                    className={cn(
+                      "text-sm font-semibold",
+                      avatarColorClassForKey(otherUserId, title)
+                    )}
+                  >
+                    {avatarInitialFromName(title)}
+                  </AvatarFallback>
+                </Avatar>
+              )}
               <div className="min-w-0">
                 <h2 className="truncate text-base font-semibold leading-tight">
                   {title}
                 </h2>
                 <p className="truncate text-xs text-muted-foreground">
-                  {dm?.isGroup
-                    ? `${dm.members?.length ?? 0} members`
+                  {dmMeta?.isGroup
+                    ? `${dmMeta.participants?.length ?? dmMeta.members?.length ?? 0} members`
                     : "Direct message"}
                 </p>
               </div>
@@ -779,6 +936,7 @@ export function ConversationView({
               conversationId={id}
               onToggleReaction={handleToggleReaction}
               onEditMessage={handleEditMessage}
+              onDeleteMessage={handleDeleteMessage}
               onMarkUnread={markConversationUnread}
               scrollToMessageId={scrollToMessageId}
               highlightMessageId={highlightMessageId}
@@ -791,7 +949,6 @@ export function ConversationView({
             conversationType={type}
             conversationId={id}
             onSend={handleSend}
-            onSaveEdit={handleEditMessage}
           />
         </div>
         {activeThreadMessageId && (
@@ -811,6 +968,7 @@ export function ConversationView({
               );
             }}
             onToggleReaction={handleToggleReaction}
+            onDeleteMessage={handleDeleteMessage}
           />
         )}
         {type === "channel" && channelDetailsView && (
@@ -822,6 +980,16 @@ export function ConversationView({
             channelId={type === "channel" ? id : undefined}
           />
         )}
+        {type === "dm" &&
+          dmDetailsView === "members" &&
+          dmMeta?.isGroup &&
+          dmMeta.participants?.length ? (
+            <DmGroupMembersPanel
+              dmId={id}
+              title={title}
+              participants={dmMeta.participants}
+            />
+          ) : null}
         {type === "dm" && dmDetailsView === "search" && (
           <DmSearchPanel conversationId={id} onSelect={handleDmSearchSelect} />
         )}
@@ -838,7 +1006,7 @@ export function ConversationView({
           />
         )}
         {type === "channel" && <ChannelDetailsRail channelId={id} />}
-        {type === "dm" && <DmDetailsRail />}
+        {type === "dm" && <DmDetailsRail dm={dmMeta} />}
       </div>
       {type === "channel" ? (
         <ConfirmDialog

@@ -20,7 +20,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useChannelMembers } from "@/hooks/use-channel-members";
-import { avatarInitialFromName } from "@/lib/user-display";
+import {
+  avatarColorClassForKey,
+  avatarInitialFromName,
+} from "@/lib/user-display";
 
 const RAIL_ACTIONS: {
   view: Exclude<ChannelDetailsView, "followers" | "settings">;
@@ -33,12 +36,6 @@ const RAIL_ACTIONS: {
 
 const AVATAR_RING = "ring-1 ring-card";
 const VISIBLE_FOLLOWER_AVATARS = 3;
-
-const FOLLOWER_AVATAR_COLORS = [
-  "bg-gradient-to-br from-sky-400 to-blue-600 text-white",
-  "bg-[#7c4dff] text-white",
-  "bg-red-500 text-white",
-] as const;
 
 function RailIconButton({
   label,
@@ -124,16 +121,13 @@ export function ChannelDetailsRail({ channelId }: { channelId: string }) {
                       className={cn(
                         "size-6",
                         AVATAR_RING,
-                        i > 0 && "-mt-1.5",
-                        FOLLOWER_AVATAR_COLORS[i % FOLLOWER_AVATAR_COLORS.length]
+                        i > 0 && "-mt-1.5"
                       )}
                     >
                       <AvatarFallback
                         className={cn(
                           "text-[9px] font-semibold",
-                          FOLLOWER_AVATAR_COLORS[
-                            i % FOLLOWER_AVATAR_COLORS.length
-                          ]
+                          avatarColorClassForKey(f.id, f.name)
                         )}
                       >
                         {avatarInitialFromName(f.name)}
