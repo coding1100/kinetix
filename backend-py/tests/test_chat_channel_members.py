@@ -5,7 +5,23 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
+from app.schemas.chat import UpdateChannelMemberBody
 from tests.conftest import API_BASE, require_py4_server
+
+
+def test_update_channel_member_body_parses_is_following():
+    assert (
+        UpdateChannelMemberBody.model_validate({"isFollowing": False}).is_following
+        is False
+    )
+    assert (
+        UpdateChannelMemberBody.model_validate({"isFollowing": True}).is_following
+        is True
+    )
+    assert (
+        UpdateChannelMemberBody.model_validate({"is_following": False}).is_following
+        is False
+    )
 
 
 @pytest.mark.asyncio

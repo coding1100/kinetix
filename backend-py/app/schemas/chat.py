@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 
 class CreateChannelBody(BaseModel):
@@ -52,7 +52,13 @@ class UpdateChannelBody(BaseModel):
 
 
 class UpdateChannelMemberBody(BaseModel):
-    isFollowing: bool | None = None
+    model_config = ConfigDict(populate_by_name=True)
+
+    is_following: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("isFollowing", "is_following"),
+        serialization_alias="isFollowing",
+    )
     starred: bool | None = None
 
 

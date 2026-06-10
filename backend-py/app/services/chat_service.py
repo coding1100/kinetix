@@ -722,9 +722,12 @@ def _dm_payload(
 ) -> dict:
     other = next((p for p in conv.participants if p.user_id != user_id), None)
     members = None
+    participants = None
     if conv.is_group:
-        members = [
-            p.user.full_name.split(" ")[0]
+        others = [p for p in conv.participants if p.user_id != user_id]
+        members = [p.user.full_name.split(" ")[0] for p in others]
+        participants = [
+            {"id": p.user_id, "fullName": p.user.full_name}
             for p in conv.participants
         ]
     other_presence = (
@@ -737,6 +740,7 @@ def _dm_payload(
         "name": dm_display_name(conv, user_id),
         "isGroup": conv.is_group,
         "members": members,
+        "participants": participants,
         "avatarUrl": None,
         "lastMessage": last_message,
         "lastAt": last_at.isoformat(),
@@ -871,7 +875,7 @@ async def create_or_get_dm(
     conversation = DirectConversation(
         workspace_id=workspace_id,
         is_group=is_group,
-        name=name or "Group chat" if is_group else None,
+        name=name.strip() if name and name.strip() else None,
     )
     session.add(conversation)
     await session.flush()
@@ -1163,6 +1167,21 @@ def _channel_member_json(
     }
 
 
+def _workspace_member_as_channel_json(
+    user: User, workspace_role: str | None, *, is_following: bool = False
+) -> dict:
+    return {
+        "id": user.id,
+        "fullName": user.full_name,
+        "email": user.email,
+        "avatarUrl": user.avatar_url,
+        "isFollowing": is_following,
+        "starred": False,
+        "joinedAt": None,
+        "workspaceRole": workspace_role,
+    }
+
+
 async def _workspace_role_map(
     session: AsyncSession, workspace_id: str, user_ids: list[str]
 ) -> dict[str, str]:
@@ -1184,7 +1203,8 @@ async def list_channel_members(
     session: AsyncSession, workspace_id: str, user_id: str, channel_id: str
 ) -> dict:
     member = await _assert_channel_member(session, channel_id, user_id)
-    if member.channel.workspace_id != workspace_id:
+    channel = member.channel
+    if channel.workspace_id != workspace_id:
         raise AppError(404, "NOT_FOUND", "Channel not found")
 
     rows = (
@@ -1195,14 +1215,45 @@ async def list_channel_members(
             .order_by(ChatChannelMember.joined_at.asc())
         )
     ).all()
-    user_ids = [m.user_id for m in rows]
+
+    if channel.is_private:
+        user_ids = [m.user_id for m in rows]
+        roles = await _workspace_role_map(session, workspace_id, user_ids)
+        return {
+            "data": [
+                _channel_member_json(m.user, m, roles.get(m.user_id))
+                for m in rows
+            ]
+        }
+
+    workspace_members = (
+        await session.scalars(
+            select(WorkspaceMember)
+            .where(
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.status == MemberStatus.ACTIVE,
+            )
+            .options(selectinload(WorkspaceMember.user))
+            .order_by(WorkspaceMember.joined_at.asc())
+        )
+    ).all()
+    channel_by_user = {m.user_id: m for m in rows}
+    user_ids = [wm.user_id for wm in workspace_members]
     roles = await _workspace_role_map(session, workspace_id, user_ids)
-    return {
-        "data": [
-            _channel_member_json(m.user, m, roles.get(m.user_id))
-            for m in rows
-        ]
-    }
+    data = []
+    for wm in workspace_members:
+        existing = channel_by_user.get(wm.user_id)
+        if existing:
+            data.append(
+                _channel_member_json(wm.user, existing, roles.get(wm.user_id))
+            )
+        else:
+            data.append(
+                _workspace_member_as_channel_json(
+                    wm.user, roles.get(wm.user_id), is_following=False
+                )
+            )
+    return {"data": data}
 
 
 async def add_channel_members(
@@ -1213,15 +1264,17 @@ async def add_channel_members(
     body: AddChannelMembersBody,
 ) -> dict:
     await _assert_channel_member(session, channel_id, user_id)
-    if not await _is_workspace_owner(session, workspace_id, user_id):
-        raise AppError(
-            403,
-            "FORBIDDEN",
-            "Only the workspace owner can add people to channel access",
-        )
     channel = await session.get(ChatChannel, channel_id)
     if not channel or channel.workspace_id != workspace_id:
         raise AppError(404, "NOT_FOUND", "Channel not found")
+    if not channel.is_private and not await _is_workspace_admin(
+        session, workspace_id, user_id
+    ):
+        raise AppError(
+            403,
+            "FORBIDDEN",
+            "Public channels include all workspace members in access",
+        )
 
     requested = list(dict.fromkeys(body.userIds))
     active = (
@@ -1396,25 +1449,36 @@ async def update_channel_member_target(
         )
     )
     if not target:
-        raise AppError(404, "NOT_FOUND", "User is not a channel member")
+        if channel.is_private:
+            raise AppError(404, "NOT_FOUND", "User is not a channel member")
+        workspace_member = await session.scalar(
+            select(WorkspaceMember).where(
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.user_id == target_user_id,
+                WorkspaceMember.status == MemberStatus.ACTIVE,
+            )
+        )
+        if not workspace_member:
+            raise AppError(404, "NOT_FOUND", "User is not a workspace member")
+        target = ChatChannelMember(
+            channel_id=channel_id,
+            user_id=target_user_id,
+            starred=False,
+            is_following=False,
+        )
+        session.add(target)
+        await session.flush()
 
     is_self = target_user_id == user_id
-    if not is_self:
-        if not await _is_workspace_admin(session, workspace_id, user_id):
-            raise AppError(
-                403,
-                "FORBIDDEN",
-                "Only workspace admins can update other members",
-            )
-        if body.starred is not None:
-            raise AppError(
-                400,
-                "VALIDATION_ERROR",
-                "Cannot change starred status for other members",
-            )
+    if not is_self and body.starred is not None:
+        raise AppError(
+            400,
+            "VALIDATION_ERROR",
+            "Cannot change starred status for other members",
+        )
 
-    if body.isFollowing is not None:
-        target.is_following = body.isFollowing
+    if body.is_following is not None:
+        target.is_following = body.is_following
     if body.starred is not None and is_self:
         target.starred = body.starred
 

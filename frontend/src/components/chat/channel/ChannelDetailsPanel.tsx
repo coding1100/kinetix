@@ -56,9 +56,13 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { formatRequestError } from "@/lib/api/client";
 import { PanelCardShell } from "@/components/shared/PanelCardShell";
 import { useUiStore } from "@/stores/ui-store";
-import { avatarInitialFromName } from "@/lib/user-display";
+import {
+  avatarColorClassForKey,
+  avatarInitialFromName,
+} from "@/lib/user-display";
 import { ChannelNameLabel } from "@/components/chat/ChannelNameLabel";
 import { useChannelFavorite } from "@/hooks/use-channel-favorite";
 
@@ -68,19 +72,6 @@ const TITLES: Record<ChannelDetailsView, string> = {
   replies: "Replies",
   settings: "Channel settings",
 };
-
-const FOLLOWER_FALLBACK_COLORS = [
-  "bg-violet-600 text-white",
-  "bg-sky-600 text-white",
-  "bg-emerald-600 text-white",
-  "bg-amber-600 text-white",
-  "bg-rose-600 text-white",
-];
-
-function followerColorForName(name: string) {
-  const hash = [...name].reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-  return FOLLOWER_FALLBACK_COLORS[hash % FOLLOWER_FALLBACK_COLORS.length];
-}
 
 function FollowerAvatar({ name, userId }: { name: string; userId: string }) {
   const presence = useUserPresence(userId, "offline");
@@ -92,7 +83,7 @@ function FollowerAvatar({ name, userId }: { name: string; userId: string }) {
       avatarClassName="size-7"
       dotSize="xs"
       borderClass="border-card"
-      fallbackClassName={followerColorForName(name)}
+      fallbackClassName={avatarColorClassForKey(userId, name)}
       fallback={avatarInitialFromName(name)}
     />
   );
@@ -173,12 +164,25 @@ function FollowersView({ channelId }: { channelId: string }) {
     (u) => !u.isFollowing && matchesQuery(u)
   );
 
+  const channelIsPrivate = useChatStore((s) => {
+    const fromCache = s.sidebarListsCache?.channels.find(
+      (c) => c.id === channelId
+    );
+    return (
+      fromCache?.isPrivate ?? getChannelById(channelId)?.isPrivate ?? false
+    );
+  });
+
   const workspaceRole = useAuthStore((s) =>
     s.workspaces.find((w) => w.id === workspaceId)?.role
   );
-  const canAddToAccess = workspaceRole === "OWNER";
+  const canAddToAccess = channelIsPrivate;
   const canManageMembers =
     workspaceRole === "OWNER" || workspaceRole === "ADMIN";
+  const canRemoveMember = (member: ChannelMember) =>
+    canManageMembers &&
+    member.id !== currentUserId &&
+    (channelIsPrivate ? allMembers.length > 1 : member.joinedAt != null);
 
   useEffect(() => {
     if (!membersLoading && followers.length === 0) {
@@ -186,8 +190,7 @@ function FollowersView({ channelId }: { channelId: string }) {
     }
   }, [membersLoading, followers.length]);
 
-  const canChangeFollow = (member: ChannelMember) =>
-    member.id === currentUserId || canManageMembers;
+  const canChangeFollow = (_member: ChannelMember) => true;
 
   const setMemberFollowing = async (
     member: ChannelMember,
@@ -221,9 +224,13 @@ function FollowersView({ channelId }: { channelId: string }) {
             : `${member.fullName} removed from followers`
         );
       }
-    } catch {
+    } catch (err) {
+      const detail = formatRequestError(err);
       toast.error(
-        following ? "Failed to add to followers" : "Failed to unfollow"
+        following
+          ? `Failed to add to followers — ${detail}`
+          : `Failed to unfollow — ${detail}`,
+        { duration: 8000 }
       );
     } finally {
       setMemberActionId(null);
@@ -400,9 +407,7 @@ function FollowersView({ channelId }: { channelId: string }) {
                   >
                     {accessPermission(user.workspaceRole)}
                   </Badge>
-                  {canManageMembers &&
-                    user.id !== currentUserId &&
-                    allMembers.length > 1 && (
+                  {canRemoveMember(user) ? (
                       <Button
                         variant="destructive"
                         size="sm"
@@ -414,7 +419,7 @@ function FollowersView({ channelId }: { channelId: string }) {
                         <UserMinusIcon className="size-3.5" />
                         Remove
                       </Button>
-                    )}
+                    ) : null}
                 </li>
               ))}
               {!membersLoading && filteredAccessFollowing.length === 0 ? (
@@ -457,9 +462,7 @@ function FollowersView({ channelId }: { channelId: string }) {
                       Follow
                     </Button>
                   ) : null}
-                  {canManageMembers &&
-                    user.id !== currentUserId &&
-                    allMembers.length > 1 && (
+                  {canRemoveMember(user) ? (
                       <Button
                         variant="destructive"
                         size="sm"
@@ -471,7 +474,7 @@ function FollowersView({ channelId }: { channelId: string }) {
                         <UserMinusIcon className="size-3.5" />
                         Remove
                       </Button>
-                    )}
+                    ) : null}
                 </li>
               ))}
               {!membersLoading && filteredAccessNotFollowing.length === 0 ? (
