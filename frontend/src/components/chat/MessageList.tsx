@@ -14,6 +14,8 @@ import {
 import { ChatDateDivider } from "@/components/chat/ChatDateDivider";
 import { ChatMessageRow } from "@/components/chat/ChatMessageRow";
 import { buildMessageRuns } from "@/lib/chat/message-groups";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 
 export function MessageList({
   messages,
@@ -22,7 +24,11 @@ export function MessageList({
   onToggleReaction,
   onEditMessage,
   onDeleteMessage,
+  onPinMessage,
   onMarkUnread,
+  hasMoreOlder,
+  loadingOlder,
+  onLoadOlder,
   scrollToMessageId,
   highlightMessageId,
   onScrollComplete,
@@ -36,7 +42,11 @@ export function MessageList({
     payload: UpdateMessagePayload
   ) => Promise<void>;
   onDeleteMessage?: (messageId: string) => Promise<void>;
+  onPinMessage?: (messageId: string, pinned: boolean) => void | Promise<void>;
   onMarkUnread?: () => void | Promise<void>;
+  hasMoreOlder?: boolean;
+  loadingOlder?: boolean;
+  onLoadOlder?: () => void;
   scrollToMessageId?: string | null;
   highlightMessageId?: string | null;
   onScrollComplete?: () => void;
@@ -74,6 +84,26 @@ export function MessageList({
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-34" data-quote-scope="main">
       <div className="py-4">
+        {hasMoreOlder ? (
+          <div className="mb-3 flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-full"
+              disabled={loadingOlder}
+              onClick={onLoadOlder}
+            >
+              {loadingOlder ? (
+                <>
+                  <Spinner className="size-3.5" />
+                  Loading…
+                </>
+              ) : (
+                "Load older messages"
+              )}
+            </Button>
+          </div>
+        ) : null}
         {dayGroups.map((group) => (
           <div
             key={group.dayKey}
@@ -98,6 +128,7 @@ export function MessageList({
                       onToggleReaction={onToggleReaction}
                       onEditMessage={onEditMessage}
                       onDeleteMessage={onDeleteMessage}
+                      onPinMessage={onPinMessage}
                       onMarkUnread={onMarkUnread}
                       highlighted={highlightMessageId === msg.id}
                     />

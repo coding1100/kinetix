@@ -8,12 +8,14 @@ import {
   MessageCircleIcon,
   UserIcon,
   CheckSquareIcon,
+  MessageSquareTextIcon,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { matchesQuery } from "@/lib/search/match-query";
-import { fetchWorkspaceMembers } from "@/lib/api/chat";
+import { fetchWorkspaceMembers, searchGlobalMessages } from "@/lib/api/chat";
+import type { ChatSearchHit } from "@/lib/types/chat";
 import { loadSidebarLists } from "@/lib/chat/sidebar-lists-loader";
 import { fetchTasks } from "@/lib/api/home";
 import { useAuthStore } from "@/stores/auth-store";
@@ -26,6 +28,7 @@ type SearchResults = {
   dms: DirectMessage[];
   allDms: DirectMessage[];
   people: { id: string; fullName: string; email: string }[];
+  messages: ChatSearchHit[];
   tasks: Task[];
 };
 
@@ -34,6 +37,7 @@ const EMPTY: SearchResults = {
   dms: [],
   allDms: [],
   people: [],
+  messages: [],
   tasks: [],
 };
 
@@ -56,10 +60,11 @@ export function GlobalSearch() {
       }
       setLoading(true);
       try {
-        const [lists, membersRes, tasksRes] = await Promise.all([
+        const [lists, membersRes, tasksRes, messagesRes] = await Promise.all([
           loadSidebarLists(accessToken, workspaceId),
           fetchWorkspaceMembers(accessToken, workspaceId),
           fetchTasks(accessToken, workspaceId, undefined, term),
+          searchGlobalMessages(accessToken, workspaceId, term),
         ]);
         setResults({
           channels: lists.channels.filter((c) =>
@@ -72,6 +77,7 @@ export function GlobalSearch() {
           people: membersRes.data
             .filter((m) => matchesQuery(term, m.fullName, m.email))
             .map((m) => ({ id: m.id, fullName: m.fullName, email: m.email })),
+          messages: messagesRes.data,
           tasks: tasksRes.data,
         });
       } catch {
@@ -111,6 +117,7 @@ export function GlobalSearch() {
     results.channels.length > 0 ||
     results.dms.length > 0 ||
     results.people.length > 0 ||
+    results.messages.length > 0 ||
     results.tasks.length > 0;
   const showPanel = open && term.length > 0;
 
@@ -199,6 +206,23 @@ export function GlobalSearch() {
                   onSelect={() => go(personHref(p.id))}
                 />
               ))}
+            </SearchSection>
+            <SearchSection title="Messages" show={results.messages.length > 0}>
+              {results.messages.map((m) => {
+                const href =
+                  m.kind === "channel"
+                    ? `/chat/c/${m.conversationId}?message=${m.id}`
+                    : `/chat/dm/${m.conversationId}?message=${m.id}`;
+                return (
+                  <SearchRow
+                    key={`m-${m.id}`}
+                    icon={<MessageSquareTextIcon className="size-3.5" />}
+                    label={m.authorName}
+                    hint={m.body.replace(/<[^>]+>/g, " ").slice(0, 80)}
+                    onSelect={() => go(href)}
+                  />
+                );
+              })}
             </SearchSection>
             <SearchSection title="Tasks" show={results.tasks.length > 0}>
               {results.tasks.map((t) => (

@@ -15,8 +15,10 @@ export function WorkspaceSetupShell({
   nextHref,
   nextLabel = "Next",
   nextDisabled = false,
+  nextLoading = false,
   showSkip = false,
   onSkipAction,
+  onNextAction,
   children,
 }: {
   title: string;
@@ -27,8 +29,10 @@ export function WorkspaceSetupShell({
   nextHref: string;
   nextLabel?: string;
   nextDisabled?: boolean;
+  nextLoading?: boolean;
   showSkip?: boolean;
   onSkipAction?: () => void;
+  onNextAction?: () => void | Promise<void>;
   children: React.ReactNode;
 }) {
   const router = useRouter();
@@ -75,8 +79,14 @@ export function WorkspaceSetupShell({
                 ) : null}
                 <Button
                   variant="default"
-                  onClick={() => router.push(nextHref)}
-                  disabled={nextDisabled}
+                  onClick={() => {
+                    if (onNextAction) {
+                      void onNextAction();
+                      return;
+                    }
+                    router.push(nextHref);
+                  }}
+                  disabled={nextDisabled || nextLoading}
                 >
                   {nextLabel}
                   {nextLabel === "Finish" ? <CheckIcon className="size-4" /> : <ChevronRightIcon className="size-4" />}

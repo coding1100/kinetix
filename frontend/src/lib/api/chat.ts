@@ -2,9 +2,11 @@ import { apiFetch } from "./client";
 import type {
   Channel,
   ChannelMember,
+  ChannelNotificationLevel,
   ChatMessage,
   ChatSearchHit,
   DirectMessage,
+  PaginatedMessagesResponse,
   SendMessagePayload,
   ThreadBundle,
   UpdateMessagePayload,
@@ -126,7 +128,12 @@ export function updateChannelMember(
   token: string,
   workspaceId: string,
   channelId: string,
-  body: { isFollowing?: boolean; starred?: boolean }
+  body: {
+    isFollowing?: boolean;
+    starred?: boolean;
+    pinned?: boolean;
+    notificationLevel?: ChannelNotificationLevel;
+  }
 ) {
   return apiFetch<{ ok: boolean }>(
     wsPath(workspaceId, `/chat/channels/${channelId}/member`),
@@ -194,15 +201,63 @@ export function markDmUnread(
   );
 }
 
+function messagesQuery(limit?: number, before?: string | null) {
+  const params = new URLSearchParams();
+  if (limit) params.set("limit", String(limit));
+  if (before) params.set("before", before);
+  const q = params.toString();
+  return q ? `?${q}` : "";
+}
+
 export function fetchChannelMessages(
   token: string,
   workspaceId: string,
   channelId: string,
-  init?: RequestInit
+  init?: RequestInit & { limit?: number; before?: string | null }
 ) {
-  return apiFetch<{ data: ChatMessage[] }>(
-    wsPath(workspaceId, `/chat/channels/${channelId}/messages`),
-    { token, ...init }
+  const { limit, before, ...rest } = init ?? {};
+  return apiFetch<PaginatedMessagesResponse>(
+    wsPath(
+      workspaceId,
+      `/chat/channels/${channelId}/messages${messagesQuery(limit, before)}`
+    ),
+    { token, ...rest }
+  );
+}
+
+export function searchGlobalMessages(
+  token: string,
+  workspaceId: string,
+  query: string
+) {
+  const q = encodeURIComponent(query.trim());
+  return apiFetch<{ data: ChatSearchHit[] }>(
+    wsPath(workspaceId, `/chat/messages/search?q=${q}`),
+    { token }
+  );
+}
+
+export function pinChannel(
+  token: string,
+  workspaceId: string,
+  channelId: string,
+  pinned: boolean
+) {
+  return apiFetch<{ ok: boolean; pinned: boolean }>(
+    wsPath(workspaceId, `/chat/channels/${channelId}/pin`),
+    { method: "PATCH", token, body: JSON.stringify({ pinned }) }
+  );
+}
+
+export function pinMessage(
+  token: string,
+  workspaceId: string,
+  messageId: string,
+  pinned: boolean
+) {
+  return apiFetch<ChatMessage>(
+    wsPath(workspaceId, `/chat/messages/${messageId}/pin`),
+    { method: "PATCH", token, body: JSON.stringify({ pinned }) }
   );
 }
 
@@ -295,11 +350,66 @@ export function fetchDmMessages(
   token: string,
   workspaceId: string,
   conversationId: string,
-  init?: RequestInit
+  init?: RequestInit & { limit?: number; before?: string | null }
 ) {
-  return apiFetch<{ data: ChatMessage[] }>(
-    wsPath(workspaceId, `/chat/dms/${conversationId}/messages`),
-    { token, ...init }
+  const { limit, before, ...rest } = init ?? {};
+  return apiFetch<PaginatedMessagesResponse>(
+    wsPath(
+      workspaceId,
+      `/chat/dms/${conversationId}/messages${messagesQuery(limit, before)}`
+    ),
+    { token, ...rest }
+  );
+}
+
+export function updateDmParticipant(
+  token: string,
+  workspaceId: string,
+  conversationId: string,
+  body: { starred?: boolean; hidden?: boolean }
+) {
+  return apiFetch<{ ok: boolean; starred?: boolean; hidden?: boolean }>(
+    wsPath(workspaceId, `/chat/dms/${conversationId}/participant`),
+    { method: "PATCH", token, body: JSON.stringify(body) }
+  );
+}
+
+export function renameGroupDm(
+  token: string,
+  workspaceId: string,
+  conversationId: string,
+  name: string
+) {
+  return apiFetch<{ id: string; name: string }>(
+    wsPath(workspaceId, `/chat/dms/${conversationId}`),
+    { method: "PATCH", token, body: JSON.stringify({ name }) }
+  );
+}
+
+export function addDmParticipants(
+  token: string,
+  workspaceId: string,
+  conversationId: string,
+  userIds: string[]
+) {
+  return apiFetch<{ ok: boolean; addedUserIds: string[] }>(
+    wsPath(workspaceId, `/chat/dms/${conversationId}/participants`),
+    { method: "POST", token, body: JSON.stringify({ userIds }) }
+  );
+}
+
+export function removeDmParticipant(
+  token: string,
+  workspaceId: string,
+  conversationId: string,
+  targetUserId: string
+) {
+  return apiFetch<{ ok: boolean }>(
+    wsPath(
+      workspaceId,
+      `/chat/dms/${conversationId}/participants/${targetUserId}`
+    ),
+    { method: "DELETE", token }
   );
 }
 

@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.db.models.chat import ChatChannel
+from app.db.models.chat import ChatChannel, ChatChannelMember, ChatMessage
 from app.db.models.enums import InboxBucket, InboxItemType, InboxTimeGroup, MemberStatus
 from app.db.models.home import InboxItem
 from app.db.models.user import User
@@ -18,6 +18,34 @@ PERSON_MENTION_RE = re.compile(
     r"@([\w]+(?:\u00a0[\w]+)?|[\w]+&nbsp;[\w]+)",
     re.UNICODE,
 )
+
+CHANNEL_MENTION_RE = re.compile(
+    r"(?:@channel|#([\w-]+))",
+    re.IGNORECASE,
+)
+
+
+def body_has_channel_mention(body: str) -> bool:
+    return bool(CHANNEL_MENTION_RE.search(body))
+
+
+def _notification_level(member: ChatChannelMember) -> str:
+    level = getattr(member, "notification_level", None) or "MENTIONS"
+    return str(level).upper()
+
+
+async def _channel_members_for_notify(
+    session: AsyncSession, channel_id: str
+) -> list[ChatChannelMember]:
+    return list(
+        (
+            await session.scalars(
+                select(ChatChannelMember).where(
+                    ChatChannelMember.channel_id == channel_id
+                )
+            )
+        ).all()
+    )
 
 
 def parse_person_mention_labels(body: str) -> list[str]:
@@ -269,6 +297,15 @@ async def create_mention_notifications(
         source = actor_name
         activity_kind = "mention_dm"
 
+    if channel:
+        members = await _channel_members_for_notify(session, channel.id)
+        level_by_user = {m.user_id: _notification_level(m) for m in members}
+        recipient_ids = [
+            rid
+            for rid in recipient_ids
+            if level_by_user.get(rid, "MENTIONS") != "NONE"
+        ]
+
     for recipient_id in recipient_ids:
         item = InboxItem(
             workspace_id=workspace_id,
@@ -282,6 +319,125 @@ async def create_mention_notifications(
             time_group=InboxTimeGroup.TODAY,
             href=href,
             activity_kind=activity_kind,
+        )
+        session.add(item)
+        created.append((recipient_id, item))
+
+    await session.flush()
+    return created
+
+
+async def create_channel_broadcast_notifications(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    author_user_id: str,
+    channel: ChatChannel,
+    body: str,
+    message_id: str,
+) -> list[tuple[str, InboxItem]]:
+    members = await _channel_members_for_notify(session, channel.id)
+    has_channel_mention = body_has_channel_mention(body)
+    channel_label = channel.name
+    href = f"{_channel_href(channel)}?message={message_id}"
+    users = await _load_users(session, [author_user_id])
+    actor_name = (
+        users.get(author_user_id).full_name if users.get(author_user_id) else "Someone"
+    )
+    snippet = _message_snippet(body)
+    created: list[tuple[str, InboxItem]] = []
+
+    for member in members:
+        if member.user_id == author_user_id:
+            continue
+        level = _notification_level(member)
+        if level == "NONE":
+            continue
+        if level == "MENTIONS" and not has_channel_mention:
+            person_labels = parse_person_mention_labels(body)
+            mentioned = await _resolve_mentioned_user_ids(
+                session, workspace_id, person_labels, exclude_user_id=author_user_id
+            )
+            if member.user_id not in mentioned and not has_channel_mention:
+                continue
+        item = InboxItem(
+            workspace_id=workspace_id,
+            user_id=member.user_id,
+            type=InboxItemType.CHAT,
+            title=f"New message in #{channel_label}",
+            preview=f"{actor_name}: {snippet}",
+            source=channel_label,
+            unread=True,
+            bucket=InboxBucket.ALL,
+            time_group=InboxTimeGroup.TODAY,
+            href=href,
+            activity_kind="channel_message",
+        )
+        session.add(item)
+        created.append((member.user_id, item))
+
+    await session.flush()
+    return created
+
+
+async def create_thread_reply_notifications(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    author_user_id: str,
+    parent: ChatMessage,
+    reply_body: str,
+    kind: str,
+    conversation_id: str,
+) -> list[tuple[str, InboxItem]]:
+    users_to_notify: set[str] = set()
+    if parent.author_id != author_user_id:
+        users_to_notify.add(parent.author_id)
+
+    replies = (
+        await session.scalars(
+            select(ChatMessage.author_id).where(
+                ChatMessage.parent_id == parent.id,
+                ChatMessage.author_id != author_user_id,
+            )
+        )
+    ).all()
+    for author_id in replies:
+        if author_id != author_user_id:
+            users_to_notify.add(author_id)
+
+    if not users_to_notify:
+        return []
+
+    users = await _load_users(session, [author_user_id, *users_to_notify])
+    actor_name = (
+        users.get(author_user_id).full_name if users.get(author_user_id) else "Someone"
+    )
+    snippet = _message_snippet(reply_body)
+    if kind == "channel":
+        channel = await session.get(ChatChannel, conversation_id)
+        source = channel.name if channel else "Channel"
+        href = f"/chat/c/{conversation_id}?thread={parent.id}"
+        title = f"Reply in #{source}"
+    else:
+        source = "Direct message"
+        href = f"/chat/dm/{conversation_id}?thread={parent.id}"
+        title = "New thread reply"
+
+    created: list[tuple[str, InboxItem]] = []
+    for recipient_id in users_to_notify:
+        item = InboxItem(
+            workspace_id=workspace_id,
+            user_id=recipient_id,
+            type=InboxItemType.REPLY,
+            title=title,
+            preview=f"{actor_name}: {snippet}",
+            source=source,
+            unread=True,
+            bucket=InboxBucket.ALL,
+            time_group=InboxTimeGroup.TODAY,
+            href=href,
+            activity_kind="thread_reply",
         )
         session.add(item)
         created.append((recipient_id, item))

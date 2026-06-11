@@ -141,6 +141,50 @@ async def broadcast_channel_removed(
     )
 
 
+async def broadcast_chat_typing(
+    *,
+    workspace_id: str,
+    kind: str,
+    conversation_id: str,
+    user_id: str,
+    typing: bool,
+) -> None:
+    sio = get_sio()
+    await sio.emit(
+        "chat:typing",
+        {
+            "workspaceId": workspace_id,
+            "kind": kind,
+            "conversationId": conversation_id,
+            "userId": user_id,
+            "typing": typing,
+        },
+        room=f"ws:{workspace_id}",
+    )
+
+
+async def broadcast_chat_read(
+    *,
+    workspace_id: str,
+    kind: str,
+    conversation_id: str,
+    user_id: str,
+    read_at: str,
+) -> None:
+    sio = get_sio()
+    await sio.emit(
+        "chat:read",
+        {
+            "workspaceId": workspace_id,
+            "kind": kind,
+            "conversationId": conversation_id,
+            "userId": user_id,
+            "readAt": read_at,
+        },
+        room=f"ws:{workspace_id}",
+    )
+
+
 async def broadcast_chat_reaction(
     *,
     workspace_id: str,

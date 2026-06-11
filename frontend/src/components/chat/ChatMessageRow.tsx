@@ -27,6 +27,7 @@ import {
   MoreHorizontalIcon,
   LinkIcon,
   BellIcon,
+  PinIcon,
   PencilIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -61,6 +62,7 @@ export function ChatMessageRow({
   onToggleReaction,
   onEditMessage,
   onDeleteMessage,
+  onPinMessage,
   onMarkUnread,
   highlighted = false,
 }: {
@@ -74,6 +76,7 @@ export function ChatMessageRow({
     payload: UpdateMessagePayload
   ) => Promise<void>;
   onDeleteMessage?: (messageId: string) => Promise<void>;
+  onPinMessage?: (messageId: string, pinned: boolean) => void | Promise<void>;
   onMarkUnread?: () => void | Promise<void>;
   highlighted?: boolean;
 }) {
@@ -91,6 +94,8 @@ export function ChatMessageRow({
   const isEditing = editingMessageId === message.id;
 
   const repliesLabel = threadRepliesLabel(message);
+  const isPinned = Boolean(message.pinnedAt);
+  const readCount = message.readByUserIds?.length ?? 0;
   const threadOpen = activeThreadMessageId === message.id;
   const reactions = message.reactions ?? [];
   const created = new Date(message.createdAt);
@@ -200,6 +205,14 @@ export function ChatMessageRow({
                 <LinkIcon className="size-4" />
                 Copy link
               </DropdownMenuItem>
+              {onPinMessage ? (
+                <DropdownMenuItem
+                  onClick={() => void onPinMessage(message.id, !isPinned)}
+                >
+                  <PinIcon className="size-4" />
+                  {isPinned ? "Unpin message" : "Pin message"}
+                </DropdownMenuItem>
+              ) : null}
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={() => {
@@ -307,6 +320,17 @@ export function ChatMessageRow({
               {repliesLabel}
             </Button>
           )}
+          {!isEditing && message.isSelf && readCount > 0 ? (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Seen by {readCount}
+            </p>
+          ) : null}
+          {!isEditing && isPinned ? (
+            <p className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
+              <PinIcon className="size-3" />
+              Pinned
+            </p>
+          ) : null}
         </div>
       </div>
       {canDelete ? (

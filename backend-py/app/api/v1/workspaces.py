@@ -5,6 +5,8 @@ from app.deps.workspace import WorkspaceMemberDep
 from app.schemas.workspace import (
     CreateInviteBody,
     CreateWorkspaceBody,
+    DeleteWorkspaceBody,
+    TransferWorkspaceOwnershipBody,
     UpdateWorkspaceBody,
     UpdateWorkspaceMemberBody,
 )
@@ -52,6 +54,32 @@ async def update_workspace(
     """Update workspace (owner/admin)."""
     return await workspace_service.update_workspace(
         session, workspace_id, user.id, body.name
+    )
+
+
+@router.delete("/{workspace_id}")
+async def delete_workspace(
+    body: DeleteWorkspaceBody,
+    workspace_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+):
+    """Permanently delete a workspace (owner only)."""
+    return await workspace_service.delete_workspace(
+        session, workspace_id, user.id, body.confirm_name
+    )
+
+
+@router.post("/{workspace_id}/transfer-ownership")
+async def transfer_workspace_ownership(
+    body: TransferWorkspaceOwnershipBody,
+    workspace_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+):
+    """Transfer workspace ownership to another member (owner only)."""
+    return await workspace_service.transfer_workspace_ownership(
+        session, workspace_id, user.id, body.new_owner_user_id
     )
 
 

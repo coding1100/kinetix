@@ -55,3 +55,19 @@ export type PresenceUpdatePayload = {
   userId: string;
   status: PresenceStatus;
 };
+
+export type ChatTypingPayload = {
+  workspaceId: string;
+  kind: "channel" | "dm";
+  conversationId: string;
+  userId: string;
+  typing: boolean;
+};
+
+export type ChatReadPayload = {
+  workspaceId: string;
+  kind: "channel" | "dm";
+  conversationId: string;
+  userId: string;
+  readAt: string;
+};

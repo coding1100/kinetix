@@ -41,6 +41,7 @@ import {
   deleteChatMessage,
   toggleMessageReaction,
   updateChatMessage,
+  pinMessage,
 } from "@/lib/api/chat";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { useHomeQuery } from "@/hooks/use-home-query";
@@ -98,6 +99,7 @@ import { fetchWorkspaceMembers } from "@/lib/api/chat";
 import { useAuthStore } from "@/stores/auth-store";
 import { ChannelNameLabel } from "@/components/chat/ChannelNameLabel";
 import { useChannelFavorite } from "@/hooks/use-channel-favorite";
+import { useChannelPin } from "@/hooks/use-channel-pin";
 import {
   invalidateChannelMembers,
   prefetchChannelMembers,
@@ -114,6 +116,8 @@ import { UNREAD_BADGE_HIDE_DELAY_MS } from "@/lib/chat/sidebar-display-unread";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { PersonProfilePanel } from "@/components/chat/PersonProfilePanel";
 import { MessageQuoteToolbar } from "@/components/chat/MessageQuoteToolbar";
+
+const MESSAGE_PAGE_SIZE = 50;
 
 export function ConversationView({
   type,
@@ -152,6 +156,10 @@ export function ConversationView({
   );
   const reactionEvent = useChatStore((s) => s.reactionEvent);
   const clearReactionEvent = useChatStore((s) => s.clearReactionEvent);
+  const typingEvent = useChatStore((s) => s.typingEvent);
+  const clearTypingEvent = useChatStore((s) => s.clearTypingEvent);
+  const readEvent = useChatStore((s) => s.readEvent);
+  const clearReadEvent = useChatStore((s) => s.clearReadEvent);
   const setConversationUnread = useChatStore((s) => s.setConversationUnread);
   const setActiveConversation = useChatStore((s) => s.setActiveConversation);
   const setUnreadBadgeHold = useChatStore((s) => s.setUnreadBadgeHold);
@@ -195,6 +203,10 @@ export function ConversationView({
   );
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [nextBefore, setNextBefore] = useState<string | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
   const [channel, setChannel] = useState<Channel | null>(null);
   const [dm, setDm] = useState<DirectMessage | null>(null);
   const [messagesLoading, setMessagesLoading] = useState(true);
@@ -241,6 +253,9 @@ export function ConversationView({
     contentReadyRef.current = false;
     readDelayKeyRef.current = null;
     clearUnreadBadgeHold();
+    setHasMoreMessages(false);
+    setNextBefore(null);
+    setTypingUserIds([]);
 
     const meta = resolveCachedMeta();
     if (type === "channel") {
@@ -302,13 +317,13 @@ export function ConversationView({
               accessToken,
               workspaceId,
               conversationId,
-              fetchInit
+              { ...fetchInit, limit: MESSAGE_PAGE_SIZE }
             )
           : await fetchDmMessages(
               accessToken,
               workspaceId,
               conversationId,
-              fetchInit
+              { ...fetchInit, limit: MESSAGE_PAGE_SIZE }
             );
 
       if (
@@ -330,6 +345,8 @@ export function ConversationView({
         });
         return next;
       });
+      setHasMoreMessages(Boolean(msgResult.hasMore));
+      setNextBefore(msgResult.nextBefore ?? null);
       setMessagesLoading(false);
 
       if (type === "channel") {
@@ -427,6 +444,48 @@ export function ConversationView({
     type,
     id,
     resolveCachedMeta,
+  ]);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!ready || !nextBefore || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const viewerId = useAuthStore.getState().user?.id;
+      const msgResult =
+        type === "channel"
+          ? await fetchChannelMessages(accessToken, workspaceId, id, {
+              limit: MESSAGE_PAGE_SIZE,
+              before: nextBefore,
+            })
+          : await fetchDmMessages(accessToken, workspaceId, id, {
+              limit: MESSAGE_PAGE_SIZE,
+              before: nextBefore,
+            });
+      const older = viewerId
+        ? msgResult.data.map((m) => normalizeMessageForViewer(m, viewerId))
+        : msgResult.data;
+      setMessages((prev) => {
+        const next = mergeFetchedMessages(older, prev);
+        setConversationCache(workspaceId, type, id, { messages: next });
+        return next;
+      });
+      setHasMoreMessages(Boolean(msgResult.hasMore));
+      setNextBefore(msgResult.nextBefore ?? null);
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : "Failed to load older messages"
+      );
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [
+    ready,
+    nextBefore,
+    loadingOlder,
+    type,
+    accessToken,
+    workspaceId,
+    id,
   ]);
 
   const markConversationRead = useCallback(async () => {
@@ -646,6 +705,80 @@ export function ConversationView({
     clearReactionEvent();
   }, [reactionEvent, workspaceId, applyReactions, clearReactionEvent]);
 
+  useEffect(() => {
+    if (!typingEvent || typingEvent.workspaceId !== workspaceId) return;
+    if (typingEvent.kind !== type || typingEvent.conversationId !== id) return;
+    if (typingEvent.userId === currentUserId) {
+      clearTypingEvent();
+      return;
+    }
+    setTypingUserIds((prev) => {
+      if (typingEvent.typing) {
+        return prev.includes(typingEvent.userId)
+          ? prev
+          : [...prev, typingEvent.userId];
+      }
+      return prev.filter((uid) => uid !== typingEvent.userId);
+    });
+    clearTypingEvent();
+  }, [
+    typingEvent,
+    workspaceId,
+    type,
+    id,
+    currentUserId,
+    clearTypingEvent,
+  ]);
+
+  useEffect(() => {
+    if (!readEvent || readEvent.workspaceId !== workspaceId) return;
+    if (readEvent.kind !== type || readEvent.conversationId !== id) return;
+    if (readEvent.userId === currentUserId) {
+      clearReadEvent();
+      return;
+    }
+    const readAtMs = new Date(readEvent.readAt).getTime();
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.authorId !== currentUserId) return m;
+        if (new Date(m.createdAt).getTime() > readAtMs) return m;
+        const readBy = new Set(m.readByUserIds ?? []);
+        readBy.add(readEvent.userId);
+        return { ...m, readByUserIds: [...readBy] };
+      })
+    );
+    clearReadEvent();
+  }, [readEvent, workspaceId, type, id, currentUserId, clearReadEvent]);
+
+  const handlePinMessage = useCallback(
+    async (messageId: string, pinned: boolean) => {
+      try {
+        const updated = await pinMessage(
+          accessToken,
+          workspaceId,
+          messageId,
+          pinned
+        );
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId
+              ? {
+                  ...m,
+                  pinnedAt: updated.pinnedAt,
+                }
+              : m
+          )
+        );
+        toast.success(pinned ? "Message pinned" : "Message unpinned");
+      } catch (err) {
+        toast.error(
+          err instanceof ApiError ? err.message : "Failed to update pin"
+        );
+      }
+    },
+    [accessToken, workspaceId]
+  );
+
   const handleEditMessage = useCallback(
     async (messageId: string, payload: UpdateMessagePayload) => {
       let rollback: ChatMessage[] | null = null;
@@ -817,6 +950,10 @@ export function ConversationView({
     id,
     channelStarred
   );
+  const { pinned: channelPinned, togglePin } = useChannelPin(
+    id,
+    Boolean(cachedSidebarChannel?.pinnedAt ?? channel?.pinnedAt)
+  );
   const recipientLabel = type === "channel" ? `#${title}` : title;
   const otherUserId = dmMeta?.otherUserId;
 
@@ -963,8 +1100,17 @@ export function ConversationView({
         </div>
         {type === "channel" ? (
         <div className="flex items-center gap-0.5">
-          <Button variant="ghost" size="icon-sm" title="Pin">
-            <PinIcon className="size-4" strokeWidth={1.75} />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            title={channelPinned ? "Unpin channel" : "Pin channel"}
+            onClick={() => void togglePin()}
+            className={cn(channelPinned && "text-primary")}
+          >
+            <PinIcon
+              className={cn("size-4", channelPinned && "fill-current")}
+              strokeWidth={1.75}
+            />
           </Button>
           <Button
             variant="ghost"
@@ -1062,12 +1208,23 @@ export function ConversationView({
               onToggleReaction={handleToggleReaction}
               onEditMessage={handleEditMessage}
               onDeleteMessage={handleDeleteMessage}
+              onPinMessage={handlePinMessage}
               onMarkUnread={markConversationUnread}
+              hasMoreOlder={hasMoreMessages}
+              loadingOlder={loadingOlder}
+              onLoadOlder={() => void loadOlderMessages()}
               scrollToMessageId={scrollToMessageId}
               highlightMessageId={highlightMessageId}
               onScrollComplete={clearSearchHighlight}
             />
           )}
+          {typingUserIds.length > 0 ? (
+            <p className="shrink-0 px-4 pb-1 text-xs text-muted-foreground">
+              {typingUserIds.length === 1
+                ? "Someone is typing…"
+                : `${typingUserIds.length} people are typing…`}
+            </p>
+          ) : null}
           <MessageComposer
             className="shrink-0"
             recipientLabel={recipientLabel}

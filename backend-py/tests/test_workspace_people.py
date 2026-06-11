@@ -16,6 +16,9 @@ async def test_openapi_workspace_people_routes():
     assert res.status_code == 200
     paths = res.json()["paths"]
     base = "/api/v1/workspaces/{workspace_id}"
+    assert base in paths
+    assert "delete" in paths[base]
+    assert f"{base}/transfer-ownership" in paths
     assert f"{base}/invites" in paths
     assert "get" in paths[f"{base}/invites"]
     assert f"{base}/invites/{{invite_id}}" in paths

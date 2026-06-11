@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { XIcon } from "lucide-react";
+import { XIcon, UserMinusIcon, UserPlusIcon } from "lucide-react";
 import type { DirectMessage, DmParticipant } from "@/lib/types/chat";
 import { PanelCardShell } from "@/components/shared/PanelCardShell";
 import { Button } from "@/components/ui/button";
@@ -12,18 +12,29 @@ import { UserAvatarWithPresence } from "@/components/shared/AvatarWithPresence";
 import { useUserPresence } from "@/stores/presence-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useAuthStore } from "@/stores/auth-store";
+import { useWorkspaceApi } from "@/hooks/use-workspace-api";
+import {
+  addDmParticipants,
+  fetchWorkspaceMembers,
+  removeDmParticipant,
+  renameGroupDm,
+} from "@/lib/api/chat";
+import { formatRequestError } from "@/lib/api/client";
+import { patchSidebarDm } from "@/lib/chat/sidebar-dm";
 import {
   avatarColorClassForKey,
   avatarInitialFromName,
 } from "@/lib/user-display";
-import { resolveGroupDmTitle } from "@/lib/chat/group-dm-display";
+import { toast } from "sonner";
 
 function MemberRow({
   member,
   isSelf,
+  onRemove,
 }: {
   member: DmParticipant;
   isSelf: boolean;
+  onRemove?: () => void;
 }) {
   const presence = useUserPresence(member.id, "offline");
 
@@ -49,6 +60,17 @@ function MemberRow({
           ) : null}
         </p>
       </div>
+      {onRemove ? (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="size-7 text-muted-foreground hover:text-destructive"
+          aria-label={`Remove ${member.fullName}`}
+          onClick={onRemove}
+        >
+          <UserMinusIcon className="size-4" />
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -64,7 +86,12 @@ export function DmGroupMembersPanel({
 }) {
   const setDmDetailsView = useChatStore((s) => s.setDmDetailsView);
   const currentUserId = useAuthStore((s) => s.user?.id);
+  const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const [query, setQuery] = useState("");
+  const [groupName, setGroupName] = useState(title);
+  const [addQuery, setAddQuery] = useState("");
+  const [savingName, setSavingName] = useState(false);
+  const [adding, setAdding] = useState(false);
 
   const members = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -76,6 +103,62 @@ export function DmGroupMembersPanel({
     if (!q) return sorted;
     return sorted.filter((m) => m.fullName.toLowerCase().includes(q));
   }, [participants, query, currentUserId]);
+
+  const handleRename = async () => {
+    const next = groupName.trim();
+    if (!next || !ready) return;
+    setSavingName(true);
+    try {
+      await renameGroupDm(accessToken, workspaceId, dmId, next);
+      patchSidebarDm(dmId, { name: next });
+      toast.success("Group renamed");
+    } catch (err) {
+      toast.error(formatRequestError(err));
+    } finally {
+      setSavingName(false);
+    }
+  };
+
+  const handleAddMember = async () => {
+    const term = addQuery.trim().toLowerCase();
+    if (!term || !ready) return;
+    setAdding(true);
+    try {
+      const membersRes = await fetchWorkspaceMembers(accessToken, workspaceId);
+      const match = membersRes.data.find(
+        (m) =>
+          !participants.some((p) => p.id === m.id) &&
+          (m.fullName.toLowerCase().includes(term) ||
+            m.email.toLowerCase().includes(term))
+      );
+      if (!match) {
+        toast.error("No matching workspace member found");
+        return;
+      }
+      await addDmParticipants(accessToken, workspaceId, dmId, [match.id]);
+      toast.success(`Added ${match.fullName}`);
+      setAddQuery("");
+    } catch (err) {
+      toast.error(formatRequestError(err));
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleRemove = async (targetUserId: string) => {
+    if (!ready) return;
+    try {
+      await removeDmParticipant(accessToken, workspaceId, dmId, targetUserId);
+      toast.success(
+        targetUserId === currentUserId ? "You left the group" : "Member removed"
+      );
+      if (targetUserId === currentUserId) {
+        setDmDetailsView(null);
+      }
+    } catch (err) {
+      toast.error(formatRequestError(err));
+    }
+  };
 
   return (
     <PanelCardShell
@@ -102,6 +185,37 @@ export function DmGroupMembersPanel({
             {participants.length} member{participants.length === 1 ? "" : "s"}
           </p>
         </div>
+        <div className="flex gap-2">
+          <Input
+            value={groupName}
+            onChange={(e) => setGroupName(e.target.value)}
+            placeholder="Group name"
+            aria-label="Group name"
+          />
+          <Button
+            size="sm"
+            disabled={savingName || !groupName.trim()}
+            onClick={() => void handleRename()}
+          >
+            Save
+          </Button>
+        </div>
+        <div className="flex gap-2">
+          <Input
+            placeholder="Add member by name or email"
+            value={addQuery}
+            onChange={(e) => setAddQuery(e.target.value)}
+            aria-label="Add member"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={adding || !addQuery.trim()}
+            onClick={() => void handleAddMember()}
+          >
+            <UserPlusIcon className="size-4" />
+          </Button>
+        </div>
         <Input
           placeholder="Search members"
           value={query}
@@ -116,17 +230,11 @@ export function DmGroupMembersPanel({
               key={`${dmId}-${member.id}`}
               member={member}
               isSelf={member.id === currentUserId}
+              onRemove={() => void handleRemove(member.id)}
             />
           ))}
         </div>
       </ScrollArea>
     </PanelCardShell>
   );
-}
-
-export function resolveGroupMembersTitle(
-  dm: Pick<DirectMessage, "name" | "isGroup" | "participants">,
-  currentUserId?: string | null
-) {
-  return resolveGroupDmTitle(dm, currentUserId);
 }

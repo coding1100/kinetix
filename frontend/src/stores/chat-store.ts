@@ -9,7 +9,9 @@ import type {
   ChatMessageDeletePayload,
   ChatMessageEditPayload,
   ChatReactionPayload,
+  ChatReadPayload,
   ChatRealtimePayload,
+  ChatTypingPayload,
 } from "@/lib/types/realtime";
 
 export type ChatSidebarLists = {
@@ -104,6 +106,8 @@ interface ChatState {
   messageEditEvent: ChatMessageEditPayload | null;
   messageDeleteEvent: ChatMessageDeletePayload | null;
   reactionEvent: ChatReactionPayload | null;
+  typingEvent: ChatTypingPayload | null;
+  readEvent: ChatReadPayload | null;
   activeThreadMessageId: string | null;
   dmDetailsView: DmDetailsView | null;
   channelDetailsView: ChannelDetailsView | null;
@@ -159,6 +163,10 @@ interface ChatState {
   clearMessageDeleteEvent: () => void;
   ingestReactionEvent: (event: ChatReactionPayload) => void;
   clearReactionEvent: () => void;
+  ingestTypingEvent: (event: ChatTypingPayload) => void;
+  clearTypingEvent: () => void;
+  ingestReadEvent: (event: ChatReadPayload) => void;
+  clearReadEvent: () => void;
   requestComposerQuote: (payload: PendingComposerQuote) => void;
   clearComposerQuote: () => void;
   startComposerEdit: (payload: ComposerEdit) => void;
@@ -178,6 +186,8 @@ export const useChatStore = create<ChatState>()(
       messageEditEvent: null,
       messageDeleteEvent: null,
       reactionEvent: null,
+      typingEvent: null,
+      readEvent: null,
       activeThreadMessageId: null,
       dmDetailsView: null,
       channelDetailsView: null,
@@ -290,6 +300,10 @@ export const useChatStore = create<ChatState>()(
       clearMessageDeleteEvent: () => set({ messageDeleteEvent: null }),
       ingestReactionEvent: (event) => set({ reactionEvent: event }),
       clearReactionEvent: () => set({ reactionEvent: null }),
+      ingestTypingEvent: (event) => set({ typingEvent: event }),
+      clearTypingEvent: () => set({ typingEvent: null }),
+      ingestReadEvent: (event) => set({ readEvent: event }),
+      clearReadEvent: () => set({ readEvent: null }),
       requestComposerQuote: (pendingComposerQuote) =>
         set({ pendingComposerQuote }),
       clearComposerQuote: () => set({ pendingComposerQuote: null }),
@@ -305,6 +319,8 @@ export const useChatStore = create<ChatState>()(
           messageEditEvent: null,
           messageDeleteEvent: null,
           reactionEvent: null,
+          typingEvent: null,
+          readEvent: null,
           pendingComposerQuote: null,
           composerEdit: null,
           activeThreadMessageId: null,

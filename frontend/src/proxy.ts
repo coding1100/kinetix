@@ -10,6 +10,7 @@ const PROTECTED_PREFIXES = [
   "/settings",
   "/profile",
   "/workspace/create",
+  "/workspace/settings",
   "/onboarding",
 ];
 
@@ -59,6 +60,7 @@ export const config = {
     "/settings/:path*",
     "/profile/:path*",
     "/workspace/create/:path*",
+    "/workspace/settings",
     "/onboarding/:path*",
     "/auth/login",
     "/auth/signup",

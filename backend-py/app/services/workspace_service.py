@@ -1,4 +1,4 @@
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -262,3 +262,82 @@ async def remove_workspace_member(
     await session.delete(target)
     await session.commit()
     return {"ok": True}
+
+
+async def _get_active_owner_membership(
+    session: AsyncSession, workspace_id: str, user_id: str
+) -> WorkspaceMember:
+    membership = await session.scalar(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.user_id == user_id,
+            WorkspaceMember.status == MemberStatus.ACTIVE,
+        )
+    )
+    if not membership or membership.role != WorkspaceRole.OWNER:
+        raise AppError(
+            403,
+            "FORBIDDEN",
+            "Only the workspace owner can perform this action",
+        )
+    return membership
+
+
+async def delete_workspace(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    confirm_name: str,
+) -> dict:
+    await _get_active_owner_membership(session, workspace_id, user_id)
+
+    ws = await session.get(Workspace, workspace_id)
+    if not ws:
+        raise AppError(404, "NOT_FOUND", "Workspace not found")
+
+    if confirm_name.strip() != ws.name.strip():
+        raise AppError(
+            400,
+            "VALIDATION_ERROR",
+            "Workspace name does not match",
+        )
+
+    # ORM delete(ws) nullifies member FKs; use DB CASCADE instead.
+    await session.execute(delete(Workspace).where(Workspace.id == workspace_id))
+    await session.commit()
+    return {"ok": True}
+
+
+async def transfer_workspace_ownership(
+    session: AsyncSession,
+    workspace_id: str,
+    actor_id: str,
+    new_owner_user_id: str,
+) -> dict:
+    if actor_id == new_owner_user_id:
+        raise AppError(
+            400,
+            "VALIDATION_ERROR",
+            "Choose a different member to transfer ownership",
+        )
+
+    actor = await _get_active_owner_membership(session, workspace_id, actor_id)
+
+    target = await session.scalar(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.user_id == new_owner_user_id,
+            WorkspaceMember.status == MemberStatus.ACTIVE,
+        )
+    )
+    if not target:
+        raise AppError(404, "NOT_FOUND", "Member not found")
+
+    actor.role = WorkspaceRole.ADMIN
+    target.role = WorkspaceRole.OWNER
+    await session.commit()
+    return {
+        "ok": True,
+        "newOwnerUserId": new_owner_user_id,
+        "previousOwnerUserId": actor_id,
+    }

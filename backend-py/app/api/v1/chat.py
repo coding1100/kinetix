@@ -4,16 +4,20 @@ from app.deps.auth import CurrentUserDep, DbSession
 from app.deps.workspace import WorkspaceMemberDep
 from app.schemas.chat import (
     AddChannelMembersBody,
+    AddDmParticipantsBody,
     CreateChannelBody,
     CreateDmBody,
+    PinMessageBody,
     PresignAttachmentBody,
     SendMessageBody,
     ToggleReactionBody,
     UpdateChannelBody,
+    UpdateDmBody,
+    UpdateDmParticipantBody,
     UpdateMessageBody,
     UpdateChannelMemberBody,
 )
-from app.services import attachment_service, chat_service
+from app.services import attachment_service, chat_enhancements, chat_service
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["chat"])
 
@@ -235,6 +239,19 @@ async def get_channel_message_search(
     )
 
 
+@router.get("/chat/messages/search")
+async def get_global_message_search(
+    workspace_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+    q: str = Query("", alias="q"),
+):
+    return await chat_enhancements.search_workspace_messages(
+        session, workspace_id, user.id, q
+    )
+
+
 @router.get("/chat/channels/{channel_id}/messages")
 async def get_channel_messages(
     workspace_id: str,
@@ -242,9 +259,16 @@ async def get_channel_messages(
     session: DbSession,
     user: CurrentUserDep,
     _member: WorkspaceMemberDep,
+    limit: int | None = Query(None, ge=1, le=100),
+    before: str | None = Query(None),
 ):
     return await chat_service.list_channel_messages(
-        session, workspace_id, user.id, channel_id
+        session,
+        workspace_id,
+        user.id,
+        channel_id,
+        limit=limit,
+        before=before,
     )
 
 
@@ -355,6 +379,67 @@ async def post_dm(
     )
 
 
+@router.patch("/chat/dms/{conversation_id}/participant")
+async def patch_dm_participant(
+    body: UpdateDmParticipantBody,
+    workspace_id: str,
+    conversation_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await chat_enhancements.update_dm_participant(
+        session,
+        workspace_id,
+        user.id,
+        conversation_id,
+        starred=body.starred,
+        hidden=body.hidden,
+    )
+
+
+@router.patch("/chat/dms/{conversation_id}")
+async def patch_dm(
+    body: UpdateDmBody,
+    workspace_id: str,
+    conversation_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await chat_enhancements.update_dm(
+        session, workspace_id, user.id, conversation_id, body.name
+    )
+
+
+@router.post("/chat/dms/{conversation_id}/participants")
+async def post_dm_participants(
+    body: AddDmParticipantsBody,
+    workspace_id: str,
+    conversation_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await chat_enhancements.add_dm_participants(
+        session, workspace_id, user.id, conversation_id, body.userIds
+    )
+
+
+@router.delete("/chat/dms/{conversation_id}/participants/{target_user_id}")
+async def delete_dm_participant(
+    workspace_id: str,
+    conversation_id: str,
+    target_user_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await chat_enhancements.remove_dm_participant(
+        session, workspace_id, user.id, conversation_id, target_user_id
+    )
+
+
 @router.get("/chat/dms/{conversation_id}")
 async def get_dm(
     workspace_id: str,
@@ -382,6 +467,34 @@ async def get_dm_message_search(
     )
 
 
+@router.patch("/chat/channels/{channel_id}/pin")
+async def patch_channel_pin(
+    workspace_id: str,
+    channel_id: str,
+    body: PinMessageBody,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await chat_enhancements.set_channel_pinned(
+        session, workspace_id, user.id, channel_id, body.pinned
+    )
+
+
+@router.patch("/chat/messages/{message_id}/pin")
+async def patch_message_pin(
+    workspace_id: str,
+    message_id: str,
+    body: PinMessageBody,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await chat_enhancements.set_message_pinned(
+        session, workspace_id, user.id, message_id, body.pinned
+    )
+
+
 @router.get("/chat/dms/{conversation_id}/messages")
 async def get_dm_messages(
     workspace_id: str,
@@ -389,9 +502,16 @@ async def get_dm_messages(
     session: DbSession,
     user: CurrentUserDep,
     _member: WorkspaceMemberDep,
+    limit: int | None = Query(None, ge=1, le=100),
+    before: str | None = Query(None),
 ):
     return await chat_service.list_dm_messages(
-        session, workspace_id, user.id, conversation_id
+        session,
+        workspace_id,
+        user.id,
+        conversation_id,
+        limit=limit,
+        before=before,
     )
 
 

@@ -81,6 +81,34 @@ class UpdateChannelMemberBody(BaseModel):
         serialization_alias="isFollowing",
     )
     starred: bool | None = None
+    pinned: bool | None = None
+    notification_level: Literal["ALL", "MENTIONS", "NONE"] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("notificationLevel", "notification_level"),
+        serialization_alias="notificationLevel",
+    )
+
+
+class UpdateDmParticipantBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    starred: bool | None = None
+    hidden: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("hidden", "isHidden", "is_hidden"),
+    )
+
+
+class UpdateDmBody(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+class AddDmParticipantsBody(BaseModel):
+    userIds: list[str] = Field(min_length=1, max_length=20)
+
+
+class PinMessageBody(BaseModel):
+    pinned: bool
 
 
 class ToggleReactionBody(BaseModel):

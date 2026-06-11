@@ -8,7 +8,7 @@ from app.core.security import verify_access_token
 from app.db.models.enums import MemberStatus
 from app.db.models.workspace import WorkspaceMember
 from app.db.session import get_session_factory
-from app.socket import presence
+from app.socket import presence, typing as typing_registry
 
 _sio: socketio.AsyncServer | None = None
 
@@ -58,17 +58,32 @@ def _register_events(sio: socketio.AsyncServer) -> None:
 
     @sio.event
     async def disconnect(sid):
+        session = await sio.get_session(sid)
+        user_id = session.get("user_id")
         updates = presence.leave_all_for_sid(sid)
-        for user_id, workspace_id, status in updates:
+        for uid, workspace_id, status in updates:
             await sio.emit(
                 "presence:update",
                 {
                     "workspaceId": workspace_id,
-                    "userId": user_id,
+                    "userId": uid,
                     "status": status,
                 },
                 room=f"ws:{workspace_id}",
             )
+        if user_id:
+            from app.socket.emit import broadcast_chat_typing
+
+            for workspace_id, kind, conv_id, _remaining in typing_registry.clear_user(
+                user_id
+            ):
+                await broadcast_chat_typing(
+                    workspace_id=workspace_id,
+                    kind=kind,
+                    conversation_id=conv_id,
+                    user_id=user_id,
+                    typing=False,
+                )
 
     @sio.on("workspace:join")
     async def workspace_join(sid, data):
@@ -143,6 +158,64 @@ def _register_events(sio: socketio.AsyncServer) -> None:
             room=f"ws:{workspace_id}",
         )
         return {"ok": True, "status": effective}
+
+    @sio.on("chat:typing:start")
+    async def chat_typing_start(sid, data):
+        from app.socket.emit import broadcast_chat_typing
+
+        session = await sio.get_session(sid)
+        user_id = session.get("user_id")
+        workspace_id = (data or {}).get("workspaceId")
+        kind = (data or {}).get("kind")
+        conversation_id = (data or {}).get("conversationId")
+        if (
+            not user_id
+            or not workspace_id
+            or kind not in ("channel", "dm")
+            or not conversation_id
+        ):
+            return {"ok": False}
+        if not await _is_workspace_member(workspace_id, user_id):
+            return {"ok": False}
+        typing_registry.start_typing(
+            workspace_id, kind, conversation_id, user_id
+        )
+        await broadcast_chat_typing(
+            workspace_id=workspace_id,
+            kind=kind,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            typing=True,
+        )
+        return {"ok": True}
+
+    @sio.on("chat:typing:stop")
+    async def chat_typing_stop(sid, data):
+        from app.socket.emit import broadcast_chat_typing
+
+        session = await sio.get_session(sid)
+        user_id = session.get("user_id")
+        workspace_id = (data or {}).get("workspaceId")
+        kind = (data or {}).get("kind")
+        conversation_id = (data or {}).get("conversationId")
+        if (
+            not user_id
+            or not workspace_id
+            or kind not in ("channel", "dm")
+            or not conversation_id
+        ):
+            return {"ok": False}
+        typing_registry.stop_typing(
+            workspace_id, kind, conversation_id, user_id
+        )
+        await broadcast_chat_typing(
+            workspace_id=workspace_id,
+            kind=kind,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            typing=False,
+        )
+        return {"ok": True}
 
 
 def create_asgi_app(fastapi_app: FastAPI):

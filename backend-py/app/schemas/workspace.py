@@ -20,6 +20,18 @@ class UpdateWorkspaceMemberBody(BaseModel):
     role: WorkspaceRole
 
 
+class DeleteWorkspaceBody(BaseModel):
+    confirm_name: str = Field(min_length=1, max_length=80, alias="confirmName")
+
+    model_config = {"populate_by_name": True}
+
+
+class TransferWorkspaceOwnershipBody(BaseModel):
+    new_owner_user_id: str = Field(min_length=1, alias="newOwnerUserId")
+
+    model_config = {"populate_by_name": True}
+
+
 class AcceptInviteSignupBody(BaseModel):
     full_name: str = Field(min_length=1, max_length=120, alias="fullName")
     password: str = Field(min_length=8)

@@ -27,9 +27,11 @@ from app.services.attachment_service import link_attachments_to_message
 from app.services.notification_service import (
     create_channel_access_notifications,
     create_channel_access_removed_notifications,
+    create_channel_broadcast_notifications,
     create_channel_deleted_notifications,
     create_channel_follow_notifications,
     create_mention_notifications,
+    create_thread_reply_notifications,
     emit_channel_access_notifications,
     emit_home_notifications,
 )
@@ -46,6 +48,7 @@ from app.socket.emit import (
     broadcast_chat_message,
     broadcast_chat_message_delete,
     broadcast_chat_message_edit,
+    broadcast_chat_read,
     broadcast_chat_reaction,
 )
 from app.socket.presence import get_presence
@@ -232,7 +235,7 @@ def _channel_payload(
     *,
     can_delete: bool = False,
 ) -> dict:
-    return {
+    payload = {
         "id": channel.id,
         "name": channel.name,
         "memberCount": member_count,
@@ -247,7 +250,13 @@ def _channel_payload(
         "customIconColor": channel.custom_icon_color,
         "createdById": channel.created_by_id,
         "canDelete": can_delete,
+        "notificationLevel": (
+            getattr(member, "notification_level", None) or "MENTIONS"
+        ).upper(),
     }
+    if member.pinned_at:
+        payload["pinnedAt"] = member.pinned_at.isoformat()
+    return payload
 
 
 async def _emit_channel_member_update(
@@ -411,8 +420,11 @@ async def list_channels(
             )
         )
 
-    channels.sort(key=lambda c: c["lastAt"], reverse=True)
-    return {"data": channels}
+    pinned = [c for c in channels if c.get("pinnedAt")]
+    unpinned = [c for c in channels if not c.get("pinnedAt")]
+    pinned.sort(key=lambda c: c["pinnedAt"] or "", reverse=True)
+    unpinned.sort(key=lambda c: c["lastAt"], reverse=True)
+    return {"data": pinned + unpinned}
 
 
 async def get_channel(
@@ -688,8 +700,26 @@ async def create_channel(
 
 
 async def list_channel_messages(
-    session: AsyncSession, workspace_id: str, user_id: str, channel_id: str
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    channel_id: str,
+    *,
+    limit: int | None = None,
+    before: str | None = None,
 ) -> dict:
+    if limit is not None or before:
+        from app.services.chat_enhancements import list_paginated_root_messages
+
+        return await list_paginated_root_messages(
+            session,
+            workspace_id,
+            user_id,
+            channel_id=channel_id,
+            limit=limit,
+            before=before,
+        )
+
     member = await _assert_channel_member(session, channel_id, user_id)
     if member.channel.workspace_id != workspace_id:
         raise AppError(404, "NOT_FOUND", "Channel not found")
@@ -725,6 +755,15 @@ async def mark_channel_read(
         raise AppError(404, "NOT_FOUND", "Channel not found")
     member.last_read_at = datetime.now(timezone.utc)
     await session.commit()
+    asyncio.create_task(
+        broadcast_chat_read(
+            workspace_id=workspace_id,
+            kind="channel",
+            conversation_id=channel_id,
+            user_id=user_id,
+            read_at=member.last_read_at.isoformat(),
+        )
+    )
     return {"ok": True, "unread": 0}
 
 
@@ -773,6 +812,14 @@ async def send_channel_message(
         body=message.body,
         channel=member.channel,
     )
+    channel_notifications = await create_channel_broadcast_notifications(
+        session,
+        workspace_id=workspace_id,
+        author_user_id=user_id,
+        channel=member.channel,
+        body=message.body,
+        message_id=message.id,
+    )
     await session.commit()
 
     loaded = await session.scalar(
@@ -781,8 +828,9 @@ async def send_channel_message(
         .options(*_MESSAGE_SEND_LOAD)
     )
     payload = map_message(loaded, user_id, thread_count=0)
-    if mention_notifications:
-        await emit_home_notifications(session, workspace_id, mention_notifications)
+    all_notifications = mention_notifications + channel_notifications
+    if all_notifications:
+        await emit_home_notifications(session, workspace_id, all_notifications)
     asyncio.create_task(
         broadcast_chat_message(
             workspace_id=workspace_id,
@@ -794,6 +842,17 @@ async def send_channel_message(
     return payload
 
 
+def _thread_has_new(
+    replies: list[ChatMessage],
+    user_id: str,
+    last_read_at: datetime | None,
+) -> bool:
+    last_read = last_read_at or _epoch()
+    return any(
+        r.author_id != user_id and r.created_at > last_read for r in replies
+    )
+
+
 async def get_message_thread(
     session: AsyncSession,
     workspace_id: str,
@@ -801,7 +860,7 @@ async def get_message_thread(
     channel_id: str,
     message_id: str,
 ) -> dict:
-    await _assert_channel_member(session, channel_id, user_id)
+    member = await _assert_channel_member(session, channel_id, user_id)
 
     parent = await session.scalar(
         select(ChatMessage)
@@ -828,7 +887,7 @@ async def get_message_thread(
     return {
         "parent": map_message(parent, user_id),
         "replies": [map_message(r, user_id) for r in replies],
-        "hasNew": False,
+        "hasNew": _thread_has_new(replies, user_id, member.last_read_at),
     }
 
 
@@ -885,6 +944,15 @@ async def send_thread_reply(
         body=message.body,
         channel=mention_channel,
     )
+    thread_notifications = await create_thread_reply_notifications(
+        session,
+        workspace_id=workspace_id,
+        author_user_id=user_id,
+        parent=parent,
+        reply_body=message.body,
+        kind="channel" if channel_id else "dm",
+        conversation_id=channel_id or conversation_id or "",
+    )
     await session.commit()
 
     loaded = await session.scalar(
@@ -893,8 +961,9 @@ async def send_thread_reply(
         .options(*_MESSAGE_SEND_LOAD)
     )
     payload = map_message(loaded, user_id, thread_count=0)
-    if mention_notifications:
-        await emit_home_notifications(session, workspace_id, mention_notifications)
+    all_notifications = mention_notifications + thread_notifications
+    if all_notifications:
+        await emit_home_notifications(session, workspace_id, all_notifications)
     conv_id = channel_id or conversation_id
     kind = "channel" if channel_id else "dm"
     if conv_id:
@@ -1007,6 +1076,8 @@ async def list_dms(session: AsyncSession, workspace_id: str, user_id: str) -> di
 
     dms = []
     for p in participations:
+        if getattr(p, "is_hidden", False):
+            continue
         last = last_by_conversation.get(p.conversation_id)
         unread = unread_by_conversation.get(p.conversation_id, 0)
         last_at = last.created_at if last else p.conversation.created_at
@@ -1107,8 +1178,26 @@ async def create_or_get_dm(
 
 
 async def list_dm_messages(
-    session: AsyncSession, workspace_id: str, user_id: str, conversation_id: str
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    conversation_id: str,
+    *,
+    limit: int | None = None,
+    before: str | None = None,
 ) -> dict:
+    if limit is not None or before:
+        from app.services.chat_enhancements import list_paginated_root_messages
+
+        return await list_paginated_root_messages(
+            session,
+            workspace_id,
+            user_id,
+            conversation_id=conversation_id,
+            limit=limit,
+            before=before,
+        )
+
     participant = await _assert_dm_participant(session, conversation_id, user_id)
     if participant.conversation.workspace_id != workspace_id:
         raise AppError(404, "NOT_FOUND", "Conversation not found")
@@ -1147,6 +1236,15 @@ async def mark_dm_read(
         raise AppError(404, "NOT_FOUND", "Conversation not found")
     participant.last_read_at = datetime.now(timezone.utc)
     await session.commit()
+    asyncio.create_task(
+        broadcast_chat_read(
+            workspace_id=workspace_id,
+            kind="dm",
+            conversation_id=conversation_id,
+            user_id=user_id,
+            read_at=participant.last_read_at.isoformat(),
+        )
+    )
     return {"ok": True, "unread": 0}
 
 
@@ -1178,6 +1276,10 @@ async def send_dm_message(
     participant = await _assert_dm_participant(session, conversation_id, user_id)
     if participant.conversation.workspace_id != workspace_id:
         raise AppError(404, "NOT_FOUND", "Conversation not found")
+
+    for p in participant.conversation.participants:
+        if getattr(p, "is_hidden", False):
+            p.is_hidden = False
 
     message = ChatMessage(
         workspace_id=workspace_id,
@@ -1226,7 +1328,7 @@ async def get_dm_message_thread(
     conversation_id: str,
     message_id: str,
 ) -> dict:
-    await _assert_dm_participant(session, conversation_id, user_id)
+    participant = await _assert_dm_participant(session, conversation_id, user_id)
 
     parent = await session.scalar(
         select(ChatMessage)
@@ -1253,7 +1355,7 @@ async def get_dm_message_thread(
     return {
         "parent": map_message(parent, user_id),
         "replies": [map_message(r, user_id) for r in replies],
-        "hasNew": False,
+        "hasNew": _thread_has_new(replies, user_id, participant.last_read_at),
     }
 
 
@@ -1844,6 +1946,14 @@ async def update_channel_member_target(
         target.is_following = body.is_following
     if body.starred is not None and is_self:
         target.starred = body.starred
+    if body.pinned is not None and is_self:
+        target.pinned_at = (
+            datetime.now(timezone.utc) if body.pinned else None
+        )
+    if body.notification_level is not None and is_self:
+        level = body.notification_level.upper()
+        if level in ("ALL", "MENTIONS", "NONE"):
+            target.notification_level = level
 
     if following_changed:
         follow_notifications = await create_channel_follow_notifications(

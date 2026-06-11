@@ -19,7 +19,8 @@ _DB_RETRY_DELAYS_SEC = (0.1, 0.3)
 # Transaction pooler (6543) — prepared statements must be disabled.
 _TRANSACTION_POOLER_MARKERS = (":6543", "pooler.supabase.com:6543")
 
-_SESSION_POOLER_POOL_SIZE = 10
+# Supabase session pooler caps clients (~15). Stay well under that limit.
+_SESSION_POOLER_POOL_SIZE = 4
 _SESSION_POOLER_MAX_OVERFLOW = 2
 
 

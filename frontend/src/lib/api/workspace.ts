@@ -1,4 +1,13 @@
+import type { WorkspaceSummary } from "./auth";
 import { apiFetch } from "./client";
+
+export interface CreatedWorkspace {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
 
 export interface WorkspaceMemberRow {
   id: string;
@@ -35,6 +44,18 @@ export interface CreateInviteResponse {
 
 function wsPath(workspaceId: string, path: string) {
   return `/workspaces/${workspaceId}${path}`;
+}
+
+export function createWorkspace(token: string, name: string) {
+  return apiFetch<CreatedWorkspace>("/workspaces", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function fetchWorkspaces(token: string) {
+  return apiFetch<{ data: WorkspaceSummary[] }>("/workspaces", { token });
 }
 
 export function fetchWorkspacePeople(token: string, workspaceId: string) {
@@ -107,4 +128,32 @@ export function removeWorkspaceMember(
     wsPath(workspaceId, `/members/${userId}`),
     { method: "DELETE", token }
   );
+}
+
+export function deleteWorkspace(
+  token: string,
+  workspaceId: string,
+  confirmName: string
+) {
+  return apiFetch<{ ok: boolean }>(wsPath(workspaceId, ""), {
+    method: "DELETE",
+    token,
+    body: JSON.stringify({ confirmName }),
+  });
+}
+
+export function transferWorkspaceOwnership(
+  token: string,
+  workspaceId: string,
+  newOwnerUserId: string
+) {
+  return apiFetch<{
+    ok: boolean;
+    newOwnerUserId: string;
+    previousOwnerUserId: string;
+  }>(wsPath(workspaceId, "/transfer-ownership"), {
+    method: "POST",
+    token,
+    body: JSON.stringify({ newOwnerUserId }),
+  });
 }

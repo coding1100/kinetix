@@ -8,7 +8,7 @@ import {
 
 export function patchSidebarChannel(
   channelId: string,
-  patch: Partial<Pick<Channel, "name" | "starred">>
+  patch: Partial<Pick<Channel, "name" | "starred" | "pinnedAt" | "notificationLevel">>
 ) {
   useChatStore.setState((s) => {
     const channelMetaOverrides = {

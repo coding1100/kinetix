@@ -12,11 +12,14 @@ import type {
   ChatMessageDeletePayload,
   ChatMessageEditPayload,
   ChatReactionPayload,
+  ChatReadPayload,
   ChatRealtimePayload,
+  ChatTypingPayload,
   HomeNotificationPayload,
   PresenceSyncPayload,
   PresenceUpdatePayload,
 } from "@/lib/types/realtime";
+import { registerChatTypingSocket } from "@/lib/socket/chat-typing";
 import { applyHomeNotification } from "@/lib/notifications/realtime";
 import {
   applyChannelJoinedToSidebar,
@@ -42,6 +45,8 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     (s) => s.ingestMessageDeleteEvent
   );
   const ingestReactionEvent = useChatStore((s) => s.ingestReactionEvent);
+  const ingestTypingEvent = useChatStore((s) => s.ingestTypingEvent);
+  const ingestReadEvent = useChatStore((s) => s.ingestReadEvent);
   const syncPresence = usePresenceStore((s) => s.syncPresence);
   const upsertPresence = usePresenceStore((s) => s.upsertPresence);
   const setPresenceWorkspace = usePresenceStore((s) => s.setWorkspace);
@@ -66,6 +71,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       transports: ["websocket", "polling"],
     });
     socketRef.current = socket;
+    registerChatTypingSocket(socket);
 
     const joinWorkspace = () => {
       if (!workspaceId) return;
@@ -114,6 +120,12 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     socket.on("chat:reaction", (payload: ChatReactionPayload) => {
       ingestReactionEvent(payload);
     });
+    socket.on("chat:typing", (payload: ChatTypingPayload) => {
+      ingestTypingEvent(payload);
+    });
+    socket.on("chat:read", (payload: ChatReadPayload) => {
+      ingestReadEvent(payload);
+    });
     socket.on("presence:sync", (payload: PresenceSyncPayload) => {
       syncPresence(payload.workspaceId, payload.users);
     });
@@ -134,7 +146,10 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       socket.off("chat:message:edit");
       socket.off("chat:message:delete");
       socket.off("chat:reaction");
+      socket.off("chat:typing");
+      socket.off("chat:read");
       socket.off("presence:sync");
+      registerChatTypingSocket(null);
       socket.off("presence:update");
       socket.disconnect();
       socketRef.current = null;
@@ -148,6 +163,8 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     ingestMessageEditEvent,
     ingestMessageDeleteEvent,
     ingestReactionEvent,
+    ingestTypingEvent,
+    ingestReadEvent,
     syncPresence,
     upsertPresence,
     router,

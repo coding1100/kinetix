@@ -57,6 +57,12 @@ class ChatChannelMember(Base):
     )
     starred: Mapped[bool] = mapped_column(Boolean, default=False)
     is_following: Mapped[bool] = mapped_column("isFollowing", Boolean, default=True)
+    pinned_at: Mapped[datetime | None] = mapped_column(
+        "pinnedAt", DateTime(timezone=True), nullable=True
+    )
+    notification_level: Mapped[str] = mapped_column(
+        "notificationLevel", String, default="MENTIONS"
+    )
     last_read_at: Mapped[datetime | None] = mapped_column(
         "lastReadAt", DateTime(timezone=True), nullable=True
     )
@@ -103,6 +109,7 @@ class DirectParticipant(Base):
         primary_key=True,
     )
     starred: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_hidden: Mapped[bool] = mapped_column("isHidden", Boolean, default=False)
     last_read_at: Mapped[datetime | None] = mapped_column(
         "lastReadAt", DateTime(timezone=True), nullable=True
     )
@@ -146,9 +153,19 @@ class ChatMessage(Base):
         "authorId", String, ForeignKey("User.id", ondelete="CASCADE")
     )
     body: Mapped[str] = mapped_column(String)
+    pinned_at: Mapped[datetime | None] = mapped_column(
+        "pinnedAt", DateTime(timezone=True), nullable=True
+    )
+    pinned_by_id: Mapped[str | None] = mapped_column(
+        "pinnedById",
+        String,
+        ForeignKey("User.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         "createdAt", DateTime(timezone=True), server_default=func.now()
     )
+    pinned_by: Mapped["User | None"] = relationship(foreign_keys=[pinned_by_id])
     channel: Mapped["ChatChannel | None"] = relationship(back_populates="messages")
     conversation: Mapped["DirectConversation | None"] = relationship(
         back_populates="messages"
@@ -164,7 +181,7 @@ class ChatMessage(Base):
         back_populates="parent",
         foreign_keys=[parent_id],
     )
-    author: Mapped["User"] = relationship()
+    author: Mapped["User"] = relationship(foreign_keys=[author_id])
     reactions: Mapped[list["MessageReaction"]] = relationship(back_populates="message")
     attachments: Mapped[list["MessageAttachment"]] = relationship(
         back_populates="message"

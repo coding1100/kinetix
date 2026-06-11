@@ -31,6 +31,7 @@ import {
   fetchWorkspaceMembers,
   removeChannelMember,
   searchChannelMessages as searchChannelMessagesApi,
+  updateChannelMember,
   updateChannelMemberById,
 } from "@/lib/api/chat";
 import { filterWorkspaceMembersToAdd } from "@/lib/chat/channel-access-search";
@@ -785,6 +786,7 @@ function SettingsView({ channelId }: { channelId: string }) {
   );
   const { files } = useChannelFiles(channelId);
   const filePreview = files.slice(0, 8);
+  const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const {
     channelFollowing,
     channelNotifications,
@@ -792,8 +794,14 @@ function SettingsView({ channelId }: { channelId: string }) {
     setChannelNotifications,
   } = useChatStore();
 
-  const following = channelFollowing[channelId] ?? meta.following;
-  const notifications = channelNotifications[channelId] ?? meta.notifications;
+  const following = channelFollowing[channelId] ?? channel?.isFollowing ?? meta.following;
+  const notifications =
+    channelNotifications[channelId] ??
+    (channel?.notificationLevel === "ALL"
+      ? "all"
+      : channel?.notificationLevel === "NONE"
+        ? "none"
+        : "mentions");
   const followerPreview = followers.slice(0, 10);
   const { starred, toggleFavorite } = useChannelFavorite(
     channelId,
@@ -975,10 +983,37 @@ function SettingsView({ channelId }: { channelId: string }) {
         <OptionRow
           icon={<BellIcon className="size-4" />}
           label="Notification settings"
+          description={
+            notifications === "all"
+              ? "All messages"
+              : notifications === "none"
+                ? "Muted"
+                : "Mentions only"
+          }
           onClick={() => {
-            const next = notifications === "all" ? "mentions" : "all";
+            const next =
+              notifications === "all"
+                ? "mentions"
+                : notifications === "mentions"
+                  ? "none"
+                  : "all";
+            const apiLevel =
+              next === "all" ? "ALL" : next === "none" ? "NONE" : "MENTIONS";
             setChannelNotifications(channelId, next);
-            toast.success(`Notifications: ${next === "all" ? "All messages" : "Mentions only"}`);
+            if (ready) {
+              void updateChannelMember(accessToken, workspaceId, channelId, {
+                notificationLevel: apiLevel,
+              }).catch((err) => {
+                toast.error(formatRequestError(err));
+              });
+            }
+            toast.success(
+              next === "all"
+                ? "Notifications: all messages"
+                : next === "none"
+                  ? "Notifications: muted"
+                  : "Notifications: mentions only"
+            );
           }}
         />
         <OptionRow

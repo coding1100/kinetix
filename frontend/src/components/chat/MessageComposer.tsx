@@ -45,6 +45,11 @@ import { MentionPickerPopover } from "@/components/chat/mentions/MentionPickerPo
 import { RichComposerField } from "@/components/chat/composer/RichComposerField";
 import { useRichComposerField } from "@/hooks/use-rich-composer-field";
 import { useMentionChannels } from "@/hooks/use-mention-channels";
+import { useWorkspaceApi } from "@/hooks/use-workspace-api";
+import {
+  emitTypingStart,
+  emitTypingStop,
+} from "@/lib/socket/chat-typing";
 
 function ToolbarDivider() {
   return <span className="mx-0.5 h-4 w-px shrink-0 bg-border" aria-hidden />;
@@ -94,6 +99,7 @@ export function MessageComposer({
   const [videoOpen, setVideoOpen] = useState(false);
   const [clipOpen, setClipOpen] = useState(false);
   const openModal = useUiStore((s) => s.openModal);
+  const { workspaceId } = useWorkspaceApi();
   useMentionChannels();
 
   const context =
@@ -128,6 +134,22 @@ export function MessageComposer({
   const canSend = Boolean(bodyText.trim() || attachmentIds.length > 0);
 
   useEffect(() => {
+    if (!workspaceId || !conversationType || !conversationId) return;
+    if (!bodyText.trim()) {
+      emitTypingStop(workspaceId, conversationType, conversationId);
+      return;
+    }
+    emitTypingStart(workspaceId, conversationType, conversationId);
+    const timer = window.setTimeout(() => {
+      emitTypingStop(workspaceId, conversationType, conversationId);
+    }, 2800);
+    return () => {
+      window.clearTimeout(timer);
+      emitTypingStop(workspaceId, conversationType, conversationId);
+    };
+  }, [bodyText, workspaceId, conversationType, conversationId]);
+
+  useEffect(() => {
     if (!pendingComposerQuote || pendingComposerQuote.target !== "main") {
       return;
     }
@@ -156,6 +178,9 @@ export function MessageComposer({
     );
     clearMentions();
     clearPending();
+    if (workspaceId && conversationType && conversationId) {
+      emitTypingStop(workspaceId, conversationType, conversationId);
+    }
     try {
       if (onSend) {
         await onSend({

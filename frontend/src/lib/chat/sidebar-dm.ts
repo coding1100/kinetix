@@ -118,7 +118,7 @@ export function patchDmActivityInSidebar(
 
 export function patchSidebarDm(
   dmId: string,
-  patch: Partial<Pick<DirectMessage, "starred">>
+  patch: Partial<Pick<DirectMessage, "starred" | "name">>
 ) {
   useChatStore.setState((s) => {
     if (!s.sidebarListsCache) return s;

@@ -7,6 +7,10 @@ from pathlib import Path
 
 import httpx
 import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+
+from app.main import app
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
@@ -70,6 +74,14 @@ def dedicated_api_server():
             proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             proc.kill()
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def api_client():
+    """Shared in-process client; session loop matches global SQLAlchemy async engine."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
 
 
 def require_py4_server() -> None:

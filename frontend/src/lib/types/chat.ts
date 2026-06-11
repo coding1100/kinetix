@@ -2,6 +2,8 @@ import type { PresenceStatus } from "@/stores/profile-store";
 
 export type ConversationType = "channel" | "dm";
 
+export type ChannelNotificationLevel = "ALL" | "MENTIONS" | "NONE";
+
 export interface Channel {
   id: string;
   name: string;
@@ -10,6 +12,8 @@ export interface Channel {
   lastAt: string;
   unread: number;
   starred?: boolean;
+  pinnedAt?: string;
+  notificationLevel?: ChannelNotificationLevel;
   topic?: string;
   spaceLabel?: string;
   isPrivate?: boolean;
@@ -60,6 +64,8 @@ export interface ChatMessage {
   reactions?: { emoji: string; count: number }[];
   threadCount?: number;
   attachments?: MessageAttachment[];
+  pinnedAt?: string;
+  readByUserIds?: string[];
 }
 
 export type OptimisticAttachment = Pick<
@@ -82,7 +88,15 @@ export type UpdateMessagePayload = {
 export interface ChatSearchHit extends ChatMessage {
   parentId?: string;
   inThread?: boolean;
+  kind?: "channel" | "dm";
+  conversationId?: string;
 }
+
+export type PaginatedMessagesResponse = {
+  data: ChatMessage[];
+  hasMore?: boolean;
+  nextBefore?: string | null;
+};
 
 export interface ThreadBundle {
   parent: ChatMessage;

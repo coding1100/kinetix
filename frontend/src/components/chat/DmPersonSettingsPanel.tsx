@@ -29,7 +29,10 @@ import {
   avatarColorClassForKey,
   avatarInitialFromName,
 } from "@/lib/user-display";
+import { updateDmParticipant } from "@/lib/api/chat";
+import { formatRequestError } from "@/lib/api/client";
 import { patchSidebarDm, removeDmFromSidebar } from "@/lib/chat/sidebar-dm";
+import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { PageLoader } from "@/components/ui/page-loader";
@@ -141,6 +144,7 @@ function OneToOneSettings({
   onMarkUnread: () => void | Promise<void>;
 }) {
   const router = useRouter();
+  const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const setDmDetailsView = useChatStore((s) => s.setDmDetailsView);
   const openPersonProfile = useChatStore((s) => s.openPersonProfile);
   const sidebarStarred = useChatStore(
@@ -168,13 +172,34 @@ function OneToOneSettings({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onMarkUnread]);
 
-  const handleFavorite = () => {
+  const handleFavorite = async () => {
     const next = !starred;
     patchSidebarDm(dmId, { starred: next });
+    if (ready) {
+      try {
+        await updateDmParticipant(accessToken, workspaceId, dmId, {
+          starred: next,
+        });
+      } catch (err) {
+        patchSidebarDm(dmId, { starred: !next });
+        toast.error(formatRequestError(err));
+        return;
+      }
+    }
     toast.success(next ? "Added to favorites" : "Removed from favorites");
   };
 
-  const handleCloseDm = () => {
+  const handleCloseDm = async () => {
+    if (ready) {
+      try {
+        await updateDmParticipant(accessToken, workspaceId, dmId, {
+          hidden: true,
+        });
+      } catch (err) {
+        toast.error(formatRequestError(err));
+        return;
+      }
+    }
     removeDmFromSidebar(dmId);
     setDmDetailsView(null);
     toast.success("DM closed. Will reappear with new messages.");
@@ -345,6 +370,7 @@ function GroupSettings({
   onMarkUnread: () => void | Promise<void>;
 }) {
   const router = useRouter();
+  const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const setDmDetailsView = useChatStore((s) => s.setDmDetailsView);
   const sidebarStarred = useChatStore(
     (s) => s.sidebarListsCache?.dms.find((d) => d.id === dmId)?.starred
@@ -352,13 +378,34 @@ function GroupSettings({
   const starred = sidebarStarred ?? dm.starred ?? false;
   const memberCount = dm.participants?.length ?? dm.members?.length ?? 0;
 
-  const handleFavorite = () => {
+  const handleFavorite = async () => {
     const next = !starred;
     patchSidebarDm(dmId, { starred: next });
+    if (ready) {
+      try {
+        await updateDmParticipant(accessToken, workspaceId, dmId, {
+          starred: next,
+        });
+      } catch (err) {
+        patchSidebarDm(dmId, { starred: !next });
+        toast.error(formatRequestError(err));
+        return;
+      }
+    }
     toast.success(next ? "Added to favorites" : "Removed from favorites");
   };
 
-  const handleCloseDm = () => {
+  const handleCloseDm = async () => {
+    if (ready) {
+      try {
+        await updateDmParticipant(accessToken, workspaceId, dmId, {
+          hidden: true,
+        });
+      } catch (err) {
+        toast.error(formatRequestError(err));
+        return;
+      }
+    }
     removeDmFromSidebar(dmId);
     setDmDetailsView(null);
     toast.success("DM closed. Will reappear with new messages.");

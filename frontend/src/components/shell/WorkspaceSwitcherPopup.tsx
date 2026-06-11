@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { resetSessionScopedState } from "@/lib/auth/reset-session-scoped-state";
 import {
   selectActiveWorkspace,
   useAuthStore,
@@ -74,6 +75,8 @@ export function WorkspaceSwitcherPopup() {
                   isActive && "bg-accent"
                 )}
                 onClick={() => {
+                  if (workspace.id === current.id) return;
+                  resetSessionScopedState();
                   setActiveWorkspace(workspace.id);
                   toast.success(`Switched to ${workspace.name}`);
                 }}
@@ -111,6 +114,16 @@ export function WorkspaceSwitcherPopup() {
           Invite
         </Button>
       </div>
+
+      <Button
+        variant="outline"
+        className="w-full justify-center"
+        nativeButton={false}
+        render={<Link href="/workspace/settings" />}
+      >
+        <SettingsIcon className="size-4" />
+        Workspace settings
+      </Button>
 
       <div className="space-y-1">
         <p className="px-1 text-xs font-medium text-muted-foreground">Manage</p>

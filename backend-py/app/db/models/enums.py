@@ -39,6 +39,12 @@ class InboxTimeGroup(str, enum.Enum):
     EARLIER = "EARLIER"
 
 
+class ChannelNotificationLevel(str, enum.Enum):
+    ALL = "ALL"
+    MENTIONS = "MENTIONS"
+    NONE = "NONE"
+
+
 class InboxItemType(str, enum.Enum):
     COMMENT = "COMMENT"
     MENTION = "MENTION"
