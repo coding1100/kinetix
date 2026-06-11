@@ -26,7 +26,17 @@ export function mergeSidebarChannels(
     const cacheIds = new Set(cacheChannels.map((c) => c.id));
     for (const channel of cacheChannels) {
       const existing = merged.get(channel.id);
-      merged.set(channel.id, existing ? { ...existing, ...channel } : channel);
+      merged.set(
+        channel.id,
+        existing
+          ? {
+              ...existing,
+              ...channel,
+              canDelete: channel.canDelete ?? existing.canDelete,
+              createdById: channel.createdById ?? existing.createdById,
+            }
+          : channel
+      );
     }
     for (const id of [...merged.keys()]) {
       if (!cacheIds.has(id)) {
@@ -101,11 +111,12 @@ export function loadSidebarLists(
       fetchChannels(token, workspaceId),
       fetchDms(token, workspaceId),
     ]);
+    const existing = getSidebarListsFromStore(workspaceId, userId);
     const result: ChatSidebarLists = {
       userId,
       workspaceId,
-      channels: channelsRes.data,
-      dms: dmsRes.data,
+      channels: mergeSidebarChannels(channelsRes.data, existing?.channels),
+      dms: mergeSidebarDms(dmsRes.data, existing?.dms),
     };
     useChatStore.getState().setSidebarListsCache(result);
     return result;

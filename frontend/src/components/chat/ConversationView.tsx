@@ -102,7 +102,10 @@ import {
   invalidateChannelMembers,
   prefetchChannelMembers,
 } from "@/lib/chat/channel-members-cache";
-import { removeChannelFromSidebar } from "@/lib/chat/sidebar-channel";
+import {
+  removeChannelFromSidebar,
+  upsertChannelInSidebar,
+} from "@/lib/chat/sidebar-channel";
 import {
   getConversationCache,
   setConversationCache,
@@ -124,8 +127,6 @@ export function ConversationView({
   const workspaceRole = useAuthStore((s) =>
     s.workspaces.find((w) => w.id === workspaceId)?.role
   );
-  const canDeleteChannel =
-    workspaceRole === "OWNER" || workspaceRole === "ADMIN";
   const activeThreadMessageId = useChatStore((s) => s.activeThreadMessageId);
   const setActiveThread = useChatStore((s) => s.setActiveThread);
   const dmDetailsView = useChatStore((s) => s.dmDetailsView);
@@ -166,6 +167,11 @@ export function ConversationView({
   const cachedChannelMemberCount = useChatStore((s) =>
     type === "channel"
       ? s.sidebarListsCache?.channels.find((c) => c.id === id)?.memberCount
+      : undefined
+  );
+  const cachedSidebarChannel = useChatStore((s) =>
+    type === "channel"
+      ? s.sidebarListsCache?.channels.find((c) => c.id === id)
       : undefined
   );
   const cachedDmName = useChatStore((s) =>
@@ -227,7 +233,15 @@ export function ConversationView({
 
     const meta = resolveCachedMeta();
     if (type === "channel") {
-      setChannel((meta as Channel | null) ?? null);
+      setChannel((prev) => {
+        const cached = (meta as Channel | null) ?? null;
+        if (!cached) return null;
+        return {
+          ...cached,
+          canDelete: prev?.canDelete ?? cached.canDelete,
+          createdById: prev?.createdById ?? cached.createdById,
+        };
+      });
       setDm(null);
     } else {
       setDm((meta as DirectMessage | null) ?? null);
@@ -293,28 +307,38 @@ export function ConversationView({
       setMessagesLoading(false);
 
       if (type === "channel") {
-        let channelMeta = resolveCachedMeta() as Channel | null;
-        if (!channelMeta) {
-          channelMeta = await fetchChannel(
-            accessToken,
-            workspaceId,
-            conversationId,
-            fetchInit
-          );
-          if (
-            signal.aborted ||
-            conversationId !== id ||
-            conversationKeyRef.current !== loadKey
-          ) {
-            return;
-          }
-          setChannel(channelMeta);
+        const channelMeta = await fetchChannel(
+          accessToken,
+          workspaceId,
+          conversationId,
+          fetchInit
+        );
+        if (
+          signal.aborted ||
+          conversationId !== id ||
+          conversationKeyRef.current !== loadKey
+        ) {
+          return;
         }
-        setDm(null);
+        const prevMeta =
+          getConversationCache(workspaceId, type, conversationId)?.channel ??
+          resolveCachedMeta();
+        const nextChannel: Channel = {
+          ...channelMeta,
+          canDelete:
+            channelMeta.canDelete ??
+            (prevMeta as Channel | null)?.canDelete,
+          createdById:
+            channelMeta.createdById ??
+            (prevMeta as Channel | null)?.createdById,
+        };
+        setChannel(nextChannel);
+        upsertChannelInSidebar(nextChannel, workspaceId, { skipRefresh: true });
         setConversationCache(workspaceId, type, conversationId, {
-          channel: channelMeta,
+          channel: nextChannel,
           dm: null,
         });
+        setDm(null);
       } else {
         let dmMeta = resolveCachedMeta() as DirectMessage | null;
         const needsDmRefresh =
@@ -658,6 +682,22 @@ export function ConversationView({
 
   const channelName =
     overrideChannelName ?? cachedChannelName ?? channel?.name ?? "Channel";
+  const canDeleteChannel = useMemo(() => {
+    if (type !== "channel") return false;
+    if (workspaceRole === "OWNER" || workspaceRole === "ADMIN") return true;
+    const createdById =
+      channel?.createdById ?? cachedSidebarChannel?.createdById ?? null;
+    if (currentUserId && createdById === currentUserId) return true;
+    return Boolean(channel?.canDelete ?? cachedSidebarChannel?.canDelete);
+  }, [
+    type,
+    workspaceRole,
+    channel?.canDelete,
+    channel?.createdById,
+    cachedSidebarChannel?.canDelete,
+    cachedSidebarChannel?.createdById,
+    currentUserId,
+  ]);
   const workspaceMembersQuery = useHomeQuery(
     (token, ws) => fetchWorkspaceMembers(token, ws).then((r) => r.data),
     []

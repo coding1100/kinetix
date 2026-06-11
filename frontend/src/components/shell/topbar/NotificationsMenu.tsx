@@ -128,7 +128,7 @@ export function NotificationsMenu() {
               disabled={!hasUnread || !ready}
               onClick={() => void clearAll()}
             >
-              Clear all
+              Mark all as read
             </Button>
             <Button
               variant="link"

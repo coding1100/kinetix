@@ -74,6 +74,8 @@ export function patchChannelActivityInSidebar(
             lastMessage: patch.lastMessage,
             lastAt: patch.lastAt,
             unread: patch.bumpUnread ? c.unread + 1 : c.unread,
+            canDelete: c.canDelete,
+            createdById: c.createdById,
           }
         : c
     );
@@ -90,7 +92,11 @@ export function patchChannelActivityInSidebar(
   });
 }
 
-export function upsertChannelInSidebar(channel: Channel, workspaceId: string) {
+export function upsertChannelInSidebar(
+  channel: Channel,
+  workspaceId: string,
+  options?: { skipRefresh?: boolean }
+) {
   const currentUserId = useAuthStore.getState().user?.id;
   if (!currentUserId) return;
   const normalized: Channel = {
@@ -119,7 +125,14 @@ export function upsertChannelInSidebar(channel: Channel, workspaceId: string) {
     const exists = base.channels.some((c) => c.id === normalized.id);
     const channels = exists
       ? base.channels.map((c) =>
-          c.id === normalized.id ? { ...c, ...normalized } : c
+          c.id === normalized.id
+            ? {
+                ...c,
+                ...normalized,
+                canDelete: normalized.canDelete ?? c.canDelete,
+                createdById: normalized.createdById ?? c.createdById,
+              }
+            : c
         )
       : [normalized, ...base.channels];
 
@@ -134,7 +147,9 @@ export function upsertChannelInSidebar(channel: Channel, workspaceId: string) {
       },
     };
   });
-  bumpSidebarRefresh();
+  if (!options?.skipRefresh) {
+    bumpSidebarRefresh();
+  }
 }
 
 export function removeChannelFromSidebar(channelId: string) {

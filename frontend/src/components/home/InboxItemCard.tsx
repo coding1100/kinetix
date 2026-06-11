@@ -178,7 +178,7 @@ export function InboxItemCard({
               disabled={!item.unread}
             >
               <Check className={compact ? "size-3" : "size-3.5"} />
-              Clear
+              Mark as read
             </Button>
             <Button
               type="button"

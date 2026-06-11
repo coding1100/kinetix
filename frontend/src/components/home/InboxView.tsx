@@ -90,7 +90,7 @@ export function InboxView() {
           disabled={!hasUnread || !ready}
           onClick={() => void clearAll()}
         >
-          Clear all
+          Mark all as read
         </Button>
       </PageHeader>
       <PageTabs

@@ -229,6 +229,8 @@ def _channel_payload(
     last_message: str,
     last_at: datetime,
     unread: int,
+    *,
+    can_delete: bool = False,
 ) -> dict:
     return {
         "id": channel.id,
@@ -243,6 +245,8 @@ def _channel_payload(
         "isPrivate": channel.is_private,
         "isFollowing": member.is_following,
         "customIconColor": channel.custom_icon_color,
+        "createdById": channel.created_by_id,
+        "canDelete": can_delete,
     }
 
 
@@ -392,6 +396,9 @@ async def list_channels(
         last = last_by_channel.get(m.channel_id)
         unread = unread_by_channel.get(m.channel_id, 0)
         last_at = last.created_at if last else m.channel.created_at
+        can_delete = await _user_can_delete_channel(
+            session, workspace_id, m.channel, user_id
+        )
         channels.append(
             _channel_payload(
                 m.channel,
@@ -400,6 +407,7 @@ async def list_channels(
                 last.body if last else "",
                 last_at,
                 unread,
+                can_delete=can_delete,
             )
         )
 
@@ -419,6 +427,9 @@ async def get_channel(
         .where(ChatChannelMember.channel_id == channel_id)
     )
     unread = await _unread_channel_count(session, channel_id, user_id)
+    can_delete = await _user_can_delete_channel(
+        session, workspace_id, member.channel, user_id
+    )
     return _channel_payload(
         member.channel,
         member,
@@ -426,6 +437,7 @@ async def get_channel(
         "",
         member.channel.created_at,
         unread,
+        can_delete=can_delete,
     )
 
 
@@ -463,6 +475,41 @@ async def update_channel(
     return await get_channel(session, workspace_id, user_id, channel_id)
 
 
+async def _user_can_delete_channel(
+    session: AsyncSession,
+    workspace_id: str,
+    channel: ChatChannel,
+    user_id: str,
+) -> bool:
+    if await _is_workspace_admin(session, workspace_id, user_id):
+        return True
+    if channel.created_by_id == user_id:
+        return True
+
+    first_author_id = await session.scalar(
+        select(ChatMessage.author_id)
+        .where(
+            ChatMessage.channel_id == channel.id,
+            ChatMessage.parent_id.is_(None),
+        )
+        .order_by(ChatMessage.created_at.asc())
+        .limit(1)
+    )
+    if first_author_id == user_id:
+        return True
+
+    if channel.created_by_id is not None:
+        return False
+
+    earliest_user_id = await session.scalar(
+        select(ChatChannelMember.user_id)
+        .where(ChatChannelMember.channel_id == channel.id)
+        .order_by(ChatChannelMember.joined_at.asc())
+        .limit(1)
+    )
+    return earliest_user_id == user_id
+
+
 async def delete_channel(
     session: AsyncSession,
     workspace_id: str,
@@ -474,11 +521,11 @@ async def delete_channel(
     if not channel or channel.workspace_id != workspace_id:
         raise AppError(404, "NOT_FOUND", "Channel not found")
 
-    if not await _is_workspace_admin(session, workspace_id, user_id):
+    if not await _user_can_delete_channel(session, workspace_id, channel, user_id):
         raise AppError(
             403,
             "FORBIDDEN",
-            "Only workspace admins can delete channels",
+            "Only workspace admins or the channel creator can delete this channel",
         )
 
     from app.db.models.chat import MessageAttachment
@@ -587,6 +634,7 @@ async def create_channel(
         topic=body.topic,
         is_private=body.isPrivate or False,
         space_label=body.spaceLabel or "in Workspace",
+        created_by_id=user_id,
     )
     session.add(channel)
     await session.flush()
@@ -635,6 +683,7 @@ async def create_channel(
         "",
         channel.created_at,
         0,
+        can_delete=True,
     )
 
 

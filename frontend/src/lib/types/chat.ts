@@ -15,6 +15,8 @@ export interface Channel {
   isPrivate?: boolean;
   isFollowing?: boolean;
   customIconColor?: string;
+  createdById?: string | null;
+  canDelete?: boolean;
 }
 
 export interface DmParticipant {
