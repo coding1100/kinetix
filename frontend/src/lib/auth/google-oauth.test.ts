@@ -38,4 +38,23 @@ describe("google-oauth", () => {
       "http://localhost:4000/api/v1/auth/google/start?next=%2Fhome%2Finbox"
     );
   });
+
+  it("uses window origin for relative API URL in the browser", () => {
+    vi.stubEnv("NEXT_PUBLIC_API_URL", "/api/v1");
+    vi.unstubAllEnvs();
+    vi.stubEnv("NEXT_PUBLIC_API_URL", "/api/v1");
+    const originalWindow = globalThis.window;
+    Object.defineProperty(globalThis, "window", {
+      value: { location: { origin: "http://3.140.5.67" } },
+      configurable: true,
+    });
+    expect(apiOrigin()).toBe("http://3.140.5.67");
+    expect(googleOAuthStartUrl("/home/inbox")).toBe(
+      "http://3.140.5.67/api/v1/auth/google/start?next=%2Fhome%2Finbox"
+    );
+    Object.defineProperty(globalThis, "window", {
+      value: originalWindow,
+      configurable: true,
+    });
+  });
 });
