@@ -13,7 +13,9 @@ import {
 } from "@/lib/chat/dates";
 import { ChatDateDivider } from "@/components/chat/ChatDateDivider";
 import { ChatMessageRow } from "@/components/chat/ChatMessageRow";
+import type { ReadReceiptMember } from "@/components/chat/MessageReadReceipts";
 import { buildMessageRuns } from "@/lib/chat/message-groups";
+import { lastReadOwnMessageId } from "@/lib/chat/read-receipts";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
@@ -32,6 +34,7 @@ export function MessageList({
   scrollToMessageId,
   highlightMessageId,
   onScrollComplete,
+  readReceiptMembersById,
 }: {
   messages: ChatMessage[];
   conversationType?: ConversationType;
@@ -50,11 +53,16 @@ export function MessageList({
   scrollToMessageId?: string | null;
   highlightMessageId?: string | null;
   onScrollComplete?: () => void;
+  readReceiptMembersById?: Record<string, ReadReceiptMember>;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
   const daySectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const dayGroups = useMemo(() => groupMessagesByDay(messages), [messages]);
+  const readReceiptMessageId = useMemo(
+    () => lastReadOwnMessageId(messages),
+    [messages]
+  );
 
   useEffect(() => {
     if (scrollToMessageId) return;
@@ -131,6 +139,8 @@ export function MessageList({
                       onPinMessage={onPinMessage}
                       onMarkUnread={onMarkUnread}
                       highlighted={highlightMessageId === msg.id}
+                      showReadReceipt={msg.id === readReceiptMessageId}
+                      readReceiptMembersById={readReceiptMembersById}
                     />
                   ))}
                 </div>

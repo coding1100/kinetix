@@ -121,7 +121,18 @@ async def _exchange_code_for_tokens(code: str, code_verifier: str) -> dict:
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
     if res.status_code != 200:
-        raise AppError(400, "OAUTH_FAILED", "Could not complete Google sign-in")
+        try:
+            err_body = res.json()
+            err_msg = err_body.get("error_description") or err_body.get("error")
+        except Exception:
+            err_msg = res.text[:200] if res.text else None
+        hint = f" ({err_msg})" if err_msg else ""
+        raise AppError(
+            400,
+            "OAUTH_FAILED",
+            f"Could not complete Google sign-in{hint}. "
+            "Check API_PUBLIC_URL matches the redirect URI in Google Cloud Console.",
+        )
     return res.json()
 
 

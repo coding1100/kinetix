@@ -16,14 +16,16 @@ from tests.conftest import require_py4_server
 
 GOOGLE_START_PATH = "/api/v1/auth/google/start"
 GOOGLE_CALLBACK_PATH = "/api/v1/auth/google/callback"
-FRONTEND_CALLBACK = "http://localhost:3001/auth/oauth/callback"
+FRONTEND_CALLBACK = "http://localhost:3000/auth/oauth/callback"
 
 
 @pytest.fixture
 def clear_settings_cache():
-    get_settings.cache_clear()
+    from app.config import _get_settings_cached
+
+    _get_settings_cached.cache_clear()
     yield
-    get_settings.cache_clear()
+    _get_settings_cached.cache_clear()
 
 
 @pytest.fixture

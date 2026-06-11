@@ -931,6 +931,30 @@ export function ConversationView({
     [dmMeta?.participants, currentUserId]
   );
 
+  const readReceiptMembersById = useMemo(() => {
+    const map: Record<
+      string,
+      { id: string; fullName: string; avatarUrl?: string | null }
+    > = {};
+    for (const member of workspaceMembersQuery.data ?? []) {
+      map[member.id] = {
+        id: member.id,
+        fullName: member.fullName,
+        avatarUrl: member.avatarUrl,
+      };
+    }
+    for (const participant of dmMeta?.participants ?? []) {
+      if (!map[participant.id]) {
+        map[participant.id] = {
+          id: participant.id,
+          fullName: participant.fullName,
+          avatarUrl: null,
+        };
+      }
+    }
+    return map;
+  }, [workspaceMembersQuery.data, dmMeta?.participants]);
+
   const title =
     type === "channel"
       ? channelName
@@ -1216,6 +1240,7 @@ export function ConversationView({
               scrollToMessageId={scrollToMessageId}
               highlightMessageId={highlightMessageId}
               onScrollComplete={clearSearchHighlight}
+              readReceiptMembersById={readReceiptMembersById}
             />
           )}
           {typingUserIds.length > 0 ? (

@@ -36,6 +36,8 @@ async function proxyRequest(request: NextRequest, path: string[]) {
       headers,
       body: hasBody ? request.body : undefined,
       signal: controller.signal,
+      // Pass OAuth redirects (Google start/callback) to the browser — do not follow.
+      redirect: "manual",
       // @ts-expect-error Node fetch requires duplex when streaming a body
       duplex: hasBody ? "half" : undefined,
       cache: "no-store",

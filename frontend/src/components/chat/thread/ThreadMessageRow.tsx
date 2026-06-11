@@ -101,7 +101,7 @@ export function ThreadMessageRow({
     <article
       className={cn(
         "group relative -mx-2 rounded-md px-2 transition-colors hover:bg-muted/70",
-        showHeader ? "py-1" : "py-0.5",
+        showHeader ? "py-0.1" : "py-0.1",
         editingMessageId === message.id && "bg-primary/10 ring-1 ring-primary/30"
       )}
     >

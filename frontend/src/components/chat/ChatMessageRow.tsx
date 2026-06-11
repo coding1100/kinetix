@@ -47,6 +47,10 @@ import {
 } from "@/lib/chat/messages";
 import { MessageAuthorButton } from "@/components/chat/MessageAuthorButton";
 import { InlineMessageEdit } from "@/components/chat/InlineMessageEdit";
+import {
+  MessageReadReceipts,
+  type ReadReceiptMember,
+} from "@/components/chat/MessageReadReceipts";
 
 function threadRepliesLabel(msg: ChatMessage): string | null {
   if (!msg.threadCount || msg.threadCount <= 0) return null;
@@ -65,6 +69,8 @@ export function ChatMessageRow({
   onPinMessage,
   onMarkUnread,
   highlighted = false,
+  showReadReceipt = false,
+  readReceiptMembersById = {},
 }: {
   message: ChatMessage;
   showHeader?: boolean;
@@ -79,6 +85,8 @@ export function ChatMessageRow({
   onPinMessage?: (messageId: string, pinned: boolean) => void | Promise<void>;
   onMarkUnread?: () => void | Promise<void>;
   highlighted?: boolean;
+  showReadReceipt?: boolean;
+  readReceiptMembersById?: Record<string, ReadReceiptMember>;
 }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -95,7 +103,7 @@ export function ChatMessageRow({
 
   const repliesLabel = threadRepliesLabel(message);
   const isPinned = Boolean(message.pinnedAt);
-  const readCount = message.readByUserIds?.length ?? 0;
+  const readByUserIds = message.readByUserIds ?? [];
   const threadOpen = activeThreadMessageId === message.id;
   const reactions = message.reactions ?? [];
   const created = new Date(message.createdAt);
@@ -137,6 +145,15 @@ export function ChatMessageRow({
         editingMessageId === message.id && "bg-primary/10 ring-1 ring-primary/30"
       )}
     >
+      {!isEditing && showReadReceipt && readByUserIds.length > 0 ? (
+        <div className="pointer-events-auto absolute right-2 top-1 z-[5] transition-opacity group-hover:opacity-0">
+          <MessageReadReceipts
+            readByUserIds={readByUserIds}
+            membersById={readReceiptMembersById}
+          />
+        </div>
+      ) : null}
+
       {!isEditing ? (
       <div className="pointer-events-none absolute right-2 top-1 z-10 opacity-0 transition-opacity group-hover:opacity-100">
         <div className="pointer-events-auto flex items-center gap-1 rounded-md border border-border bg-card px-1.5 py-0.5 shadow-sm">
@@ -320,11 +337,6 @@ export function ChatMessageRow({
               {repliesLabel}
             </Button>
           )}
-          {!isEditing && message.isSelf && readCount > 0 ? (
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Seen by {readCount}
-            </p>
-          ) : null}
           {!isEditing && isPinned ? (
             <p className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
               <PinIcon className="size-3" />
