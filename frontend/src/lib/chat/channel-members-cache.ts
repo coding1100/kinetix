@@ -58,6 +58,22 @@ export function setCachedChannelMembers(
   bumpRevision(workspaceId, channelId);
 }
 
+export function mergeChannelMembersIntoCache(
+  workspaceId: string,
+  channelId: string,
+  incoming: ChannelMember[]
+) {
+  if (!incoming.length) return;
+  const key = cacheKey(workspaceId, channelId);
+  const entry = cache.get(key);
+  const base = entry?.loaded ? entry.members : [];
+  const byId = new Map(base.map((member) => [member.id, member]));
+  for (const member of incoming) {
+    byId.set(member.id, member);
+  }
+  setCachedChannelMembers(workspaceId, channelId, [...byId.values()]);
+}
+
 export function patchCachedChannelMembers(
   workspaceId: string,
   channelId: string,

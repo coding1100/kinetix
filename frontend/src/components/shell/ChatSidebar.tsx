@@ -57,6 +57,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { matchesQuery } from "@/lib/search/match-query";
+import { useSidebarUnread } from "@/lib/chat/sidebar-display-unread";
 import { useShellStore } from "@/stores/shell-store";
 import { useRouter } from "next/navigation";
 
@@ -365,12 +366,11 @@ function OrganizedList({
             {favoriteChannels.map((c) => (
               <ChannelRow
                 key={c.id}
+                channelId={c.id}
                 href={`/chat/c/${c.id}`}
                 active={pathname === `/chat/c/${c.id}`}
                 name={c.name}
-                unread={
-                  pathname === `/chat/c/${c.id}` ? 0 : c.unread
-                }
+                unread={c.unread}
                 privateChannel={c.isPrivate}
                 starred
               />
@@ -387,12 +387,11 @@ function OrganizedList({
           {otherChannels.map((c) => (
             <ChannelRow
               key={c.id}
+              channelId={c.id}
               href={`/chat/c/${c.id}`}
               active={pathname === `/chat/c/${c.id}`}
               name={c.name}
-              unread={
-                pathname === `/chat/c/${c.id}` ? 0 : c.unread
-              }
+              unread={c.unread}
               privateChannel={c.isPrivate}
             />
           ))}
@@ -416,14 +415,13 @@ function OrganizedList({
           {dms.map((d) => (
             <DmRow
               key={d.id}
+              dmId={d.id}
               href={`/chat/dm/${d.id}`}
               active={pathname === `/chat/dm/${d.id}`}
               name={d.name}
               participants={d.participants}
               currentUserId={currentUserId}
-              unread={
-                pathname === `/chat/dm/${d.id}` ? 0 : d.unread
-              }
+              unread={d.unread}
               avatarUrl={d.avatarUrl}
               otherUserId={d.otherUserId}
               presenceFallback={d.presence}
@@ -461,6 +459,7 @@ function RecentsList({
 }
 
 function ChannelRow({
+  channelId,
   href,
   active,
   name,
@@ -468,6 +467,7 @@ function ChannelRow({
   privateChannel,
   starred,
 }: {
+  channelId: string;
   href: string;
   active: boolean;
   name: string;
@@ -475,6 +475,15 @@ function ChannelRow({
   privateChannel?: boolean;
   starred?: boolean;
 }) {
+  const unreadBadgeHold = useChatStore((s) => s.unreadBadgeHold);
+  const displayUnread = useSidebarUnread(
+    "channel",
+    channelId,
+    unread,
+    active,
+    unreadBadgeHold
+  );
+
   return (
     <Button
       variant="ghost"
@@ -494,9 +503,9 @@ function ChannelRow({
         {privateChannel ? <LockIcon className="size-3 text-muted-foreground" /> : null}
       </span>
       <span className="flex items-center gap-1">
-        {unread > 0 && (
-          <Badge className="size-5 min-w-5 justify-center rounded-full px-1 text-[10px]">
-            {unread}
+        {displayUnread > 0 && (
+          <Badge className="size-5 min-w-5 justify-center rounded-full px-1 text-[10px] transition-opacity duration-300">
+            {displayUnread}
           </Badge>
         )}
       </span>
@@ -505,6 +514,7 @@ function ChannelRow({
 }
 
 function DmRow({
+  dmId,
   href,
   active,
   name,
@@ -516,6 +526,7 @@ function DmRow({
   presenceFallback,
   isGroup,
 }: {
+  dmId: string;
   href: string;
   active: boolean;
   name: string;
@@ -527,6 +538,14 @@ function DmRow({
   presenceFallback?: PresenceStatus;
   isGroup?: boolean;
 }) {
+  const unreadBadgeHold = useChatStore((s) => s.unreadBadgeHold);
+  const displayUnread = useSidebarUnread(
+    "dm",
+    dmId,
+    unread,
+    active,
+    unreadBadgeHold
+  );
   const presence = useUserPresence(
     otherUserId,
     presenceFallback ?? "offline"
@@ -562,9 +581,9 @@ function DmRow({
         )}
         <span className="truncate text-sm font-medium">{displayName}</span>
       </span>
-      {unread > 0 ? (
-        <Badge className="size-5 min-w-5 justify-center rounded-full px-1 text-[10px]">
-          {unread}
+      {displayUnread > 0 ? (
+        <Badge className="size-5 min-w-5 justify-center rounded-full px-1 text-[10px] transition-opacity duration-300">
+          {displayUnread}
         </Badge>
       ) : null}
     </Button>

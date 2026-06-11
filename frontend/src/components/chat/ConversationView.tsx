@@ -110,6 +110,7 @@ import {
   getConversationCache,
   setConversationCache,
 } from "@/lib/chat/conversation-cache";
+import { UNREAD_BADGE_HIDE_DELAY_MS } from "@/lib/chat/sidebar-display-unread";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { PersonProfilePanel } from "@/components/chat/PersonProfilePanel";
 import { MessageQuoteToolbar } from "@/components/chat/MessageQuoteToolbar";
@@ -153,6 +154,8 @@ export function ConversationView({
   const clearReactionEvent = useChatStore((s) => s.clearReactionEvent);
   const setConversationUnread = useChatStore((s) => s.setConversationUnread);
   const setActiveConversation = useChatStore((s) => s.setActiveConversation);
+  const setUnreadBadgeHold = useChatStore((s) => s.setUnreadBadgeHold);
+  const clearUnreadBadgeHold = useChatStore((s) => s.clearUnreadBadgeHold);
   const clearComposerEdit = useChatStore((s) => s.clearComposerEdit);
   const cachedChannelName = useChatStore((s) =>
     type === "channel"
@@ -195,6 +198,7 @@ export function ConversationView({
   const [channel, setChannel] = useState<Channel | null>(null);
   const [dm, setDm] = useState<DirectMessage | null>(null);
   const [messagesLoading, setMessagesLoading] = useState(true);
+  const [conversationContentReady, setConversationContentReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scrollToMessageId, setScrollToMessageId] = useState<string | null>(
     null
@@ -206,6 +210,9 @@ export function ConversationView({
   const [deletingChannel, setDeletingChannel] = useState(false);
   const loadAbortRef = useRef<AbortController | null>(null);
   const conversationKeyRef = useRef(`${type}:${id}`);
+  const readDelayKeyRef = useRef<string | null>(null);
+  const contentReadyRef = useRef(false);
+  const markConversationReadRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     if (!messageScrollTarget) return;
@@ -230,6 +237,10 @@ export function ConversationView({
   useLayoutEffect(() => {
     conversationKeyRef.current = `${type}:${id}`;
     setActiveConversation({ kind: type, id });
+    setConversationContentReady(false);
+    contentReadyRef.current = false;
+    readDelayKeyRef.current = null;
+    clearUnreadBadgeHold();
 
     const meta = resolveCachedMeta();
     if (type === "channel") {
@@ -259,8 +270,23 @@ export function ConversationView({
     setError(null);
     clearComposerEdit();
 
-    return () => setActiveConversation(null);
-  }, [type, id, workspaceId, setActiveConversation, resolveCachedMeta, clearComposerEdit]);
+    return () => {
+      if (contentReadyRef.current) {
+        void markConversationReadRef.current();
+      }
+      setActiveConversation(null);
+      readDelayKeyRef.current = null;
+      clearUnreadBadgeHold();
+    };
+  }, [
+    type,
+    id,
+    workspaceId,
+    setActiveConversation,
+    resolveCachedMeta,
+    clearComposerEdit,
+    clearUnreadBadgeHold,
+  ]);
 
   const loadConversation = useCallback(async (signal: AbortSignal) => {
     if (!ready) return;
@@ -366,6 +392,14 @@ export function ConversationView({
           channel: null,
         });
       }
+
+      if (
+        !signal.aborted &&
+        conversationId === id &&
+        conversationKeyRef.current === loadKey
+      ) {
+        setConversationContentReady(true);
+      }
     } catch (err) {
       if (
         signal.aborted ||
@@ -381,6 +415,8 @@ export function ConversationView({
         setError(
           err instanceof ApiError ? err.message : "Failed to load conversation"
         );
+      } else {
+        setConversationContentReady(true);
       }
       setMessagesLoading(false);
     }
@@ -407,6 +443,8 @@ export function ConversationView({
       // keep UI usable if mark-read fails
     }
   }, [ready, accessToken, workspaceId, type, id, setConversationUnread]);
+
+  markConversationReadRef.current = markConversationRead;
 
   const markConversationUnread = useCallback(async () => {
     if (!ready) return;
@@ -443,9 +481,48 @@ export function ConversationView({
   }, [ready, type, accessToken, workspaceId, id]);
 
   useEffect(() => {
-    if (messagesLoading || error || !ready) return;
-    void markConversationRead();
-  }, [messagesLoading, error, ready, markConversationRead]);
+    contentReadyRef.current = conversationContentReady;
+  }, [conversationContentReady]);
+
+  useEffect(() => {
+    if (!conversationContentReady || error || !ready) return;
+
+    const key = `${type}:${id}`;
+    if (readDelayKeyRef.current === key) return;
+    readDelayKeyRef.current = key;
+
+    const lists = useChatStore.getState().sidebarListsCache;
+    const currentUnread =
+      type === "channel"
+        ? (lists?.channels.find((c) => c.id === id)?.unread ?? 0)
+        : (lists?.dms.find((d) => d.id === id)?.unread ?? 0);
+
+    if (currentUnread > 0) {
+      setUnreadBadgeHold({
+        kind: type,
+        id,
+        count: currentUnread,
+        expiresAt: Date.now() + UNREAD_BADGE_HIDE_DELAY_MS,
+      });
+    }
+
+    const timer = window.setTimeout(() => {
+      void markConversationReadRef.current();
+      clearUnreadBadgeHold();
+    }, UNREAD_BADGE_HIDE_DELAY_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    conversationContentReady,
+    error,
+    ready,
+    type,
+    id,
+    setUnreadBadgeHold,
+    clearUnreadBadgeHold,
+  ]);
 
   useEffect(() => {
     setActiveThread(null);
@@ -464,11 +541,13 @@ export function ConversationView({
     );
 
     setMessages((prev) => {
-      if (
-        incoming.authorId === currentUserId &&
-        prev.some((m) => m.id === incoming.id)
-      ) {
-        return prev;
+      if (incoming.authorId === currentUserId) {
+        if (prev.some((m) => m.id === incoming.id)) return prev;
+        const hasPending = prev.some(
+          (m) =>
+            m.id.startsWith("pending-") && m.authorId === currentUserId
+        );
+        if (!hasPending) return prev;
       }
       const next = mergeIncomingMessage(prev, incoming);
       setConversationCache(workspaceId, type, id, { messages: next });
@@ -741,6 +820,8 @@ export function ConversationView({
   const recipientLabel = type === "channel" ? `#${title}` : title;
   const otherUserId = dmMeta?.otherUserId;
 
+  const sendingRef = useRef(false);
+
   const handleSend = async (payload: SendMessagePayload) => {
     if (!ready || !accessToken || !workspaceId) {
       throw new ApiError(401, "UNAUTHORIZED", "Session not ready — try refreshing");
@@ -748,6 +829,8 @@ export function ConversationView({
     if (!currentUserId) {
       throw new ApiError(401, "UNAUTHORIZED", "You must be signed in to send messages");
     }
+    if (sendingRef.current) return;
+    sendingRef.current = true;
     const optimistic = createOptimisticMessage(
       payload.body || ATTACHMENT_PLACEHOLDER,
       currentUserId,
@@ -772,6 +855,8 @@ export function ConversationView({
     } catch (err) {
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
       throw err;
+    } finally {
+      sendingRef.current = false;
     }
   };
 

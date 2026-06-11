@@ -23,6 +23,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { CheckIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { ApiError } from "@/lib/api/client";
 import {
   avatarColorClassForKey,
   avatarInitialFromName,
@@ -97,8 +98,12 @@ export function CreateChannelDialog() {
       closeModal();
       reset();
       router.push(`/chat/c/${channel.id}`);
-    } catch {
-      toast.error("Failed to create channel");
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : "Failed to create channel"
+      );
     } finally {
       setCreating(false);
     }

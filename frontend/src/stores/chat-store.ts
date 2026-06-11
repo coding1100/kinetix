@@ -63,6 +63,13 @@ export type ActiveConversation = {
   id: string;
 };
 
+export type UnreadBadgeHold = {
+  kind: "channel" | "dm";
+  id: string;
+  count: number;
+  expiresAt: number;
+};
+
 export type PersonProfileTab =
   | "activity"
   | "tasks"
@@ -110,6 +117,7 @@ interface ChatState {
   >;
   messageScrollTarget: string | null;
   activeConversation: ActiveConversation | null;
+  unreadBadgeHold: UnreadBadgeHold | null;
   pendingComposerQuote: PendingComposerQuote | null;
   composerEdit: ComposerEdit | null;
   setFilter: (f: ChatFilter) => void;
@@ -132,6 +140,8 @@ interface ChatState {
   clearMessageScrollTarget: () => void;
   setSidebarListsCache: (cache: ChatSidebarLists) => void;
   setActiveConversation: (conversation: ActiveConversation | null) => void;
+  setUnreadBadgeHold: (hold: UnreadBadgeHold | null) => void;
+  clearUnreadBadgeHold: () => void;
   setConversationUnread: (
     kind: "channel" | "dm",
     conversationId: string,
@@ -178,6 +188,7 @@ export const useChatStore = create<ChatState>()(
       channelMetaOverrides: {},
       messageScrollTarget: null,
       activeConversation: null,
+      unreadBadgeHold: null,
       pendingComposerQuote: null,
       composerEdit: null,
       setFilter: (filter) => set({ filter }),
@@ -237,6 +248,8 @@ export const useChatStore = create<ChatState>()(
       clearMessageScrollTarget: () => set({ messageScrollTarget: null }),
       setSidebarListsCache: (sidebarListsCache) => set({ sidebarListsCache }),
       setActiveConversation: (activeConversation) => set({ activeConversation }),
+      setUnreadBadgeHold: (unreadBadgeHold) => set({ unreadBadgeHold }),
+      clearUnreadBadgeHold: () => set({ unreadBadgeHold: null }),
       setConversationUnread: (kind, conversationId, unread) =>
         set((s) => {
           const workspaceId = s.sidebarListsCache?.workspaceId;
@@ -303,13 +316,23 @@ export const useChatStore = create<ChatState>()(
           channelMetaOverrides: {},
           messageScrollTarget: null,
           activeConversation: null,
+          unreadBadgeHold: null,
         }),
     }),
     {
       name: "riseup-chat",
       partialize: (s) => ({
         layout: s.layout,
-        sidebarListsCache: s.sidebarListsCache,
+        sidebarListsCache: s.sidebarListsCache
+          ? {
+              ...s.sidebarListsCache,
+              channels: s.sidebarListsCache.channels.map((c) => ({
+                ...c,
+                unread: 0,
+              })),
+              dms: s.sidebarListsCache.dms.map((d) => ({ ...d, unread: 0 })),
+            }
+          : null,
       }),
     }
   )

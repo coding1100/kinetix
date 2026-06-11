@@ -27,17 +27,24 @@ import {
   getChannelThreadReplies,
 } from "@/lib/mocks/channel-details";
 import {
+  addChannelMembers,
+  fetchWorkspaceMembers,
   removeChannelMember,
   searchChannelMessages as searchChannelMessagesApi,
   updateChannelMemberById,
 } from "@/lib/api/chat";
+import { filterWorkspaceMembersToAdd } from "@/lib/chat/channel-access-search";
+import { useHomeQuery } from "@/hooks/use-home-query";
 import type { Channel, ChannelMember, ChatSearchHit } from "@/lib/types/chat";
 import { ConversationMessageSearch } from "@/components/chat/search/ConversationMessageSearch";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { useChannelMembers } from "@/hooks/use-channel-members";
 import { useChannelFiles } from "@/hooks/use-channel-files";
-import { patchCachedChannelMembers } from "@/lib/chat/channel-members-cache";
+import {
+  mergeChannelMembersIntoCache,
+  patchCachedChannelMembers,
+} from "@/lib/chat/channel-members-cache";
 import { useAuthStore } from "@/stores/auth-store";
 import { AddChannelMembersDialog } from "@/components/chat/modals/AddChannelMembersDialog";
 import {
@@ -137,6 +144,7 @@ function FollowersView({ channelId }: { channelId: string }) {
   const [query, setQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"followers" | "access">("followers");
   const [addOpen, setAddOpen] = useState(false);
+  const [addingUserId, setAddingUserId] = useState<string | null>(null);
   const [memberActionId, setMemberActionId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<
     | { type: "remove"; member: ChannelMember }
@@ -147,11 +155,41 @@ function FollowersView({ channelId }: { channelId: string }) {
 
   const { members: allMembers, loading: membersLoading, reload } =
     useChannelMembers(channelId);
+  const channelIsPrivate = useChatStore((s) => {
+    const fromCache = s.sidebarListsCache?.channels.find(
+      (c) => c.id === channelId
+    );
+    return (
+      fromCache?.isPrivate ?? getChannelById(channelId)?.isPrivate ?? false
+    );
+  });
+  const workspaceMembersQuery = useHomeQuery(
+    (token, ws) => fetchWorkspaceMembers(token, ws).then((r) => r.data),
+    []
+  );
+  const q = query.trim().toLowerCase();
+  const channelMemberIds = useMemo(
+    () => new Set(allMembers.map((m) => m.id)),
+    [allMembers]
+  );
+  const addCandidates = useMemo(() => {
+    if (!channelIsPrivate || activeTab !== "access") return [];
+    return filterWorkspaceMembersToAdd(
+      workspaceMembersQuery.data ?? [],
+      channelMemberIds,
+      q
+    );
+  }, [
+    channelIsPrivate,
+    activeTab,
+    workspaceMembersQuery.data,
+    channelMemberIds,
+    q,
+  ]);
   const followers = useMemo(
     () => allMembers.filter((m) => m.isFollowing),
     [allMembers]
   );
-  const q = query.trim().toLowerCase();
   const matchesQuery = (member: ChannelMember) =>
     !q ||
     member.fullName.toLowerCase().includes(q) ||
@@ -164,21 +202,22 @@ function FollowersView({ channelId }: { channelId: string }) {
     (u) => !u.isFollowing && matchesQuery(u)
   );
 
-  const channelIsPrivate = useChatStore((s) => {
-    const fromCache = s.sidebarListsCache?.channels.find(
-      (c) => c.id === channelId
-    );
-    return (
-      fromCache?.isPrivate ?? getChannelById(channelId)?.isPrivate ?? false
-    );
-  });
-
+  const channelCreatedById = useChatStore(
+    (s) =>
+      s.sidebarListsCache?.channels.find((c) => c.id === channelId)?.createdById ??
+      null
+  );
   const workspaceRole = useAuthStore((s) =>
     s.workspaces.find((w) => w.id === workspaceId)?.role
   );
+  const isChannelCreator = Boolean(
+    currentUserId && channelCreatedById === currentUserId
+  );
   const canAddToAccess = channelIsPrivate;
   const canManageMembers =
-    workspaceRole === "OWNER" || workspaceRole === "ADMIN";
+    workspaceRole === "OWNER" ||
+    workspaceRole === "ADMIN" ||
+    isChannelCreator;
   const canRemoveMember = (member: ChannelMember) =>
     canManageMembers &&
     member.id !== currentUserId &&
@@ -189,6 +228,12 @@ function FollowersView({ channelId }: { channelId: string }) {
       setActiveTab("access");
     }
   }, [membersLoading, followers.length]);
+
+  useEffect(() => {
+    if (channelIsPrivate && activeTab === "access") {
+      reload();
+    }
+  }, [channelIsPrivate, activeTab, channelId, reload]);
 
   const canChangeFollow = (_member: ChannelMember) => true;
 
@@ -238,6 +283,32 @@ function FollowersView({ channelId }: { channelId: string }) {
       );
     } finally {
       setMemberActionId(null);
+    }
+  };
+
+  const addWorkspaceMember = async (userId: string, fullName: string) => {
+    if (!ready || !canAddToAccess) return;
+    setAddingUserId(userId);
+    try {
+      const res = await addChannelMembers(
+        accessToken,
+        workspaceId,
+        channelId,
+        [userId]
+      );
+      if (res.added === 0) {
+        mergeChannelMembersIntoCache(workspaceId, channelId, res.data);
+        reload();
+        toast.info(`${fullName} already has access`);
+        return;
+      }
+      mergeChannelMembersIntoCache(workspaceId, channelId, res.data);
+      toast.success(`${fullName} added to channel`);
+      reload();
+    } catch (err) {
+      toast.error(formatRequestError(err) || "Failed to add member");
+    } finally {
+      setAddingUserId(null);
     }
   };
 
@@ -390,6 +461,58 @@ function FollowersView({ channelId }: { channelId: string }) {
               <PlusIcon className="size-4" />
               Add people to access
             </Button>
+          ) : null}
+          {canAddToAccess && q ? (
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                Add to channel
+              </p>
+              <ul className="space-y-1">
+                {workspaceMembersQuery.loading ? (
+                  <li className="px-2 py-2 text-sm text-muted-foreground">
+                    Searching workspace…
+                  </li>
+                ) : null}
+                {!workspaceMembersQuery.loading &&
+                  addCandidates.map((member) => (
+                    <li
+                      key={member.id}
+                      className="flex items-center gap-2 rounded-lg px-2 py-2 hover:bg-muted/50"
+                    >
+                      <FollowerAvatar
+                        name={member.fullName}
+                        userId={member.id}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">
+                          {member.fullName}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {member.email}
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 shrink-0 px-2 text-xs"
+                        loading={addingUserId === member.id}
+                        loadingText="Adding…"
+                        onClick={() =>
+                          void addWorkspaceMember(member.id, member.fullName)
+                        }
+                      >
+                        Add
+                      </Button>
+                    </li>
+                  ))}
+                {!workspaceMembersQuery.loading &&
+                addCandidates.length === 0 ? (
+                  <li className="px-2 py-2 text-sm text-muted-foreground">
+                    No workspace members match. They may already have access.
+                  </li>
+                ) : null}
+              </ul>
+            </div>
           ) : null}
           <div className="space-y-2">
             <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">

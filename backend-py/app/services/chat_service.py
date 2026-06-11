@@ -1619,7 +1619,25 @@ async def add_channel_members(
     await session.commit()
 
     if not to_add:
-        return {"data": [], "added": 0}
+        existing_rows = (
+            await session.scalars(
+                select(ChatChannelMember)
+                .where(
+                    ChatChannelMember.channel_id == channel_id,
+                    ChatChannelMember.user_id.in_(requested),
+                )
+                .options(selectinload(ChatChannelMember.user))
+            )
+        ).all()
+        existing_ids = [m.user_id for m in existing_rows]
+        roles = await _workspace_role_map(session, workspace_id, existing_ids)
+        return {
+            "added": 0,
+            "data": [
+                _channel_member_json(m.user, m, roles.get(m.user_id))
+                for m in existing_rows
+            ],
+        }
 
     if access_notifications:
         await emit_channel_access_notifications(
@@ -1670,19 +1688,22 @@ async def remove_channel_member(
         raise AppError(404, "NOT_FOUND", "User is not a channel member")
 
     if target_user_id != user_id:
-        wm = await session.scalar(
-            select(WorkspaceMember).where(
-                WorkspaceMember.workspace_id == workspace_id,
-                WorkspaceMember.user_id == user_id,
-                WorkspaceMember.status == MemberStatus.ACTIVE,
+        channel = actor.channel
+        is_creator = channel.created_by_id == user_id
+        if not is_creator:
+            wm = await session.scalar(
+                select(WorkspaceMember).where(
+                    WorkspaceMember.workspace_id == workspace_id,
+                    WorkspaceMember.user_id == user_id,
+                    WorkspaceMember.status == MemberStatus.ACTIVE,
+                )
             )
-        )
-        if not wm or wm.role not in (WorkspaceRole.OWNER, WorkspaceRole.ADMIN):
-            raise AppError(
-                403,
-                "FORBIDDEN",
-                "Only workspace admins can remove other members",
-            )
+            if not wm or wm.role not in (WorkspaceRole.OWNER, WorkspaceRole.ADMIN):
+                raise AppError(
+                    403,
+                    "FORBIDDEN",
+                    "Only workspace admins or the channel creator can remove other members",
+                )
 
     member_count = await session.scalar(
         select(func.count())

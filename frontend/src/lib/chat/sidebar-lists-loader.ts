@@ -1,11 +1,22 @@
 import { fetchChannels, fetchDms } from "@/lib/api/chat";
 import type { Channel, DirectMessage } from "@/lib/types/chat";
+import { mergeConversationUnread } from "@/lib/chat/sidebar-unread-merge";
 import {
   isSidebarCacheForSession,
   useChatStore,
   type ChatSidebarLists,
 } from "@/stores/chat-store";
 import { useAuthStore } from "@/stores/auth-store";
+
+function activeChannelId(): string | null {
+  const active = useChatStore.getState().activeConversation;
+  return active?.kind === "channel" ? active.id : null;
+}
+
+function activeDmId(): string | null {
+  const active = useChatStore.getState().activeConversation;
+  return active?.kind === "dm" ? active.id : null;
+}
 
 function sortByLastAt<T extends { lastAt: string }>(items: T[]) {
   return [...items].sort(
@@ -34,6 +45,9 @@ export function mergeSidebarChannels(
               ...channel,
               canDelete: channel.canDelete ?? existing.canDelete,
               createdById: channel.createdById ?? existing.createdById,
+              unread: mergeConversationUnread(channel.unread, existing.unread, {
+                isActive: activeChannelId() === channel.id,
+              }),
             }
           : channel
       );
@@ -57,7 +71,18 @@ export function mergeSidebarDms(
   }
   for (const dm of cacheDms ?? []) {
     const existing = merged.get(dm.id);
-    merged.set(dm.id, existing ? { ...existing, ...dm } : dm);
+    merged.set(
+      dm.id,
+      existing
+        ? {
+            ...existing,
+            ...dm,
+            unread: mergeConversationUnread(dm.unread, existing.unread, {
+              isActive: activeDmId() === dm.id,
+            }),
+          }
+        : dm
+    );
   }
   return sortByLastAt([...merged.values()]);
 }

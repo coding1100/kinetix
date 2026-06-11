@@ -146,6 +146,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     userId,
     ingestRealtimeEvent,
     ingestMessageEditEvent,
+    ingestMessageDeleteEvent,
     ingestReactionEvent,
     syncPresence,
     upsertPresence,

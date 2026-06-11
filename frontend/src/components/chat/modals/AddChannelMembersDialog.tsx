@@ -27,7 +27,7 @@ import {
   avatarInitialFromName,
 } from "@/lib/user-display";
 import { toast } from "sonner";
-import { patchCachedChannelMembers } from "@/lib/chat/channel-members-cache";
+import { mergeChannelMembersIntoCache } from "@/lib/chat/channel-members-cache";
 
 type Props = {
   channelId: string;
@@ -101,14 +101,13 @@ export function AddChannelMembersDialog({
         [...selected]
       );
       if (res.added === 0) {
+        mergeChannelMembersIntoCache(workspaceId, channelId, res.data);
+        onAdded?.();
         toast.info("Selected people are already in this channel");
+        handleClose(false);
         return;
       }
-      patchCachedChannelMembers(workspaceId, channelId, (members) => {
-        const existingIds = new Set(members.map((m) => m.id));
-        const appended = res.data.filter((m) => !existingIds.has(m.id));
-        return [...members, ...appended];
-      });
+      mergeChannelMembersIntoCache(workspaceId, channelId, res.data);
       toast.success(
         res.added === 1 ? "1 person added" : `${res.added} people added`
       );
