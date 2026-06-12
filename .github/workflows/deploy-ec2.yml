@@ -13,7 +13,7 @@ jobs:
   deploy:
     name: Deploy production
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
 
     steps:
       - name: Deploy over SSH
@@ -26,11 +26,11 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           envs: APP_ROOT
-          script_stop: true
-          command_timeout: 20m
+          command_timeout: 40m
           script: |
             set -euo pipefail
             export APP_ROOT="${APP_ROOT:-/opt/clickup/kinetix}"
+            export DEPLOY_MODE=docker
             cd "$APP_ROOT"
             # Reset before deploy.sh so local edits on the server cannot block CI
             git fetch origin main
