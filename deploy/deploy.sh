@@ -107,10 +107,10 @@ deploy_docker_stack() {
   export DOCKER_BUILDKIT=1
   export COMPOSE_DOCKER_CLI_BUILD=1
 
-  log "Build and start containers (builds run inside Docker, not on host)"
+  log "Build and start containers (sequential builds — lower peak memory)"
   docker compose --env-file docker-compose.env \
     -f docker-compose.yml -f docker-compose.app.yml \
-    build --no-parallel api
+    build api
   docker compose --env-file docker-compose.env \
     -f docker-compose.yml -f docker-compose.app.yml \
     build web
