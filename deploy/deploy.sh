@@ -101,6 +101,18 @@ deploy_docker_stack() {
   sudo systemctl disable kinetix-api kinetix-web 2>/dev/null || true
   sudo systemctl stop nginx 2>/dev/null || true
 
+  compose_env_file
+  # shellcheck disable=SC1091
+  set -a
+  source "$APP_ROOT/docker-compose.env"
+  set +a
+  if [ -z "${POSTGRES_PASSWORD:-}" ]; then
+    echo "ERROR: POSTGRES_PASSWORD is empty in docker-compose.env"
+    exit 1
+  fi
+  export API_PUBLIC_URL="${API_PUBLIC_URL:-${PUBLIC_APP_URL:-http://localhost}}"
+  export FRONTEND_URL="${FRONTEND_URL:-${PUBLIC_APP_URL:-http://localhost}}"
+
   compose_postgres
 
   cd "$APP_ROOT"
@@ -125,8 +137,13 @@ deploy_docker_stack() {
     exit 1
   fi
 
-  if ! curl -fsS http://127.0.0.1/health | grep -q '"database": "connected"'; then
-    echo "ERROR: database not connected — check docker-compose.env DATABASE_URL uses host postgres"
+  HEALTH_JSON=$(curl -fsS http://127.0.0.1/health)
+  echo "$HEALTH_JSON"
+  if ! echo "$HEALTH_JSON" | grep -qE '"database"[[:space:]]*:[[:space:]]*"connected"'; then
+    echo "ERROR: database not connected"
+    docker compose --env-file docker-compose.env \
+      -f docker-compose.yml -f docker-compose.app.yml \
+      exec -T api printenv DATABASE_URL 2>/dev/null | sed 's/:\/\/[^:]*:[^@]*@/:\/\/USER:***@/' || true
     docker compose --env-file docker-compose.env \
       -f docker-compose.yml -f docker-compose.app.yml logs --tail 40 api
     exit 1
