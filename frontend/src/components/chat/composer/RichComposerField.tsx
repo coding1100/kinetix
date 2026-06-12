@@ -13,6 +13,7 @@ import { useComposerFormat } from "@/hooks/use-composer-format";
 import type { TurnIntoBlockType } from "@/lib/chat/rich-text/block-types";
 import { applyTurnInto } from "@/lib/chat/rich-text/commands";
 import { RICH_TEXT_CONTENT_CLASS } from "@/lib/chat/rich-text/rich-text-styles";
+import { extractFilesFromClipboard } from "@/lib/chat/composer-image-files";
 
 const MAX_EDITOR_HEIGHT_PX = 160;
 
@@ -93,16 +94,10 @@ export function RichComposerField({
 
   const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
     if (onPasteFiles) {
-      const items = Array.from(e.clipboardData.items);
-      const imageFiles: File[] = [];
-      for (const item of items) {
-        if (item.kind !== "file" || !item.type.startsWith("image/")) continue;
-        const file = item.getAsFile();
-        if (file) imageFiles.push(file);
-      }
-      if (imageFiles.length > 0) {
+      const files = extractFilesFromClipboard(e.clipboardData);
+      if (files.length > 0) {
         e.preventDefault();
-        onPasteFiles(imageFiles);
+        onPasteFiles(files);
         return;
       }
     }

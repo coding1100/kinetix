@@ -36,7 +36,7 @@ import { useUiStore } from "@/stores/ui-store";
 import { EmojiPickerPopover } from "@/components/chat/emoji/EmojiPickerPopover";
 import type { ConversationType, SendMessagePayload } from "@/lib/types/chat";
 import { useComposerAttachments } from "@/hooks/use-composer-attachments";
-import { useComposerImageDropPaste } from "@/hooks/use-composer-image-drop-paste";
+import { useComposerFileDropPaste } from "@/hooks/use-composer-file-drop-paste";
 import { ComposerAttachmentChips } from "@/components/chat/attachments/ComposerAttachmentChips";
 import { CreateDocDialog } from "@/components/chat/attachments/CreateDocDialog";
 import { MediaRecorderDialog } from "@/components/chat/attachments/MediaRecorderDialog";
@@ -116,15 +116,15 @@ export function MessageComposer({
     pickFile,
     onFileInputChange,
     uploadBlob,
-    uploadImageFiles,
+    uploadFiles,
     removePending,
     clearPending,
   } = useComposerAttachments(context);
 
-  const imageInputEnabled = Boolean(context) && !uploading;
-  const { dragActive, rootProps } = useComposerImageDropPaste({
-    enabled: imageInputEnabled,
-    onImages: uploadImageFiles,
+  const fileInputEnabled = Boolean(context) && !uploading;
+  const { dragActive, rootProps } = useComposerFileDropPaste({
+    enabled: fileInputEnabled,
+    onFiles: uploadFiles,
   });
 
   const placeholder = compact
@@ -241,6 +241,7 @@ export function MessageComposer({
       <input
         ref={fileInputRef}
         type="file"
+        multiple
         className="hidden"
         onChange={(e) => void onFileInputChange(e)}
       />
@@ -281,7 +282,7 @@ export function MessageComposer({
               className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-primary/5 text-sm font-medium text-primary"
               aria-hidden
             >
-              Drop image to attach
+              Drop files to attach
             </div>
           ) : null}
           <ComposerAttachmentChips
@@ -303,9 +304,7 @@ export function MessageComposer({
             onDismissMentionAutocomplete={dismissMentionAutocomplete}
             onKeyDown={handleKeyDown}
             onInput={syncFromEditor}
-            onPasteFiles={
-              imageInputEnabled ? uploadImageFiles : undefined
-            }
+            onPasteFiles={fileInputEnabled ? uploadFiles : undefined}
           />
 
           <div className="flex items-center justify-between gap-2 px-2 pb-2">

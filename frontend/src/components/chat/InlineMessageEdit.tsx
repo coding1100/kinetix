@@ -20,7 +20,7 @@ import {
   useComposerAttachments,
   type PendingAttachment,
 } from "@/hooks/use-composer-attachments";
-import { useComposerImageDropPaste } from "@/hooks/use-composer-image-drop-paste";
+import { useComposerFileDropPaste } from "@/hooks/use-composer-file-drop-paste";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -127,15 +127,15 @@ export function InlineMessageEdit({
     fileInputRef,
     pickFile,
     onFileInputChange,
-    uploadImageFiles,
+    uploadFiles,
     removePending,
     clearPending,
   } = useComposerAttachments(context);
 
-  const imageInputEnabled = Boolean(context) && !uploading && !saving;
-  const { dragActive, rootProps } = useComposerImageDropPaste({
-    enabled: imageInputEnabled,
-    onImages: uploadImageFiles,
+  const fileInputEnabled = Boolean(context) && !uploading && !saving;
+  const { dragActive, rootProps } = useComposerFileDropPaste({
+    enabled: fileInputEnabled,
+    onFiles: uploadFiles,
   });
 
   const {
@@ -296,8 +296,8 @@ export function InlineMessageEdit({
       <input
         ref={fileInputRef}
         type="file"
+        multiple
         className="hidden"
-        accept="image/*"
         onChange={(e) => void onFileInputChange(e)}
       />
       <div
@@ -313,7 +313,7 @@ export function InlineMessageEdit({
             className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-primary/5 text-sm font-medium text-primary"
             aria-hidden
           >
-            Drop image to attach
+            Drop files to attach
           </div>
         ) : null}
         <RichComposerField
@@ -330,7 +330,7 @@ export function InlineMessageEdit({
           onDismissMentionAutocomplete={dismissMentionAutocomplete}
           onKeyDown={handleKeyDown}
           onInput={syncFromEditor}
-          onPasteFiles={imageInputEnabled ? uploadImageFiles : undefined}
+          onPasteFiles={fileInputEnabled ? uploadFiles : undefined}
         />
 
         <div className="flex items-center justify-between gap-2 border-t border-border px-2 py-1.5">
@@ -340,8 +340,8 @@ export function InlineMessageEdit({
               variant="ghost"
               size="icon-sm"
               className="size-7 text-muted-foreground"
-              aria-label="Attach image"
-              disabled={!imageInputEnabled}
+              aria-label="Attach file"
+              disabled={!fileInputEnabled}
               onClick={pickFile}
             >
               <PaperclipIcon className="size-4" strokeWidth={1.5} />
