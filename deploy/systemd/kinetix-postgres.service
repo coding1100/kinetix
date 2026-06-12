@@ -1,0 +1,18 @@
+[Unit]
+Description=Kinetix PostgreSQL (Docker)
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/clickup/kinetix
+ExecStart=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d postgres
+ExecStop=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.prod.yml stop postgres
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

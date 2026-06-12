@@ -1,0 +1,6 @@
+# Production overrides for EC2 — use with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d postgres
+
+services:
+  postgres:
+    restart: always

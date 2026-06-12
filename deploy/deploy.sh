@@ -55,11 +55,48 @@ if lsof -i :3000 -t >/dev/null 2>&1; then
 fi
 
 log "Install systemd units"
+sudo cp "$ROOT/deploy/systemd/kinetix-postgres.service" /etc/systemd/system/
 sudo cp "$ROOT/deploy/systemd/kinetix-api.service" /etc/systemd/system/
 sudo cp "$ROOT/deploy/systemd/kinetix-web.service" /etc/systemd/system/
+sudo sed -i "s|/opt/clickup/kinetix|$APP_ROOT|g" /etc/systemd/system/kinetix-postgres.service
 sudo sed -i "s|/opt/clickup/kinetix|$APP_ROOT|g" /etc/systemd/system/kinetix-api.service
 sudo sed -i "s|/opt/clickup/kinetix|$APP_ROOT|g" /etc/systemd/system/kinetix-web.service
 sudo systemctl daemon-reload
+
+log "PostgreSQL (Docker)"
+if [ ! -f "$APP_ROOT/docker-compose.env" ]; then
+  echo "ERROR: missing $APP_ROOT/docker-compose.env (copy from docker-compose.env.example)"
+  exit 1
+fi
+sudo systemctl enable kinetix-postgres
+sudo systemctl start kinetix-postgres
+COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+# shellcheck disable=SC1091
+set -a
+source "$APP_ROOT/docker-compose.env"
+set +a
+POSTGRES_USER="${POSTGRES_USER:-riseup}"
+POSTGRES_DB="${POSTGRES_DB:-riseup}"
+cd "$APP_ROOT"
+if ! $COMPOSE up -d postgres; then
+  echo "ERROR: failed to start Postgres container"
+  exit 1
+fi
+pg_attempts=30
+pg_i=1
+while [ "$pg_i" -le "$pg_attempts" ]; do
+  if $COMPOSE exec -T postgres pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1; then
+    log "Postgres ready"
+    break
+  fi
+  sleep 2
+  pg_i=$((pg_i + 1))
+done
+if [ "$pg_i" -gt "$pg_attempts" ]; then
+  echo "ERROR: Postgres not ready after $((pg_attempts * 2))s"
+  $COMPOSE logs postgres --tail 40 || true
+  exit 1
+fi
 
 log "Backend dependencies"
 cd "$BACKEND"

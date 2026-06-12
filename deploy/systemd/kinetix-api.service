@@ -1,6 +1,7 @@
 [Unit]
 Description=Kinetix API (FastAPI + Socket.IO)
-After=network.target
+After=network.target kinetix-postgres.service
+Wants=kinetix-postgres.service
 
 [Service]
 Type=simple

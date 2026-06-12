@@ -1,15 +1,23 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.14-alpine
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: riseup
-      POSTGRES_PASSWORD: riseup
-      POSTGRES_DB: riseup
+    shm_size: 128mb
+    env_file:
+      - docker-compose.env
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - riseup_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER:-riseup} -d $${POSTGRES_DB:-riseup}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   riseup_pg_data:

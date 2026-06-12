@@ -1,6 +1,7 @@
 from functools import lru_cache
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _STRIP_QUERY_KEYS = frozenset({"pgbouncer", "connection_limit"})
@@ -17,7 +18,10 @@ class Settings(BaseSettings):
     port: int = 4001
     frontend_url: str = "http://localhost:3001"
     database_url: str
-    direct_database_url: str = ""
+    direct_database_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("DIRECT_DATABASE_URL", "DIRECT_URL"),
+    )
     jwt_access_secret: str
     jwt_refresh_secret: str
     jwt_access_expires_minutes: int = 240  # 4 hours (use 180 for 3h)
@@ -60,7 +64,7 @@ class Settings(BaseSettings):
 
     @property
     def runtime_database_url(self) -> str:
-        """Prefer session/direct URL when set (stable asyncpg on Supabase)."""
+        """Prefer direct URL when set (e.g. migrations); otherwise DATABASE_URL."""
         direct = self.direct_database_url.strip()
         if direct:
             return direct

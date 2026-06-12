@@ -52,7 +52,7 @@ API_PUBLIC_URL="http://localhost:4001"
 FRONTEND_URL="http://localhost:3001"
 ```
 
-5. Apply DB migration once: run `backend-py/scripts/migrate_google_oauth.sql` in Supabase SQL editor.
+5. Apply DB migration once: run `backend-py/scripts/migrate_google_oauth.sql` via `psql` or any SQL client.
 6. Restart `backend-py`, open [http://localhost:3001/auth/login](http://localhost:3001/auth/login) → **Continue with Google**.
 
 **Verify:** `GET http://localhost:4001/health` must include `"googleOAuth": { "routesRegistered": true }`. If that field is missing, an old API process is still on port 4001 — stop all uvicorn windows, then from `backend-py` run `.\scripts\start-api.ps1` (or start uvicorn once manually).
@@ -64,39 +64,44 @@ cd backend-py && python -m pytest tests/test_google_oauth.py -v
 cd frontend && npm run test
 ```
 
-## Backend (Phase 2A)
+## Database (Docker PostgreSQL)
 
-### 1. Configure Supabase (database)
+Local and production use the same [`docker-compose.yml`](docker-compose.yml) (Postgres 16 Alpine).
 
-Copy env and set your Supabase URLs in `backend/.env`:
+### Local setup
 
 ```bash
-cd backend
-cp .env.example .env
-```
+cp docker-compose.env.example docker-compose.env
+docker compose up -d postgres
 
-Required variables:
+cd backend-py
+cp .env.example .env
+# Set DATABASE_URL to match POSTGRES_* in docker-compose.env
+uv sync
+uv run uvicorn app.main:app --reload --port 4001
+```
 
 | Variable | Purpose |
 |----------|---------|
-| `DATABASE_URL` | Pooled URL (port **6543**, `?pgbouncer=true`) — used by the API at runtime |
-| `DIRECT_URL` | Direct/session URL (port **5432**) — used by Prisma `db push` / migrations |
+| `DATABASE_URL` | `postgresql://USER:PASS@127.0.0.1:5432/DBNAME` — API runtime connection |
 
-Get both from [Supabase Dashboard](https://supabase.com/dashboard) → **Project Settings** → **Database** → **Connection string**.
+Schema changes: run SQL files in `backend-py/scripts/` via `psql` or a migration runner script.
 
-### 2. Install, sync schema, seed
+### Migrate from Supabase (one-time, on EC2)
 
 ```bash
-npm install
-npm run db:generate
-npm run db:push
-npm run db:seed
-npm run dev
+pg_dump "$SUPABASE_DIRECT_URL" --format=custom --no-owner --no-acl -f supabase.dump
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d postgres
+pg_restore --dbname="postgresql://riseup:PASS@127.0.0.1:5432/riseup" --no-owner --no-acl supabase.dump
 ```
 
-> **Local Docker Postgres** (`docker compose up -d`) is optional — not needed when using Supabase.
+Update `backend-py/.env` `DATABASE_URL` to the local Docker URL, then restart the API.
 
-API: [http://localhost:4000](http://localhost:4000)
+## Backend (Phase 2A — legacy Express)
+
+The Node/Express `backend/` folder is no longer in this repo. Use **backend-py** (FastAPI) instead.
+
+API (legacy docs): [http://localhost:4000](http://localhost:4000)
 
 ### Health & docs
 
@@ -150,13 +155,12 @@ If SMTP is not configured, invites are still created and the invite link is copi
 - `alex@demo.com` / `password123`
 - Workspace: **Acme Demo**
 
-### Database (Supabase)
+### Database
 
-- **Provider:** Supabase PostgreSQL
-- **Runtime:** `DATABASE_URL` (pooler port 6543)
-- **Migrations:** `DIRECT_URL` (port 5432)
-- **Browse data:** `cd backend && npm run db:studio` → [http://localhost:5555](http://localhost:5555)
-- **Supabase Dashboard:** [https://supabase.com/dashboard](https://supabase.com/dashboard) → Table Editor
+- **Provider:** PostgreSQL 16 in Docker (`docker compose up -d postgres`)
+- **Runtime:** `DATABASE_URL` → `127.0.0.1:5432`
+- **Migrations:** SQL scripts in `backend-py/scripts/`
+- **Backups (production):** `deploy/backup-postgres.sh` (cron + optional S3 upload)
 
 ## Python API (`backend-py`) — Phases PY-1 & PY-2
 
@@ -190,18 +194,24 @@ Pushes to `main` deploy automatically via GitHub Actions (`.github/workflows/dep
 
 ```bash
 sudo apt update
-sudo apt install -y git nginx python3 python3-venv nodejs npm
+sudo apt install -y git nginx docker.io docker-compose-plugin postgresql-client
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
+sudo usermod -aG docker ubuntu
 
 sudo mkdir -p /opt/clickup
 sudo chown ubuntu:ubuntu /opt/clickup
 git clone git@github.com:coding1100/kinetix.git /opt/clickup/kinetix
 cd /opt/clickup/kinetix
 
+# Postgres credentials (never commit)
+cp docker-compose.env.example docker-compose.env
+nano docker-compose.env
+
 # Backend env (never commit .env)
 cp backend-py/.env.example backend-py/.env
 nano backend-py/.env
+# DATABASE_URL must match docker-compose.env (127.0.0.1:5432)
 
 # Frontend env
 nano frontend/.env.local
@@ -209,9 +219,12 @@ nano frontend/.env.local
 # NEXT_PUBLIC_APP_URL=http://YOUR_EC2_IP
 # NEXT_PUBLIC_SOCKET_URL=http://YOUR_EC2_IP
 
-chmod +x deploy/setup-services.sh deploy/deploy.sh
+chmod +x deploy/setup-services.sh deploy/deploy.sh deploy/backup-postgres.sh
 ./deploy/setup-services.sh
 ./deploy/deploy.sh
+
+# Optional: daily backup at 3am
+# (crontab -e) 0 3 * * * /opt/clickup/kinetix/deploy/backup-postgres.sh
 ```
 
 ### GitHub repository secrets
