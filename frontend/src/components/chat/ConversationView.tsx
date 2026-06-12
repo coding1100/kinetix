@@ -1244,7 +1244,7 @@ export function ConversationView({
             />
           )}
           {typingUserIds.length > 0 ? (
-            <p className="shrink-0 px-4 pb-1 text-xs text-muted-foreground">
+            <p className="shrink-0 px-4 pb-1 text-xs text-muted-foreground hidden">
               {typingUserIds.length === 1
                 ? "Someone is typing…"
                 : `${typingUserIds.length} people are typing…`}
