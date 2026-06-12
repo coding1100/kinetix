@@ -114,8 +114,11 @@ cp backend-py/.env.example backend-py/.env
 # Edit docker-compose.env — POSTGRES_PASSWORD, PUBLIC_APP_URL (e.g. http://3.140.5.67 on EC2)
 # Edit backend-py/.env — JWT, Google, SMTP, AWS secrets (DATABASE_URL is overridden in Docker)
 
-docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build
+docker compose --env-file docker-compose.env \
+  -f docker-compose.yml -f docker-compose.app.yml up -d --build
 ```
+
+`docker-compose.env` must include `DATABASE_URL` with host **`postgres`** (Docker network), plus `PUBLIC_APP_URL` / `API_PUBLIC_URL` / `FRONTEND_URL`.
 
 Open `PUBLIC_APP_URL` in the browser (default `http://localhost`).
 
@@ -135,8 +138,10 @@ sudo systemctl stop nginx   # free port 80 for Docker nginx
 
 cd /opt/clickup/kinetix
 # PUBLIC_APP_URL=http://3.140.5.67 in docker-compose.env
-docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build
-docker compose -f docker-compose.yml -f docker-compose.app.yml ps
+docker compose --env-file docker-compose.env \
+  -f docker-compose.yml -f docker-compose.app.yml up -d --build
+docker compose --env-file docker-compose.env \
+  -f docker-compose.yml -f docker-compose.app.yml ps
 curl -s http://127.0.0.1/health   # nginx → api (check "database":"connected")
 ```
 
@@ -144,13 +149,16 @@ curl -s http://127.0.0.1/health   # nginx → api (check "database":"connected")
 
 ```bash
 # Logs
-docker compose -f docker-compose.yml -f docker-compose.app.yml logs -f api
+docker compose --env-file docker-compose.env \
+  -f docker-compose.yml -f docker-compose.app.yml logs -f api
 
 # Rebuild after code changes
-docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build
+docker compose --env-file docker-compose.env \
+  -f docker-compose.yml -f docker-compose.app.yml up -d --build
 
 # Stop all
-docker compose -f docker-compose.yml -f docker-compose.app.yml down
+docker compose --env-file docker-compose.env \
+  -f docker-compose.yml -f docker-compose.app.yml down
 ```
 
 **Postgres only** (hybrid with systemd API/web): `docker compose up -d postgres`

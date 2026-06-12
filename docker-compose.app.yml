@@ -1,8 +1,9 @@
 # Full stack: API + Web + Nginx (use with docker-compose.yml for Postgres).
 #
-#   docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build
+#   docker compose --env-file docker-compose.env \
+#     -f docker-compose.yml -f docker-compose.app.yml up -d --build
 #
-# Set PUBLIC_APP_URL in docker-compose.env (e.g. http://3.140.5.67).
+# docker-compose.env must set PUBLIC_APP_URL and DATABASE_URL (@postgres host).
 
 services:
   api:
@@ -10,12 +11,10 @@ services:
     restart: unless-stopped
     env_file:
       - ./backend-py/.env
+      - ./docker-compose.env
     environment:
       NODE_ENV: production
       PORT: "4000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-riseup}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-riseup}
-      API_PUBLIC_URL: ${PUBLIC_APP_URL:-http://localhost}
-      FRONTEND_URL: ${PUBLIC_APP_URL:-http://localhost}
     depends_on:
       postgres:
         condition: service_healthy
