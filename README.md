@@ -71,9 +71,16 @@ Local and production use the same [`docker-compose.yml`](docker-compose.yml) (Po
 ### Local setup
 
 ```bash
+cp .env.example .env
 cp docker-compose.env.example docker-compose.env
 docker compose up -d postgres
+```
 
+**Windows:** If port 5432 is already in use (native PostgreSQL), set `POSTGRES_HOST_PORT=5433` in root `.env` and the same port in `backend-py/.env` `DATABASE_URL`.
+
+Ensure **Docker Desktop is running** before `docker compose` (the `dockerDesktopLinuxEngine` pipe error means it is stopped).
+
+```bash
 cd backend-py
 cp .env.example .env
 # Set DATABASE_URL to match POSTGRES_* in docker-compose.env
@@ -96,6 +103,57 @@ pg_restore --dbname="postgresql://riseup:PASS@127.0.0.1:5432/riseup" --no-owner 
 ```
 
 Update `backend-py/.env` `DATABASE_URL` to the local Docker URL, then restart the API.
+
+### Run everything with Docker (Postgres + API + Web + Nginx)
+
+Use this instead of running uvicorn / `next start` / host nginx manually.
+
+```bash
+cp docker-compose.env.example docker-compose.env
+cp backend-py/.env.example backend-py/.env
+# Edit docker-compose.env — POSTGRES_PASSWORD, PUBLIC_APP_URL (e.g. http://3.140.5.67 on EC2)
+# Edit backend-py/.env — JWT, Google, SMTP, AWS secrets (DATABASE_URL is overridden in Docker)
+
+docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build
+```
+
+Open `PUBLIC_APP_URL` in the browser (default `http://localhost`).
+
+| Service | Container | Role |
+|---------|-----------|------|
+| `postgres` | `kinetix-postgres-1` | Database |
+| `api` | FastAPI + Socket.IO | Backend |
+| `web` | Next.js | Frontend |
+| `nginx` | Reverse proxy | Port 80 → `/api`, `/socket.io`, `/` |
+
+**On EC2 (switch from systemd to full Docker):**
+
+```bash
+sudo systemctl stop kinetix-api kinetix-web
+sudo systemctl disable kinetix-api kinetix-web
+sudo systemctl stop nginx   # free port 80 for Docker nginx
+
+cd /opt/clickup/kinetix
+# PUBLIC_APP_URL=http://3.140.5.67 in docker-compose.env
+docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.app.yml ps
+curl -s http://127.0.0.1/health   # nginx → api (check "database":"connected")
+```
+
+**Useful commands:**
+
+```bash
+# Logs
+docker compose -f docker-compose.yml -f docker-compose.app.yml logs -f api
+
+# Rebuild after code changes
+docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build
+
+# Stop all
+docker compose -f docker-compose.yml -f docker-compose.app.yml down
+```
+
+**Postgres only** (hybrid with systemd API/web): `docker compose up -d postgres`
 
 ## Backend (Phase 2A — legacy Express)
 
