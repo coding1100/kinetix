@@ -90,6 +90,9 @@ export function ChatMessageRow({
 }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [emojiMenuOpen, setEmojiMenuOpen] = useState(false);
+  const actionsActive = moreMenuOpen || emojiMenuOpen;
   const currentUserId = useAuthStore((s) => s.user?.id);
   const currentUserFullName = useAuthStore((s) => s.user?.fullName);
   const activeThreadMessageId = useChatStore((s) => s.activeThreadMessageId);
@@ -140,7 +143,8 @@ export function ChatMessageRow({
         "group relative -mx-3 rounded-md px-3 transition-colors",
         showHeader ? "py-1" : "py-0.5",
         "hover:bg-muted/70",
-        threadOpen && "bg-muted/50",
+        threadOpen && !actionsActive && "bg-muted/50",
+        actionsActive && "bg-muted/70",
         highlighted && "bg-primary/10 ring-1 ring-primary/30",
         editingMessageId === message.id && "bg-primary/10 ring-1 ring-primary/30"
       )}
@@ -155,7 +159,12 @@ export function ChatMessageRow({
       ) : null}
 
       {!isEditing ? (
-      <div className="pointer-events-none absolute right-2 top-1 z-10 opacity-0 transition-opacity group-hover:opacity-100">
+      <div
+        className={cn(
+          "pointer-events-none absolute right-2 top-1 z-10 transition-opacity",
+          actionsActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+        )}
+      >
         <div className="pointer-events-auto flex items-center gap-1 rounded-md border border-border bg-card px-1.5 py-0.5 shadow-sm">
           <Button
             variant="ghost"
@@ -168,6 +177,7 @@ export function ChatMessageRow({
           </Button>
           <EmojiPickerPopover
             onSelectEmoji={(emoji) => void onToggleReaction(message.id, emoji)}
+            onOpenChange={setEmojiMenuOpen}
             trigger={
               <Button
                 variant="ghost"
@@ -179,7 +189,7 @@ export function ChatMessageRow({
               </Button>
             }
           />
-          <DropdownMenu>
+          <DropdownMenu open={moreMenuOpen} onOpenChange={setMoreMenuOpen}>
             <DropdownMenuTrigger
               render={
                 <Button

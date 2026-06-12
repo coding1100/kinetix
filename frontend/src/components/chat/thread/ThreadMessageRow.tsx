@@ -61,6 +61,9 @@ export function ThreadMessageRow({
 }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [emojiMenuOpen, setEmojiMenuOpen] = useState(false);
+  const actionsActive = moreMenuOpen || emojiMenuOpen;
   const currentUserId = useAuthStore((s) => s.user?.id);
   const currentUserFullName = useAuthStore((s) => s.user?.fullName);
   const displayName = resolveMessageAuthorName(message, {
@@ -101,15 +104,22 @@ export function ThreadMessageRow({
     <article
       className={cn(
         "group relative -mx-2 rounded-md px-2 transition-colors hover:bg-muted/70",
+        actionsActive && "bg-muted/70",
         showHeader ? "py-0.1" : "py-0.1",
         editingMessageId === message.id && "bg-primary/10 ring-1 ring-primary/30"
       )}
     >
       {(canEdit || canDelete) && !isEditing && (
-        <div className="pointer-events-none absolute right-1 top-1 z-10 opacity-0 transition-opacity group-hover:opacity-100">
+        <div
+          className={cn(
+            "pointer-events-none absolute right-1 top-1 z-10 transition-opacity",
+            actionsActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          )}
+        >
           <div className="pointer-events-auto flex items-center gap-1 rounded-md border border-border bg-card px-1 py-0.5 shadow-sm">
             <EmojiPickerPopover
               onSelectEmoji={(emoji) => void onToggleReaction(message.id, emoji)}
+              onOpenChange={setEmojiMenuOpen}
               trigger={
                 <Button
                   type="button"
@@ -122,7 +132,7 @@ export function ThreadMessageRow({
                 </Button>
               }
             />
-            <DropdownMenu>
+            <DropdownMenu open={moreMenuOpen} onOpenChange={setMoreMenuOpen}>
               <DropdownMenuTrigger
                 render={
                   <Button

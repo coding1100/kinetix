@@ -11,14 +11,21 @@ const EmojiPicker = dynamic(() => import("emoji-picker-react"), { ssr: false });
 export function EmojiPickerPopover({
   trigger,
   onSelectEmoji,
+  onOpenChange,
 }: {
   trigger: React.ReactElement;
   onSelectEmoji: (emoji: string) => void;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
 
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    onOpenChange?.(next);
+  };
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger render={trigger} />
       <PopoverContent align="start" sideOffset={6} className="w-auto p-0">
         <EmojiPicker
