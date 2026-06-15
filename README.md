@@ -68,31 +68,43 @@ cd frontend && npm run test
 
 Local and production use the same [`docker-compose.yml`](docker-compose.yml) (Postgres 16 Alpine).
 
-### Local setup
+### Local setup (hybrid — recommended)
+
+Postgres in Docker; API and frontend run on your machine (production Docker stack unchanged).
 
 ```bash
-cp .env.example .env
+# 1. Root — Postgres credentials
 cp docker-compose.env.example docker-compose.env
+# If 5432 is busy on Windows: set POSTGRES_HOST_PORT=5433 and use :5433 in DATABASE_URL below
+
+# 2. Start Postgres only
 docker compose up -d postgres
-```
 
-**Windows:** If port 5432 is already in use (native PostgreSQL), set `POSTGRES_HOST_PORT=5433` in root `.env` and the same port in `backend-py/.env` `DATABASE_URL`.
-
-Ensure **Docker Desktop is running** before `docker compose` (the `dockerDesktopLinuxEngine` pipe error means it is stopped).
-
-```bash
+# 3. Backend
 cd backend-py
 cp .env.example .env
-# Set DATABASE_URL to match POSTGRES_* in docker-compose.env
+# DATABASE_URL user/password/port must match docker-compose.env
 uv sync
+# First time only (empty Postgres): create tables + demo login
+uv run python scripts/bootstrap_local_db.py
 uv run uvicorn app.main:app --reload --port 4001
+
+# 4. Frontend (new terminal)
+cd frontend
+cp .env.local.example .env.local
+npm install
+npm run dev
 ```
 
-| Variable | Purpose |
-|----------|---------|
-| `DATABASE_URL` | `postgresql://USER:PASS@127.0.0.1:5432/DBNAME` — API runtime connection |
+Open [http://localhost:3001](http://localhost:3001) · API health [http://localhost:4001/health](http://localhost:4001/health)
 
-Schema changes: run SQL files in `backend-py/scripts/` via `psql` or a migration runner script.
+| Service | Local URL |
+|---------|-----------|
+| Frontend | http://localhost:3001 |
+| API | http://localhost:4001 |
+| Postgres | 127.0.0.1:5433 (Docker; set `POSTGRES_HOST_PORT=5433` in root `.env` if 5432 is busy) |
+
+**Windows:** Docker Desktop must be running. Default dev DB password in examples is `riseup` / `riseup` (not production).
 
 ### Migrate from Supabase (one-time, on EC2)
 
