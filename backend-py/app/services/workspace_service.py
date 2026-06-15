@@ -129,6 +129,40 @@ async def update_workspace(
     return _workspace_json(ws)
 
 
+def map_workspace_member_json(
+    membership: WorkspaceMember, workspace_id: str
+) -> dict:
+    user = membership.user
+    return {
+        "id": user.id,
+        "membershipId": membership.id,
+        "email": user.email,
+        "fullName": user.full_name,
+        "avatarUrl": user.avatar_url,
+        "role": membership.role.value,
+        "status": membership.status.value,
+        "joinedAt": membership.joined_at.isoformat() if membership.joined_at else None,
+        "presence": get_presence(workspace_id, user.id),
+    }
+
+
+async def get_active_member_json(
+    session: AsyncSession, workspace_id: str, user_id: str
+) -> dict:
+    membership = await session.scalar(
+        select(WorkspaceMember)
+        .where(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.user_id == user_id,
+            WorkspaceMember.status == MemberStatus.ACTIVE,
+        )
+        .options(selectinload(WorkspaceMember.user))
+    )
+    if not membership:
+        raise AppError(404, "NOT_FOUND", "Workspace member not found")
+    return map_workspace_member_json(membership, workspace_id)
+
+
 async def list_workspace_members(session: AsyncSession, workspace_id: str) -> list[dict]:
     rows = (
         await session.scalars(
@@ -141,20 +175,7 @@ async def list_workspace_members(session: AsyncSession, workspace_id: str) -> li
             .order_by(WorkspaceMember.joined_at.asc())
         )
     ).all()
-    return [
-        {
-            "id": m.user.id,
-            "membershipId": m.id,
-            "email": m.user.email,
-            "fullName": m.user.full_name,
-            "avatarUrl": m.user.avatar_url,
-            "role": m.role.value,
-            "status": m.status.value,
-            "joinedAt": m.joined_at.isoformat() if m.joined_at else None,
-            "presence": get_presence(workspace_id, m.user.id),
-        }
-        for m in rows
-    ]
+    return [map_workspace_member_json(m, workspace_id) for m in rows]
 
 
 def _assert_can_manage_people(actor_role: WorkspaceRole) -> None:

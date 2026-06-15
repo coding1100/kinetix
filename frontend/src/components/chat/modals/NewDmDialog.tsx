@@ -16,8 +16,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useUiStore } from "@/stores/ui-store";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
-import { useHomeQuery } from "@/hooks/use-home-query";
-import { createDm, fetchWorkspaceMembers } from "@/lib/api/chat";
+import { createDm } from "@/lib/api/chat";
+import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
 import { useAuthStore } from "@/stores/auth-store";
 import { toast } from "sonner";
 import {
@@ -39,10 +39,7 @@ export function NewDmDialog() {
   const [creating, setCreating] = useState(false);
   const open = activeModal === "new-dm";
 
-  const membersQuery = useHomeQuery(
-    (token, ws) => fetchWorkspaceMembers(token, ws).then((r) => r.data),
-    []
-  );
+  const membersQuery = useWorkspaceMembersQuery();
 
   const members = useMemo(
     () => (membersQuery.data ?? []).filter((m) => m.id !== currentUserId),

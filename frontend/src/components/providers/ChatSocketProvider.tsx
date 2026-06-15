@@ -19,10 +19,12 @@ import type {
   HomeNotificationPayload,
   PresenceSyncPayload,
   PresenceUpdatePayload,
+  WorkspaceMemberJoinedPayload,
 } from "@/lib/types/realtime";
 import { registerChatTypingSocket } from "@/lib/socket/chat-typing";
 import { joinDmRoom, registerDmRoomsSocket } from "@/lib/socket/dm-rooms";
 import { applyHomeNotification } from "@/lib/notifications/realtime";
+import { applyWorkspaceMemberJoined } from "@/lib/workspace/realtime";
 import {
   applyChannelJoinedToSidebar,
   applyChannelMemberUpdate,
@@ -104,6 +106,12 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       if (!userId || !payload.userIds.includes(userId)) return;
       joinDmRoom(payload.workspaceId, payload.conversationId);
     });
+    socket.on(
+      "workspace:member:joined",
+      (payload: WorkspaceMemberJoinedPayload) => {
+        applyWorkspaceMemberJoined(payload, workspaceId);
+      }
+    );
     socket.on("chat:channel:removed", (payload: ChatChannelRemovedPayload) => {
       const viewingRemoved = applyChannelRemovedFromSidebar(payload, userId);
       if (!viewingRemoved) return;
@@ -148,6 +156,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       socket.off("chat:message");
       socket.off("chat:channel:joined");
       socket.off("chat:dm:joined");
+      socket.off("workspace:member:joined");
       socket.off("chat:channel:removed");
       socket.off("chat:channel:member");
       socket.off("home:notification");

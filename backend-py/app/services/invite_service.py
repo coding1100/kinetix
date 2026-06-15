@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
+import asyncio
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -15,6 +17,8 @@ from app.db.models.workspace import Workspace, WorkspaceMember
 from app.schemas.workspace import CreateInviteBody
 from app.services import email_service
 from app.services.auth_service import issue_refresh_for_user
+from app.services.workspace_service import get_active_member_json
+from app.socket.emit import broadcast_workspace_member_joined
 
 _INVITE_ROLES = {
     WorkspaceRole.OWNER,
@@ -300,6 +304,15 @@ async def accept_invite_for_user(
     invite.accepted_at = datetime.now(timezone.utc)
     await session.commit()
 
+    member = await get_active_member_json(session, invite.workspace_id, user_id)
+    asyncio.create_task(
+        broadcast_workspace_member_joined(
+            workspace_id=invite.workspace_id,
+            member=member,
+            invite_email=invite.email,
+        )
+    )
+
     workspace = await session.get(Workspace, invite.workspace_id)
     return {
         "workspace": {
@@ -346,6 +359,15 @@ async def accept_invite_with_signup(
     )
     invite.accepted_at = datetime.now(timezone.utc)
     await session.commit()
+
+    member = await get_active_member_json(session, invite.workspace_id, user.id)
+    asyncio.create_task(
+        broadcast_workspace_member_joined(
+            workspace_id=invite.workspace_id,
+            member=member,
+            invite_email=invite.email,
+        )
+    )
 
     workspace = await session.get(Workspace, invite.workspace_id)
     access_token = sign_access_token(sub=str(user.id), email=user.email)

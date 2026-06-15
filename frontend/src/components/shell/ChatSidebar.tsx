@@ -20,7 +20,7 @@ import {
   otherGroupParticipants,
   resolveGroupDmTitle,
 } from "@/lib/chat/group-dm-display";
-import { fetchWorkspaceMembers } from "@/lib/api/chat";
+import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
 import {
   loadSidebarLists,
   mergeSidebarChannels,
@@ -145,10 +145,7 @@ export function ChatSidebar() {
     }
   );
 
-  const membersQuery = useHomeQuery(
-    (token, ws) => fetchWorkspaceMembers(token, ws).then((r) => r.data),
-    []
-  );
+  const membersQuery = useWorkspaceMembersQuery();
 
   useEffect(() => {
     const source = cacheValid

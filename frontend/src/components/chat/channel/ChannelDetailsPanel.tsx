@@ -28,14 +28,13 @@ import {
 } from "@/lib/mocks/channel-details";
 import {
   addChannelMembers,
-  fetchWorkspaceMembers,
   removeChannelMember,
   searchChannelMessages as searchChannelMessagesApi,
   updateChannelMember,
   updateChannelMemberById,
 } from "@/lib/api/chat";
 import { filterWorkspaceMembersToAdd } from "@/lib/chat/channel-access-search";
-import { useHomeQuery } from "@/hooks/use-home-query";
+import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
 import type { Channel, ChannelMember, ChatSearchHit } from "@/lib/types/chat";
 import { ConversationMessageSearch } from "@/components/chat/search/ConversationMessageSearch";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
@@ -164,10 +163,7 @@ function FollowersView({ channelId }: { channelId: string }) {
       fromCache?.isPrivate ?? getChannelById(channelId)?.isPrivate ?? false
     );
   });
-  const workspaceMembersQuery = useHomeQuery(
-    (token, ws) => fetchWorkspaceMembers(token, ws).then((r) => r.data),
-    []
-  );
+  const workspaceMembersQuery = useWorkspaceMembersQuery();
   const q = query.trim().toLowerCase();
   const channelMemberIds = useMemo(
     () => new Set(allMembers.map((m) => m.id)),

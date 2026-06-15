@@ -44,7 +44,7 @@ import {
   pinMessage,
 } from "@/lib/api/chat";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
-import { useHomeQuery } from "@/hooks/use-home-query";
+import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
 import { ApiError } from "@/lib/api/client";
 import { PageLoader } from "@/components/ui/page-loader";
 import { MessageList } from "./MessageList";
@@ -95,7 +95,6 @@ import {
 } from "@/lib/chat/group-dm-display";
 import { upsertDmInSidebar } from "@/lib/chat/sidebar-dm";
 import { DmGroupMembersPanel } from "@/components/chat/DmGroupMembersPanel";
-import { fetchWorkspaceMembers } from "@/lib/api/chat";
 import { useAuthStore } from "@/stores/auth-store";
 import { ChannelNameLabel } from "@/components/chat/ChannelNameLabel";
 import { useChannelFavorite } from "@/hooks/use-channel-favorite";
@@ -910,10 +909,7 @@ export function ConversationView({
     cachedSidebarChannel?.createdById,
     currentUserId,
   ]);
-  const workspaceMembersQuery = useHomeQuery(
-    (token, ws) => fetchWorkspaceMembers(token, ws).then((r) => r.data),
-    []
-  );
+  const workspaceMembersQuery = useWorkspaceMembersQuery();
 
   const dmMetaRaw = type === "dm" ? (dm ?? cachedDm ?? null) : null;
   const dmMeta = useMemo(() => {

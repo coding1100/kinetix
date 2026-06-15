@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/sheet";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { useAuthStore, selectActiveWorkspace } from "@/stores/auth-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 import {
   cancelWorkspaceInvite,
   fetchWorkspaceInvites,
@@ -144,6 +145,7 @@ export function PeopleView() {
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
   const [memberToRemove, setMemberToRemove] =
     useState<WorkspaceMemberRow | null>(null);
+  const peopleRefreshKey = useWorkspaceStore((s) => s.peopleRefreshKey);
   const seedPresence = usePresenceStore((s) => s.seedPresence);
 
   const manage = canManagePeople(actorRole);
@@ -175,7 +177,7 @@ export function PeopleView() {
 
   useEffect(() => {
     void load();
-  }, [load, reloadKey]);
+  }, [load, reloadKey, peopleRefreshKey]);
 
   useEffect(() => {
     if (showInvitePanel) setInviteOpen(true);

@@ -1,12 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import { fetchWorkspaceMembers } from "@/lib/api/chat";
 import type { ConversationType } from "@/lib/types/chat";
 import { useChannelMembers } from "@/hooks/use-channel-members";
-import { useHomeQuery } from "@/hooks/use-home-query";
+import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
 import { useChatStore } from "@/stores/chat-store";
-
 export type MentionMember = {
   id: string;
   fullName: string;
@@ -26,12 +24,7 @@ export function useMentionMembers(
     { enabled: isChannel }
   );
 
-  const workspaceQuery = useHomeQuery(
-    (token, ws) => fetchWorkspaceMembers(token, ws).then((r) => r.data),
-    [conversationType, conversationId],
-    { initialData: isDm ? null : null }
-  );
-
+  const workspaceQuery = useWorkspaceMembersQuery();
   const dmSidebarEntry = useChatStore((s) =>
     isDm && conversationId
       ? s.sidebarListsCache?.dms.find((d) => d.id === conversationId)

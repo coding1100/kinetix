@@ -116,6 +116,24 @@ async def broadcast_dm_joined(
     )
 
 
+async def broadcast_workspace_member_joined(
+    *,
+    workspace_id: str,
+    member: dict,
+    invite_email: str,
+) -> None:
+    sio = get_sio()
+    await sio.emit(
+        "workspace:member:joined",
+        {
+            "workspaceId": workspace_id,
+            "member": member,
+            "inviteEmail": invite_email,
+        },
+        room=workspace_room(workspace_id),
+    )
+
+
 async def broadcast_home_notification(
     *,
     workspace_id: str,
