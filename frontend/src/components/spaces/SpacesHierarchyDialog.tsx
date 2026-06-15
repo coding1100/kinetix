@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +14,9 @@ import {
   createSpace,
   createFolder,
   createList,
+  patchSpace,
+  patchFolder,
+  patchList,
 } from "@/lib/api/spaces";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { useSpacesStore } from "@/stores/spaces-store";
@@ -23,7 +26,10 @@ import { toast } from "sonner";
 export type HierarchyDialogMode =
   | { type: "space" }
   | { type: "folder"; spaceId: string }
-  | { type: "list"; spaceId: string; folderId?: string };
+  | { type: "list"; spaceId: string; folderId?: string }
+  | { type: "edit-space"; spaceId: string; initialName: string }
+  | { type: "edit-folder"; folderId: string; initialName: string }
+  | { type: "edit-list"; listId: string; initialName: string };
 
 export function SpacesHierarchyDialog({
   open,
@@ -40,6 +46,16 @@ export function SpacesHierarchyDialog({
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const isEdit = mode?.type.startsWith("edit-") ?? false;
+
+  useEffect(() => {
+    if (!open || !mode) return;
+    if (mode.type === "edit-space") setName(mode.initialName);
+    else if (mode.type === "edit-folder") setName(mode.initialName);
+    else if (mode.type === "edit-list") setName(mode.initialName);
+    else setName("");
+  }, [open, mode]);
+
   const title =
     mode?.type === "space"
       ? "New space"
@@ -47,7 +63,13 @@ export function SpacesHierarchyDialog({
         ? "New folder"
         : mode?.type === "list"
           ? "New list"
-          : "";
+          : mode?.type === "edit-space"
+            ? "Rename space"
+            : mode?.type === "edit-folder"
+              ? "Rename folder"
+              : mode?.type === "edit-list"
+                ? "Rename list"
+                : "";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -70,12 +92,27 @@ export function SpacesHierarchyDialog({
         });
         toast.success("List created");
         router.push(`/spaces/l/${list.id}`);
+      } else if (mode.type === "edit-space") {
+        await patchSpace(accessToken, workspaceId, mode.spaceId, {
+          name: trimmed,
+        });
+        toast.success("Space renamed");
+      } else if (mode.type === "edit-folder") {
+        await patchFolder(accessToken, workspaceId, mode.folderId, {
+          name: trimmed,
+        });
+        toast.success("Folder renamed");
+      } else if (mode.type === "edit-list") {
+        await patchList(accessToken, workspaceId, mode.listId, {
+          name: trimmed,
+        });
+        toast.success("List renamed");
       }
       bumpRefresh();
       setName("");
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not create");
+      toast.error(err instanceof Error ? err.message : "Could not save");
     } finally {
       setSaving(false);
     }
@@ -109,9 +146,9 @@ export function SpacesHierarchyDialog({
             className="w-full"
             disabled={!name.trim()}
             loading={saving}
-            loadingText="Creating…"
+            loadingText={isEdit ? "Saving…" : "Creating…"}
           >
-            Create
+            {isEdit ? "Save" : "Create"}
           </Button>
         </form>
       </DialogContent>

@@ -1,0 +1,292 @@
+# Prioritized Task Management Roadmap — Clone vs ClickUp
+
+Roadmap ordered by **user impact ÷ effort**, aligned with your current stack (`backend-py` + Next.js). Assumes chat (Phase PY-4/5) stays stable; task work builds on Phase 3.
+
+**P0 (before any release):** Fix the build error in `ChatSocketProvider.tsx` — `workspaceId` is `string | null` but `applyWorkspaceMemberJoined` expects `string | undefined`. One-line fix: pass `workspaceId ?? undefined` or widen the helper type.
+
+---
+
+## How to read this
+
+| Size | Meaning |
+|------|---------|
+| **S** | ~0.5–1 day |
+| **M** | ~2–4 days |
+| **L** | ~1–2 weeks |
+| **XL** | ~2+ weeks |
+
+Each phase has **dependencies** — do not skip earlier items unless noted.
+
+---
+
+## Phase 4A — Task hygiene (foundation)
+**Goal:** Make tasks feel complete for daily use.  
+**Effort:** ~1 week total  
+**ClickUp gap closed:** ~15%
+
+| # | Feature | Size | Backend | Frontend | Acceptance criteria |
+|---|---------|------|---------|----------|---------------------|
+| 4A.1 | **Delete task** | S | `DELETE /tasks/{id}` in [`home.py`](backend-py/app/api/v1/home.py), `delete_task` in [`home_service.py`](backend-py/app/services/home_service.py) | Delete in `TaskDrawer`, confirm dialog | Task removed from list/board/calendar; gone from search |
+| 4A.2 | **Move task between lists** | M | `PATCH /tasks/{id}` add `listId` or `POST /tasks/{id}/move` | List picker in drawer; optional drag in sidebar | Task appears in new list only |
+| 4A.3 | **Priority in API + UI** | S | Add `priority` to `UpdateTaskBody` in [`schemas/home.py`](backend-py/app/schemas/home.py) | Priority select in [`TaskDrawer.tsx`](frontend/src/components/spaces/TaskDrawer.tsx); badge on `TaskRow` | Urgent/high/normal/low set and shown |
+| 4A.4 | **Add comment in drawer** | S | Already exists: `POST /tasks/{id}/comments` | Comment input + list in `TaskDrawer` | User can post without link-task flow |
+| 4A.5 | **Edit on task detail page** | S | — | Reuse drawer form on [`TaskDetailView.tsx`](frontend/src/components/home/TaskDetailView.tsx) or redirect to list+drawer | `/home/tasks/[id]` is not read-only |
+| 4A.6 | **Backend tests** | M | `tests/test_tasks.py` — CRUD, move, delete, filters | — | CI covers task APIs |
+
+**Key files:** `home_service.py`, `home.py`, `TaskDrawer.tsx`, `spaces.ts`, `home.ts`
+
+---
+
+## Phase 4B — Home & hierarchy UX
+**Goal:** Fix rough edges in navigation and “My work.”  
+**Effort:** ~1 week  
+**ClickUp gap closed:** +10%
+
+| # | Feature | Size | Work |
+|---|---------|------|------|
+| 4B.1 | **Personal List (proper)** | M | Auto-create `"Personal"` space + default list on workspace join OR dedicated `isPersonal` flag on `TaskList`; stop relying on name match in `home_service._task_filters` |
+| 4B.2 | **Hierarchy edit/delete UI** | M | Wire existing PATCH/DELETE for Space/Folder/List in [`SpacesSidebar.tsx`](frontend/src/components/shell/ChatSidebar.tsx) / [`SpacesHierarchyDialog.tsx`](frontend/src/components/spaces/SpacesHierarchyDialog.tsx) |
+| 4B.3 | **All Tasks filters** | S | Make filter button on [`all-tasks/page.tsx`](frontend/src/app/(app)/home/all-tasks/page.tsx) call existing `GET /tasks?filter=` |
+| 4B.4 | **LineUp (real)** | M | `Task.lineup_order` or user-specific ordering table; drag reorder on lineup page |
+| 4B.5 | **Reminders / favorites / recents write** | M | POST APIs for `HomeReminder`, `HomeFavorite`, `HomeRecent`; minimal UI (star task, “remind me”) |
+
+---
+
+## Phase 4C — Workflow: statuses & tags
+**Goal:** Per-list workflows like ClickUp (biggest UX jump for PM users).  
+**Effort:** ~2 weeks  
+**ClickUp gap closed:** +20%
+
+| # | Feature | Size | Design |
+|---|---------|------|--------|
+| 4C.1 | **Custom statuses per List** | L | New `ListStatus` table: `list_id`, `name`, `color`, `group` (open/active/done/closed), `sort_order`. Migrate off fixed `TaskStatus` enum OR map enum → custom labels per list |
+| 4C.2 | **Status inheritance** | M | Optional: List inherits from Space default statuses (ClickUp pattern) |
+| 4C.3 | **Closed / archived status** | S | `CLOSED` group; hide from board by default; “Show closed” toggle |
+| 4C.4 | **Tags** | M | `TaskTag` + `Tag` tables; multi-select on task; filter in list view |
+| 4C.5 | **Start date** | S | `start_date` on `Task`; show in drawer + calendar range |
+
+**Migration note:** Board columns today come from [`task-status.ts`](frontend/src/lib/task-status.ts) — replace with API-driven columns from list meta.
+
+```mermaid
+flowchart LR
+    ListMeta --> ListStatuses[ListStatus API]
+    ListStatuses --> BoardView
+    ListStatuses --> TaskDrawer
+    Task --> status_id[statusId FK]
+```
+
+---
+
+## Phase 4D — Subtasks & checklists
+**Goal:** Break work down inside a task.  
+**Effort:** ~2 weeks  
+**ClickUp gap closed:** +15%
+
+| # | Feature | Size | Notes |
+|---|---------|------|-------|
+| 4D.1 | **Subtasks** | L | `Task.parent_id` nullable FK; nested create in drawer; indent in list view; board shows parent only by default |
+| 4D.2 | **Subtask status independent** | S | Same status set as parent list |
+| 4D.3 | **Checklists** | M | `TaskChecklist` + `TaskChecklistItem` (title, checked, assignee_id optional); not full subtasks |
+| 4D.4 | **Rollup progress** | S | Parent shows “3/5 subtasks done” on `TaskRow` |
+
+**Depends on:** 4C (custom statuses) recommended but can ship with fixed 4-status enum first.
+
+---
+
+## Phase 4E — Realtime & notifications for tasks
+**Goal:** Multi-user task boards stay in sync (like chat).  
+**Effort:** ~1 week  
+**ClickUp gap closed:** +5%
+
+| # | Feature | Size | Work |
+|---|---------|------|------|
+| 4E.1 | **Socket events** | M | `task:created`, `task:updated`, `task:deleted` in [`emit.py`](backend-py/app/socket/emit.py); room `ws:{workspaceId}` |
+| 4E.2 | **Frontend ingest** | M | Extend [`ChatSocketProvider.tsx`](frontend/src/components/providers/ChatSocketProvider.tsx) or new `TaskSocketProvider`; patch list cache in `ListWorkspace` |
+| 4E.3 | **Inbox for assignments** | M | On assign: create `InboxItem` type `TASK_ASSIGNED`; wire to existing inbox UI |
+| 4E.4 | **Followers** | M | `TaskFollower` table; notify on comment/status change |
+
+**Pattern:** Reuse chat reaction flow (`ingestReactionEvent` → store → view effect).
+
+---
+
+## Phase 4F — Custom fields (lite)
+**Goal:** Stage tracking without 20 status columns.  
+**Effort:** ~2–3 weeks  
+**ClickUp gap closed:** +15%
+
+| # | Feature | Size | Scope |
+|---|---------|------|-------|
+| 4F.1 | **Field definitions** | L | `CustomFieldDef` at List or Space level: `type` = dropdown, text, number, date |
+| 4F.2 | **Field values** | M | `TaskCustomFieldValue` JSON or typed columns |
+| 4F.3 | **UI** | M | Columns in list view; fields in drawer |
+| 4F.4 | **Filter/sort by field** | M | Extend `GET /lists/{id}/tasks` query params |
+
+**Start with:** dropdown only (covers “Stage”, “Client”, “Sprint” labels).
+
+---
+
+## Phase 4G — Planning: dependencies & timeline
+**Goal:** Project managers can sequence work.  
+**Effort:** ~3 weeks  
+**ClickUp gap closed:** +15%
+
+| # | Feature | Size | Notes |
+|---|---------|------|-------|
+| 4G.1 | **Dependencies** | M | `TaskDependency`: `blocker_id`, `blocked_id`; API + sidebar in drawer |
+| 4G.2 | **Dependency warning** | S | Warn when marking DONE if blockers open |
+| 4G.3 | **Timeline view (lite)** | L | New view component: horizontal bars by due date; no drag-deps initially |
+| 4G.4 | **Gantt view** | XL | Defer until Timeline works; add connector lines + reschedule cascade |
+| 4G.5 | **Recurring tasks** | L | `recurrence_rule` JSON on Task; cron or on-complete spawn next instance |
+
+---
+
+## Phase 4H — Automations (lite)
+**Goal:** Reduce manual busywork.  
+**Effort:** ~2–3 weeks  
+**ClickUp gap closed:** +10%
+
+| # | Feature | Size | MVP scope |
+|---|---------|------|-----------|
+| 4H.1 | **Automation model** | L | `Automation`: `list_id`, `trigger`, `conditions` JSON, `actions` JSON |
+| 4H.2 | **Triggers** | M | `status_changes`, `task_created`, `due_date_arrives` |
+| 4H.3 | **Actions** | M | `change_status`, `add_assignee`, `add_comment`, `add_follower` |
+| 4H.4 | **UI** | M | Replace Phase 3 toasts in [`WorkspaceSwitcherPopup.tsx`](frontend/src/components/shell/WorkspaceSwitcherPopup.tsx); list-level “Automate” panel |
+| 4H.5 | **Templates** | M | `TaskTemplate` JSON snapshot; apply on create |
+
+**Do not** build full ClickUp automation catalog in v1 — 3 triggers × 4 actions is enough.
+
+---
+
+## Phase 4I — Agile / sprints
+**Goal:** Dev teams can run sprints.  
+**Effort:** ~3–4 weeks  
+**ClickUp gap closed:** +10%
+
+| # | Feature | Size | Notes |
+|---|---------|------|-------|
+| 4I.1 | **Tasks in multiple lists** | M | `TaskListMembership` M:N; home list + sprint list |
+| 4I.2 | **Sprint folder type** | M | `Folder.is_sprint_folder` + sprint Lists with `sprint_start`, `sprint_end` |
+| 4I.3 | **Sprint points** | S | Integer field on Task + rollup option |
+| 4I.4 | **Backlog → sprint** | M | Bulk add to sprint list |
+| 4I.5 | **Spillover** | M | Move incomplete tasks to next sprint (manual or automation) |
+| 4I.6 | **Burndown card** | L | Phase 4J dashboard dependency |
+
+---
+
+## Phase 4J — Permissions
+**Goal:** Enterprise-ready access control.  
+**Effort:** ~2–3 weeks  
+**ClickUp gap closed:** +10%
+
+| # | Feature | Size | Notes |
+|---|---------|------|-------|
+| 4J.1 | **Space visibility** | M | `Space.is_private`; `SpaceMember` with role |
+| 4J.2 | **List-level ACL** | M | Extend deps pattern from chat channel membership |
+| 4J.3 | **Task private** | S | `Task.is_private` + creator + assignees only |
+| 4J.4 | **Guest enforcement** | M | Actually restrict `GUEST` / `LIMITED_MEMBER` on task routes |
+| 4J.5 | **Use workspace roles** | M | ADMIN delete any task; MEMBER edit assigned only (configurable) |
+
+**Reuse:** Permission patterns from [`chat_service.py`](backend-py/app/services/chat_service.py) channel creator / member checks.
+
+---
+
+## Phase 4K — Dashboards & reporting
+**Goal:** Managers see status without opening every list.  
+**Effort:** ~2–3 weeks  
+**ClickUp gap closed:** +10%
+
+| # | Feature | Size | MVP |
+|---|---------|------|-----|
+| 4K.1 | **Dashboard entity** | M | `Dashboard` + `DashboardCard` with `widget_type` |
+| 4K.2 | **Cards** | M | Overdue tasks, tasks by status (pie), tasks by assignee |
+| 4K.3 | **Sprint burndown** | M | After 4I |
+| 4K.4 | **UI** | M | Replace “Dashboards — coming soon” in [`ProfileMenu.tsx`](frontend/src/components/shell/ProfileMenu.tsx) |
+
+---
+
+## Phase 4L — Polish & parity (long tail)
+**Effort:** ongoing
+
+- Time tracking + timesheet  
+- Task attachments  
+- Bulk actions toolbar  
+- CSV import  
+- Custom task types (Milestone, Epic)  
+- Form view → task intake  
+- Workload view  
+- Zapier / public webhooks  
+- Mobile parity  
+
+---
+
+## Recommended execution order (summary)
+
+```mermaid
+gantt
+    title Task roadmap phases
+    dateFormat YYYY-MM-DD
+    section Foundation
+    4A Task hygiene           :a1, 2026-03-10, 7d
+    4B Home hierarchy UX      :a2, after a1, 7d
+    section Workflow
+    4C Custom statuses tags   :b1, after a2, 14d
+    4D Subtasks checklists    :b2, after b1, 14d
+    section Collab
+    4E Realtime tasks         :c1, after a1, 7d
+    section Advanced
+    4F Custom fields          :d1, after b2, 21d
+    4G Dependencies timeline  :d2, after d1, 21d
+    4H Automations lite       :d3, after b2, 21d
+    section Scale
+    4I Sprints                :e1, after d3, 28d
+    4J Permissions            :e2, after a2, 21d
+    4K Dashboards             :e3, after e1, 21d
+```
+
+**Parallel tracks after 4A:**
+- **Track A (UX):** 4B → 4C → 4D  
+- **Track B (collab):** 4E (can start right after 4A)  
+- **Track C (enterprise):** 4J (can start after 4B)
+
+---
+
+## Milestone targets
+
+| Milestone | Phases | User-facing outcome |
+|-----------|--------|---------------------|
+| **M1 — “Usable PM”** | 4A + 4B + 4E | Delete/move tasks, comments, filters, realtime board |
+| **M2 — “ClickUp-like workflow”** | + 4C + 4D | Custom columns, subtasks, tags |
+| **M3 — “Team scale”** | + 4F + 4J | Custom fields, space permissions |
+| **M4 — “Project scale”** | + 4G + 4H + 4K | Dependencies, automations, dashboards |
+| **M5 — “Agile”** | + 4I | Sprints, points, burndown |
+
+---
+
+## What NOT to build early
+
+| Feature | Why wait |
+|---------|----------|
+| Full Gantt | Needs dependencies + start dates + stable statuses first |
+| Full automation catalog | High complexity; 5 rules cover 80% of value |
+| Goals/OKRs | Separate product surface; tasks aren’t mature enough |
+| Whiteboards / Docs | Chat + tasks still higher ROI |
+| 15 views | List + Board + Calendar + Timeline is enough for M3 |
+
+---
+
+## Suggested first sprint (if you approve implementation)
+
+**Sprint 1 (1 week):**
+1. Fix `ChatSocketProvider` build error (P0)  
+2. 4A.1 Delete task  
+3. 4A.3 Priority UI  
+4. 4A.4 Comments in drawer  
+5. 4A.6 Basic API tests  
+
+That gives the highest impact with minimal schema change.
+
+---
+
+If you want to proceed, say which milestone (**M1**, **M2**, etc.) or sprint you want implemented first, and I’ll break it into concrete PR-sized tasks with API contracts before coding.
+
+[REDACTED]

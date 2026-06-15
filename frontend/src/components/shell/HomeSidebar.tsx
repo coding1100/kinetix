@@ -8,8 +8,13 @@ import {
   FilterIcon,
   Settings2Icon,
   PanelLeftCloseIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
 } from "lucide-react";
-import { useHomeSidebarStore } from "@/stores/home-sidebar-store";
+import {
+  useHomeSidebarStore,
+  MY_TASKS_LINKS,
+} from "@/stores/home-sidebar-store";
 import { useUiStore } from "@/stores/ui-store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -29,11 +34,14 @@ import { useNotificationsUnread } from "@/hooks/use-notifications-unread";
 
 export function HomeSidebar() {
   const pathname = usePathname();
-  const { items, filter, setFilter } = useHomeSidebarStore();
+  const { items, filter, setFilter, myTasksExpanded, setMyTasksExpanded } =
+    useHomeSidebarStore();
   const visibleItems = items.filter((i) => i.pinned);
   const openModal = useUiStore((s) => s.openModal);
   const { secondaryPanelOpen, setSecondaryPanelOpen } = useShellStore();
   const { unreadCount } = useNotificationsUnread();
+  const onMyTasksRoute = pathname.startsWith("/home/my-tasks");
+  const showMyTasksChildren = myTasksExpanded || onMyTasksRoute;
 
   if (!secondaryPanelOpen) return null;
 
@@ -81,7 +89,9 @@ export function HomeSidebar() {
                   onClick={() => {
                     if (item === "Channel") openModal("new-channel");
                     else if (item === "Message") openModal("new-dm");
-                    else toast(`${item} — Phase 3`);
+                    else if (item === "Task") {
+                      window.location.href = "/home/all-tasks";
+                    } else toast(`${item} — coming soon`);
                   }}
                 >
                   {item}
@@ -109,25 +119,77 @@ export function HomeSidebar() {
       <ScrollArea className="flex-1 px-2">
         <nav className="pb-4">
           {visibleItems.map((item) => {
-            const active = pathname === item.href;
+            const active =
+              pathname === item.href ||
+              (item.id === "my-tasks" && onMyTasksRoute);
+            const isMyTasks = item.id === "my-tasks";
+
             return (
-              <Button
-                key={item.id}
-                variant="ghost"
-                size="sm"
-                nativeButton={false}
-                render={<Link href={item.href} />}
-                className={cn(
-                  "mb-0.5 h-8 w-full justify-start gap-2 px-2 font-medium",
-                  active && "bg-sidebar-accent text-primary"
-                )}
-              >
-                <SidebarNavIcon itemId={item.id} active={active} />
-                <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                {item.id === "inbox" && unreadCount > 0 ? (
-                  <span className="size-2 shrink-0 rounded-full bg-primary" />
+              <div key={item.id}>
+                <div className="flex items-center gap-0.5">
+                  {isMyTasks ? (
+                    <button
+                      type="button"
+                      className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent"
+                      aria-label={showMyTasksChildren ? "Collapse" : "Expand"}
+                      onClick={() => setMyTasksExpanded(!showMyTasksChildren)}
+                    >
+                      {showMyTasksChildren ? (
+                        <ChevronDownIcon className="size-3.5" />
+                      ) : (
+                        <ChevronRightIcon className="size-3.5" />
+                      )}
+                    </button>
+                  ) : (
+                    <span className="size-8 shrink-0" aria-hidden />
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    nativeButton={false}
+                    render={<Link href={item.href} />}
+                    className={cn(
+                      "mb-0.5 h-8 min-w-0 flex-1 justify-start gap-2 px-2 font-medium",
+                      active && "bg-sidebar-accent text-primary"
+                    )}
+                  >
+                    <SidebarNavIcon itemId={item.id} active={active} />
+                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                    {item.id === "inbox" && unreadCount > 0 ? (
+                      <span className="size-2 shrink-0 rounded-full bg-primary" />
+                    ) : null}
+                  </Button>
+                </div>
+                {isMyTasks && showMyTasksChildren ? (
+                  <ul className="mb-1 ml-8 space-y-0.5 border-l border-sidebar-border pl-2">
+                    {MY_TASKS_LINKS.map((link) => {
+                      const subActive = pathname === link.href;
+                      return (
+                        <li key={link.href}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            nativeButton={false}
+                            render={<Link href={link.href} />}
+                            className={cn(
+                              "h-7 w-full justify-start gap-2 px-2 text-xs font-normal",
+                              subActive &&
+                                "bg-sidebar-accent font-medium text-primary"
+                            )}
+                          >
+                            <SidebarNavIcon
+                              itemId="my-tasks"
+                              href={link.href}
+                              active={subActive}
+                            />
+                            <span className="truncate">{link.label}</span>
+                          </Button>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 ) : null}
-              </Button>
+              </div>
             );
           })}
         </nav>

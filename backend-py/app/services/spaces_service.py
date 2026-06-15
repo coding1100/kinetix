@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.errors import AppError
-from app.db.models.home import Folder, Space, Task, TaskComment, TaskList
+from app.db.models.home import Folder, Space, Task, TaskComment, TaskFollower, TaskList
 from app.schemas.spaces import (
     CreateFolderBody,
     CreateListBody,
@@ -21,6 +21,11 @@ from app.services.home_service import (
     _list_count_for_space,
 )
 from app.services.home_helpers import map_list_entry, map_task
+from app.services.list_status_service import ensure_list_statuses
+from app.services.notification_service import (
+    create_task_comment_notifications,
+    emit_home_notifications,
+)
 
 
 async def create_space(
@@ -77,6 +82,8 @@ async def delete_space(
     )
     if not space:
         raise AppError(404, "NOT_FOUND", "Space not found")
+    if space.is_personal:
+        raise AppError(400, "VALIDATION_ERROR", "Cannot delete the Personal space")
     await session.delete(space)
     await session.commit()
     return {"ok": True}
@@ -170,6 +177,8 @@ async def create_list(
         sort_order=int(max_order or 0) + 1,
     )
     session.add(task_list)
+    await session.flush()
+    await ensure_list_statuses(session, task_list.id)
     await session.commit()
     return map_list_entry(task_list, 0)
 
@@ -203,9 +212,12 @@ async def delete_list(
         select(TaskList)
         .join(Space)
         .where(TaskList.id == list_id, Space.workspace_id == workspace_id)
+        .options(selectinload(TaskList.space))
     )
     if not task_list:
         raise AppError(404, "NOT_FOUND", "List not found")
+    if task_list.space.is_personal and task_list.name == "Personal List":
+        raise AppError(400, "VALIDATION_ERROR", "Cannot delete the Personal list")
     await session.delete(task_list)
     await session.commit()
     return {"ok": True}
@@ -226,9 +238,32 @@ async def add_task_comment(
     )
     if not task:
         raise AppError(404, "NOT_FOUND", "Task not found")
+
+    follower_ids = list(
+        (
+            await session.scalars(
+                select(TaskFollower.user_id).where(TaskFollower.task_id == task_id)
+            )
+        ).all()
+    )
+
     comment = TaskComment(task_id=task_id, user_id=user_id, body=body.body.strip())
     session.add(comment)
+
+    comment_notifications = await create_task_comment_notifications(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=user_id,
+        task_name=task.name,
+        task_id=task_id,
+        comment_preview=body.body.strip(),
+        follower_ids=follower_ids,
+    )
+
     await session.commit()
+    if comment_notifications:
+        await emit_home_notifications(session, workspace_id, comment_notifications)
+
     refreshed = await session.scalar(
         select(Task).where(Task.id == task_id).options(*_TASK_LOAD)
     )

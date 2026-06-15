@@ -7,6 +7,7 @@ from app.core.utils import unique_workspace_slug
 from app.db.models.enums import MemberStatus, WorkspaceRole
 from app.db.models.workspace import Workspace, WorkspaceMember
 from app.socket.presence import get_presence
+from app.services.personal_space_service import ensure_personal_space
 from app.schemas.workspace import CreateWorkspaceBody, UpdateWorkspaceMemberBody
 
 
@@ -64,6 +65,7 @@ async def create_workspace(
             status=MemberStatus.ACTIVE,
         )
     )
+    await ensure_personal_space(session, workspace.id)
     await session.commit()
     await session.refresh(workspace)
     return _workspace_json(workspace)

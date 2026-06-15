@@ -44,8 +44,7 @@ export function Modals() {
           <DialogHeader>
             <DialogTitle>Customize Home Sidebar</DialogTitle>
             <DialogDescription>
-              Pin items to show them in the Home sidebar (Inbox, Replies, All
-              Channels).
+              Pin items to show them in the Home sidebar.
             </DialogDescription>
           </DialogHeader>
           <ul className="max-h-64 space-y-2 overflow-y-auto">

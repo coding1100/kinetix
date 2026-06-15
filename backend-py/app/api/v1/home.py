@@ -3,8 +3,13 @@ from fastapi import APIRouter, Query, status
 from app.deps.auth import CurrentUserDep, DbSession
 from app.deps.workspace import WorkspaceMemberDep
 from app.schemas.home import (
+    AddLineupBody,
+    CreateFavoriteBody,
     CreatePostBody,
+    CreateReminderBody,
     CreateTaskBody,
+    RecordRecentBody,
+    ReorderLineupBody,
     UpdateInboxItemBody,
     UpdateSidebarBody,
     UpdateTaskBody,
@@ -137,6 +142,120 @@ async def get_recents(
     _member: WorkspaceMemberDep,
 ):
     return await home_service.list_recents(session, workspace_id, user.id)
+
+
+@router.post("/home/reminders", status_code=status.HTTP_201_CREATED)
+async def post_reminder(
+    body: CreateReminderBody,
+    workspace_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.create_reminder(
+        session, workspace_id, user.id, body
+    )
+
+
+@router.delete("/home/reminders/{reminder_id}")
+async def delete_reminder(
+    workspace_id: str,
+    reminder_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.delete_reminder(
+        session, workspace_id, user.id, reminder_id
+    )
+
+
+@router.post("/home/favorites", status_code=status.HTTP_201_CREATED)
+async def post_favorite(
+    body: CreateFavoriteBody,
+    workspace_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.create_favorite(
+        session, workspace_id, user.id, body
+    )
+
+
+@router.delete("/home/favorites/{favorite_id}")
+async def delete_favorite(
+    workspace_id: str,
+    favorite_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.delete_favorite(
+        session, workspace_id, user.id, favorite_id
+    )
+
+
+@router.post("/home/recents", status_code=status.HTTP_201_CREATED)
+async def post_recent(
+    body: RecordRecentBody,
+    workspace_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.record_recent(
+        session, workspace_id, user.id, body
+    )
+
+
+@router.get("/home/lineup")
+async def get_lineup(
+    workspace_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.list_lineup(session, workspace_id, user.id)
+
+
+@router.post("/home/lineup", status_code=status.HTTP_201_CREATED)
+async def post_lineup(
+    body: AddLineupBody,
+    workspace_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.add_to_lineup(
+        session, workspace_id, user.id, body
+    )
+
+
+@router.delete("/home/lineup/{task_id}")
+async def delete_lineup_task(
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.remove_from_lineup(
+        session, workspace_id, user.id, task_id
+    )
+
+
+@router.put("/home/lineup/reorder")
+async def put_lineup_reorder(
+    body: ReorderLineupBody,
+    workspace_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.reorder_lineup(
+        session, workspace_id, user.id, body
+    )
 
 
 @router.get("/home/notifications")
@@ -421,6 +540,42 @@ async def patch_task(
 ):
     return await home_service.update_task(
         session, workspace_id, user.id, task_id, body
+    )
+
+
+@router.delete("/tasks/{task_id}")
+async def delete_task(
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.delete_task(session, workspace_id, task_id)
+
+
+@router.post("/tasks/{task_id}/follow", status_code=status.HTTP_201_CREATED)
+async def follow_task(
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.follow_task(
+        session, workspace_id, user.id, task_id
+    )
+
+
+@router.delete("/tasks/{task_id}/follow")
+async def unfollow_task(
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.unfollow_task(
+        session, workspace_id, user.id, task_id
     )
 
 

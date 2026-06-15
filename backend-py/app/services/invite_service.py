@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.core.errors import AppError
+from app.services.personal_space_service import ensure_personal_space
 from app.core.security import hash_password, sign_access_token
 from app.core.utils import generate_token
 from app.db.models.enums import MemberStatus, WorkspaceRole
@@ -298,6 +299,7 @@ async def accept_invite_for_user(
             )
         )
     invite.accepted_at = datetime.now(timezone.utc)
+    await ensure_personal_space(session, invite.workspace_id)
     await session.commit()
 
     workspace = await session.get(Workspace, invite.workspace_id)
@@ -345,6 +347,7 @@ async def accept_invite_with_signup(
         )
     )
     invite.accepted_at = datetime.now(timezone.utc)
+    await ensure_personal_space(session, invite.workspace_id)
     await session.commit()
 
     workspace = await session.get(Workspace, invite.workspace_id)

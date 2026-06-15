@@ -22,6 +22,13 @@ class TaskStatus(str, enum.Enum):
     DONE = "DONE"
 
 
+class StatusGroup(str, enum.Enum):
+    NOT_STARTED = "NOT_STARTED"
+    ACTIVE = "ACTIVE"
+    DONE = "DONE"
+    CLOSED = "CLOSED"
+
+
 class TaskPriority(str, enum.Enum):
     URGENT = "URGENT"
     HIGH = "HIGH"

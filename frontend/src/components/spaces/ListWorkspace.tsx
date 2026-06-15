@@ -134,6 +134,7 @@ export function ListWorkspace({
       ) : view === "board" ? (
         <BoardView
           tasks={tasks}
+          statuses={meta.statuses}
           loading={loading}
           error={error}
           onTaskSelect={openTask}
@@ -190,6 +191,7 @@ export function ListWorkspace({
           if (!open) closeTask();
         }}
         onSaved={onTasksChange}
+        onDeleted={closeTask}
       />
     </>
   );

@@ -8,13 +8,22 @@ export interface SidebarItem {
   pinned: boolean;
 }
 
-/** Only these Home sidebar links are shown (ClickUp-style trim). */
-export const HOME_SIDEBAR_VISIBLE_IDS = ["inbox", "replies", "channels"] as const;
+export const HOME_SIDEBAR_VISIBLE_IDS = [
+  "inbox",
+  "replies",
+  "channels",
+  "all-tasks",
+  "my-tasks",
+  "favorites",
+] as const;
 
 const DEFAULT_ITEMS: SidebarItem[] = [
   { id: "inbox", label: "Inbox", href: "/home/inbox", pinned: true },
   { id: "replies", label: "Replies", href: "/home/replies", pinned: true },
   { id: "channels", label: "All Channels", href: "/home/channels", pinned: true },
+  { id: "all-tasks", label: "All Tasks", href: "/home/all-tasks", pinned: true },
+  { id: "my-tasks", label: "My Tasks", href: "/home/my-tasks", pinned: true },
+  { id: "favorites", label: "Favorites", href: "/home/favorites", pinned: true },
 ];
 
 function normalizeItems(items: SidebarItem[]): SidebarItem[] {
@@ -65,13 +74,14 @@ export const useHomeSidebarStore = create<HomeSidebarState>()(
     }),
     {
       name: "riseup-home-sidebar",
-      version: 2,
+      version: 3,
       migrate: (persisted, version) => {
         const state = persisted as HomeSidebarState;
-        if (version < 2) {
+        if (version < 3) {
           return {
             ...state,
             items: DEFAULT_ITEMS,
+            myTasksExpanded: true,
           };
         }
         return { ...state, items: normalizeItems(state.items ?? DEFAULT_ITEMS) };

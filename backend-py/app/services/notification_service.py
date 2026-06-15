@@ -658,3 +658,89 @@ async def emit_channel_access_notifications(
     created: list[tuple[str, InboxItem]],
 ) -> None:
     await emit_home_notifications(session, workspace_id, created)
+
+
+async def create_task_comment_notifications(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    actor_user_id: str,
+    task_name: str,
+    task_id: str,
+    comment_preview: str,
+    follower_ids: list[str],
+) -> list[tuple[str, InboxItem]]:
+    if not follower_ids:
+        return []
+
+    users = await _load_users(session, [actor_user_id, *follower_ids])
+    actor = users.get(actor_user_id)
+    actor_name = actor.full_name if actor else "Someone"
+    href = f"/home/tasks/{task_id}"
+    preview = _message_snippet(comment_preview, 120)
+    created: list[tuple[str, InboxItem]] = []
+
+    for follower_id in dict.fromkeys(follower_ids):
+        if follower_id == actor_user_id:
+            continue
+        item = InboxItem(
+            workspace_id=workspace_id,
+            user_id=follower_id,
+            type=InboxItemType.COMMENT,
+            title=f"Comment on {task_name}",
+            preview=f"{actor_name}: {preview}",
+            source=task_name,
+            unread=True,
+            bucket=InboxBucket.ALL,
+            time_group=InboxTimeGroup.TODAY,
+            href=href,
+            activity_kind="task_comment",
+        )
+        session.add(item)
+        created.append((follower_id, item))
+
+    if created:
+        await session.flush()
+    return created
+
+
+async def create_task_assignment_notifications(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    actor_user_id: str,
+    task_name: str,
+    task_id: str,
+    assignee_ids: list[str],
+) -> list[tuple[str, InboxItem]]:
+    if not assignee_ids:
+        return []
+
+    users = await _load_users(session, [actor_user_id, *assignee_ids])
+    actor = users.get(actor_user_id)
+    actor_name = actor.full_name if actor else "Someone"
+    href = f"/home/tasks/{task_id}"
+    created: list[tuple[str, InboxItem]] = []
+
+    for assignee_id in dict.fromkeys(assignee_ids):
+        if assignee_id == actor_user_id:
+            continue
+        item = InboxItem(
+            workspace_id=workspace_id,
+            user_id=assignee_id,
+            type=InboxItemType.ASSIGNMENT,
+            title=f"Assigned: {task_name}",
+            preview=f"{actor_name} assigned you to {task_name}",
+            source=task_name,
+            unread=True,
+            bucket=InboxBucket.ALL,
+            time_group=InboxTimeGroup.TODAY,
+            href=href,
+            activity_kind="task_assigned",
+        )
+        session.add(item)
+        created.append((assignee_id, item))
+
+    if created:
+        await session.flush()
+    return created

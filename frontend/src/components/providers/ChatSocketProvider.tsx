@@ -18,7 +18,9 @@ import type {
   HomeNotificationPayload,
   PresenceSyncPayload,
   PresenceUpdatePayload,
+  TaskRealtimePayload,
 } from "@/lib/types/realtime";
+import { ingestTaskEvent } from "@/lib/tasks/realtime";
 import { registerChatTypingSocket } from "@/lib/socket/chat-typing";
 import { applyHomeNotification } from "@/lib/notifications/realtime";
 import {
@@ -126,6 +128,10 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     socket.on("chat:read", (payload: ChatReadPayload) => {
       ingestReadEvent(payload);
     });
+    socket.on("task:event", (payload: TaskRealtimePayload) => {
+      if (payload.workspaceId !== workspaceId) return;
+      ingestTaskEvent(payload);
+    });
     socket.on("presence:sync", (payload: PresenceSyncPayload) => {
       syncPresence(payload.workspaceId, payload.users);
     });
@@ -148,6 +154,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       socket.off("chat:reaction");
       socket.off("chat:typing");
       socket.off("chat:read");
+      socket.off("task:event");
       socket.off("presence:sync");
       registerChatTypingSocket(null);
       socket.off("presence:update");

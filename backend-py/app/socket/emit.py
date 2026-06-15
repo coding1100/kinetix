@@ -201,3 +201,25 @@ async def broadcast_chat_reaction(
         },
         room=f"ws:{workspace_id}",
     )
+
+
+async def broadcast_task_event(
+    *,
+    workspace_id: str,
+    action: str,
+    task_id: str,
+    list_id: str | None = None,
+    task: dict | None = None,
+) -> None:
+    sio = get_sio()
+    await sio.emit(
+        "task:event",
+        {
+            "workspaceId": workspace_id,
+            "action": action,
+            "taskId": task_id,
+            "listId": list_id,
+            "task": task,
+        },
+        room=f"ws:{workspace_id}",
+    )

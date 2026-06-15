@@ -12,7 +12,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import type { Task } from "@/lib/types/task";
+import type { ListStatus, Task } from "@/lib/types/task";
 import { HomeDataState } from "@/components/home/HomeDataState";
 import { cn } from "@/lib/utils";
 import { patchTask } from "@/lib/api/spaces";
@@ -24,20 +24,60 @@ import {
 } from "@/lib/task-status";
 import { toast } from "sonner";
 
+type BoardColumnDef = {
+  id: string;
+  label: string;
+  color: string;
+  legacyKey?: string | null;
+};
+
 type BoardViewProps = {
   tasks: Task[] | undefined;
+  statuses?: ListStatus[];
   loading: boolean;
   error: string | null;
   onTaskSelect: (taskId: string) => void;
   onTasksChange: () => void;
 };
 
-function taskColumnKey(task: Task): TaskStatusKey {
-  return (task.statusKey as TaskStatusKey) || taskStatusKeyFromLabel(task.status);
+function resolveBoardColumns(statuses?: ListStatus[]): BoardColumnDef[] {
+  if (statuses?.length) {
+    return [...statuses]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((s) => ({
+        id: s.id,
+        label: s.name,
+        color: s.color,
+        legacyKey: s.legacyKey,
+      }));
+  }
+  return TASK_STATUS_COLUMNS.map((c) => ({
+    id: c.key,
+    label: c.label,
+    color: c.color,
+    legacyKey: c.key,
+  }));
+}
+
+function taskColumnId(task: Task, columns: BoardColumnDef[]): string {
+  if (task.statusId) {
+    const byId = columns.find((c) => c.id === task.statusId);
+    if (byId) return byId.id;
+  }
+  const legacy =
+    (task.statusKey as TaskStatusKey) || taskStatusKeyFromLabel(task.status);
+  const byLegacy = columns.find((c) => c.legacyKey === legacy);
+  if (byLegacy) return byLegacy.id;
+  return columns[1]?.id ?? columns[0]?.id ?? "TODO";
+}
+
+function isLegacyColumnId(id: string): id is TaskStatusKey {
+  return TASK_STATUS_COLUMNS.some((c) => c.key === id);
 }
 
 export function BoardView({
   tasks,
+  statuses,
   loading,
   error,
   onTaskSelect,
@@ -49,18 +89,24 @@ export function BoardView({
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
 
-  const columns = useMemo(() => {
-    const grouped: Record<TaskStatusKey, Task[]> = {
-      OPEN: [],
-      TODO: [],
-      IN_PROGRESS: [],
-      DONE: [],
-    };
-    for (const task of tasks ?? []) {
-      grouped[taskColumnKey(task)].push(task);
+  const columns = useMemo(() => resolveBoardColumns(statuses), [statuses]);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    for (const col of columns) {
+      map.set(col.id, []);
     }
-    return grouped;
-  }, [tasks]);
+    for (const task of tasks ?? []) {
+      const colId = taskColumnId(task, columns);
+      const list = map.get(colId);
+      if (list) {
+        list.push(task);
+      } else if (columns[0]) {
+        map.get(columns[0].id)?.push(task);
+      }
+    }
+    return map;
+  }, [tasks, columns]);
 
   const activeTask = tasks?.find((t) => t.id === activeId);
 
@@ -69,12 +115,16 @@ export function BoardView({
     const { active, over } = event;
     if (!over || !ready || !accessToken || !workspaceId) return;
     const taskId = String(active.id);
-    const columnKey = String(over.id) as TaskStatusKey;
-    if (!TASK_STATUS_COLUMNS.some((c) => c.key === columnKey)) return;
+    const columnId = String(over.id);
+    if (!columns.some((c) => c.id === columnId)) return;
     const task = tasks?.find((t) => t.id === taskId);
-    if (!task || taskColumnKey(task) === columnKey) return;
+    if (!task || taskColumnId(task, columns) === columnId) return;
     try {
-      await patchTask(accessToken, workspaceId, taskId, { status: columnKey });
+      if (isLegacyColumnId(columnId)) {
+        await patchTask(accessToken, workspaceId, taskId, { status: columnId });
+      } else {
+        await patchTask(accessToken, workspaceId, taskId, { statusId: columnId });
+      }
       onTasksChange();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not move task");
@@ -95,13 +145,13 @@ export function BoardView({
         onDragCancel={() => setActiveId(null)}
       >
         <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-4">
-          {TASK_STATUS_COLUMNS.map((col) => (
+          {columns.map((col) => (
             <BoardColumn
-              key={col.key}
-              statusKey={col.key}
+              key={col.id}
+              columnId={col.id}
               label={col.label}
               color={col.color}
-              tasks={columns[col.key]}
+              tasks={grouped.get(col.id) ?? []}
               onTaskSelect={onTaskSelect}
             />
           ))}
@@ -117,19 +167,19 @@ export function BoardView({
 }
 
 function BoardColumn({
-  statusKey,
+  columnId,
   label,
   color,
   tasks,
   onTaskSelect,
 }: {
-  statusKey: TaskStatusKey;
+  columnId: string;
   label: string;
   color: string;
   tasks: Task[];
   onTaskSelect: (id: string) => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: statusKey });
+  const { setNodeRef, isOver } = useDroppable({ id: columnId });
 
   return (
     <div

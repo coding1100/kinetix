@@ -92,17 +92,27 @@ def map_task(task: Task, current_user_id: str) -> dict:
         assignee_labels.append("You" if a.user_id == current_user_id else name)
 
     comments = sorted(task.comments, key=lambda c: c.created_at)
+    if task.list_status:
+        status_label = task.list_status.name
+        status_color = task.list_status.color
+        status_key = task.list_status.legacy_key or task.status.value
+    else:
+        status_label = STATUS_LABELS.get(task.status, task.status.value.lower())
+        status_color = task.status_color
+        status_key = task.status.value
     return {
         "id": task.id,
         "name": task.name,
-        "status": STATUS_LABELS.get(task.status, task.status.value.lower()),
-        "statusKey": task.status.value,
-        "statusColor": task.status_color,
+        "status": status_label,
+        "statusKey": status_key,
+        "statusId": task.status_id,
+        "statusColor": status_color,
         "assigneeIds": [a.user_id for a in task.assignees],
         "dueDate": format_due_date(task.due_date),
         "dueDateIso": task.due_date.isoformat() if task.due_date else None,
         "assignees": assignee_labels,
         "list": task.task_list.name,
+        "listId": task.task_list.id,
         "space": task.task_list.space.name,
         "priority": task.priority.value.lower() if task.priority else None,
         "overdue": is_overdue(task.due_date, task.status),
@@ -141,6 +151,7 @@ def map_space_row(
         "memberCount": member_count,
         "listCount": list_count,
         "description": space.description,
+        "isPersonal": bool(getattr(space, "is_personal", False)),
         "folders": folder_payload,
         "standaloneLists": standalone_payload,
     }
