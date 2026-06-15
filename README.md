@@ -242,9 +242,11 @@ Pushes to `develop` deploy automatically via `.github/workflows/deploy-staging-e
 |---|------------|---------|
 | Branch | `main` | `develop` |
 | Path | `/opt/clickup/kinetix` | `/opt/clickup/kinetix-staging` |
-| Web / API ports | `3000` / `4000` | `3050` / `4050` |
-| Public URL | `http://YOUR_EC2_IP` | `http://YOUR_EC2_IP:8080` |
+| Web / API ports | `3000` / `4000` | `3050` / `4050` (systemd on host) |
+| Public URL | `http://YOUR_EC2_IP` | `http://YOUR_EC2_IP/staging` |
 | systemd | `kinetix-api`, `kinetix-web` | `kinetix-staging-api`, `kinetix-staging-web` |
+
+Staging is proxied through **production Docker nginx** on port **80** at `/staging` (no extra AWS port needed).
 
 ### One-time EC2 staging setup
 
@@ -261,21 +263,28 @@ cp backend-py/.env.example backend-py/.env
 nano backend-py/.env
 # PORT=4050
 # DATABASE_URL=postgresql://riseup:PASSWORD@127.0.0.1:5432/riseup_staging
-# API_PUBLIC_URL=http://YOUR_EC2_IP:8080
-# FRONTEND_URL=http://YOUR_EC2_IP:8080
+# API_PUBLIC_URL=http://YOUR_EC2_IP/staging
+# FRONTEND_URL=http://YOUR_EC2_IP/staging
 
 # Frontend
 nano frontend/.env.local
-# NEXT_PUBLIC_API_URL=http://YOUR_EC2_IP:8080/api/v1
-# NEXT_PUBLIC_APP_URL=http://YOUR_EC2_IP:8080
-# NEXT_PUBLIC_SOCKET_URL=http://YOUR_EC2_IP:8080
+# NEXT_PUBLIC_BASE_PATH=/staging
+# NEXT_PUBLIC_API_URL=/staging/api/v1
+# NEXT_PUBLIC_APP_URL=http://YOUR_EC2_IP/staging
+# NEXT_PUBLIC_SOCKET_URL=http://YOUR_EC2_IP/staging
 
-chmod +x deploy/setup-staging-services.sh deploy/deploy-staging.sh
-./deploy/setup-staging-services.sh
-./deploy/deploy-staging.sh
+chmod +x deploy/setup-staging-services.sh deploy/deploy-staging.sh deploy/ec2-restore.sh
+./deploy/ec2-restore.sh
 ```
 
-Open port **8080** in the EC2 security group for staging access.
+Or restore everything (prod Docker + staging) in one step from the staging clone:
+
+```bash
+cd /opt/clickup/kinetix-staging
+git pull origin develop
+chmod +x deploy/ec2-restore.sh
+./deploy/ec2-restore.sh
+```
 
 ### GitHub secret (staging)
 
@@ -287,7 +296,7 @@ Reuses `EC2_HOST`, `EC2_USER`, and `EC2_SSH_KEY` from production.
 
 ### After staging is set up
 
-- `git push origin develop` → deploys staging only.
+- `git push origin develop` → deploys staging only (`http://YOUR_EC2_IP/staging`).
 - Manual deploy: **Actions → Deploy Staging to EC2 → Run workflow**.
 - `git push origin main` → still deploys production only.
 
