@@ -2,12 +2,14 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    env_file:
+      - docker-compose.env
     environment:
-      POSTGRES_USER: riseup
-      POSTGRES_PASSWORD: riseup
-      POSTGRES_DB: riseup
+      POSTGRES_USER: ${POSTGRES_USER:-riseup}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-riseup}
+      POSTGRES_DB: ${POSTGRES_DB:-riseup}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - riseup_pg_data:/var/lib/postgresql/data
 
