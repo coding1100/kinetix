@@ -109,7 +109,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     socket.on(
       "workspace:member:joined",
       (payload: WorkspaceMemberJoinedPayload) => {
-        applyWorkspaceMemberJoined(payload, workspaceId);
+        applyWorkspaceMemberJoined(payload, workspaceId ?? undefined);
       }
     );
     socket.on("chat:channel:removed", (payload: ChatChannelRemovedPayload) => {
