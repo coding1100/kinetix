@@ -1,0 +1,18 @@
+[Unit]
+Description=Kinetix Staging Web (Next.js)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/clickup/kinetix-staging/frontend
+Environment=NODE_ENV=production
+Environment=PORT=3050
+ExecStart=/opt/clickup/kinetix-staging/frontend/node_modules/.bin/next start -p 3050 -H 127.0.0.1
+Restart=always
+RestartSec=5
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

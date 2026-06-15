@@ -1,0 +1,44 @@
+name: Deploy Staging to EC2
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-ec2-staging
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          APP_ROOT: ${{ secrets.EC2_STAGING_APP_PATH }}
+          DEPLOY_BRANCH: develop
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          envs: APP_ROOT,DEPLOY_BRANCH
+          script_stop: true
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+            export APP_ROOT="${APP_ROOT:-/opt/clickup/kinetix-staging}"
+            export DEPLOY_BRANCH="${DEPLOY_BRANCH:-develop}"
+            cd "$APP_ROOT"
+            git fetch origin "$DEPLOY_BRANCH"
+            git reset --hard "origin/$DEPLOY_BRANCH"
+            chmod +x deploy/deploy-staging.sh deploy/setup-staging-services.sh 2>/dev/null || true
+            ./deploy/deploy-staging.sh
+
+      - name: Summary
+        if: success()
+        run: echo "Deployed develop branch to staging EC2"

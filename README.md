@@ -234,16 +234,67 @@ Allow the deploy key: add the public key that matches `EC2_SSH_KEY` to `~/.ssh/a
 
 The deploy script stops `next dev`, builds production frontend, reloads nginx, and fails if Turbopack/dev mode is detected.
 
+## EC2 staging deploy (`develop` branch)
+
+Pushes to `develop` deploy automatically via `.github/workflows/deploy-staging-ec2.yml`. Production (`main`) is unchanged.
+
+| | Production | Staging |
+|---|------------|---------|
+| Branch | `main` | `develop` |
+| Path | `/opt/clickup/kinetix` | `/opt/clickup/kinetix-staging` |
+| Web / API ports | `3000` / `4000` | `3050` / `4050` |
+| Public URL | `http://YOUR_EC2_IP` | `http://YOUR_EC2_IP:8080` |
+| systemd | `kinetix-api`, `kinetix-web` | `kinetix-staging-api`, `kinetix-staging-web` |
+
+### One-time EC2 staging setup
+
+```bash
+ssh -i your-key.pem ubuntu@YOUR_EC2_IP
+
+sudo mkdir -p /opt/clickup
+sudo chown ubuntu:ubuntu /opt/clickup
+git clone -b develop git@github.com:coding1100/kinetix.git /opt/clickup/kinetix-staging
+cd /opt/clickup/kinetix-staging
+
+# Backend — use a separate staging DB when possible
+cp backend-py/.env.example backend-py/.env
+nano backend-py/.env
+# PORT=4050
+# DATABASE_URL=postgresql://riseup:PASSWORD@127.0.0.1:5432/riseup_staging
+# API_PUBLIC_URL=http://YOUR_EC2_IP:8080
+# FRONTEND_URL=http://YOUR_EC2_IP:8080
+
+# Frontend
+nano frontend/.env.local
+# NEXT_PUBLIC_API_URL=http://YOUR_EC2_IP:8080/api/v1
+# NEXT_PUBLIC_APP_URL=http://YOUR_EC2_IP:8080
+# NEXT_PUBLIC_SOCKET_URL=http://YOUR_EC2_IP:8080
+
+chmod +x deploy/setup-staging-services.sh deploy/deploy-staging.sh
+./deploy/setup-staging-services.sh
+./deploy/deploy-staging.sh
+```
+
+Open port **8080** in the EC2 security group for staging access.
+
+### GitHub secret (staging)
+
+| Secret | Example |
+|--------|---------|
+| `EC2_STAGING_APP_PATH` | `/opt/clickup/kinetix-staging` |
+
+Reuses `EC2_HOST`, `EC2_USER`, and `EC2_SSH_KEY` from production.
+
+### After staging is set up
+
+- `git push origin develop` → deploys staging only.
+- Manual deploy: **Actions → Deploy Staging to EC2 → Run workflow**.
+- `git push origin main` → still deploys production only.
+
 ## Stack
 
 | Layer | Technology |
 |-------|------------|
 | Frontend | Next.js, React, TypeScript, Tailwind, shadcn/ui, Zustand |
 | Backend (current) | Node.js, Express, TypeScript, Prisma, PostgreSQL, Zod, JWT |
-| Backend (migration) | Python 3.12, uv, FastAPI, SQLAlchemy, asyncpg, Pydantic |
-| Backend (migration) | Python 3.12, uv, FastAPI, SQLAlchemy, asyncpg, Pydantic |
-| Backend (migration) | Python 3.12, uv, FastAPI, SQLAlchemy, asyncpg, Pydantic |
-| Backend (migration) | Python 3.12, uv, FastAPI, SQLAlchemy, asyncpg, Pydantic |
-| Backend (migration) | Python 3.12, uv, FastAPI, SQLAlchemy, asyncpg, Pydantic |
-| Backend (migration) | Python 3.12, uv, FastAPI, SQLAlchemy, asyncpg, Pydantic |
 | Backend (migration) | Python 3.12, uv, FastAPI, SQLAlchemy, asyncpg, Pydantic |
