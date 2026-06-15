@@ -21,30 +21,14 @@ docker start kinetix-postgres-1 kinetix-api-1 kinetix-web-1 kinetix-nginx-1 2>/d
 sleep 3
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
-log "2) Sync nginx config (prod + /staging routes on port 80)"
-NGINX_SRC="$STAGING_ROOT/deploy/nginx/docker.conf"
-NGINX_DST="$PROD_ROOT/deploy/nginx/docker.conf"
-if [ ! -f "$NGINX_SRC" ]; then
-  NGINX_SRC="$PROD_ROOT/deploy/nginx/docker.conf"
-fi
-if [ -f "$NGINX_SRC" ]; then
-  mkdir -p "$(dirname "$NGINX_DST")"
-  cp "$NGINX_SRC" "$NGINX_DST"
-  docker exec kinetix-nginx-1 nginx -t
-  docker exec kinetix-nginx-1 nginx -s reload
-else
-  echo "WARN: deploy/nginx/docker.conf not found — skip nginx reload"
-fi
-
-log "3) Deploy staging ($STAGING_ROOT)"
+log "2) Deploy staging ($STAGING_ROOT) — also reloads Docker nginx with correct host IP"
 cd "$STAGING_ROOT"
 export STAGING_PUBLIC_URL="$STAGING_URL"
 export PROD_ROOT
-chmod +x deploy/deploy-staging.sh deploy/setup-staging-services.sh 2>/dev/null || true
+chmod +x deploy/deploy-staging.sh deploy/setup-staging-services.sh deploy/diagnose-staging.sh 2>/dev/null || true
 ./deploy/deploy-staging.sh
 
-log "4) Health checks"
-curl -fsS "http://127.0.0.1/health" >/dev/null && log "prod /health OK" || log "WARN prod /health failed"
+log "3) Health checks"curl -fsS "http://127.0.0.1/health" >/dev/null && log "prod /health OK" || log "WARN prod /health failed"
 curl -fsS -o /dev/null -w "prod_login=%{http_code}\n" "http://127.0.0.1/auth/login"
 curl -fsS -o /dev/null -w "staging_login=%{http_code}\n" "http://127.0.0.1/staging/auth/login"
 

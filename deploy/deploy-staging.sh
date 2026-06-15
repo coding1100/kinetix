@@ -48,6 +48,39 @@ run_as_user() {
   fi
 }
 
+docker_host_ip() {
+  local ip=""
+  if docker ps --format '{{.Names}}' | grep -qx "$NGINX_CONTAINER"; then
+    ip=$(docker exec "$NGINX_CONTAINER" sh -c "ip route show default 2>/dev/null | awk '{print \$3}'" 2>/dev/null || true)
+  fi
+  if [ -z "$ip" ]; then
+    ip=$(ip route show default 2>/dev/null | awk '{print $3}' || true)
+  fi
+  echo "${ip:-172.17.0.1}"
+}
+
+reload_docker_nginx() {
+  local host_ip="$1"
+  local nginx_src="$ROOT/deploy/nginx/docker.conf"
+  local nginx_dst="$PROD_ROOT/deploy/nginx/docker.conf"
+  if [ ! -f "$nginx_src" ]; then
+    echo "WARN: $nginx_src missing"
+    return 0
+  fi
+  if ! docker ps --format '{{.Names}}' | grep -qx "$NGINX_CONTAINER"; then
+    echo "WARN: $NGINX_CONTAINER not running — start prod Docker first"
+    return 0
+  fi
+  mkdir -p "$(dirname "$nginx_dst")"
+  sed "s|__DOCKER_HOST_IP__|${host_ip}|g" "$nginx_src" >"$nginx_dst"
+  log "Docker nginx upstream host IP: $host_ip"
+  docker exec "$NGINX_CONTAINER" sh -c "wget -q -O- --timeout=3 http://${host_ip}:3050${STAGING_BASE_PATH}/auth/login >/dev/null" \
+    && log "nginx container can reach staging web" \
+    || echo "WARN: nginx container cannot reach http://${host_ip}:3050${STAGING_BASE_PATH}/auth/login"
+  docker exec "$NGINX_CONTAINER" nginx -t
+  docker exec "$NGINX_CONTAINER" nginx -s reload
+}
+
 patch_env_var() {
   local file="$1"
   local key="$2"
@@ -125,24 +158,12 @@ if [ ! -d "$FRONTEND/.next/static/chunks" ]; then
   exit 1
 fi
 
-log "Docker nginx — route /staging on port 80 ($NGINX_CONTAINER)"
-NGINX_SRC="$ROOT/deploy/nginx/docker.conf"
-NGINX_DST="$PROD_ROOT/deploy/nginx/docker.conf"
-if [ -f "$NGINX_SRC" ] && docker ps --format '{{.Names}}' | grep -qx "$NGINX_CONTAINER"; then
-  mkdir -p "$(dirname "$NGINX_DST")"
-  cp "$NGINX_SRC" "$NGINX_DST"
-  docker exec "$NGINX_CONTAINER" nginx -t
-  docker exec "$NGINX_CONTAINER" nginx -s reload
-else
-  echo "WARN: $NGINX_CONTAINER not running or docker.conf missing — start prod Docker first"
-fi
-
-log "Restart staging services"
+log "Restart staging services (before nginx reload)"
 sudo systemctl enable "$API_SERVICE" "$WEB_SERVICE"
 sudo systemctl restart "$API_SERVICE" "$WEB_SERVICE"
 sleep 5
 
-log "Health checks"
+log "Health checks (direct ports)"
 if ! wait_for_http "http://127.0.0.1:${API_PORT}/health" "Staging API"; then
   sudo journalctl -u "$API_SERVICE" -n 40 --no-pager
   exit 1
@@ -154,9 +175,14 @@ if ! wait_for_http "http://127.0.0.1:${WEB_PORT}${STAGING_LOGIN_PATH}" "Staging 
   exit 1
 fi
 
+HOST_IP="$(docker_host_ip)"
+log "Docker nginx — route /staging on port 80 ($NGINX_CONTAINER)"
+reload_docker_nginx "$HOST_IP"
+
 if docker ps --format '{{.Names}}' | grep -qx "$NGINX_CONTAINER"; then
   if ! wait_for_http "http://127.0.0.1${STAGING_LOGIN_PATH}" "Staging via Docker nginx"; then
     docker logs "$NGINX_CONTAINER" --tail 30
+    echo "TIP: run deploy/diagnose-staging.sh on EC2"
     exit 1
   fi
 fi
