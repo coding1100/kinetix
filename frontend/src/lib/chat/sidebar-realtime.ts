@@ -146,20 +146,7 @@ export function applyRealtimeMessageToSidebar(
           workspaceId
         );
       })
-      .catch(() => {
-        upsertDmInSidebar(
-          {
-            id: conversationId,
-            name: message.authorName,
-            isGroup: false,
-            lastMessage,
-            lastAt,
-            unread: bumpUnread ? 1 : 0,
-            otherUserId: message.authorId,
-          },
-          workspaceId
-        );
-      })
+      .catch(() => undefined)
       .finally(() => {
         pendingDmFetches.delete(conversationId);
       });

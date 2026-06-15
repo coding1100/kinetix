@@ -25,6 +25,7 @@ import {
   avatarInitialFromName,
 } from "@/lib/user-display";
 import { upsertDmInSidebar } from "@/lib/chat/sidebar-dm";
+import { joinDmRoom } from "@/lib/socket/dm-rooms";
 import { cn } from "@/lib/utils";
 
 export function NewDmDialog() {
@@ -99,6 +100,7 @@ export function NewDmDialog() {
       const name =
         isGroup && groupName.trim() ? groupName.trim() : undefined;
       const dm = await createDm(accessToken, workspaceId, userIds, name);
+      joinDmRoom(workspaceId, dm.id);
       upsertDmInSidebar(dm, workspaceId);
       closeModal();
       reset();

@@ -50,6 +50,7 @@ from app.socket.emit import (
     broadcast_chat_message_edit,
     broadcast_chat_read,
     broadcast_chat_reaction,
+    broadcast_dm_joined,
 )
 from app.socket.presence import get_presence
 
@@ -943,6 +944,7 @@ async def send_thread_reply(
         author_user_id=user_id,
         body=message.body,
         channel=mention_channel,
+        conversation_id=conversation_id,
     )
     thread_notifications = await create_thread_reply_notifications(
         session,
@@ -1174,6 +1176,14 @@ async def create_or_get_dm(
         )
     await session.commit()
 
+    asyncio.create_task(
+        broadcast_dm_joined(
+            workspace_id=workspace_id,
+            user_ids=unique_ids,
+            conversation_id=conversation.id,
+        )
+    )
+
     return await get_dm(session, workspace_id, user_id, conversation.id)
 
 
@@ -1299,6 +1309,7 @@ async def send_dm_message(
         author_user_id=user_id,
         body=message.body,
         channel=None,
+        conversation_id=conversation_id,
     )
     await session.commit()
 
@@ -1509,7 +1520,7 @@ async def toggle_message_reaction(
     message_id: str,
     emoji: str,
 ) -> dict:
-    await _assert_message_access(session, workspace_id, user_id, message_id)
+    message = await _assert_message_access(session, workspace_id, user_id, message_id)
     trimmed = emoji.strip()
     if not trimmed:
         raise AppError(400, "VALIDATION_ERROR", "Emoji is required")
@@ -1534,11 +1545,15 @@ async def toggle_message_reaction(
     await session.commit()
 
     reactions = await _reaction_counts(session, message_id)
+    kind = "channel" if message.channel_id else "dm"
+    conv_id = message.channel_id or message.conversation_id
     asyncio.create_task(
         broadcast_chat_reaction(
             workspace_id=workspace_id,
             message_id=message_id,
             reactions=reactions,
+            kind=kind if conv_id else None,
+            conversation_id=conv_id,
         )
     )
     return {"messageId": message_id, "reactions": reactions}

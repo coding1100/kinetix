@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.db.models.chat import ChatChannel, ChatChannelMember, ChatMessage
+from app.db.models.chat import ChatChannel, ChatChannelMember, ChatMessage, DirectParticipant
 from app.db.models.enums import InboxBucket, InboxItemType, InboxTimeGroup, MemberStatus
 from app.db.models.home import InboxItem
 from app.db.models.user import User
@@ -266,11 +266,35 @@ async def create_mention_notifications(
     author_user_id: str,
     body: str,
     channel: ChatChannel | None = None,
+    conversation_id: str | None = None,
 ) -> list[tuple[str, InboxItem]]:
     labels = parse_person_mention_labels(body)
     recipient_ids = await _resolve_mentioned_user_ids(
         session, workspace_id, labels, exclude_user_id=author_user_id
     )
+    if not recipient_ids:
+        return []
+
+    if channel:
+        members = await _channel_members_for_notify(session, channel.id)
+        level_by_user = {m.user_id: _notification_level(m) for m in members}
+        recipient_ids = [
+            rid
+            for rid in recipient_ids
+            if level_by_user.get(rid, "MENTIONS") != "NONE"
+        ]
+    elif conversation_id:
+        participant_ids = set(
+            await session.scalars(
+                select(DirectParticipant.user_id).where(
+                    DirectParticipant.conversation_id == conversation_id
+                )
+            )
+        )
+        recipient_ids = [
+            rid for rid in recipient_ids if rid in participant_ids
+        ]
+
     if not recipient_ids:
         return []
 
@@ -296,15 +320,6 @@ async def create_mention_notifications(
         preview = f"{actor_name} mentioned you: {snippet}"
         source = actor_name
         activity_kind = "mention_dm"
-
-    if channel:
-        members = await _channel_members_for_notify(session, channel.id)
-        level_by_user = {m.user_id: _notification_level(m) for m in members}
-        recipient_ids = [
-            rid
-            for rid in recipient_ids
-            if level_by_user.get(rid, "MENTIONS") != "NONE"
-        ]
 
     for recipient_id in recipient_ids:
         item = InboxItem(

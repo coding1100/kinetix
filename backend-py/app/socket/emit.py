@@ -1,3 +1,4 @@
+from app.socket.rooms import conversation_room, workspace_room
 from app.socket.server import get_sio
 
 
@@ -19,7 +20,11 @@ async def broadcast_chat_message(
             "message": message,
             "parentId": parent_id,
         },
-        room=f"ws:{workspace_id}",
+        room=conversation_room(
+            workspace_id=workspace_id,
+            kind=kind,
+            conversation_id=conversation_id,
+        ),
     )
 
 
@@ -41,7 +46,11 @@ async def broadcast_chat_message_delete(
             "messageId": message_id,
             "parentId": parent_id,
         },
-        room=f"ws:{workspace_id}",
+        room=conversation_room(
+            workspace_id=workspace_id,
+            kind=kind,
+            conversation_id=conversation_id,
+        ),
     )
 
 
@@ -63,7 +72,11 @@ async def broadcast_chat_message_edit(
             "message": message,
             "parentId": parent_id,
         },
-        room=f"ws:{workspace_id}",
+        room=conversation_room(
+            workspace_id=workspace_id,
+            kind=kind,
+            conversation_id=conversation_id,
+        ),
     )
 
 
@@ -81,7 +94,25 @@ async def broadcast_channel_joined(
             "userIds": user_ids,
             "channel": channel,
         },
-        room=f"ws:{workspace_id}",
+        room=workspace_room(workspace_id),
+    )
+
+
+async def broadcast_dm_joined(
+    *,
+    workspace_id: str,
+    user_ids: list[str],
+    conversation_id: str,
+) -> None:
+    sio = get_sio()
+    await sio.emit(
+        "chat:dm:joined",
+        {
+            "workspaceId": workspace_id,
+            "userIds": user_ids,
+            "conversationId": conversation_id,
+        },
+        room=workspace_room(workspace_id),
     )
 
 
@@ -99,7 +130,7 @@ async def broadcast_home_notification(
             "userIds": user_ids,
             "notification": notification,
         },
-        room=f"ws:{workspace_id}",
+        room=workspace_room(workspace_id),
     )
 
 
@@ -119,7 +150,7 @@ async def broadcast_channel_member_updated(
             "member": member,
             "removed": removed,
         },
-        room=f"ws:{workspace_id}",
+        room=workspace_room(workspace_id),
     )
 
 
@@ -137,7 +168,7 @@ async def broadcast_channel_removed(
             "userIds": user_ids,
             "channelId": channel_id,
         },
-        room=f"ws:{workspace_id}",
+        room=workspace_room(workspace_id),
     )
 
 
@@ -159,7 +190,11 @@ async def broadcast_chat_typing(
             "userId": user_id,
             "typing": typing,
         },
-        room=f"ws:{workspace_id}",
+        room=conversation_room(
+            workspace_id=workspace_id,
+            kind=kind,
+            conversation_id=conversation_id,
+        ),
     )
 
 
@@ -181,7 +216,11 @@ async def broadcast_chat_read(
             "userId": user_id,
             "readAt": read_at,
         },
-        room=f"ws:{workspace_id}",
+        room=conversation_room(
+            workspace_id=workspace_id,
+            kind=kind,
+            conversation_id=conversation_id,
+        ),
     )
 
 
@@ -190,8 +229,19 @@ async def broadcast_chat_reaction(
     workspace_id: str,
     message_id: str,
     reactions: list[dict],
+    kind: str | None = None,
+    conversation_id: str | None = None,
 ) -> None:
     sio = get_sio()
+    room = (
+        conversation_room(
+            workspace_id=workspace_id,
+            kind=kind,
+            conversation_id=conversation_id,
+        )
+        if kind and conversation_id
+        else workspace_room(workspace_id)
+    )
     await sio.emit(
         "chat:reaction",
         {
@@ -199,5 +249,5 @@ async def broadcast_chat_reaction(
             "messageId": message_id,
             "reactions": reactions,
         },
-        room=f"ws:{workspace_id}",
+        room=room,
     )

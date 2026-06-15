@@ -69,20 +69,28 @@ export function mergeSidebarDms(
   for (const dm of queryDms ?? []) {
     merged.set(dm.id, dm);
   }
-  for (const dm of cacheDms ?? []) {
-    const existing = merged.get(dm.id);
-    merged.set(
-      dm.id,
-      existing
-        ? {
-            ...existing,
-            ...dm,
-            unread: mergeConversationUnread(dm.unread, existing.unread, {
-              isActive: activeDmId() === dm.id,
-            }),
-          }
-        : dm
-    );
+  if (cacheDms !== undefined) {
+    const cacheIds = new Set(cacheDms.map((d) => d.id));
+    for (const dm of cacheDms) {
+      const existing = merged.get(dm.id);
+      merged.set(
+        dm.id,
+        existing
+          ? {
+              ...existing,
+              ...dm,
+              unread: mergeConversationUnread(dm.unread, existing.unread, {
+                isActive: activeDmId() === dm.id,
+              }),
+            }
+          : dm
+      );
+    }
+    for (const id of [...merged.keys()]) {
+      if (!cacheIds.has(id)) {
+        merged.delete(id);
+      }
+    }
   }
   return sortByLastAt([...merged.values()]);
 }

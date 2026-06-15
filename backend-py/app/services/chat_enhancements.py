@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
 from sqlalchemy import func, or_, select
@@ -26,6 +27,7 @@ from app.services.chat_service import (
     _assert_dm_participant,
     _thread_counts_for_messages,
 )
+from app.socket.emit import broadcast_dm_joined
 
 _GLOBAL_SEARCH_LIMIT = 50
 _DEFAULT_PAGE_SIZE = 50
@@ -347,6 +349,14 @@ async def add_dm_participants(
         added.append(uid)
 
     await session.commit()
+    if added:
+        asyncio.create_task(
+            broadcast_dm_joined(
+                workspace_id=workspace_id,
+                user_ids=added,
+                conversation_id=conversation_id,
+            )
+        )
     return {"ok": True, "addedUserIds": added}
 
 

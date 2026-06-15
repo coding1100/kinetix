@@ -9,6 +9,7 @@ import type {
   ChatChannelJoinedPayload,
   ChatChannelMemberPayload,
   ChatChannelRemovedPayload,
+  ChatDmJoinedPayload,
   ChatMessageDeletePayload,
   ChatMessageEditPayload,
   ChatReactionPayload,
@@ -20,6 +21,7 @@ import type {
   PresenceUpdatePayload,
 } from "@/lib/types/realtime";
 import { registerChatTypingSocket } from "@/lib/socket/chat-typing";
+import { joinDmRoom, registerDmRoomsSocket } from "@/lib/socket/dm-rooms";
 import { applyHomeNotification } from "@/lib/notifications/realtime";
 import {
   applyChannelJoinedToSidebar,
@@ -72,6 +74,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     });
     socketRef.current = socket;
     registerChatTypingSocket(socket);
+    registerDmRoomsSocket(socket);
 
     const joinWorkspace = () => {
       if (!workspaceId) return;
@@ -96,6 +99,10 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     });
     socket.on("chat:channel:joined", (payload: ChatChannelJoinedPayload) => {
       applyChannelJoinedToSidebar(payload, userId);
+    });
+    socket.on("chat:dm:joined", (payload: ChatDmJoinedPayload) => {
+      if (!userId || !payload.userIds.includes(userId)) return;
+      joinDmRoom(payload.workspaceId, payload.conversationId);
     });
     socket.on("chat:channel:removed", (payload: ChatChannelRemovedPayload) => {
       const viewingRemoved = applyChannelRemovedFromSidebar(payload, userId);
@@ -140,6 +147,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       socket.off("connect", joinWorkspace);
       socket.off("chat:message");
       socket.off("chat:channel:joined");
+      socket.off("chat:dm:joined");
       socket.off("chat:channel:removed");
       socket.off("chat:channel:member");
       socket.off("home:notification");
@@ -150,6 +158,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       socket.off("chat:read");
       socket.off("presence:sync");
       registerChatTypingSocket(null);
+      registerDmRoomsSocket(null);
       socket.off("presence:update");
       socket.disconnect();
       socketRef.current = null;

@@ -563,8 +563,8 @@ function DmRow({
       nativeButton={false}
       render={<Link href={href} />}
       className={cn(
-        "h-9 w-full justify-between rounded-md px-2 hover:bg-[#eaeaea]",
-        active && "bg-[#eaeaea]"
+        "h-9 w-full justify-between rounded-md px-2",
+        active && "bg-sidebar-accent text-sidebar-accent-foreground"
       )}
     >
       <span className="flex min-w-0 items-center gap-2">

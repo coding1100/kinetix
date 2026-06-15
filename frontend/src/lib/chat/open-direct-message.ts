@@ -3,6 +3,7 @@ import { createDm } from "@/lib/api/chat";
 import { ApiError } from "@/lib/api/client";
 import { setConversationCache } from "@/lib/chat/conversation-cache";
 import { findDmByUserId, upsertDmInSidebar } from "@/lib/chat/sidebar-dm";
+import { joinDmRoom } from "@/lib/socket/dm-rooms";
 import { useAuthStore } from "@/stores/auth-store";
 import { useChatStore } from "@/stores/chat-store";
 import { toast } from "sonner";
@@ -39,6 +40,7 @@ export async function openDirectMessageForUser(
     }
 
     const dm = await createDm(accessToken, workspaceId, [userId]);
+    joinDmRoom(workspaceId, dm.id);
     upsertDmInSidebar(dm, workspaceId);
     setConversationCache(workspaceId, "dm", dm.id, { dm });
     closePersonProfile();
