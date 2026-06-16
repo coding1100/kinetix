@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
 import { toast } from "sonner";
-import { getSocketBaseUrl } from "@/lib/socket/config";
+import { getSocketConnectionConfig } from "@/lib/socket/config";
 import type {
   ChatChannelJoinedPayload,
   ChatChannelMemberPayload,
@@ -67,8 +67,10 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
 
   useEffect(() => {
     if (!hydrated || !accessToken) return;
+    const { url, path } = getSocketConnectionConfig();
 
-    const socket: Socket = io(getSocketBaseUrl(), {
+    const socket: Socket = io(url, {
+      path,
       auth: { token: accessToken },
       transports: ["websocket", "polling"],
     });
