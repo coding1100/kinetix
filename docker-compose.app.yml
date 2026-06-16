@@ -17,8 +17,6 @@ services:
       PORT: "4000"
       # Overrides backend-py/.env — inside Docker the DB host is the service name.
       DATABASE_URL: postgresql://${POSTGRES_USER:-riseup}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-riseup}
-      API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
     depends_on:
       postgres:
         condition: service_healthy

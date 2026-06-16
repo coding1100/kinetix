@@ -2,6 +2,7 @@ import socketio
 from fastapi import FastAPI
 from jwt import PyJWTError
 from sqlalchemy import select
+from urllib.parse import urlparse
 
 from app.config import get_settings
 from app.core.security import verify_access_token
@@ -15,11 +16,18 @@ from app.socket.rooms import dm_room, workspace_room
 _sio: socketio.AsyncServer | None = None
 
 
+def _frontend_origin(value: str) -> str:
+    parsed = urlparse(value.strip())
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return value.rstrip("/")
+
+
 def get_sio() -> socketio.AsyncServer:
     global _sio
     if _sio is None:
         settings = get_settings()
-        base = settings.frontend_url.rstrip("/")
+        base = _frontend_origin(settings.frontend_url)
         origins = {base}
         if "localhost" in base:
             origins.add(base.replace("localhost", "127.0.0.1"))

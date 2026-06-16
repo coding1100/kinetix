@@ -112,6 +112,11 @@ deploy_docker_stack() {
   fi
   export API_PUBLIC_URL="${API_PUBLIC_URL:-${PUBLIC_APP_URL:-http://localhost}}"
   export FRONTEND_URL="${FRONTEND_URL:-${PUBLIC_APP_URL:-http://localhost}}"
+  log "Runtime URLs: FRONTEND_URL=$FRONTEND_URL API_PUBLIC_URL=$API_PUBLIC_URL"
+  if [[ "$FRONTEND_URL" == *"localhost"* ]] || [[ "$FRONTEND_URL" == *"127.0.0.1"* ]]; then
+    echo "ERROR: FRONTEND_URL resolves to localhost in docker deploy. Set PUBLIC_APP_URL in docker-compose.env to your public host."
+    exit 1
+  fi
 
   compose_postgres
 
