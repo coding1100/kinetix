@@ -47,7 +47,9 @@ def _register_events(sio: socketio.AsyncServer) -> None:
             payload = verify_access_token(token)
         except PyJWTError:
             return False
-        await sio.save_session(sid, {"user_id": payload["sub"]})
+        user_id = payload["sub"]
+        await sio.save_session(sid, {"user_id": user_id})
+        await sio.enter_room(sid, f"user:{user_id}")
         return True
 
     @sio.event

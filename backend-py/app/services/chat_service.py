@@ -225,6 +225,20 @@ async def _assert_dm_participant(
     return participant
 
 
+async def _dm_participant_user_ids(
+    session: AsyncSession, conversation_id: str
+) -> list[str]:
+    return list(
+        (
+            await session.scalars(
+                select(DirectParticipant.user_id).where(
+                    DirectParticipant.conversation_id == conversation_id
+                )
+            )
+        ).all()
+    )
+
+
 def _channel_payload(
     channel: ChatChannel,
     member: ChatChannelMember,
@@ -966,6 +980,9 @@ async def send_thread_reply(
         await emit_home_notifications(session, workspace_id, all_notifications)
     conv_id = channel_id or conversation_id
     kind = "channel" if channel_id else "dm"
+    audience_user_ids: list[str] | None = None
+    if kind == "dm" and conversation_id:
+        audience_user_ids = await _dm_participant_user_ids(session, conversation_id)
     if conv_id:
         asyncio.create_task(
             broadcast_chat_message(
@@ -974,6 +991,7 @@ async def send_thread_reply(
                 conversation_id=conv_id,
                 message=map_message_broadcast(loaded, thread_count=0),
                 parent_id=parent_id,
+                user_ids=audience_user_ids,
             )
         )
     return payload
@@ -1236,6 +1254,7 @@ async def mark_dm_read(
         raise AppError(404, "NOT_FOUND", "Conversation not found")
     participant.last_read_at = datetime.now(timezone.utc)
     await session.commit()
+    audience_user_ids = [p.user_id for p in participant.conversation.participants]
     asyncio.create_task(
         broadcast_chat_read(
             workspace_id=workspace_id,
@@ -1243,6 +1262,7 @@ async def mark_dm_read(
             conversation_id=conversation_id,
             user_id=user_id,
             read_at=participant.last_read_at.isoformat(),
+            audience_user_ids=audience_user_ids,
         )
     )
     return {"ok": True, "unread": 0}
@@ -1310,12 +1330,14 @@ async def send_dm_message(
     payload = map_message(loaded, user_id, thread_count=0)
     if mention_notifications:
         await emit_home_notifications(session, workspace_id, mention_notifications)
+    audience_user_ids = [p.user_id for p in participant.conversation.participants]
     asyncio.create_task(
         broadcast_chat_message(
             workspace_id=workspace_id,
             kind="dm",
             conversation_id=conversation_id,
             message=map_message_broadcast(loaded, thread_count=0),
+            user_ids=audience_user_ids,
         )
     )
     return payload
@@ -1457,6 +1479,11 @@ async def update_message(
     payload = map_message(loaded, user_id)
     kind = "channel" if loaded.channel_id else "dm"
     conv_id = loaded.channel_id or loaded.conversation_id
+    audience_user_ids: list[str] | None = None
+    if kind == "dm" and loaded.conversation_id:
+        audience_user_ids = await _dm_participant_user_ids(
+            session, loaded.conversation_id
+        )
     if conv_id:
         asyncio.create_task(
             broadcast_chat_message_edit(
@@ -1465,6 +1492,7 @@ async def update_message(
                 conversation_id=conv_id,
                 message=map_message_broadcast(loaded),
                 parent_id=loaded.parent_id,
+                user_ids=audience_user_ids,
             )
         )
     return payload
@@ -1485,6 +1513,11 @@ async def delete_message(
     kind = "channel" if message.channel_id else "dm"
     conv_id = message.channel_id or message.conversation_id
     parent_id = message.parent_id
+    audience_user_ids: list[str] | None = None
+    if kind == "dm" and message.conversation_id:
+        audience_user_ids = await _dm_participant_user_ids(
+            session, message.conversation_id
+        )
 
     await session.delete(message)
     await session.commit()
@@ -1497,6 +1530,7 @@ async def delete_message(
                 conversation_id=conv_id,
                 message_id=message_id,
                 parent_id=parent_id,
+                user_ids=audience_user_ids,
             )
         )
     return {"ok": True, "messageId": message_id}
@@ -1509,7 +1543,7 @@ async def toggle_message_reaction(
     message_id: str,
     emoji: str,
 ) -> dict:
-    await _assert_message_access(session, workspace_id, user_id, message_id)
+    message = await _assert_message_access(session, workspace_id, user_id, message_id)
     trimmed = emoji.strip()
     if not trimmed:
         raise AppError(400, "VALIDATION_ERROR", "Emoji is required")
@@ -1534,11 +1568,21 @@ async def toggle_message_reaction(
     await session.commit()
 
     reactions = await _reaction_counts(session, message_id)
+    kind = "channel" if message.channel_id else "dm"
+    conversation_id = message.channel_id or message.conversation_id or ""
+    audience_user_ids: list[str] | None = None
+    if kind == "dm" and message.conversation_id:
+        audience_user_ids = await _dm_participant_user_ids(
+            session, message.conversation_id
+        )
     asyncio.create_task(
         broadcast_chat_reaction(
             workspace_id=workspace_id,
+            kind=kind,
+            conversation_id=conversation_id,
             message_id=message_id,
             reactions=reactions,
+            user_ids=audience_user_ids,
         )
     )
     return {"messageId": message_id, "reactions": reactions}

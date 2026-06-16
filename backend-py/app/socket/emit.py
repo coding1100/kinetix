@@ -1,6 +1,21 @@
 from app.socket.server import get_sio
 
 
+async def _emit_workspace_or_users(
+    *,
+    event: str,
+    payload: dict,
+    workspace_id: str,
+    user_ids: list[str] | None = None,
+) -> None:
+    sio = get_sio()
+    if user_ids:
+        for user_id in sorted(set(user_ids)):
+            await sio.emit(event, payload, room=f"user:{user_id}")
+        return
+    await sio.emit(event, payload, room=f"ws:{workspace_id}")
+
+
 async def broadcast_chat_message(
     *,
     workspace_id: str,
@@ -8,18 +23,19 @@ async def broadcast_chat_message(
     conversation_id: str,
     message: dict,
     parent_id: str | None = None,
+    user_ids: list[str] | None = None,
 ) -> None:
-    sio = get_sio()
-    await sio.emit(
-        "chat:message",
-        {
+    await _emit_workspace_or_users(
+        event="chat:message",
+        payload={
             "workspaceId": workspace_id,
             "kind": kind,
             "conversationId": conversation_id,
             "message": message,
             "parentId": parent_id,
         },
-        room=f"ws:{workspace_id}",
+        workspace_id=workspace_id,
+        user_ids=user_ids,
     )
 
 
@@ -30,18 +46,19 @@ async def broadcast_chat_message_delete(
     conversation_id: str,
     message_id: str,
     parent_id: str | None = None,
+    user_ids: list[str] | None = None,
 ) -> None:
-    sio = get_sio()
-    await sio.emit(
-        "chat:message:delete",
-        {
+    await _emit_workspace_or_users(
+        event="chat:message:delete",
+        payload={
             "workspaceId": workspace_id,
             "kind": kind,
             "conversationId": conversation_id,
             "messageId": message_id,
             "parentId": parent_id,
         },
-        room=f"ws:{workspace_id}",
+        workspace_id=workspace_id,
+        user_ids=user_ids,
     )
 
 
@@ -52,18 +69,19 @@ async def broadcast_chat_message_edit(
     conversation_id: str,
     message: dict,
     parent_id: str | None = None,
+    user_ids: list[str] | None = None,
 ) -> None:
-    sio = get_sio()
-    await sio.emit(
-        "chat:message:edit",
-        {
+    await _emit_workspace_or_users(
+        event="chat:message:edit",
+        payload={
             "workspaceId": workspace_id,
             "kind": kind,
             "conversationId": conversation_id,
             "message": message,
             "parentId": parent_id,
         },
-        room=f"ws:{workspace_id}",
+        workspace_id=workspace_id,
+        user_ids=user_ids,
     )
 
 
@@ -170,36 +188,42 @@ async def broadcast_chat_read(
     conversation_id: str,
     user_id: str,
     read_at: str,
+    audience_user_ids: list[str] | None = None,
 ) -> None:
-    sio = get_sio()
-    await sio.emit(
-        "chat:read",
-        {
+    await _emit_workspace_or_users(
+        event="chat:read",
+        payload={
             "workspaceId": workspace_id,
             "kind": kind,
             "conversationId": conversation_id,
             "userId": user_id,
             "readAt": read_at,
         },
-        room=f"ws:{workspace_id}",
+        workspace_id=workspace_id,
+        user_ids=audience_user_ids,
     )
 
 
 async def broadcast_chat_reaction(
     *,
     workspace_id: str,
+    kind: str,
+    conversation_id: str,
     message_id: str,
     reactions: list[dict],
+    user_ids: list[str] | None = None,
 ) -> None:
-    sio = get_sio()
-    await sio.emit(
-        "chat:reaction",
-        {
+    await _emit_workspace_or_users(
+        event="chat:reaction",
+        payload={
             "workspaceId": workspace_id,
+            "kind": kind,
+            "conversationId": conversation_id,
             "messageId": message_id,
             "reactions": reactions,
         },
-        room=f"ws:{workspace_id}",
+        workspace_id=workspace_id,
+        user_ids=user_ids,
     )
 
 
