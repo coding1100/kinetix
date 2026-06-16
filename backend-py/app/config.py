@@ -91,6 +91,21 @@ class Settings(BaseSettings):
         base = self.api_public_url.rstrip("/")
         return f"{base}/api/v1/auth/google/callback"
 
+    @property
+    def browser_cors_origins(self) -> list[str]:
+        """Browser Origin header is scheme + host + port only (no path)."""
+        parsed = urlparse(self.frontend_url.strip())
+        if parsed.scheme and parsed.netloc:
+            base = f"{parsed.scheme}://{parsed.netloc}"
+        else:
+            base = self.frontend_url.rstrip("/")
+        origins = {base}
+        if "localhost" in base:
+            origins.add(base.replace("localhost", "127.0.0.1"))
+        if "127.0.0.1" in base:
+            origins.add(base.replace("127.0.0.1", "localhost"))
+        return sorted(origins)
+
 
 @lru_cache
 def _get_settings_cached() -> Settings:

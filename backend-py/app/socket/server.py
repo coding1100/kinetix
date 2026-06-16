@@ -17,15 +17,9 @@ def get_sio() -> socketio.AsyncServer:
     global _sio
     if _sio is None:
         settings = get_settings()
-        base = settings.frontend_url.rstrip("/")
-        origins = {base}
-        if "localhost" in base:
-            origins.add(base.replace("localhost", "127.0.0.1"))
-        if "127.0.0.1" in base:
-            origins.add(base.replace("127.0.0.1", "localhost"))
         _sio = socketio.AsyncServer(
             async_mode="asgi",
-            cors_allowed_origins=sorted(origins),
+            cors_allowed_origins=settings.browser_cors_origins,
         )
         _register_events(_sio)
     return _sio

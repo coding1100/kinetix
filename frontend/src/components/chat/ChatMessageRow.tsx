@@ -150,7 +150,7 @@ export function ChatMessageRow({
       )}
     >
       {!isEditing && showReadReceipt && readByUserIds.length > 0 ? (
-        <div className="pointer-events-auto absolute right-2 bottom-[10px] z-[999] transition-opacity">
+        <div className="pointer-events-auto absolute right-2 bottom-[10px] z-[1] transition-opacity">
           <MessageReadReceipts
             readByUserIds={readByUserIds}
             membersById={readReceiptMembersById}

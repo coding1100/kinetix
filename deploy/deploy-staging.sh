@@ -12,6 +12,11 @@ API_PORT="${API_PORT:-4050}"
 STAGING_BASE_PATH="${STAGING_BASE_PATH:-/staging}"
 PUBLIC_HOST="${PUBLIC_HOST:-3.140.5.67}"
 STAGING_PUBLIC_URL="${STAGING_PUBLIC_URL:-http://${PUBLIC_HOST}${STAGING_BASE_PATH}}"
+STAGING_FRONTEND_ORIGIN="${STAGING_PUBLIC_URL%/}"
+if [[ "${STAGING_BASE_PATH%/}" != "/" && "$STAGING_FRONTEND_ORIGIN" == *"${STAGING_BASE_PATH%/}" ]]; then
+  STAGING_FRONTEND_ORIGIN="${STAGING_FRONTEND_ORIGIN%${STAGING_BASE_PATH%/}}"
+fi
+STAGING_FRONTEND_ORIGIN="${STAGING_FRONTEND_ORIGIN%/}"
 FRONTEND="$APP_ROOT/frontend"
 BACKEND="$APP_ROOT/backend-py"
 DEPLOY_USER="${DEPLOY_USER:-ubuntu}"
@@ -93,6 +98,7 @@ patch_env_var() {
 }
 
 log "Staging deploy — branch=$DEPLOY_BRANCH app=$APP_ROOT public=$STAGING_PUBLIC_URL"
+log "Socket/CORS frontend origin: $STAGING_FRONTEND_ORIGIN"
 log "Fix ownership ($DEPLOY_USER)"
 sudo chown -R "$DEPLOY_USER:$DEPLOY_USER" "$FRONTEND" "$BACKEND" 2>/dev/null || true
 cd "$APP_ROOT"
@@ -122,7 +128,7 @@ log "Backend env (staging URLs)"
 if [ -f "$BACKEND/.env" ]; then
   patch_env_var "$BACKEND/.env" "PORT" "$API_PORT"
   patch_env_var "$BACKEND/.env" "NODE_ENV" "production"
-  patch_env_var "$BACKEND/.env" "FRONTEND_URL" "$STAGING_PUBLIC_URL"
+  patch_env_var "$BACKEND/.env" "FRONTEND_URL" "$STAGING_FRONTEND_ORIGIN"
   patch_env_var "$BACKEND/.env" "API_PUBLIC_URL" "$STAGING_PUBLIC_URL"
 fi
 

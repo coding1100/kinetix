@@ -62,13 +62,7 @@ fastapi_app = FastAPI(
 )
 
 def _cors_origins() -> list[str]:
-    base = get_settings().frontend_url.rstrip("/")
-    origins = {base}
-    if "localhost" in base:
-        origins.add(base.replace("localhost", "127.0.0.1"))
-    if "127.0.0.1" in base:
-        origins.add(base.replace("127.0.0.1", "localhost"))
-    return sorted(origins)
+    return get_settings().browser_cors_origins
 
 
 fastapi_app.add_middleware(
