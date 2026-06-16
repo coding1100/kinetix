@@ -59,6 +59,20 @@ wait_for_http() {
   return 1
 }
 
+wait_for_service_active() {
+  local service="$1"
+  local attempts="${2:-20}"
+  local i=1
+  while [ "$i" -le "$attempts" ]; do
+    if sudo systemctl is-active --quiet "$service"; then
+      return 0
+    fi
+    sleep 2
+    i=$((i + 1))
+  done
+  return 1
+}
+
 run_as_user() {
   local dir="$1"
   shift
@@ -72,16 +86,25 @@ run_as_user() {
 docker_host_ip() {
   local ip=""
   if docker ps --format '{{.Names}}' | grep -qx "$NGINX_CONTAINER"; then
-    ip=$(docker exec "$NGINX_CONTAINER" sh -c "ip route show default 2>/dev/null | awk '{print \$3}'" 2>/dev/null || true)
+    ip=$(
+      docker exec "$NGINX_CONTAINER" sh -c \
+        "ip -4 route show default 2>/dev/null | awk '{for (i=1;i<=NF;i++) if (\$i==\"via\") {print \$(i+1); exit}}'" \
+        2>/dev/null || true
+    )
   fi
   if [ -z "$ip" ]; then
-    ip=$(ip route show default 2>/dev/null | awk '{print $3}' || true)
+    ip=$(ip -4 route show default 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="via") {print $(i+1); exit}}' || true)
+  fi
+  ip="$(echo "$ip" | tr -d '\r' | tr '\n' ' ' | awk '{print $1}')"
+  if ! echo "$ip" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+    ip=""
   fi
   echo "${ip:-172.17.0.1}"
 }
 
 reload_docker_nginx() {
   local host_ip="$1"
+  host_ip="$(echo "$host_ip" | tr -d '\r' | tr '\n' ' ' | awk '{print $1}')"
   local nginx_src="$ROOT/deploy/nginx/docker.conf"
   local nginx_dst="$PROD_ROOT/deploy/nginx/docker.conf"
   if [ ! -f "$nginx_src" ]; then
@@ -95,9 +118,9 @@ reload_docker_nginx() {
   mkdir -p "$(dirname "$nginx_dst")"
   replace_in_file "$nginx_src" "$nginx_dst" "__DOCKER_HOST_IP__" "$host_ip"
   log "Docker nginx upstream host IP: $host_ip"
-  docker exec "$NGINX_CONTAINER" sh -c "wget -q -O- --timeout=3 http://${host_ip}:3050${STAGING_BASE_PATH}/auth/login >/dev/null" \
+  docker exec "$NGINX_CONTAINER" sh -c "wget -q -O- --timeout=3 http://${host_ip}:${WEB_PORT}${STAGING_BASE_PATH}/auth/login >/dev/null" \
     && log "nginx container can reach staging web" \
-    || echo "WARN: nginx container cannot reach http://${host_ip}:3050${STAGING_BASE_PATH}/auth/login"
+    || echo "WARN: nginx container cannot reach http://${host_ip}:${WEB_PORT}${STAGING_BASE_PATH}/auth/login"
   docker exec "$NGINX_CONTAINER" nginx -t
   docker exec "$NGINX_CONTAINER" nginx -s reload
 }
@@ -228,13 +251,17 @@ if docker ps --format '{{.Names}}' | grep -qx "$NGINX_CONTAINER"; then
   fi
 fi
 
-if ! sudo systemctl is-active --quiet "$API_SERVICE"; then
+if ! wait_for_service_active "$API_SERVICE" 15; then
   echo "ERROR: $API_SERVICE is not active"
+  sudo systemctl status "$API_SERVICE" --no-pager || true
+  sudo journalctl -u "$API_SERVICE" -n 60 --no-pager || true
   exit 1
 fi
 
-if ! sudo systemctl is-active --quiet "$WEB_SERVICE"; then
+if ! wait_for_service_active "$WEB_SERVICE" 15; then
   echo "ERROR: $WEB_SERVICE is not active"
+  sudo systemctl status "$WEB_SERVICE" --no-pager || true
+  sudo journalctl -u "$WEB_SERVICE" -n 60 --no-pager || true
   exit 1
 fi
 
