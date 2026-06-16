@@ -74,6 +74,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import {
   applyMessageUpdate,
@@ -1124,40 +1125,70 @@ export function ConversationView({
         </div>
         {type === "channel" ? (
         <div className="flex items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            title={channelPinned ? "Unpin channel" : "Pin channel"}
-            onClick={() => void togglePin()}
-            className={cn(channelPinned && "text-primary")}
-          >
-            <PinIcon
-              className={cn("size-4", channelPinned && "fill-current")}
-              strokeWidth={1.75}
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={channelPinned ? "Unpin channel" : "Pin channel"}
+                  onClick={() => void togglePin()}
+                  className={cn(channelPinned && "text-primary")}
+                >
+                  <PinIcon
+                    className={cn("size-4", channelPinned && "fill-current")}
+                    strokeWidth={1.75}
+                  />
+                </Button>
+              }
             />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            title="Notifications"
-            onClick={() => openChannelPanel("settings")}
-          >
-            <BellIcon className="size-4" strokeWidth={1.75} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            title="Search"
-            onClick={() => openChannelPanel("search")}
-          >
-            <SearchIcon className="size-4" strokeWidth={1.75} />
-          </Button>
+            <TooltipContent side="bottom">
+              {channelPinned ? "Unpin channel" : "Pin channel"}
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Notifications"
+                  onClick={() => openChannelPanel("settings")}
+                >
+                  <BellIcon className="size-4" strokeWidth={1.75} />
+                </Button>
+              }
+            />
+            <TooltipContent side="bottom">Notifications</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Search"
+                  onClick={() => openChannelPanel("search")}
+                >
+                  <SearchIcon className="size-4" strokeWidth={1.75} />
+                </Button>
+              }
+            />
+            <TooltipContent side="bottom">Search</TooltipContent>
+          </Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
-                <Button variant="ghost" size="icon-sm" title="More options">
-                  <MoreHorizontalIcon className="size-4" strokeWidth={1.75} />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button variant="ghost" size="icon-sm" aria-label="More options">
+                        <MoreHorizontalIcon className="size-4" strokeWidth={1.75} />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent side="bottom">More options</TooltipContent>
+                </Tooltip>
               }
             />
             <DropdownMenuContent align="end" className="w-52">

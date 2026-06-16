@@ -44,8 +44,12 @@ class Space(Base):
     created_at: Mapped[datetime] = mapped_column(
         "createdAt", DateTime(timezone=True), server_default=func.now()
     )
-    folders: Mapped[list["Folder"]] = relationship(back_populates="space")
-    lists: Mapped[list["TaskList"]] = relationship(back_populates="space")
+    folders: Mapped[list["Folder"]] = relationship(
+        back_populates="space", passive_deletes=True
+    )
+    lists: Mapped[list["TaskList"]] = relationship(
+        back_populates="space", passive_deletes=True
+    )
 
 
 class Folder(Base):
@@ -60,7 +64,9 @@ class Folder(Base):
     name: Mapped[str] = mapped_column(String)
     sort_order: Mapped[int] = mapped_column("sortOrder", Integer, default=0)
     space: Mapped["Space"] = relationship(back_populates="folders")
-    lists: Mapped[list["TaskList"]] = relationship(back_populates="folder")
+    lists: Mapped[list["TaskList"]] = relationship(
+        back_populates="folder", passive_deletes=True
+    )
 
 
 class TaskList(Base):
@@ -79,8 +85,12 @@ class TaskList(Base):
     sort_order: Mapped[int] = mapped_column("sortOrder", Integer, default=0)
     space: Mapped["Space"] = relationship(back_populates="lists")
     folder: Mapped["Folder | None"] = relationship(back_populates="lists")
-    tasks: Mapped[list["Task"]] = relationship(back_populates="task_list")
-    statuses: Mapped[list["ListStatus"]] = relationship(back_populates="task_list")
+    tasks: Mapped[list["Task"]] = relationship(
+        back_populates="task_list", passive_deletes=True
+    )
+    statuses: Mapped[list["ListStatus"]] = relationship(
+        back_populates="task_list", passive_deletes=True
+    )
 
 
 class ListStatus(Base):
@@ -100,7 +110,9 @@ class ListStatus(Base):
     legacy_key: Mapped[str | None] = mapped_column("legacyKey", String, nullable=True)
     sort_order: Mapped[int] = mapped_column("sortOrder", Integer, default=0)
     task_list: Mapped["TaskList"] = relationship(back_populates="statuses")
-    tasks: Mapped[list["Task"]] = relationship(back_populates="list_status")
+    tasks: Mapped[list["Task"]] = relationship(
+        back_populates="list_status", passive_deletes=True
+    )
 
 
 class Task(Base):
@@ -127,6 +139,12 @@ class Task(Base):
     due_date: Mapped[datetime | None] = mapped_column(
         "dueDate", DateTime(timezone=True), nullable=True
     )
+    parent_task_id: Mapped[str | None] = mapped_column(
+        "parentTaskId",
+        String,
+        ForeignKey("Task.id", ondelete="CASCADE"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         "createdAt", DateTime(timezone=True), server_default=func.now()
     )
@@ -147,6 +165,49 @@ class Task(Base):
     followers: Mapped[list["TaskFollower"]] = relationship(
         back_populates="task", cascade="all, delete-orphan"
     )
+    parent_task: Mapped["Task | None"] = relationship(
+        "Task",
+        remote_side="Task.id",
+        foreign_keys=[parent_task_id],
+        back_populates="subtasks",
+    )
+    subtasks: Mapped[list["Task"]] = relationship(
+        "Task",
+        foreign_keys=[parent_task_id],
+        back_populates="parent_task",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    attachments: Mapped[list["TaskAttachment"]] = relationship(
+        back_populates="task", cascade="all, delete-orphan"
+    )
+
+
+class TaskAttachment(Base):
+    __tablename__ = "TaskAttachment"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    task_id: Mapped[str] = mapped_column(
+        "taskId", String, ForeignKey("Task.id", ondelete="CASCADE")
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        "workspaceId", String, ForeignKey("Workspace.id", ondelete="CASCADE")
+    )
+    uploader_id: Mapped[str] = mapped_column(
+        "uploaderId", String, ForeignKey("User.id", ondelete="CASCADE")
+    )
+    storage_key: Mapped[str] = mapped_column("storageKey", String)
+    file_name: Mapped[str] = mapped_column("fileName", String)
+    mime_type: Mapped[str] = mapped_column("mimeType", String)
+    size_bytes: Mapped[int] = mapped_column("sizeBytes")
+    status: Mapped[str] = mapped_column(String, default="pending")
+    created_at: Mapped[datetime] = mapped_column(
+        "createdAt", DateTime(timezone=True), server_default=func.now()
+    )
+    task: Mapped["Task"] = relationship(back_populates="attachments")
+    uploader: Mapped["User"] = relationship()
 
 
 class TaskFollower(Base):

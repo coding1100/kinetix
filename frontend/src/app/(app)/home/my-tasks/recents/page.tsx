@@ -1,36 +1,40 @@
 "use client";
 
-import Link from "next/link";
-import { PageHeader } from "@/components/shared/PageHeader";
-import { HomeDataState } from "@/components/home/HomeDataState";
+import { Suspense, useState } from "react";
+import { MyTasksPageShell } from "@/components/home/MyTasksPageShell";
+import { MyTasksRecentsList } from "@/components/home/MyTasksRecentsList";
 import { fetchRecents } from "@/lib/api/home";
 import { useHomeQuery } from "@/hooks/use-home-query";
 
-export default function RecentsPage() {
-  const { data: recents, loading, error } = useHomeQuery((token, ws) =>
-    fetchRecents(token, ws).then((r) => r.data)
+const BASE_PATH = "/home/my-tasks/recents";
+
+function RecentsContent() {
+  const [refreshKey] = useState(0);
+  const { data: recents, loading, error } = useHomeQuery(
+    (token, ws) => fetchRecents(token, ws).then((r) => r.data),
+    [refreshKey]
   );
 
   return (
-    <>
-      <PageHeader title="Recents" />
-      <HomeDataState loading={loading} error={error}>
-        <ul className="flex-1 overflow-y-auto p-4">
-          {recents?.map((r) => (
-            <li key={r.id}>
-              <Link
-                href={r.href}
-                className="mb-2 block rounded-lg border border-border bg-card px-4 py-3 hover:border-primary"
-              >
-                <p className="font-medium">{r.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {r.type} · {r.space}
-                </p>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </HomeDataState>
-    </>
+    <MyTasksPageShell
+      title="Recents"
+      subtitle="Items you've opened recently across your workspace."
+      basePath={BASE_PATH}
+      showToolbar={false}
+    >
+      <MyTasksRecentsList
+        recents={recents ?? undefined}
+        loading={loading}
+        error={error}
+      />
+    </MyTasksPageShell>
+  );
+}
+
+export default function RecentsPage() {
+  return (
+    <Suspense fallback={null}>
+      <RecentsContent />
+    </Suspense>
   );
 }

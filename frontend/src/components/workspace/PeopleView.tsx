@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UserAvatarWithPresence } from "@/components/shared/AvatarWithPresence";
 import { usePresenceStore, useUserPresence } from "@/stores/presence-store";
 import { presenceLabel } from "@/stores/profile-store";
@@ -445,9 +446,20 @@ export function PeopleView() {
                           <DropdownMenu>
                             <DropdownMenuTrigger
                               render={
-                                <Button variant="ghost" size="icon-sm">
-                                  <MoreHorizontalIcon className="size-4" />
-                                </Button>
+                                <Tooltip>
+                                  <TooltipTrigger
+                                    render={
+                                      <Button
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        aria-label="Member actions"
+                                      >
+                                        <MoreHorizontalIcon className="size-4" />
+                                      </Button>
+                                    }
+                                  />
+                                  <TooltipContent side="bottom">Actions</TooltipContent>
+                                </Tooltip>
                               }
                             />
                             <DropdownMenuContent align="end">
@@ -512,15 +524,22 @@ export function PeopleView() {
                             <RefreshCwIcon className="size-3.5" />
                             Resend
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            loading={inviteActionId === `cancel:${inv.id}`}
-                            onClick={() => void handleCancel(inv.id)}
-                            aria-label="Cancel invite"
-                          >
-                            <XIcon className="size-4" />
-                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  loading={inviteActionId === `cancel:${inv.id}`}
+                                  onClick={() => void handleCancel(inv.id)}
+                                  aria-label="Cancel invite"
+                                >
+                                  <XIcon className="size-4" />
+                                </Button>
+                              }
+                            />
+                            <TooltipContent side="bottom">Cancel invite</TooltipContent>
+                          </Tooltip>
                         </div>
                       </td>
                     ) : null}

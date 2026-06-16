@@ -61,12 +61,22 @@ async def test_list_statuses_and_status_id_patch(api_client: AsyncClient):
     )
     assert meta.status_code == 200, meta.text
     statuses = meta.json()["statuses"]
-    assert len(statuses) == 4
-    assert {s["legacyKey"] for s in statuses} == {
-        "OPEN",
+    assert len(statuses) == 11
+    assert [s["name"] for s in statuses] == [
+        "BACKLOG",
+        "GROOMING",
         "TODO",
-        "IN_PROGRESS",
+        "READY FOR DEVELOPMENT",
+        "IN PROGRESS",
+        "IN UI INTEGRATION READY",
+        "IN QA READY",
+        "IN QA",
+        "IN QA SENT BACK",
         "DONE",
+        "CLOSED",
+    ]
+    assert {"OPEN", "TODO", "IN_PROGRESS", "DONE"} <= {
+        s["legacyKey"] for s in statuses
     }
 
     created = await api_client.post(
@@ -90,7 +100,7 @@ async def test_list_statuses_and_status_id_patch(api_client: AsyncClient):
     body = patched.json()
     assert body["statusId"] == in_progress["id"]
     assert body["statusKey"] == "IN_PROGRESS"
-    assert body["status"] == "in progress"
+    assert body["status"] == "IN PROGRESS"
 
 
 @pytest.mark.asyncio(loop_scope="session")

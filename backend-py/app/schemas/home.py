@@ -13,6 +13,18 @@ class CreateTaskBody(BaseModel):
     description: str | None = Field(default=None, max_length=5000)
 
 
+class CreateSubtaskBody(BaseModel):
+    name: str = Field(min_length=1, max_length=500)
+
+
+class PresignTaskAttachmentBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    file_name: str = Field(min_length=1, max_length=255, alias="fileName")
+    mime_type: str = Field(min_length=1, max_length=120, alias="mimeType")
+    size_bytes: int = Field(gt=0, alias="sizeBytes")
+
+
 class UpdateTaskBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

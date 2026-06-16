@@ -52,6 +52,7 @@ export default function TaskDetailPage({
           }}
           onSaved={() => router.refresh()}
           onDeleted={() => router.push("/home/all-tasks")}
+          onTaskNavigate={(id) => router.replace(`/home/tasks/${id}`)}
         />
       ) : null}
     </HomeDataState>

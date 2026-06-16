@@ -117,15 +117,36 @@ def map_task(task: Task, current_user_id: str) -> dict:
         "priority": task.priority.value.lower() if task.priority else None,
         "overdue": is_overdue(task.due_date, task.status),
         "description": task.description,
+        "commentCount": len(comments),
+        "subtaskCount": len(getattr(task, "subtasks", None) or []),
         "comments": [
             {
                 "id": c.id,
                 "author": c.user.full_name,
                 "body": c.body,
                 "at": comment_relative_time(c.created_at),
+                "createdAt": c.created_at.isoformat() if c.created_at else None,
             }
             for c in comments
         ],
+    }
+
+
+def map_subtask_summary(task: Task, current_user_id: str) -> dict:
+    if task.list_status:
+        status_label = task.list_status.name
+        status_color = task.list_status.color
+        status_key = task.list_status.legacy_key or task.status.value
+    else:
+        status_label = STATUS_LABELS.get(task.status, task.status.value.lower())
+        status_color = task.status_color
+        status_key = task.status.value
+    return {
+        "id": task.id,
+        "name": task.name,
+        "status": status_label,
+        "statusKey": status_key,
+        "statusColor": status_color,
     }
 
 

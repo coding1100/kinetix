@@ -24,6 +24,7 @@ from app.db.models.home import (
     Space,
     Task,
     TaskAssignee,
+    TaskAttachment,
     TaskComment,
     TaskFollower,
     TaskList,
@@ -43,6 +44,7 @@ from app.schemas.home import (
     CreateFavoriteBody,
     CreatePostBody,
     CreateReminderBody,
+    CreateSubtaskBody,
     CreateTaskBody,
     RecordRecentBody,
     ReorderLineupBody,
@@ -63,6 +65,7 @@ from app.services.home_helpers import (
     map_list_entry,
     map_space_row,
     map_task,
+    map_subtask_summary,
     relative_time,
     start_of_today,
 )
@@ -72,6 +75,7 @@ _TASK_LOAD = (
     selectinload(Task.list_status),
     selectinload(Task.assignees).selectinload(TaskAssignee.user),
     selectinload(Task.comments).selectinload(TaskComment.user),
+    selectinload(Task.subtasks),
 )
 
 _SPACE_LOAD = (
@@ -382,7 +386,7 @@ async def get_space(
 def _task_filters(
     workspace_id: str, user_id: str, filter_name: str | None, search: str | None
 ):
-    base = [Space.workspace_id == workspace_id]
+    base = [Space.workspace_id == workspace_id, Task.parent_task_id.is_(None)]
     if search and search.strip():
         term = f"%{search.strip()}%"
         base.append(Task.name.ilike(term))
@@ -451,7 +455,7 @@ async def list_tasks_for_list(
     tasks = (
         await session.scalars(
             select(Task)
-            .where(Task.list_id == list_id)
+            .where(Task.list_id == list_id, Task.parent_task_id.is_(None))
             .options(*_TASK_LOAD)
             .order_by(Task.updated_at.desc())
         )
@@ -496,6 +500,51 @@ async def create_task(
         task_id=refreshed.id,
         list_id=refreshed.list_id,
         task=mapped,
+    )
+    return mapped
+
+
+async def create_subtask(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    parent_task_id: str,
+    body: CreateSubtaskBody,
+) -> dict:
+    parent = await session.scalar(
+        select(Task)
+        .join(Task.task_list)
+        .join(TaskList.space)
+        .where(Task.id == parent_task_id, Space.workspace_id == workspace_id)
+    )
+    if not parent:
+        raise AppError(404, "NOT_FOUND", "Task not found")
+    if parent.parent_task_id:
+        raise AppError(400, "VALIDATION_ERROR", "Nested subtasks are not supported")
+
+    await ensure_list_statuses(session, parent.list_id)
+    default_status = await default_status_for_list(session, parent.list_id)
+    now = datetime.now(timezone.utc)
+    task = Task(
+        list_id=parent.list_id,
+        parent_task_id=parent_task_id,
+        name=body.name.strip(),
+        updated_at=now,
+        status_id=default_status.id if default_status else None,
+        status_color=default_status.color if default_status else "#87909e",
+    )
+    session.add(task)
+    await session.commit()
+    refreshed = await session.scalar(
+        select(Task).where(Task.id == task.id).options(*_TASK_LOAD)
+    )
+    mapped = map_subtask_summary(refreshed, user_id)
+    await broadcast_task_event(
+        workspace_id=workspace_id,
+        action="created",
+        task_id=refreshed.id,
+        list_id=refreshed.list_id,
+        task=map_task(refreshed, user_id),
     )
     return mapped
 
@@ -545,6 +594,30 @@ async def get_task(
     payload["isFollowing"] = await is_task_followed_by(
         session, task_id, user_id
     )
+    subtasks = (
+        await session.scalars(
+            select(Task)
+            .where(Task.parent_task_id == task_id)
+            .options(*_TASK_LOAD)
+            .order_by(Task.created_at.asc())
+        )
+    ).all()
+    payload["subtasks"] = [map_subtask_summary(st, user_id) for st in subtasks]
+
+    from app.services.task_attachment_service import map_task_attachment
+
+    attachments = (
+        await session.scalars(
+            select(TaskAttachment)
+            .where(
+                TaskAttachment.task_id == task_id,
+                TaskAttachment.workspace_id == workspace_id,
+                TaskAttachment.status == "ready",
+            )
+            .order_by(TaskAttachment.created_at.asc())
+        )
+    ).all()
+    payload["attachments"] = [map_task_attachment(a) for a in attachments]
     return payload
 
 

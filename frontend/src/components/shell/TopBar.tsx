@@ -6,9 +6,12 @@ import {
   CalendarIcon,
   CircleHelpIcon,
   SparklesIcon,
+  SquareCheckBigIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProfileMenu } from "@/components/shell/ProfileMenu";
+import { useUiStore } from "@/stores/ui-store";
 import { GlobalSearch } from "@/components/search/GlobalSearch";
 import { ChatShortcutsMenu } from "@/components/shell/topbar/ChatShortcutsMenu";
 import { NotificationsMenu } from "@/components/shell/topbar/NotificationsMenu";
@@ -31,6 +34,7 @@ import { cn } from "@/lib/utils";
 export function TopBar() {
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const openSheet = useTopBarStore((s) => s.openSheet);
+  const openModal = useUiStore((s) => s.openModal);
   const activeWorkspace = useAuthStore(selectActiveWorkspace);
   const workspaceLabel = activeWorkspace?.name ?? "Workspace";
   const workspaceBadge = activeWorkspace
@@ -73,31 +77,69 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Calendar"
-          onClick={() => openSheet("calendar")}
-        >
-          <CalendarIcon className="size-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Create task"
+                onClick={() => openModal("create-task")}
+              >
+                <SquareCheckBigIcon className="size-4" strokeWidth={2} />
+              </Button>
+            }
+          />
+          <TooltipContent side="bottom">Create task</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Calendar"
+                onClick={() => openSheet("calendar")}
+              >
+                <CalendarIcon className="size-4" />
+              </Button>
+            }
+          />
+          <TooltipContent side="bottom">Calendar</TooltipContent>
+        </Tooltip>
         <ChatShortcutsMenu />
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Help"
-          onClick={() => openSheet("help")}
-        >
-          <CircleHelpIcon className="size-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="AI"
-          onClick={() => openSheet("ai")}
-        >
-          <SparklesIcon className="size-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Help"
+                onClick={() => openSheet("help")}
+              >
+                <CircleHelpIcon className="size-4" />
+              </Button>
+            }
+          />
+          <TooltipContent side="bottom">Help</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="AI"
+                onClick={() => openSheet("ai")}
+              >
+                <SparklesIcon className="size-4" />
+              </Button>
+            }
+          />
+          <TooltipContent side="bottom">AI</TooltipContent>
+        </Tooltip>
+        
         <NotificationsMenu />
         <Separator orientation="vertical" className="mx-1 h-5" />
         <ProfileMenu />

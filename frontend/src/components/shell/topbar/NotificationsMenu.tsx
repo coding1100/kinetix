@@ -104,7 +104,12 @@ export function NotificationsMenu() {
     <DropdownMenu open={open} onOpenChange={handleOpen}>
       <DropdownMenuTrigger
         render={
-          <Button variant="ghost" size="icon-sm" aria-label="Notifications">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Notifications"
+            title="Notifications"
+          >
             <span className="relative">
               <BellIcon className="size-4" />
               {unreadCount > 0 ? (

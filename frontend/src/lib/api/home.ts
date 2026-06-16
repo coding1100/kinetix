@@ -308,7 +308,9 @@ export function recordTaskRecent(
     name: task.name,
     itemType: "task",
     space: task.space,
-    href: `/home/tasks/${task.id}`,
+    href: task.listId
+      ? `/spaces/l/${task.listId}?task=${task.id}`
+      : `/home/tasks/${task.id}`,
   });
 }
 

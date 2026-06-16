@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import type { InboxItemDto } from "@/lib/api/home";
 import { resolveInboxHref } from "@/lib/notifications/inbox-item-utils";
-import { cn, formatNotificationDate } from "@/lib/utils";
+import { cn, formatShortDateTimeUtc } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
 type InboxItemType = InboxItemDto["type"];
@@ -24,6 +24,7 @@ type Props = {
   onOpen: (item: InboxItemDto) => void;
   onClear: (event: React.MouseEvent, item: InboxItemDto) => void;
   compact?: boolean;
+  variant?: "card" | "flat";
 };
 
 function itemIcon(type: InboxItemType) {
@@ -78,31 +79,39 @@ export function InboxItemCard({
   onOpen,
   onClear,
   compact = false,
+  variant = "card",
 }: Props) {
   const Icon = itemIcon(item.type);
   const href = resolveInboxHref(item);
+  const flat = variant === "flat";
 
   return (
     <article
       className={cn(
-        "group relative w-full overflow-hidden rounded-xl border transition-all duration-200",
-        "border-primary/15 bg-gradient-to-r from-primary/[0.04] via-card to-card",
-        "hover:border-primary/25 hover:shadow-sm",
-        item.unread
-          ? ""
-          : ""
+        "group relative w-full overflow-hidden transition-colors",
+        flat
+          ? "hover:bg-muted/40"
+          : cn(
+              "rounded-xl border duration-200",
+              "border-primary/15 bg-gradient-to-r from-primary/[0.04] via-card to-card",
+              "hover:border-primary/25 hover:shadow-sm"
+            )
       )}
     >
       <div
         className={cn(
           "flex w-full items-center gap-3 sm:gap-4",
-          compact ? "px-3 py-2.5" : "px-4 py-3.5 sm:px-5 sm:py-4"
+          flat
+            ? "px-4 py-3"
+            : compact
+              ? "px-3 py-2.5"
+              : "px-4 py-3.5 sm:px-5 sm:py-4"
         )}
       >
         <div
           className={cn(
-            "grid shrink-0 place-items-center rounded-xl",
-            compact ? "size-8" : "size-10",
+            "grid shrink-0 place-items-center rounded-lg",
+            flat || compact ? "size-8" : "size-10",
             itemIconTone(item.type)
           )}
         >
@@ -159,43 +168,64 @@ export function InboxItemCard({
                 : "hidden px-2.5 py-1 text-[11px] sm:inline-flex"
             )}
           >
-            {formatNotificationDate(item.createdAt)}
+            {formatShortDateTimeUtc(item.createdAt)}
           </time>
 
           <div className="flex items-center gap-1.5">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className={cn(
-                "gap-1 rounded-lg px-2.5 font-medium",
-                compact ? "h-7 text-[10px]" : "h-8 text-xs",
-                item.unread
-                  ? "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  : "text-muted-foreground/40"
-              )}
-              onClick={(e) => void onClear(e, item)}
-              disabled={!item.unread}
-            >
-              <Check className={compact ? "size-3" : "size-3.5"} />
-              Mark as read
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className={cn(
-                "gap-1 rounded-lg border-border/80 bg-background font-medium shadow-sm hover:bg-primary hover:text-primary-foreground",
-                compact ? "h-7 px-2 text-[10px]" : "h-8 px-2.5 text-xs"
-              )}
-              onClick={(e) => {
-                e.stopPropagation();
-                void onOpen({ ...item, href });
-              }}
-            >
-              <ArrowUpRight className={compact ? "size-3" : "size-3.5"} />
-              Open
-            </Button>
+            {!flat ? (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "gap-1 rounded-lg px-2.5 font-medium",
+                    compact ? "h-7 text-[10px]" : "h-8 text-xs",
+                    item.unread
+                      ? "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      : "text-muted-foreground/40"
+                  )}
+                  onClick={(e) => void onClear(e, item)}
+                  disabled={!item.unread}
+                >
+                  <Check className={compact ? "size-3" : "size-3.5"} />
+                  Mark as read
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    "gap-1 rounded-lg border-border/80 bg-background font-medium shadow-sm hover:bg-primary hover:text-primary-foreground",
+                    compact ? "h-7 px-2 text-[10px]" : "h-8 px-2.5 text-xs"
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void onOpen({ ...item, href });
+                  }}
+                >
+                  <ArrowUpRight className={compact ? "size-3" : "size-3.5"} />
+                  Open
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className={cn(
+                  "shrink-0",
+                  item.unread
+                    ? "text-muted-foreground hover:text-foreground"
+                    : "text-muted-foreground/30"
+                )}
+                onClick={(e) => void onClear(e, item)}
+                disabled={!item.unread}
+                aria-label="Mark as read"
+              >
+                <Check className="size-4" />
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -205,7 +235,7 @@ export function InboxItemCard({
           dateTime={item.createdAt}
           className="border-t border-border/50 px-5 py-1.5 text-[10px] text-muted-foreground sm:hidden"
         >
-          {formatNotificationDate(item.createdAt)}
+          {formatShortDateTimeUtc(item.createdAt)}
         </time>
       ) : null}
     </article>

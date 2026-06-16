@@ -19,7 +19,7 @@ export const HOME_SIDEBAR_VISIBLE_IDS = [
 
 const DEFAULT_ITEMS: SidebarItem[] = [
   { id: "inbox", label: "Inbox", href: "/home/inbox", pinned: true },
-  { id: "replies", label: "Replies", href: "/home/replies", pinned: true },
+  { id: "replies", label: "Replies", href: "/home/inbox?tab=replies", pinned: true },
   { id: "channels", label: "All Channels", href: "/home/channels", pinned: true },
   { id: "all-tasks", label: "All Tasks", href: "/home/all-tasks", pinned: true },
   { id: "my-tasks", label: "My Tasks", href: "/home/my-tasks", pinned: true },

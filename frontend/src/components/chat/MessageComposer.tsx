@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -213,17 +214,24 @@ export function MessageComposer({
     onClick?: () => void,
     disabled?: boolean
   ) => (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-sm"
-      className="size-7 text-muted-foreground hover:text-foreground"
-      aria-label={label}
-      disabled={disabled}
-      onClick={onClick ?? (() => toast(`${label} — coming soon`))}
-    >
-      <Icon className="size-4" strokeWidth={1.5} />
-    </Button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="size-7 text-muted-foreground hover:text-foreground"
+            aria-label={label}
+            disabled={disabled}
+            onClick={onClick ?? (() => toast(`${label} — coming soon`))}
+          >
+            <Icon className="size-4" strokeWidth={1.5} />
+          </Button>
+        }
+      />
+      <TooltipContent side="top">{label}</TooltipContent>
+    </Tooltip>
   );
 
   const handleCreateDoc = async (title: string, content: string) => {

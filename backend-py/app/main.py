@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError, OperationalError, TimeoutError as SATimeoutError
+from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError, TimeoutError as SATimeoutError
 
 from app.api.v1.router import api_router
 from app.config import get_settings
@@ -166,6 +166,20 @@ async def db_operational_handler(_request: Request, exc: OperationalError):
             "error": {
                 "code": "DATABASE_UNAVAILABLE",
                 "message": "Database is temporarily unavailable. Please retry.",
+            }
+        },
+    )
+
+
+@fastapi_app.exception_handler(IntegrityError)
+async def integrity_error_handler(_request: Request, exc: IntegrityError):
+    print(exc)
+    return JSONResponse(
+        status_code=409,
+        content={
+            "error": {
+                "code": "CONFLICT",
+                "message": "Could not complete delete due to related records.",
             }
         },
     )

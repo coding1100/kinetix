@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, File, Query, UploadFile, status
 
 from app.deps.auth import CurrentUserDep, DbSession
 from app.deps.workspace import WorkspaceMemberDep
@@ -7,7 +7,9 @@ from app.schemas.home import (
     CreateFavoriteBody,
     CreatePostBody,
     CreateReminderBody,
+    CreateSubtaskBody,
     CreateTaskBody,
+    PresignTaskAttachmentBody,
     RecordRecentBody,
     ReorderLineupBody,
     UpdateInboxItemBody,
@@ -23,7 +25,7 @@ from app.schemas.spaces import (
     UpdateListBody,
     UpdateSpaceBody,
 )
-from app.services import home_service, spaces_service
+from app.services import home_service, spaces_service, task_attachment_service
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["home"])
 
@@ -526,6 +528,68 @@ async def post_task_comment(
 ):
     return await spaces_service.add_task_comment(
         session, workspace_id, user.id, task_id, body
+    )
+
+
+@router.post(
+    "/tasks/{task_id}/subtasks",
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_task_subtask(
+    body: CreateSubtaskBody,
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.create_subtask(
+        session, workspace_id, user.id, task_id, body
+    )
+
+
+@router.post(
+    "/tasks/{task_id}/attachments/presign",
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_task_attachment_presign(
+    body: PresignTaskAttachmentBody,
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await task_attachment_service.presign_upload(
+        session,
+        workspace_id,
+        user.id,
+        task_id,
+        file_name=body.file_name,
+        mime_type=body.mime_type,
+        size_bytes=body.size_bytes,
+    )
+
+
+@router.post("/tasks/{task_id}/attachments/{attachment_id}/upload")
+async def post_task_attachment_upload(
+    workspace_id: str,
+    task_id: str,
+    attachment_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+    file: UploadFile = File(...),
+):
+    _ = task_id
+    data = await file.read()
+    return await task_attachment_service.upload_file_content(
+        session,
+        workspace_id,
+        user.id,
+        attachment_id,
+        data,
+        file.content_type,
     )
 
 

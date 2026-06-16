@@ -259,6 +259,55 @@ export function unfollowTask(
   );
 }
 
+export function createSubtask(
+  token: string,
+  workspaceId: string,
+  parentTaskId: string,
+  name: string
+) {
+  return apiFetch<import("@/lib/types/task").TaskSubtask>(
+    wsPath(workspaceId, `/tasks/${parentTaskId}/subtasks`),
+    { method: "POST", token, body: JSON.stringify({ name }) }
+  );
+}
+
+export function presignTaskAttachment(
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  body: { fileName: string; mimeType: string; sizeBytes: number }
+) {
+  return apiFetch<{
+    attachmentId: string;
+    uploadUrl: string;
+    storageKey: string;
+    expiresIn: number;
+  }>(wsPath(workspaceId, `/tasks/${taskId}/attachments/presign`), {
+    method: "POST",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
+export function uploadTaskAttachmentContent(
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  attachmentId: string,
+  file: Blob,
+  fileName: string
+) {
+  const form = new FormData();
+  form.append("file", file, fileName);
+  return apiFetch<{ ok: boolean; attachmentId: string; status: string }>(
+    wsPath(
+      workspaceId,
+      `/tasks/${taskId}/attachments/${attachmentId}/upload`
+    ),
+    { method: "POST", token, body: form }
+  );
+}
+
 export function firstListIdFromSpaces(spaces: SpaceDto[]): string | null {
   for (const space of spaces) {
     for (const folder of space.folders ?? []) {

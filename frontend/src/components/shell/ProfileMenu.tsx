@@ -56,6 +56,7 @@ import {
   type PresenceStatus,
 } from "@/stores/profile-store";
 import { useTopBarStore } from "@/stores/topbar-store";
+import { useUiStore } from "@/stores/ui-store";
 import { cn } from "@/lib/utils";
 import {
   avatarColorClassForKey,
@@ -147,6 +148,7 @@ export function ProfileMenu() {
   const clearSession = useAuthStore((s) => s.clearSession);
   const showLoading = useLoadingStore((s) => s.showLoading);
   const openSheet = useTopBarStore((s) => s.openSheet);
+  const openModal = useUiStore((s) => s.openModal);
   const setDesktopNotifications = useSettingsStore(
     (s) => s.setDesktopNotifications
   );
@@ -209,7 +211,7 @@ export function ProfileMenu() {
       label: "Create task",
       icon: <ListPlusIcon className="size-4" />,
       pinnable: true,
-      action: () => router.push("/spaces"),
+      action: () => openModal("create-task"),
     },
     {
       id: "my-work",

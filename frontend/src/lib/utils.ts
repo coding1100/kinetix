@@ -24,6 +24,19 @@ export function formatNotificationDate(value: string | Date): string {
   });
 }
 
+export function formatShortDateTimeUtc(value: string | Date): string {
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "UTC",
+  });
+}
+
 // Stable date formatting for chat day separators.
 // Uses a fixed dd/mm/yyyy format so SSR and client render identically.
 export function formatChatDate(date: Date): string {

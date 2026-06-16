@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 type Modal =
   | "customize-home"
+  | "create-task"
   | "new-channel"
   | "new-dm"
   | "schedule-message"

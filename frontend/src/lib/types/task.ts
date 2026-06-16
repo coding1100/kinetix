@@ -3,6 +3,25 @@ export interface TaskComment {
   author: string;
   body: string;
   at: string;
+  createdAt?: string | null;
+}
+
+export interface TaskSubtask {
+  id: string;
+  name: string;
+  status: string;
+  statusKey?: string;
+  statusColor: string;
+}
+
+export interface TaskAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  status: string;
+  downloadUrl?: string | null;
+  createdAt?: string | null;
 }
 
 export interface ListStatus {
@@ -31,7 +50,11 @@ export interface Task {
   priority?: "urgent" | "high" | "normal" | "low";
   overdue?: boolean;
   description?: string;
+  commentCount?: number;
+  subtaskCount?: number;
   comments?: TaskComment[];
+  subtasks?: TaskSubtask[];
+  attachments?: TaskAttachment[];
   inLineup?: boolean;
   isFollowing?: boolean;
 }

@@ -56,6 +56,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { matchesQuery } from "@/lib/search/match-query";
 import { useSidebarUnread } from "@/lib/chat/sidebar-display-unread";
 import { useShellStore } from "@/stores/shell-store";
@@ -232,27 +233,41 @@ export function ChatSidebar() {
       <div className="flex items-center justify-between px-3 py-3">
         <span className="text-sm font-semibold">Chat</span>
         <div className="flex gap-0.5">
-          <Button
-            variant={listSearchOpen ? "secondary" : "ghost"}
-            size="icon-sm"
-            aria-label="Search channels and DMs"
-            aria-pressed={listSearchOpen}
-            onClick={() => {
-              setListSearchOpen((open) => {
-                const next = !open;
-                if (!next) setListQuery("");
-                return next;
-              });
-            }}
-          >
-            <SearchIcon className="size-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant={listSearchOpen ? "secondary" : "ghost"}
+                  size="icon-sm"
+                  aria-label="Search channels and DMs"
+                  aria-pressed={listSearchOpen}
+                  onClick={() => {
+                    setListSearchOpen((open) => {
+                      const next = !open;
+                      if (!next) setListQuery("");
+                      return next;
+                    });
+                  }}
+                >
+                  <SearchIcon className="size-4" />
+                </Button>
+              }
+            />
+            <TooltipContent side="bottom">Search</TooltipContent>
+          </Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
-                <Button variant="ghost" size="icon-sm">
-                  <PlusIcon className="size-4" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button variant="ghost" size="icon-sm" aria-label="Create chat">
+                        <PlusIcon className="size-4" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent side="bottom">Create</TooltipContent>
+                </Tooltip>
               }
             />
             <DropdownMenuContent align="end">
@@ -264,14 +279,21 @@ export function ChatSidebar() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => setSecondaryPanelOpen(false)}
-            title="Collapse sidebar"
-          >
-            <PanelLeftCloseIcon className="size-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Collapse sidebar"
+                  onClick={() => setSecondaryPanelOpen(false)}
+                >
+                  <PanelLeftCloseIcon className="size-4" />
+                </Button>
+              }
+            />
+            <TooltipContent side="bottom">Collapse sidebar</TooltipContent>
+          </Tooltip>
         </div>
       </div>
       {listSearchOpen ? (
@@ -318,22 +340,36 @@ export function ChatSidebar() {
       </ScrollArea>
       <Separator />
       <div className="hidden">
-        <Button
-          variant={layout === "organized" ? "secondary" : "ghost"}
-          size="icon-sm"
-          onClick={() => setLayout("organized")}
-          title="Organized"
-        >
-          <LayoutListIcon className="size-4" />
-        </Button>
-        <Button
-          variant={layout === "recents" ? "secondary" : "ghost"}
-          size="icon-sm"
-          onClick={() => setLayout("recents")}
-          title="Recents"
-        >
-          <ListIcon className="size-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant={layout === "organized" ? "secondary" : "ghost"}
+                size="icon-sm"
+                onClick={() => setLayout("organized")}
+                aria-label="Organized"
+              >
+                <LayoutListIcon className="size-4" />
+              </Button>
+            }
+          />
+          <TooltipContent side="top">Organized</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant={layout === "recents" ? "secondary" : "ghost"}
+                size="icon-sm"
+                onClick={() => setLayout("recents")}
+                aria-label="Recents"
+              >
+                <ListIcon className="size-4" />
+              </Button>
+            }
+          />
+          <TooltipContent side="top">Recents</TooltipContent>
+        </Tooltip>
       </div>
     </aside>
   );

@@ -9,6 +9,7 @@ import {
   PlusIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,9 +36,16 @@ export function ChatShortcutsMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button variant="ghost" size="icon-sm" aria-label="Chat shortcuts">
-            <MessageSquareIcon className="size-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button variant="ghost" size="icon-sm" aria-label="Chat shortcuts">
+                  <MessageSquareIcon className="size-4" />
+                </Button>
+              }
+            />
+            <TooltipContent side="bottom">Chat shortcuts</TooltipContent>
+          </Tooltip>
         }
       />
       <DropdownMenuContent align="end" className="w-52">
