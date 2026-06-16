@@ -4,6 +4,7 @@ const basePath = process.env.NEXT_PUBLIC_BASE_PATH?.trim() ?? "";
 
 const nextConfig: NextConfig = {
   ...(basePath ? { basePath } : {}),
+  output: "standalone",
 };
 
 export default nextConfig;
