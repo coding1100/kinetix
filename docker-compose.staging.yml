@@ -31,7 +31,7 @@ services:
       API_PUBLIC_URL: ${STAGING_PUBLIC_URL:-http://3.140.5.67/staging}
       FRONTEND_URL: ${STAGING_FRONTEND_ORIGIN:-http://3.140.5.67}
     ports:
-      - "127.0.0.1:4050:4000"
+      - "4050:4000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,7 +60,7 @@ services:
       NEXT_PUBLIC_APP_URL: ${STAGING_PUBLIC_URL:-http://3.140.5.67/staging}
       NEXT_PUBLIC_SOCKET_URL: ${STAGING_PUBLIC_URL:-http://3.140.5.67/staging}
     ports:
-      - "127.0.0.1:3050:3000"
+      - "3050:3000"
     depends_on:
       api:
         condition: service_healthy
