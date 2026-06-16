@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file:
+      - docker-compose.env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-riseup}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-riseup}
+      POSTGRES_DB: ${POSTGRES_DB:-riseup}
+    volumes:
+      - riseup_pg_data_staging:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-riseup} -d ${POSTGRES_DB:-riseup}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  api:
+    build: ./backend-py
+    image: kinetix-staging-api
+    restart: unless-stopped
+    env_file:
+      - ./backend-py/.env
+      - docker-compose.env
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-riseup}:${POSTGRES_PASSWORD:-riseup}@postgres:5432/${POSTGRES_DB:-riseup}
+      API_PUBLIC_URL: ${STAGING_PUBLIC_URL:-http://3.140.5.67/staging}
+      FRONTEND_URL: ${STAGING_FRONTEND_ORIGIN:-http://3.140.5.67}
+    ports:
+      - "127.0.0.1:4050:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_BASE_PATH: /staging
+        NEXT_PUBLIC_API_URL: /staging/api/v1
+        NEXT_PUBLIC_APP_URL: ${STAGING_PUBLIC_URL:-http://3.140.5.67/staging}
+        NEXT_PUBLIC_SOCKET_URL: ${STAGING_PUBLIC_URL:-http://3.140.5.67/staging}
+    image: kinetix-staging-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      NEXT_PUBLIC_BASE_PATH: /staging
+      NEXT_PUBLIC_API_URL: /staging/api/v1
+      NEXT_PUBLIC_APP_URL: ${STAGING_PUBLIC_URL:-http://3.140.5.67/staging}
+      NEXT_PUBLIC_SOCKET_URL: ${STAGING_PUBLIC_URL:-http://3.140.5.67/staging}
+    ports:
+      - "127.0.0.1:3050:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/staging/auth/login', (r) => process.exit(r.statusCode >= 200 && r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1));"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+
+volumes:
+  riseup_pg_data_staging:
