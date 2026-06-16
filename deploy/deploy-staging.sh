@@ -26,6 +26,22 @@ NGINX_CONTAINER="${NGINX_CONTAINER:-kinetix-nginx-1}"
 
 log() { echo "==> $*"; }
 
+replace_in_file() {
+  local src="$1"
+  local dst="$2"
+  local needle="$3"
+  local replacement="$4"
+  python3 - "$src" "$dst" "$needle" "$replacement" <<'PY'
+import pathlib
+import sys
+
+src, dst, needle, replacement = sys.argv[1:5]
+content = pathlib.Path(src).read_text(encoding="utf-8")
+content = content.replace(needle, replacement)
+pathlib.Path(dst).write_text(content, encoding="utf-8")
+PY
+}
+
 wait_for_http() {
   local url="$1"
   local label="$2"
@@ -77,7 +93,7 @@ reload_docker_nginx() {
     return 0
   fi
   mkdir -p "$(dirname "$nginx_dst")"
-  sed "s|__DOCKER_HOST_IP__|${host_ip}|g" "$nginx_src" >"$nginx_dst"
+  replace_in_file "$nginx_src" "$nginx_dst" "__DOCKER_HOST_IP__" "$host_ip"
   log "Docker nginx upstream host IP: $host_ip"
   docker exec "$NGINX_CONTAINER" sh -c "wget -q -O- --timeout=3 http://${host_ip}:3050${STAGING_BASE_PATH}/auth/login >/dev/null" \
     && log "nginx container can reach staging web" \
@@ -90,11 +106,30 @@ patch_env_var() {
   local file="$1"
   local key="$2"
   local value="$3"
-  if grep -q "^${key}=" "$file" 2>/dev/null; then
-    sed -i "s|^${key}=.*|${key}=\"${value}\"|" "$file"
-  else
-    echo "${key}=\"${value}\"" >>"$file"
-  fi
+  python3 - "$file" "$key" "$value" <<'PY'
+import pathlib
+import re
+import sys
+
+file_path = pathlib.Path(sys.argv[1])
+key = sys.argv[2]
+value = sys.argv[3]
+line = f'{key}="{value}"'
+
+if file_path.exists():
+    content = file_path.read_text(encoding="utf-8")
+    pattern = re.compile(rf"^{re.escape(key)}=.*$", flags=re.MULTILINE)
+    if pattern.search(content):
+        content = pattern.sub(line, content, count=1)
+    else:
+        if content and not content.endswith("\n"):
+            content += "\n"
+        content += line + "\n"
+else:
+    content = line + "\n"
+
+file_path.write_text(content, encoding="utf-8")
+PY
 }
 
 log "Staging deploy — branch=$DEPLOY_BRANCH app=$APP_ROOT public=$STAGING_PUBLIC_URL"
