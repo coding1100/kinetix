@@ -541,9 +541,11 @@ export function TaskDrawer({
 
   function applyTaskResponse(updated: Task) {
     setTask((prev) => ({
+      ...(prev ?? {}),
       ...updated,
-      subtasks: prev?.subtasks ?? updated.subtasks ?? [],
-      attachments: prev?.attachments ?? updated.attachments ?? [],
+      comments: updated.comments ?? prev?.comments ?? [],
+      subtasks: updated.subtasks ?? prev?.subtasks ?? [],
+      attachments: updated.attachments ?? prev?.attachments ?? [],
     }));
     setTimeEstimateMinutes(updated.timeEstimateMinutes ?? null);
     setTimeTrackedSeconds(updated.timeTrackedSeconds ?? 0);

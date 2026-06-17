@@ -69,6 +69,19 @@ async def get_task_time_state(
     }
 
 
+async def _task_payload(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    task_id: str,
+) -> dict:
+    # Reuse canonical task mapping to keep TaskDrawer state stable
+    # (comments/activity, subtasks, attachments, and time state).
+    from app.services.home_service import get_task
+
+    return await get_task(session, workspace_id, user_id, task_id)
+
+
 async def start_task_timer(
     session: AsyncSession,
     workspace_id: str,
@@ -91,7 +104,7 @@ async def start_task_timer(
                 "Stop the active timer on another task first",
             )
         await session.commit()
-        return await get_task_time_state(session, workspace_id, user_id, task_id)
+        return await _task_payload(session, workspace_id, user_id, task_id)
 
     entry = TaskTimeEntry(
         task_id=task_id,
@@ -101,7 +114,7 @@ async def start_task_timer(
     )
     session.add(entry)
     await session.commit()
-    return await get_task_time_state(session, workspace_id, user_id, task_id)
+    return await _task_payload(session, workspace_id, user_id, task_id)
 
 
 async def stop_task_timer(
@@ -122,4 +135,4 @@ async def stop_task_timer(
         raise AppError(400, "VALIDATION_ERROR", "No active timer for this task")
     running.ended_at = datetime.now(timezone.utc)
     await session.commit()
-    return await get_task_time_state(session, workspace_id, user_id, task_id)
+    return await _task_payload(session, workspace_id, user_id, task_id)
