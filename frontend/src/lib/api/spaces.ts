@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import type { ListStatus, Task } from "@/lib/types/task";
+import type { ListStatus, Task, TaskActivityEvent } from "@/lib/types/task";
 import type { SpaceDto } from "./home";
 
 function wsPath(workspaceId: string, path: string) {
@@ -297,6 +297,49 @@ export function stopTaskTimer(
     method: "POST",
     token,
   });
+}
+
+export function fetchTaskActivity(
+  token: string,
+  workspaceId: string,
+  taskId: string
+) {
+  return apiFetch<{ data: TaskActivityEvent[] }>(
+    wsPath(workspaceId, `/tasks/${taskId}/activity`),
+    { token }
+  );
+}
+
+export interface TaskNotificationDto {
+  id: string;
+  title: string;
+  preview: string;
+  createdAt: string;
+  unread: boolean;
+  href?: string;
+  activityKind?: string | null;
+}
+
+export function fetchTaskNotifications(
+  token: string,
+  workspaceId: string,
+  taskId: string
+) {
+  return apiFetch<{ data: TaskNotificationDto[]; unreadCount: number }>(
+    wsPath(workspaceId, `/tasks/${taskId}/notifications`),
+    { token }
+  );
+}
+
+export function markTaskNotificationsRead(
+  token: string,
+  workspaceId: string,
+  taskId: string
+) {
+  return apiFetch<{ updated: number }>(
+    wsPath(workspaceId, `/tasks/${taskId}/notifications/read-all`),
+    { method: "POST", token }
+  );
 }
 
 export function followTask(

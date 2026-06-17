@@ -68,6 +68,8 @@ export interface Task {
   priority?: "urgent" | "high" | "normal" | "low";
   overdue?: boolean;
   description?: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
   commentCount?: number;
   subtaskCount?: number;
   comments?: TaskComment[];
@@ -75,4 +77,15 @@ export interface Task {
   attachments?: TaskAttachment[];
   inLineup?: boolean;
   isFollowing?: boolean;
+}
+
+export interface TaskActivityEvent {
+  id: string;
+  type: string;
+  title: string;
+  preview: string;
+  source: string;
+  createdAt: string;
+  href?: string;
+  activityKind?: string | null;
 }

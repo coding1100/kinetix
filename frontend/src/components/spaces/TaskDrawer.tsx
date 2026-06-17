@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ListStatus, Task, TaskAttachment, TaskSubtask } from "@/lib/types/task";
+import type {
+  ListStatus,
+  Task,
+  TaskActivityEvent,
+  TaskAttachment,
+  TaskSubtask,
+} from "@/lib/types/task";
 import {
   Dialog,
   DialogContent,
@@ -16,11 +22,13 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
 import { CreateTaskListPicker } from "@/components/spaces/CreateTaskListPicker";
 import {
   fetchTask,
@@ -38,7 +46,10 @@ import {
   deleteTaskComment,
   fetchListMeta,
   fetchSpacesTree,
+  fetchTaskActivity,
+  fetchTaskNotifications,
   followTask,
+  markTaskNotificationsRead,
   patchTask,
   startTaskTimer,
   stopTaskTimer,
@@ -68,7 +79,7 @@ import {
   avatarInitialFromName,
 } from "@/lib/user-display";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { appPath, cn } from "@/lib/utils";
 import {
   ArchiveIcon,
   BellIcon,
@@ -80,6 +91,7 @@ import {
   FlagIcon,
   FlaskConicalIcon,
   ListChecksIcon,
+  LinkIcon,
   Loader2Icon,
   MoreHorizontalIcon,
   PaperclipIcon,
@@ -90,6 +102,7 @@ import {
   Share2Icon,
   SquareCheckBigIcon,
   StarIcon,
+  Trash2Icon,
   Undo2Icon,
   UserPlusIcon,
   WandSparklesIcon,
@@ -164,6 +177,36 @@ function PropertyLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
+function formatCreatedLabel(iso: string | null | undefined) {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function formatActivityTime(iso: string | null | undefined) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function extractActorFromPreview(preview: string | undefined) {
+  if (!preview) return null;
+  const normalized = preview.trim();
+  const separators = [":", " created ", " updated ", " deleted ", " started ", " stopped "];
+  for (const sep of separators) {
+    const idx = normalized.indexOf(sep);
+    if (idx > 0) return normalized.slice(0, idx).trim();
+  }
+  return null;
+}
+
 export function TaskDrawer({
   taskId,
   open,
@@ -198,6 +241,11 @@ export function TaskDrawer({
   const [favoriteBusy, setFavoriteBusy] = useState(false);
   const [following, setFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareSearch, setShareSearch] = useState("");
+  const [publicShareEnabled, setPublicShareEnabled] = useState(false);
+  const [sharePerms, setSharePerms] = useState<Record<string, "view" | "comment" | "edit">>({});
   const [listStatuses, setListStatuses] = useState<ListStatus[]>([]);
 
   const [name, setName] = useState("");
@@ -224,11 +272,37 @@ export function TaskDrawer({
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [subtasks, setSubtasks] = useState<TaskSubtask[]>([]);
   const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
+  const [activityEvents, setActivityEvents] = useState<TaskActivityEvent[]>([]);
+  const [activitySearchOpen, setActivitySearchOpen] = useState(false);
+  const [activitySearch, setActivitySearch] = useState("");
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationsBusy, setNotificationsBusy] = useState(false);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
+  const [notifications, setNotifications] = useState<
+    {
+      id: string;
+      title: string;
+      preview: string;
+      createdAt: string;
+      href?: string;
+      unread: boolean;
+    }[]
+  >([]);
   const [subtaskInput, setSubtaskInput] = useState("");
   const [subtaskOpen, setSubtaskOpen] = useState(false);
   const [subtaskBusy, setSubtaskBusy] = useState(false);
   const [attachBusy, setAttachBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const refreshActivity = useCallback(async () => {
+    if (!taskId || !ready || !accessToken || !workspaceId) return;
+    try {
+      const activity = await fetchTaskActivity(accessToken, workspaceId, taskId);
+      setActivityEvents(activity.data ?? []);
+    } catch {
+      // Keep existing activity list if refresh fails.
+    }
+  }, [taskId, ready, accessToken, workspaceId]);
 
   const persistPatch = useCallback(
     async (patch: Parameters<typeof patchTask>[3]) => {
@@ -252,6 +326,7 @@ export function TaskDrawer({
         if (updated.dueDateIso !== undefined) {
           setDueInput(updated.dueDateIso ? updated.dueDateIso.slice(0, 10) : "");
         }
+        void refreshActivity();
         onSaved();
         return updated;
       } catch (e) {
@@ -261,7 +336,7 @@ export function TaskDrawer({
         setSaving(false);
       }
     },
-    [taskId, ready, accessToken, workspaceId, onSaved]
+    [taskId, ready, accessToken, workspaceId, onSaved, refreshActivity]
   );
 
   const reloadTask = useCallback(async () => {
@@ -279,11 +354,12 @@ export function TaskDrawer({
       setDueInput(refreshed.dueDateIso ? refreshed.dueDateIso.slice(0, 10) : "");
       setName(refreshed.name);
       setDescription(refreshed.description ?? "");
+      await refreshActivity();
       onSaved();
     } catch {
       toast.error("Could not refresh task");
     }
-  }, [taskId, ready, accessToken, workspaceId, onSaved]);
+  }, [taskId, ready, accessToken, workspaceId, onSaved, refreshActivity]);
 
   useEffect(() => {
     if (!open || !taskId || !ready || !accessToken || !workspaceId) {
@@ -297,12 +373,14 @@ export function TaskDrawer({
       fetchWorkspaceMembers(accessToken, workspaceId),
       fetchSpacesTree(accessToken, workspaceId),
       fetchRecents(accessToken, workspaceId),
+      fetchTaskActivity(accessToken, workspaceId, taskId),
     ])
-      .then(async ([t, m, spacesRes, recentsRes]) => {
+      .then(async ([t, m, spacesRes, recentsRes, activityRes]) => {
         if (cancelled) return;
         setMembers(m.data);
         setSpaces(spacesRes.data);
         setRecents(recentsRes.data);
+        setActivityEvents(activityRes.data ?? []);
         setTask(t);
         setName(t.name);
         setStatusKey(
@@ -350,6 +428,42 @@ export function TaskDrawer({
     };
   }, [open, taskId, ready, accessToken, workspaceId]);
 
+  const filteredActivityEvents = useMemo(() => {
+    const query = activitySearch.trim().toLowerCase();
+    if (!query) return activityEvents;
+    return activityEvents.filter((event) =>
+      [event.title, event.preview, event.source, event.activityKind]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query))
+    );
+  }, [activityEvents, activitySearch]);
+
+  const filteredComments = useMemo(() => {
+    const query = activitySearch.trim().toLowerCase();
+    const comments = task?.comments ?? [];
+    if (!query) return comments;
+    return comments.filter((comment) =>
+      [comment.author, comment.body]
+        .filter(Boolean)
+        .some((value) => value.toLowerCase().includes(query))
+    );
+  }, [task?.comments, activitySearch]);
+
+  const createdByLabel = useMemo(() => {
+    const creationEvent = activityEvents.find(
+      (event) => event.activityKind === "task_created"
+    );
+    const fromEvent = extractActorFromPreview(creationEvent?.preview);
+    if (fromEvent) return fromEvent;
+    const firstCommentAuthor = [...(task?.comments ?? [])]
+      .sort((a, b) => {
+        const aTs = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTs = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return aTs - bTs;
+      })[0]?.author;
+    return firstCommentAuthor ?? "Unknown";
+  }, [activityEvents, task?.comments]);
+
   const statusColumns = useMemo(
     () =>
       listStatuses.length > 0
@@ -364,6 +478,10 @@ export function TaskDrawer({
 
   const selectedStatus = statusColumns?.find((s) => s.id === statusId);
   const StatusIcon = selectedStatus ? statusIcon(selectedStatus) : CircleIcon;
+  const isArchived = Boolean(
+    selectedStatus?.statusGroup === "CLOSED" ||
+      task?.status?.trim().toLowerCase() === "closed"
+  );
 
   const filteredMembers = useMemo(() => {
     const q = assigneeSearch.trim().toLowerCase();
@@ -375,6 +493,15 @@ export function TaskDrawer({
     () => members.filter((m) => assigneeIds.includes(m.id)),
     [members, assigneeIds]
   );
+  const shareCandidates = useMemo(() => {
+    const q = shareSearch.trim().toLowerCase();
+    if (!q) return members;
+    return members.filter(
+      (m) =>
+        m.fullName.toLowerCase().includes(q) ||
+        m.email.toLowerCase().includes(q)
+    );
+  }, [members, shareSearch]);
 
   async function handleDescriptionSave() {
     if (description === (task?.description ?? "")) return;
@@ -405,6 +532,7 @@ export function TaskDrawer({
       setSubtasks((rows) => [...rows, created]);
       setSubtaskInput("");
       setSubtaskOpen(false);
+      await refreshActivity();
       onSaved();
       toast.success("Subtask added");
     } catch (e) {
@@ -469,6 +597,7 @@ export function TaskDrawer({
         await uploadTaskAttachment(accessToken, workspaceId, taskId, file);
       }
       await reloadTask();
+      await refreshActivity();
       toast.success(
         fileList.length === 1 ? "File attached" : `${fileList.length} files attached`
       );
@@ -565,6 +694,7 @@ export function TaskDrawer({
     try {
       const updated = await startTaskTimer(accessToken, workspaceId, taskId);
       applyTaskResponse(updated);
+      await refreshActivity();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not start timer");
     } finally {
@@ -578,6 +708,7 @@ export function TaskDrawer({
     try {
       const updated = await stopTaskTimer(accessToken, workspaceId, taskId);
       applyTaskResponse(updated);
+      await refreshActivity();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not stop timer");
     } finally {
@@ -746,10 +877,118 @@ export function TaskDrawer({
         setFollowing(true);
         toast.success("Following task");
       }
+      await refreshActivity();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not update follow");
     } finally {
       setFollowBusy(false);
+    }
+  }
+
+  async function handleToggleArchive() {
+    if (!taskId || !ready || !accessToken || !workspaceId) return;
+    setArchiveBusy(true);
+    try {
+      if (statusColumns?.length) {
+        const archiveStatus = statusColumns.find(
+          (s) =>
+            s.statusGroup === "CLOSED" ||
+            (s.legacyKey ?? "").toUpperCase() === "CLOSED"
+        );
+        const activeStatus =
+          statusColumns.find(
+            (s) =>
+              (s.legacyKey ?? "").toUpperCase() === "TODO" ||
+              (s.legacyKey ?? "").toUpperCase() === "OPEN"
+          ) ??
+          statusColumns.find((s) => s.statusGroup === "ACTIVE") ??
+          statusColumns.find((s) => s.statusGroup !== "CLOSED");
+        const target = isArchived ? activeStatus : archiveStatus;
+        if (!target) {
+          toast.error(
+            isArchived
+              ? "No active status configured for this list"
+              : "No archived/closed status configured for this list"
+          );
+          return;
+        }
+        setStatusId(target.id);
+        if (target.legacyKey) setStatusKey(target.legacyKey as TaskStatusKey);
+        await persistPatch({ statusId: target.id });
+      } else {
+        await persistPatch({ status: isArchived ? "TODO" : "DONE" });
+      }
+      toast.success(isArchived ? "Task unarchived" : "Task archived");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not update archive state");
+    } finally {
+      setArchiveBusy(false);
+    }
+  }
+
+  const loadNotifications = useCallback(
+    async (options?: { markRead?: boolean }) => {
+      if (!taskId || !ready || !accessToken || !workspaceId) return;
+      setNotificationsBusy(true);
+      try {
+        const res = await fetchTaskNotifications(accessToken, workspaceId, taskId);
+        const items = (res.data ?? []).map((item) => ({
+          id: item.id,
+          title: item.title,
+          preview: item.preview,
+          createdAt: item.createdAt,
+          href: item.href,
+          unread: item.unread,
+        }));
+        if (options?.markRead) {
+          await markTaskNotificationsRead(accessToken, workspaceId, taskId);
+          setNotifications(items.map((item) => ({ ...item, unread: false })));
+          setNotificationUnreadCount(0);
+        } else {
+          setNotifications(items);
+          setNotificationUnreadCount(res.unreadCount ?? 0);
+        }
+      } catch {
+        setNotifications([]);
+        if (!options?.markRead) {
+          setNotificationUnreadCount(0);
+        }
+      } finally {
+        setNotificationsBusy(false);
+      }
+    },
+    [taskId, ready, accessToken, workspaceId]
+  );
+
+  useEffect(() => {
+    void loadNotifications();
+  }, [loadNotifications]);
+
+  useEffect(() => {
+    if (!notificationsOpen) return;
+    void loadNotifications({ markRead: true });
+  }, [notificationsOpen, loadNotifications]);
+
+  function buildTaskShareUrl(isPublic = false) {
+    if (!taskId || typeof window === "undefined") return "";
+    const origin = window.location.origin;
+    if (isPublic) {
+      return `${origin}${appPath(`/home/tasks/${taskId}?share=public`)}`;
+    }
+    if (task?.listId) {
+      return `${origin}${appPath(`/spaces/l/${task.listId}?task=${taskId}`)}`;
+    }
+    return `${origin}${appPath(`/home/tasks/${taskId}`)}`;
+  }
+
+  async function handleCopyTaskLink(isPublic = false) {
+    const href = buildTaskShareUrl(isPublic);
+    if (!href) return;
+    try {
+      await navigator.clipboard.writeText(href);
+      toast.success(isPublic ? "Public link copied" : "Task link copied");
+    } catch {
+      toast.error("Could not copy link");
     }
   }
 
@@ -782,11 +1021,21 @@ export function TaskDrawer({
             ) : (
               <div className="flex-1" />
             )}
-            <div className="ml-auto flex items-center gap-0.5">
+            <div className="ml-auto flex items-center gap-1 mr-3">
+              {task?.createdAt ? (
+                <span className="mr-2 text-xs text-muted-foreground">
+                  Created {formatCreatedLabel(task.createdAt)}
+                </span>
+              ) : null}
               <Tooltip>
                 <TooltipTrigger
                   render={
-                    <Button variant="ghost" size="icon-sm" aria-label="Share">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Share"
+                      onClick={() => setShareOpen(true)}
+                    >
                       <Share2Icon className="size-4" />
                     </Button>
                   }
@@ -829,7 +1078,24 @@ export function TaskDrawer({
                     </Tooltip>
                   }
                 />
-                <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel>Task actions</DropdownMenuLabel>
+                  <DropdownMenuItem
+                    disabled={archiveBusy || !task}
+                    onClick={() => void handleToggleArchive()}
+                  >
+                    <ArchiveIcon className="mr-2 size-4" />
+                    {isArchived ? "Unarchive task" : "Archive task"}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => setDeleteOpen(true)}
+                    disabled={!task}
+                  >
+                    <Trash2Icon className="mr-2 size-4" />
+                    Delete task
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     disabled={lineupBusy || !task}
                     onClick={() => void handleToggleLineup()}
@@ -841,14 +1107,6 @@ export function TaskDrawer({
                     onClick={() => void handleToggleFollow()}
                   >
                     {following ? "Unfollow" : "Follow"}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onClick={() => setDeleteOpen(true)}
-                    disabled={!task}
-                  >
-                    Delete task
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -862,7 +1120,7 @@ export function TaskDrawer({
           ) : task ? (
             <div className="flex min-h-0 flex-1">
               <div className="min-w-0 flex-[1.4] overflow-y-auto px-8 py-6">
-                <div className="mb-5 flex items-start gap-3">
+                <div className="mb-5 flex items-start gap-1">
                   <CreateTaskListPicker
                     spaces={spaces}
                     recents={recents}
@@ -881,7 +1139,7 @@ export function TaskDrawer({
                   onChange={(e) => setName(e.target.value)}
                   onBlur={() => void handleNameBlur()}
                   rows={2}
-                  className="mb-6 w-full resize-none border-0 bg-transparent text-3xl leading-snug font-semibold outline-none placeholder:text-muted-foreground"
+                  className="mb-2 w-full resize-none border-0 bg-transparent text-3xl leading-snug font-semibold outline-none placeholder:text-muted-foreground"
                   placeholder="Task name"
                 />
 
@@ -1272,35 +1530,106 @@ export function TaskDrawer({
               <div className="flex w-[min(42%,520px)] min-w-[400px] shrink-0 flex-col border-l border-border bg-muted/20">
                 <div className="flex items-center justify-between border-b border-border px-6 py-3.5">
                   <span className="text-sm font-semibold">Activity</span>
-                  <div className="flex items-center gap-0.5">
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <Button variant="ghost" size="icon-sm" aria-label="Search activity">
-                            <SearchIcon className="size-4" />
-                          </Button>
-                        }
+                  <div className="flex items-center gap-2">
+                    {activitySearchOpen ? (
+                      <Input
+                        autoFocus
+                        value={activitySearch}
+                        onChange={(event) => setActivitySearch(event.target.value)}
+                        placeholder="Search activity..."
+                        className="h-8 w-[220px]"
                       />
-                      <TooltipContent side="bottom">Search activity</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Search activity"
+                      onClick={() => {
+                        setActivitySearchOpen((prev) => {
+                          const next = !prev;
+                          if (!next) setActivitySearch("");
+                          return next;
+                        });
+                      }}
+                    >
+                      <SearchIcon className="size-4" />
+                    </Button>
+                    <Popover
+                      open={notificationsOpen}
+                      onOpenChange={setNotificationsOpen}
+                    >
+                      <PopoverTrigger
                         render={
-                          <Button variant="ghost" size="icon-sm" aria-label="Notifications">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label="Task notifications"
+                            className="relative"
+                          >
                             <BellIcon className="size-4" />
+                            {notificationUnreadCount > 0 ? (
+                              <span className="absolute -top-1 -right-1 inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] text-primary-foreground">
+                                {notificationUnreadCount > 9
+                                  ? "9+"
+                                  : notificationUnreadCount}
+                              </span>
+                            ) : null}
                           </Button>
                         }
                       />
-                      <TooltipContent side="bottom">Notifications</TooltipContent>
-                    </Tooltip>
+                      <PopoverContent
+                        align="end"
+                        className="max-h-[380px] w-[340px] overflow-y-auto p-0"
+                      >
+                        <div className="border-b border-border px-3 py-2">
+                          <p className="text-sm font-semibold">Notifications</p>
+                        </div>
+                        {notificationsBusy ? (
+                          <p className="px-3 py-4 text-xs text-muted-foreground">
+                            Loading...
+                          </p>
+                        ) : notifications.length === 0 ? (
+                          <p className="px-3 py-4 text-xs text-muted-foreground">
+                            No notifications
+                          </p>
+                        ) : (
+                          <div className="p-2">
+                            {notifications.map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                className="mb-1 w-full rounded-md px-2 py-2 text-left hover:bg-muted/60"
+                                onClick={() => {
+                                  if (item.href) {
+                                    window.location.href = appPath(item.href);
+                                  }
+                                }}
+                              >
+                                <p className="text-xs font-medium">{item.title}</p>
+                                <p className="text-[11px] text-muted-foreground">
+                                  {item.preview}
+                                </p>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-                  <p className="mb-4 text-xs text-muted-foreground">
-                    You opened this task
+                  <p className="mb-1 text-xs text-muted-foreground">
+                    Created by {createdByLabel}
                   </p>
-                  {(task.comments ?? []).map((c) => (
+                  {task?.createdAt ? (
+                    <p className="mb-4 text-xs text-muted-foreground">
+                      Task created {formatActivityTime(task.createdAt)}
+                    </p>
+                  ) : null}
+                  {filteredComments.map((c) => (
                     <TaskActivityComment
                       key={c.id}
                       comment={c}
@@ -1318,6 +1647,9 @@ export function TaskDrawer({
                       onDeleteComment={handleDeleteComment}
                     />
                   ))}
+                  {!filteredComments.length ? (
+                    <p className="text-xs text-muted-foreground">No matching activity.</p>
+                  ) : null}
                 </div>
 
                 <div className="border-t border-border p-4">
@@ -1345,6 +1677,166 @@ export function TaskDrawer({
         loading={deleting}
         onConfirm={() => void handleDelete()}
       />
+
+      <Dialog open={shareOpen} onOpenChange={setShareOpen}>
+        <DialogContent className="min-w-[600px] gap-0 p-0" showCloseButton>
+          <div className="border-b border-border px-5 py-4">
+            <DialogTitle>Share task</DialogTitle>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Invite people and manage who can access this task.
+            </p>
+          </div>
+
+          <div className="space-y-4 px-5 py-4">
+            <div className="rounded-lg border border-border p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-sm font-medium">Private link</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  onClick={() => void handleCopyTaskLink(false)}
+                >
+                  <LinkIcon className="mr-1 size-3.5" />
+                  Copy
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                People in your workspace with access can open this link.
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-border p-3">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">Public sharing</p>
+                  <p className="text-xs text-muted-foreground">
+                    Anyone with the link can view this task.
+                  </p>
+                </div>
+                <Switch
+                  checked={publicShareEnabled}
+                  onCheckedChange={(checked) =>
+                    setPublicShareEnabled(Boolean(checked))
+                  }
+                />
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  disabled={!publicShareEnabled}
+                  onClick={() => void handleCopyTaskLink(true)}
+                >
+                  <LinkIcon className="mr-1 size-3.5" />
+                  Copy public link
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2 rounded-lg border border-border p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Invite people</p>
+                <p className="text-xs text-muted-foreground">
+                  {assigneeIds.length} shared
+                </p>
+              </div>
+              <Input
+                value={shareSearch}
+                onChange={(e) => setShareSearch(e.target.value)}
+                placeholder="Invite members by name or email..."
+                className="h-9"
+              />
+              <div className="max-h-56 space-y-1 overflow-y-auto">
+                {shareCandidates.map((member) => {
+                  const shared = assigneeIds.includes(member.id);
+                  const perm = sharePerms[member.id] ?? "edit";
+                  return (
+                    <div
+                      key={member.id}
+                      className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/60"
+                    >
+                      <Avatar className="size-7">
+                        <AvatarFallback
+                          className={cn(
+                            "text-[10px] text-white",
+                            avatarColorClassForKey(member.id)
+                          )}
+                        >
+                          {avatarInitialFromName(member.fullName)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">
+                          {member.fullName}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {member.email}
+                        </p>
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs capitalize"
+                            >
+                              {perm}
+                              <ChevronDownIcon className="ml-1 size-3.5" />
+                            </Button>
+                          }
+                        />
+                        <DropdownMenuContent align="end">
+                          {(["view", "comment", "edit"] as const).map((level) => (
+                            <DropdownMenuItem
+                              key={level}
+                              onClick={() =>
+                                setSharePerms((prev) => ({
+                                  ...prev,
+                                  [member.id]: level,
+                                }))
+                              }
+                              className="capitalize"
+                            >
+                              {level}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={shared ? "secondary" : "outline"}
+                        className="h-7 px-2 text-xs"
+                        onClick={() => void toggleAssignee(member.id)}
+                      >
+                        {shared ? "Shared" : "Share"}
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+          <div className="border-t border-border px-5 py-3">
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShareOpen(false)}
+              >
+                Done
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -88,7 +88,7 @@ async def start_task_timer(
     user_id: str,
     task_id: str,
 ) -> dict:
-    await _assert_task_in_workspace(session, workspace_id, task_id)
+    task = await _assert_task_in_workspace(session, workspace_id, task_id)
 
     existing = await session.scalar(
         select(TaskTimeEntry).where(
@@ -114,6 +114,29 @@ async def start_task_timer(
     )
     session.add(entry)
     await session.commit()
+    from app.services.notification_service import (
+        create_task_activity_notifications,
+        emit_home_notifications,
+        task_notification_recipients,
+    )
+
+    recipients = await task_notification_recipients(
+        session, task_id=task_id, exclude_user_id=user_id
+    )
+    notifications = await create_task_activity_notifications(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=user_id,
+        task_name=task.name,
+        task_id=task_id,
+        recipient_ids=recipients,
+        title=f"Timer started: {task.name}",
+        preview_template="{actor} started tracking time on {task}",
+        activity_kind="task_timer_started",
+    )
+    if notifications:
+        await session.commit()
+        await emit_home_notifications(session, workspace_id, notifications)
     return await _task_payload(session, workspace_id, user_id, task_id)
 
 
@@ -123,7 +146,7 @@ async def stop_task_timer(
     user_id: str,
     task_id: str,
 ) -> dict:
-    await _assert_task_in_workspace(session, workspace_id, task_id)
+    task = await _assert_task_in_workspace(session, workspace_id, task_id)
     running = await session.scalar(
         select(TaskTimeEntry).where(
             TaskTimeEntry.task_id == task_id,
@@ -135,4 +158,27 @@ async def stop_task_timer(
         raise AppError(400, "VALIDATION_ERROR", "No active timer for this task")
     running.ended_at = datetime.now(timezone.utc)
     await session.commit()
+    from app.services.notification_service import (
+        create_task_activity_notifications,
+        emit_home_notifications,
+        task_notification_recipients,
+    )
+
+    recipients = await task_notification_recipients(
+        session, task_id=task_id, exclude_user_id=user_id
+    )
+    notifications = await create_task_activity_notifications(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=user_id,
+        task_name=task.name,
+        task_id=task_id,
+        recipient_ids=recipients,
+        title=f"Timer stopped: {task.name}",
+        preview_template="{actor} stopped tracking time on {task}",
+        activity_kind="task_timer_stopped",
+    )
+    if notifications:
+        await session.commit()
+        await emit_home_notifications(session, workspace_id, notifications)
     return await _task_payload(session, workspace_id, user_id, task_id)

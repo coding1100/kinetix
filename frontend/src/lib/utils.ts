@@ -5,6 +5,17 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function getAppBasePath(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_BASE_PATH?.trim();
+  return fromEnv ? fromEnv.replace(/\/$/, "") : "";
+}
+
+export function appPath(path: string): string {
+  const base = getAppBasePath();
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  return `${base}${normalized}`;
+}
+
 export function formatRelativeTime(date: Date): string {
   const diff = Date.now() - date.getTime();
   const mins = Math.floor(diff / 60000);

@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.db.models.chat import ChatChannel, ChatChannelMember, ChatMessage
 from app.db.models.enums import InboxBucket, InboxItemType, InboxTimeGroup, MemberStatus
-from app.db.models.home import InboxItem
+from app.db.models.home import InboxItem, TaskAssignee, TaskFollower
 from app.db.models.user import User
 from app.db.models.workspace import WorkspaceMember
 from app.services.home_helpers import map_inbox_type
@@ -828,6 +828,80 @@ async def create_task_assignment_notifications(
         )
         session.add(item)
         created.append((assignee_id, item))
+
+    if created:
+        await session.flush()
+    return created
+
+
+async def task_notification_recipients(
+    session: AsyncSession,
+    *,
+    task_id: str,
+    exclude_user_id: str | None = None,
+) -> list[str]:
+    assignees = (
+        await session.scalars(
+            select(TaskAssignee.user_id).where(TaskAssignee.task_id == task_id)
+        )
+    ).all()
+    followers = (
+        await session.scalars(
+            select(TaskFollower.user_id).where(TaskFollower.task_id == task_id)
+        )
+    ).all()
+    recipient_ids: list[str] = []
+    seen: set[str] = set()
+    for user_id in [*assignees, *followers]:
+        if not user_id:
+            continue
+        if exclude_user_id and user_id == exclude_user_id:
+            continue
+        if user_id in seen:
+            continue
+        seen.add(user_id)
+        recipient_ids.append(user_id)
+    return recipient_ids
+
+
+async def create_task_activity_notifications(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    actor_user_id: str,
+    task_name: str,
+    task_id: str,
+    recipient_ids: list[str],
+    title: str,
+    preview_template: str,
+    activity_kind: str,
+    item_type: InboxItemType = InboxItemType.ASSIGNMENT,
+) -> list[tuple[str, InboxItem]]:
+    if not recipient_ids:
+        return []
+
+    users = await _load_users(session, [actor_user_id, *recipient_ids])
+    actor = users.get(actor_user_id)
+    actor_name = actor.full_name if actor else "Someone"
+    href = f"/home/tasks/{task_id}"
+    created: list[tuple[str, InboxItem]] = []
+
+    for recipient_id in dict.fromkeys(recipient_ids):
+        item = InboxItem(
+            workspace_id=workspace_id,
+            user_id=recipient_id,
+            type=item_type,
+            title=title,
+            preview=preview_template.format(actor=actor_name, task=task_name),
+            source=task_name,
+            unread=True,
+            bucket=InboxBucket.ALL,
+            time_group=InboxTimeGroup.TODAY,
+            href=href,
+            activity_kind=activity_kind,
+        )
+        session.add(item)
+        created.append((recipient_id, item))
 
     if created:
         await session.flush()

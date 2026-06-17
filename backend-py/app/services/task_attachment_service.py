@@ -109,6 +109,31 @@ async def upload_file_content(
     row.size_bytes = len(data)
     row.status = "ready"
     await session.commit()
+    if row.comment_id is None:
+        from app.services.notification_service import (
+            create_task_activity_notifications,
+            emit_home_notifications,
+            task_notification_recipients,
+        )
+
+        task = await _assert_task_in_workspace(session, workspace_id, row.task_id)
+        recipients = await task_notification_recipients(
+            session, task_id=row.task_id, exclude_user_id=user_id
+        )
+        notifications = await create_task_activity_notifications(
+            session,
+            workspace_id=workspace_id,
+            actor_user_id=user_id,
+            task_name=task.name,
+            task_id=row.task_id,
+            recipient_ids=recipients,
+            title=f"Attachment added: {task.name}",
+            preview_template="{actor} uploaded an attachment to {task}",
+            activity_kind="task_attachment_uploaded",
+        )
+        if notifications:
+            await session.commit()
+            await emit_home_notifications(session, workspace_id, notifications)
     return {"ok": True, "attachmentId": attachment_id, "status": "ready"}
 
 

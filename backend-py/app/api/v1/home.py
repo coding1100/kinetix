@@ -668,9 +668,10 @@ async def delete_task(
     workspace_id: str,
     task_id: str,
     session: DbSession,
+    user: CurrentUserDep,
     _member: WorkspaceMemberDep,
 ):
-    return await home_service.delete_task(session, workspace_id, task_id)
+    return await home_service.delete_task(session, workspace_id, user.id, task_id)
 
 
 @router.post("/tasks/{task_id}/follow", status_code=status.HTTP_201_CREATED)
@@ -695,6 +696,46 @@ async def unfollow_task(
     _member: WorkspaceMemberDep,
 ):
     return await home_service.unfollow_task(
+        session, workspace_id, user.id, task_id
+    )
+
+
+@router.get("/tasks/{task_id}/activity")
+async def get_task_activity(
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.list_task_activity(
+        session, workspace_id, user.id, task_id
+    )
+
+
+@router.get("/tasks/{task_id}/notifications")
+async def get_task_notifications(
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+    limit: int = Query(50, ge=1, le=100),
+):
+    return await home_service.list_task_notifications(
+        session, workspace_id, user.id, task_id, limit
+    )
+
+
+@router.post("/tasks/{task_id}/notifications/read-all")
+async def post_task_notifications_read_all(
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.mark_task_notifications_read(
         session, workspace_id, user.id, task_id
     )
 

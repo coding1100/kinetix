@@ -9,6 +9,7 @@ from app.db.models.enums import (
     InboxBucket,
     InboxItemType,
     MemberStatus,
+    StatusGroup,
     TaskPriority,
     TaskStatus,
 )
@@ -53,8 +54,10 @@ from app.schemas.home import (
 )
 from app.services import workspace_service
 from app.services.notification_service import (
+    create_task_activity_notifications,
     create_task_assignment_notifications,
     emit_home_notifications,
+    task_notification_recipients,
 )
 from app.socket.emit import broadcast_task_event
 from app.services.home_helpers import (
@@ -495,6 +498,20 @@ async def create_task(
         select(Task).where(Task.id == task.id).options(*_TASK_LOAD)
     )
     mapped = map_task(refreshed, user_id)
+    created_notifications = await create_task_activity_notifications(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=user_id,
+        task_name=task.name,
+        task_id=task.id,
+        recipient_ids=[user_id],
+        title=f"Task created: {task.name}",
+        preview_template="{actor} created {task}",
+        activity_kind="task_created",
+    )
+    if created_notifications:
+        await session.commit()
+        await emit_home_notifications(session, workspace_id, created_notifications)
     await broadcast_task_event(
         workspace_id=workspace_id,
         action="created",
@@ -540,6 +557,24 @@ async def create_subtask(
         select(Task).where(Task.id == task.id).options(*_TASK_LOAD)
     )
     mapped = map_subtask_summary(refreshed, user_id)
+    parent_recipients = await task_notification_recipients(
+        session, task_id=parent_task_id, exclude_user_id=user_id
+    )
+    subtask_notifications = await create_task_activity_notifications(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=user_id,
+        task_name=parent.name,
+        task_id=parent_task_id,
+        recipient_ids=parent_recipients,
+        title=f"Subtask added in {parent.name}",
+        preview_template="{actor} added a subtask to {task}",
+        activity_kind="task_subtask_created",
+        item_type=InboxItemType.COMMENT,
+    )
+    if subtask_notifications:
+        await session.commit()
+        await emit_home_notifications(session, workspace_id, subtask_notifications)
     await broadcast_task_event(
         workspace_id=workspace_id,
         action="created",
@@ -642,6 +677,14 @@ async def update_task(
     )
     if not task:
         raise AppError(404, "NOT_FOUND", "Task not found")
+    original_name = task.name
+    original_description = task.description
+    original_status_id = task.status_id
+    original_status = task.status
+    original_priority = task.priority
+    original_due_date = task.due_date
+    original_start_date = task.start_date
+    original_list_id = task.list_id
 
     old_assignee_ids: set[str] = set()
     if body.assignee_ids is not None:
@@ -738,6 +781,7 @@ async def update_task(
     task.updated_at = datetime.now(timezone.utc)
 
     assignment_notifications: list = []
+    change_labels: list[str] = []
     if body.assignee_ids is not None:
         added = set(body.assignee_ids) - old_assignee_ids
         if added:
@@ -749,6 +793,20 @@ async def update_task(
                 task_id=task_id,
                 assignee_ids=list(added),
             )
+    if task.status_id != original_status_id or task.status != original_status:
+        change_labels.append("status")
+    if task.name != original_name:
+        change_labels.append("name")
+    if task.description != original_description:
+        change_labels.append("description")
+    if task.priority != original_priority:
+        change_labels.append("priority")
+    if task.due_date != original_due_date:
+        change_labels.append("due date")
+    if task.start_date != original_start_date:
+        change_labels.append("start date")
+    if task.list_id != original_list_id:
+        change_labels.append("list")
 
     await session.commit()
     refreshed = await session.scalar(
@@ -761,6 +819,52 @@ async def update_task(
         await emit_home_notifications(
             session, workspace_id, assignment_notifications
         )
+    if change_labels:
+        recipients = await task_notification_recipients(
+            session, task_id=task_id, exclude_user_id=user_id
+        )
+        archived_status = (
+            (
+                refreshed.list_status is not None
+                and refreshed.list_status.status_group == StatusGroup.CLOSED
+            )
+            or str(mapped.get("status", "")).strip().lower()
+            in {"closed", "archived"}
+        )
+        task_update_notifications = await create_task_activity_notifications(
+            session,
+            workspace_id=workspace_id,
+            actor_user_id=user_id,
+            task_name=task.name,
+            task_id=task_id,
+            recipient_ids=recipients,
+            title=(
+                f"Task archived: {task.name}"
+                if archived_status and "status" in change_labels
+                else f"Task updated: {task.name}"
+            ),
+            preview_template=(
+                "{actor} archived {task}"
+                if archived_status and "status" in change_labels
+                else (
+                    "{actor} updated {task} ("
+                    + ", ".join(change_labels[:3])
+                    + (", …" if len(change_labels) > 3 else "")
+                    + ")"
+                )
+            ),
+            activity_kind=(
+                "task_archived"
+                if archived_status and "status" in change_labels
+                else "task_updated"
+            ),
+            item_type=InboxItemType.COMMENT,
+        )
+        if task_update_notifications:
+            await session.commit()
+            await emit_home_notifications(
+                session, workspace_id, task_update_notifications
+            )
     await broadcast_task_event(
         workspace_id=workspace_id,
         action="updated",
@@ -779,6 +883,7 @@ async def update_task(
 async def delete_task(
     session: AsyncSession,
     workspace_id: str,
+    user_id: str,
     task_id: str,
 ) -> dict:
     task = await session.scalar(
@@ -789,10 +894,28 @@ async def delete_task(
     )
     if not task:
         raise AppError(404, "NOT_FOUND", "Task not found")
+    task_name = task.name
     task_id = task.id
     list_id = task.list_id
+    recipients = await task_notification_recipients(
+        session, task_id=task_id, exclude_user_id=user_id
+    )
+    delete_notifications = await create_task_activity_notifications(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=user_id,
+        task_name=task_name,
+        task_id=task_id,
+        recipient_ids=recipients,
+        title=f"Task deleted: {task_name}",
+        preview_template="{actor} deleted {task}",
+        activity_kind="task_deleted",
+        item_type=InboxItemType.COMMENT,
+    )
     await session.delete(task)
     await session.commit()
+    if delete_notifications:
+        await emit_home_notifications(session, workspace_id, delete_notifications)
     await broadcast_task_event(
         workspace_id=workspace_id,
         action="deleted",
@@ -1250,6 +1373,25 @@ async def follow_task(
     if not existing:
         session.add(TaskFollower(task_id=task_id, user_id=user_id))
         await session.commit()
+    task = await _get_workspace_task(session, workspace_id, task_id)
+    recipients = await task_notification_recipients(
+        session, task_id=task_id, exclude_user_id=user_id
+    )
+    follow_notifications = await create_task_activity_notifications(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=user_id,
+        task_name=task.name,
+        task_id=task_id,
+        recipient_ids=recipients,
+        title=f"Following task: {task.name}",
+        preview_template="{actor} is now following {task}",
+        activity_kind="task_followed",
+        item_type=InboxItemType.CHAT,
+    )
+    if follow_notifications:
+        await session.commit()
+        await emit_home_notifications(session, workspace_id, follow_notifications)
     return {"ok": True, "following": True}
 
 
@@ -1273,7 +1415,135 @@ async def unfollow_task(
     if row:
         await session.delete(row)
         await session.commit()
+    task = await _get_workspace_task(session, workspace_id, task_id)
+    recipients = await task_notification_recipients(
+        session, task_id=task_id, exclude_user_id=user_id
+    )
+    unfollow_notifications = await create_task_activity_notifications(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=user_id,
+        task_name=task.name,
+        task_id=task_id,
+        recipient_ids=recipients,
+        title=f"Unfollowed task: {task.name}",
+        preview_template="{actor} stopped following {task}",
+        activity_kind="task_unfollowed",
+        item_type=InboxItemType.CHAT,
+    )
+    if unfollow_notifications:
+        await session.commit()
+        await emit_home_notifications(session, workspace_id, unfollow_notifications)
     return {"ok": True, "following": False}
+
+
+async def list_task_activity(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    task_id: str,
+    limit: int = 50,
+) -> dict:
+    await _get_workspace_task(session, workspace_id, task_id)
+    href = f"/home/tasks/{task_id}"
+    rows = (
+        await session.scalars(
+            select(InboxItem)
+            .where(
+                InboxItem.workspace_id == workspace_id,
+                InboxItem.user_id == user_id,
+                InboxItem.href == href,
+            )
+            .order_by(InboxItem.created_at.desc())
+            .limit(limit)
+        )
+    ).all()
+    return {
+        "data": [
+            {
+                "id": row.id,
+                "type": map_inbox_type(row.type),
+                "title": row.title,
+                "preview": row.preview,
+                "source": row.source,
+                "href": row.href,
+                "createdAt": row.created_at.isoformat(),
+                "activityKind": row.activity_kind,
+            }
+            for row in rows
+            if row.activity_kind
+            not in {"task_comment", "task_comment_reply", "task_mention"}
+        ]
+    }
+
+
+async def list_task_notifications(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    task_id: str,
+    limit: int = 50,
+) -> dict:
+    await _get_workspace_task(session, workspace_id, task_id)
+    href = f"/home/tasks/{task_id}"
+    rows = (
+        await session.scalars(
+            select(InboxItem)
+            .where(
+                InboxItem.workspace_id == workspace_id,
+                InboxItem.user_id == user_id,
+                InboxItem.href == href,
+            )
+            .order_by(InboxItem.created_at.desc())
+            .limit(limit)
+        )
+    ).all()
+    unread_count = await session.scalar(
+        select(func.count())
+        .select_from(InboxItem)
+        .where(
+            InboxItem.workspace_id == workspace_id,
+            InboxItem.user_id == user_id,
+            InboxItem.href == href,
+            InboxItem.unread.is_(True),
+        )
+    )
+    return {
+        "unreadCount": int(unread_count or 0),
+        "data": [
+            {
+                "id": row.id,
+                "type": map_inbox_type(row.type),
+                "title": row.title,
+                "preview": row.preview,
+                "source": row.source,
+                "createdAt": row.created_at.isoformat(),
+                "unread": row.unread,
+                "href": row.href,
+                "activityKind": row.activity_kind,
+            }
+            for row in rows
+        ],
+    }
+
+
+async def mark_task_notifications_read(
+    session: AsyncSession, workspace_id: str, user_id: str, task_id: str
+) -> dict:
+    await _get_workspace_task(session, workspace_id, task_id)
+    href = f"/home/tasks/{task_id}"
+    result = await session.execute(
+        update(InboxItem)
+        .where(
+            InboxItem.workspace_id == workspace_id,
+            InboxItem.user_id == user_id,
+            InboxItem.href == href,
+            InboxItem.unread.is_(True),
+        )
+        .values(unread=False)
+    )
+    await session.commit()
+    return {"updated": int(result.rowcount or 0)}
 
 
 async def list_notifications(

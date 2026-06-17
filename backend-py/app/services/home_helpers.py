@@ -162,6 +162,8 @@ def map_task(task: Task, current_user_id: str) -> dict:
         "priority": task.priority.value.lower() if task.priority else None,
         "overdue": is_overdue(task.due_date, task.status),
         "description": task.description,
+        "createdAt": task.created_at.isoformat() if task.created_at else None,
+        "updatedAt": task.updated_at.isoformat() if task.updated_at else None,
         "commentCount": len(comments),
         "subtaskCount": len(getattr(task, "subtasks", None) or []),
         "comments": _map_task_comments_threaded(comments),
