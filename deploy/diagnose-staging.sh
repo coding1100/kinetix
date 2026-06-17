@@ -1,44 +1,47 @@
 #!/usr/bin/env bash
-# Diagnose staging 502 on EC2. Run: ./deploy/diagnose-staging.sh
+# Diagnose staging on EC2 (Docker-only).
 set -euo pipefail
 
-NGINX_CONTAINER="${NGINX_CONTAINER:-kinetix-nginx-1}"
-WEB_PORT="${WEB_PORT:-3050}"
-API_PORT="${API_PORT:-4050}"
+STAGING_ROOT="${STAGING_ROOT:-/opt/clickup/kinetix-staging}"
 STAGING_BASE_PATH="${STAGING_BASE_PATH:-/staging}"
-
-echo "=== systemd ==="
-systemctl is-active kinetix-staging-api kinetix-staging-web nginx 2>/dev/null || true
+NGINX_CONTAINER="${NGINX_CONTAINER:-kinetix-nginx-1}"
+EDGE_NETWORK="${EDGE_NETWORK:-kinetix_edge}"
 
 echo "=== git (staging app) ==="
-STAGING_ROOT="${STAGING_ROOT:-/opt/clickup/kinetix-staging}"
 if [ -d "$STAGING_ROOT/.git" ]; then
   git -C "$STAGING_ROOT" log -1 --oneline 2>/dev/null || true
 else
   echo "WARN: $STAGING_ROOT not a git repo"
 fi
 
-echo "=== ports (systemd vs docker) ==="
-ss -tlnp | grep -E ":3050|:4050|:80 " || true
-docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Ports}}" 2>/dev/null | grep -E "staging|3050|4050|NAMES" || true
+echo "=== legacy systemd (should be inactive) ==="
+systemctl is-active kinetix-staging-api kinetix-staging-web 2>/dev/null || true
 
-echo "=== direct staging ==="
-curl -s -o /dev/null -w "api_health=%{http_code}\n" "http://127.0.0.1:${API_PORT}/health" || echo "api_health=000"
-curl -s -o /dev/null -w "web_login=%{http_code}\n" "http://127.0.0.1:${WEB_PORT}${STAGING_BASE_PATH}/auth/login" || echo "web_login=000"
+echo "=== staging docker containers ==="
+docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}" \
+  | grep -E "staging|NAMES" || true
 
-echo "=== docker nginx ==="
-docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "nginx|NAMES" || true
+echo "=== edge network ==="
+docker network inspect "$EDGE_NETWORK" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || echo "WARN: $EDGE_NETWORK missing"
+
+echo "=== staging health (inside containers) ==="
+docker exec kinetix-staging-api python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health')" >/dev/null 2>&1 \
+  && echo "staging_api=ok" || echo "staging_api=fail"
+docker exec kinetix-staging-web node -e "require('http').get('http://127.0.0.1:3000/staging/auth/login', (r) => process.exit(r.statusCode >= 200 && r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1));" >/dev/null 2>&1 \
+  && echo "staging_web=ok" || echo "staging_web=fail"
+
+echo "=== nginx routing ==="
+curl -s -o /dev/null -w "nginx_staging=%{http_code}\n" "http://127.0.0.1${STAGING_BASE_PATH}/auth/login" || echo "nginx_staging=000"
+curl -s -o /dev/null -w "prod_login=%{http_code}\n" "http://127.0.0.1/auth/login" || echo "prod_login=000"
 
 if docker ps --format '{{.Names}}' | grep -qx "$NGINX_CONTAINER"; then
-  HOST_IP=$(docker exec "$NGINX_CONTAINER" sh -c "ip route show default | awk '{print \$3}'" 2>/dev/null || echo "172.17.0.1")
-  echo "docker_host_ip=$HOST_IP"
-  docker exec "$NGINX_CONTAINER" sh -c "wget -q -S -O /dev/null --timeout=3 http://${HOST_IP}:${WEB_PORT}${STAGING_BASE_PATH}/auth/login 2>&1 | head -5" || true
-  curl -s -o /dev/null -w "nginx_staging=%{http_code}\n" "http://127.0.0.1${STAGING_BASE_PATH}/auth/login" || echo "nginx_staging=000"
-  echo "=== nginx error log (last 10) ==="
-  docker exec "$NGINX_CONTAINER" sh -c "tail -10 /var/log/nginx/error.log 2>/dev/null" || true
-else
-  echo "WARN: $NGINX_CONTAINER not running"
+  echo "=== nginx can reach staging upstreams ==="
+  docker exec "$NGINX_CONTAINER" wget -q -O- --timeout=3 http://kinetix-staging-api:4000/health >/dev/null 2>&1 \
+    && echo "nginx->staging-api=ok" || echo "nginx->staging-api=fail"
+  docker exec "$NGINX_CONTAINER" wget -q -O- --timeout=3 http://kinetix-staging-web:3000/staging/auth/login >/dev/null 2>&1 \
+    && echo "nginx->staging-web=ok" || echo "nginx->staging-web=fail"
 fi
 
-echo "=== staging web logs ==="
-journalctl -u kinetix-staging-web -n 15 --no-pager 2>/dev/null || true
+echo "=== recent staging logs ==="
+docker logs kinetix-staging-api --tail 10 2>/dev/null || true
+docker logs kinetix-staging-web --tail 10 2>/dev/null || true

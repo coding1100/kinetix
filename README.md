@@ -242,11 +242,11 @@ Pushes to `develop` deploy automatically via `.github/workflows/deploy-staging-e
 |---|------------|---------|
 | Branch | `main` | `develop` |
 | Path | `/opt/clickup/kinetix` | `/opt/clickup/kinetix-staging` |
-| Web / API ports | `3000` / `4000` | `3050` / `4050` (systemd on host) |
+| Web / API ports | `3000` / `4000` (Docker internal) | Docker internal (no host ports) |
 | Public URL | `http://YOUR_EC2_IP` | `http://YOUR_EC2_IP/staging` |
-| systemd | `kinetix-api`, `kinetix-web` | `kinetix-staging-api`, `kinetix-staging-web` |
+| Runtime | Docker (`kinetix-api`, `kinetix-web`, `kinetix-nginx`) | Docker (`kinetix-staging-api`, `kinetix-staging-web`) |
 
-Staging is proxied through **production Docker nginx** on port **80** at `/staging` (no extra AWS port needed).
+Staging is proxied through **production Docker nginx** on port **80** at `/staging`. Staging containers join the shared `kinetix_edge` Docker network — **no systemd**.
 
 ### One-time EC2 staging setup
 
@@ -258,23 +258,17 @@ sudo chown ubuntu:ubuntu /opt/clickup
 git clone -b develop git@github.com:coding1100/kinetix.git /opt/clickup/kinetix-staging
 cd /opt/clickup/kinetix-staging
 
-# Backend — use a separate staging DB when possible
+# Backend
 cp backend-py/.env.example backend-py/.env
 nano backend-py/.env
-# PORT=4050
-# DATABASE_URL=postgresql://riseup:PASSWORD@127.0.0.1:5432/riseup_staging
-# API_PUBLIC_URL=http://YOUR_EC2_IP/staging
-# FRONTEND_URL=http://YOUR_EC2_IP/staging
 
-# Frontend
-nano frontend/.env.local
-# NEXT_PUBLIC_BASE_PATH=/staging
-# NEXT_PUBLIC_API_URL=/staging/api/v1
-# NEXT_PUBLIC_APP_URL=http://YOUR_EC2_IP/staging
-# NEXT_PUBLIC_SOCKET_URL=http://YOUR_EC2_IP/staging
+# Docker env (staging DB credentials)
+cp docker-compose.env.example docker-compose.env
+nano docker-compose.env
+# POSTGRES_DB=riseup_staging
 
 chmod +x deploy/setup-staging-services.sh deploy/deploy-staging.sh deploy/ec2-restore.sh
-./deploy/ec2-restore.sh
+./deploy/setup-staging-services.sh
 ```
 
 Or restore everything (prod Docker + staging) in one step from the staging clone:

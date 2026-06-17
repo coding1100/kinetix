@@ -52,3 +52,11 @@ services:
     depends_on:
       - api
       - web
+    networks:
+      - default
+      - edge
+
+networks:
+  edge:
+    name: kinetix_edge
+    driver: bridge

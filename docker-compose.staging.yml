@@ -1,17 +1,36 @@
+# Staging stack — Docker only (no systemd, no host ports).
+# Public URL: http://HOST/staging via production nginx (kinetix-nginx-1).
+#
+# Deploy:
+#   docker network create kinetix_edge 2>/dev/null || true
+#   docker compose -f docker-compose.staging.yml up -d --build
+
+name: kinetix-staging
+
+networks:
+  internal:
+    driver: bridge
+  edge:
+    external: true
+    name: kinetix_edge
+
 services:
   postgres:
     image: postgres:16-alpine
+    container_name: kinetix-staging-postgres
     restart: unless-stopped
+    networks:
+      - internal
     env_file:
       - docker-compose.env
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-riseup}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-riseup}
-      POSTGRES_DB: ${POSTGRES_DB:-riseup}
+      POSTGRES_DB: ${POSTGRES_DB:-riseup_staging}
     volumes:
       - riseup_pg_data_staging:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-riseup} -d ${POSTGRES_DB:-riseup}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-riseup} -d ${POSTGRES_DB:-riseup_staging}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -20,28 +39,26 @@ services:
   api:
     build: ./backend-py
     image: kinetix-staging-api
+    container_name: kinetix-staging-api
     restart: unless-stopped
+    networks:
+      - internal
+      - edge
     env_file:
       - ./backend-py/.env
       - docker-compose.env
     environment:
       NODE_ENV: production
       PORT: "4000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-riseup}:${POSTGRES_PASSWORD:-riseup}@postgres:5432/${POSTGRES_DB:-riseup}
-      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-riseup}:${POSTGRES_PASSWORD:-riseup}@postgres:5432/${POSTGRES_DB:-riseup}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-riseup}:${POSTGRES_PASSWORD:-riseup}@postgres:5432/${POSTGRES_DB:-riseup_staging}
+      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-riseup}:${POSTGRES_PASSWORD:-riseup}@postgres:5432/${POSTGRES_DB:-riseup_staging}
       API_PUBLIC_URL: ${STAGING_PUBLIC_URL:-http://3.140.5.67/staging}
       FRONTEND_URL: ${STAGING_FRONTEND_ORIGIN:-http://3.140.5.67}
-    ports:
-      - "4050:4000"
+    expose:
+      - "4000"
     depends_on:
       postgres:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health')"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
 
   web:
     build:
@@ -52,7 +69,10 @@ services:
         NEXT_PUBLIC_APP_URL: ${STAGING_PUBLIC_URL:-http://3.140.5.67/staging}
         NEXT_PUBLIC_SOCKET_URL: ${STAGING_PUBLIC_URL:-http://3.140.5.67/staging}
     image: kinetix-staging-web
+    container_name: kinetix-staging-web
     restart: unless-stopped
+    networks:
+      - edge
     environment:
       NODE_ENV: production
       PORT: "3000"
@@ -60,17 +80,11 @@ services:
       NEXT_PUBLIC_API_URL: /staging/api/v1
       NEXT_PUBLIC_APP_URL: ${STAGING_PUBLIC_URL:-http://3.140.5.67/staging}
       NEXT_PUBLIC_SOCKET_URL: ${STAGING_PUBLIC_URL:-http://3.140.5.67/staging}
-    ports:
-      - "3050:3000"
+    expose:
+      - "3000"
     depends_on:
       api:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/staging/auth/login', (r) => process.exit(r.statusCode >= 200 && r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1));"]
-      interval: 15s
-      timeout: 5s
-      retries: 8
-      start_period: 30s
 
 volumes:
   riseup_pg_data_staging:
