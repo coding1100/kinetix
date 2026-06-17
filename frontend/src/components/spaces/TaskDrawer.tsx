@@ -35,15 +35,26 @@ import {
   addTaskComment,
   createSubtask,
   deleteTask,
+  deleteTaskComment,
   fetchListMeta,
   fetchSpacesTree,
   followTask,
   patchTask,
+  startTaskTimer,
+  stopTaskTimer,
   unfollowTask,
+  updateTaskComment,
 } from "@/lib/api/spaces";
 import { uploadTaskAttachment } from "@/lib/tasks/upload-task-attachment";
+import { TaskCommentComposer } from "@/components/tasks/TaskCommentComposer";
+import { TaskActivityComment } from "@/components/tasks/TaskActivityComment";
+import { CommentAttachmentCard } from "@/components/tasks/CommentAttachmentCard";
+import { TaskDatesField } from "@/components/tasks/TaskDatesField";
+import { TaskTimeEstimateField } from "@/components/tasks/TaskTimeEstimateField";
+import { TaskTimeTrackField } from "@/components/tasks/TaskTimeTrackField";
 import { fetchWorkspaceMembers } from "@/lib/api/chat";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
+import { useAuthStore } from "@/stores/auth-store";
 import {
   taskStatusKeyFromLabel,
   type TaskStatusKey,
@@ -61,7 +72,6 @@ import { cn } from "@/lib/utils";
 import {
   ArchiveIcon,
   BellIcon,
-  CalendarIcon,
   CheckCircle2Icon,
   ChevronDownIcon,
   CircleDashedIcon,
@@ -76,7 +86,6 @@ import {
   PlusIcon,
   RocketIcon,
   SearchIcon,
-  SendHorizontalIcon,
   ShieldCheckIcon,
   Share2Icon,
   SquareCheckBigIcon,
@@ -86,7 +95,7 @@ import {
   WandSparklesIcon,
 } from "lucide-react";
 
-type Member = { id: string; fullName: string };
+type Member = { id: string; fullName: string; email: string; avatarUrl?: string | null };
 
 const NO_PRIORITY = "__none__";
 
@@ -147,38 +156,6 @@ function priorityFlagClass(priority: TaskPriority) {
   }
 }
 
-function formatCommentTime(comment: { at: string; createdAt?: string | null }) {
-  if (comment.createdAt) {
-    const date = new Date(comment.createdAt);
-    if (!Number.isNaN(date.getTime())) {
-      const now = new Date();
-      const sameDay =
-        date.getDate() === now.getDate() &&
-        date.getMonth() === now.getMonth() &&
-        date.getFullYear() === now.getFullYear();
-      if (sameDay) {
-        return `Today at ${date.toLocaleTimeString(undefined, {
-          hour: "numeric",
-          minute: "2-digit",
-        })}`;
-      }
-      return date.toLocaleString(undefined, {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      });
-    }
-  }
-  return comment.at || "Just now";
-}
-
-function formatFileSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 function PropertyLabel({ children }: { children: React.ReactNode }) {
   return (
     <span className="pt-1 text-sm font-medium text-muted-foreground">
@@ -203,6 +180,7 @@ export function TaskDrawer({
   onTaskNavigate?: (taskId: string) => void;
 }) {
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
+  const currentUserId = useAuthStore((s) => s.user?.id ?? null);
   const [task, setTask] = useState<Task | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [spaces, setSpaces] = useState<SpaceDto[]>([]);
@@ -213,8 +191,8 @@ export function TaskDrawer({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [commentBody, setCommentBody] = useState("");
   const [commenting, setCommenting] = useState(false);
+  const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
   const [inLineup, setInLineup] = useState(false);
   const [lineupBusy, setLineupBusy] = useState(false);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
@@ -229,6 +207,12 @@ export function TaskDrawer({
     NO_PRIORITY
   );
   const [dueInput, setDueInput] = useState("");
+  const [startInput, setStartInput] = useState("");
+  const [timeEstimateMinutes, setTimeEstimateMinutes] = useState<number | null>(null);
+  const [timeTrackedSeconds, setTimeTrackedSeconds] = useState(0);
+  const [timeTrackingActive, setTimeTrackingActive] = useState(false);
+  const [timeTrackingStartedAt, setTimeTrackingStartedAt] = useState<string | null>(null);
+  const [timerBusy, setTimerBusy] = useState(false);
   const [description, setDescription] = useState("");
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [listId, setListId] = useState("");
@@ -238,7 +222,6 @@ export function TaskDrawer({
   const [assigneeOpen, setAssigneeOpen] = useState(false);
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const [priorityOpen, setPriorityOpen] = useState(false);
-  const [dueOpen, setDueOpen] = useState(false);
   const [subtasks, setSubtasks] = useState<TaskSubtask[]>([]);
   const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
   const [subtaskInput, setSubtaskInput] = useState("");
@@ -259,6 +242,16 @@ export function TaskDrawer({
           patch
         );
         setTask(updated);
+        setTimeEstimateMinutes(updated.timeEstimateMinutes ?? null);
+        setTimeTrackedSeconds(updated.timeTrackedSeconds ?? 0);
+        setTimeTrackingActive(Boolean(updated.timeTracking?.active));
+        setTimeTrackingStartedAt(updated.timeTracking?.startedAt ?? null);
+        if (updated.startDateIso !== undefined) {
+          setStartInput(updated.startDateIso ? updated.startDateIso.slice(0, 10) : "");
+        }
+        if (updated.dueDateIso !== undefined) {
+          setDueInput(updated.dueDateIso ? updated.dueDateIso.slice(0, 10) : "");
+        }
         onSaved();
         return updated;
       } catch (e) {
@@ -278,6 +271,12 @@ export function TaskDrawer({
       setTask(refreshed);
       setSubtasks(refreshed.subtasks ?? []);
       setAttachments(refreshed.attachments ?? []);
+      setTimeEstimateMinutes(refreshed.timeEstimateMinutes ?? null);
+      setTimeTrackedSeconds(refreshed.timeTrackedSeconds ?? 0);
+      setTimeTrackingActive(Boolean(refreshed.timeTracking?.active));
+      setTimeTrackingStartedAt(refreshed.timeTracking?.startedAt ?? null);
+      setStartInput(refreshed.startDateIso ? refreshed.startDateIso.slice(0, 10) : "");
+      setDueInput(refreshed.dueDateIso ? refreshed.dueDateIso.slice(0, 10) : "");
       setName(refreshed.name);
       setDescription(refreshed.description ?? "");
       onSaved();
@@ -316,13 +315,18 @@ export function TaskDrawer({
         setListId(t.listId ?? "");
         setListName(t.list ?? "");
         setDueInput(t.dueDateIso ? t.dueDateIso.slice(0, 10) : "");
-        setCommentBody("");
+        setStartInput(t.startDateIso ? t.startDateIso.slice(0, 10) : "");
+        setTimeEstimateMinutes(t.timeEstimateMinutes ?? null);
+        setTimeTrackedSeconds(t.timeTrackedSeconds ?? 0);
+        setTimeTrackingActive(Boolean(t.timeTracking?.active));
+        setTimeTrackingStartedAt(t.timeTracking?.startedAt ?? null);
         setInLineup(Boolean(t.inLineup));
         setFollowing(Boolean(t.isFollowing));
         setSubtasks(t.subtasks ?? []);
         setAttachments(t.attachments ?? []);
         setSubtaskInput("");
         setSubtaskOpen(false);
+        setReplyingToCommentId(null);
         if (t.listId) {
           try {
             const meta = await fetchListMeta(accessToken, workspaceId, t.listId);
@@ -510,13 +514,111 @@ export function TaskDrawer({
 
   async function handleDueChange(value: string) {
     setDueInput(value);
-    setDueOpen(false);
     if (value) {
       await persistPatch({
         dueDate: new Date(`${value}T12:00:00.000Z`).toISOString(),
       });
     } else if (task?.dueDateIso) {
       await persistPatch({ dueDate: "" });
+    }
+  }
+
+  async function handleStartChange(value: string) {
+    setStartInput(value);
+    if (value) {
+      await persistPatch({
+        startDate: new Date(`${value}T12:00:00.000Z`).toISOString(),
+      });
+    } else if (task?.startDateIso) {
+      await persistPatch({ startDate: "" });
+    }
+  }
+
+  async function handleTimeEstimateChange(minutes: number | null) {
+    setTimeEstimateMinutes(minutes);
+    await persistPatch({ timeEstimateMinutes: minutes });
+  }
+
+  function applyTaskResponse(updated: Task) {
+    setTask((prev) => ({
+      ...updated,
+      subtasks: prev?.subtasks ?? updated.subtasks ?? [],
+      attachments: prev?.attachments ?? updated.attachments ?? [],
+    }));
+    setTimeEstimateMinutes(updated.timeEstimateMinutes ?? null);
+    setTimeTrackedSeconds(updated.timeTrackedSeconds ?? 0);
+    setTimeTrackingActive(Boolean(updated.timeTracking?.active));
+    setTimeTrackingStartedAt(updated.timeTracking?.startedAt ?? null);
+    if (updated.dueDateIso !== undefined) {
+      setDueInput(updated.dueDateIso ? updated.dueDateIso.slice(0, 10) : "");
+    }
+    if (updated.startDateIso !== undefined) {
+      setStartInput(updated.startDateIso ? updated.startDateIso.slice(0, 10) : "");
+    }
+  }
+
+  async function handleStartTimer() {
+    if (!taskId || !ready || !accessToken || !workspaceId) return;
+    setTimerBusy(true);
+    try {
+      const updated = await startTaskTimer(accessToken, workspaceId, taskId);
+      applyTaskResponse(updated);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not start timer");
+    } finally {
+      setTimerBusy(false);
+    }
+  }
+
+  async function handleStopTimer() {
+    if (!taskId || !ready || !accessToken || !workspaceId) return;
+    setTimerBusy(true);
+    try {
+      const updated = await stopTaskTimer(accessToken, workspaceId, taskId);
+      applyTaskResponse(updated);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not stop timer");
+    } finally {
+      setTimerBusy(false);
+    }
+  }
+
+  async function handleEditComment(commentId: string, body: string) {
+    if (!taskId || !body.trim() || !ready || !accessToken || !workspaceId) return;
+    setCommenting(true);
+    try {
+      const updated = await updateTaskComment(
+        accessToken,
+        workspaceId,
+        taskId,
+        commentId,
+        body
+      );
+      applyTaskResponse(updated);
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not update comment");
+    } finally {
+      setCommenting(false);
+    }
+  }
+
+  async function handleDeleteComment(commentId: string) {
+    if (!taskId || !ready || !accessToken || !workspaceId) return;
+    setCommenting(true);
+    try {
+      const updated = await deleteTaskComment(
+        accessToken,
+        workspaceId,
+        taskId,
+        commentId
+      );
+      applyTaskResponse(updated);
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not delete comment");
+    } finally {
+      setCommenting(false);
     }
   }
 
@@ -547,23 +649,24 @@ export function TaskDrawer({
     await persistPatch({ assigneeIds: next });
   }
 
-  async function handleAddComment() {
-    const body = commentBody.trim();
-    if (!taskId || !body || !ready || !accessToken || !workspaceId) return;
+  async function handleAddComment(
+    body: string,
+    attachmentIds: string[],
+    parentCommentId?: string
+  ) {
+    if (!taskId || (!body.trim() && attachmentIds.length === 0) || !ready || !accessToken || !workspaceId) return;
     setCommenting(true);
     try {
       const updated = await addTaskComment(
         accessToken,
         workspaceId,
         taskId,
-        body
+        body,
+        attachmentIds,
+        parentCommentId
       );
-      setTask((prev) => ({
-        ...updated,
-        subtasks: prev?.subtasks ?? updated.subtasks ?? [],
-        attachments: prev?.attachments ?? updated.attachments ?? [],
-      }));
-      setCommentBody("");
+      applyTaskResponse(updated);
+      setReplyingToCommentId(null);
       onSaved();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not add comment");
@@ -647,13 +750,6 @@ export function TaskDrawer({
       setFollowBusy(false);
     }
   }
-
-  const dueChipLabel = dueInput
-    ? new Date(`${dueInput}T12:00:00.000Z`).toLocaleDateString(undefined, {
-        month: "short",
-        day: "numeric",
-      })
-    : "Due";
 
   return (
     <>
@@ -944,38 +1040,13 @@ export function TaskDrawer({
                   </div>
 
                   <PropertyLabel>Dates</PropertyLabel>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Popover open={dueOpen} onOpenChange={setDueOpen}>
-                      <PopoverTrigger
-                        render={
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-1 text-sm hover:bg-muted/50"
-                          >
-                            <CalendarIcon className="size-3.5 text-muted-foreground" />
-                            {dueChipLabel}
-                          </button>
-                        }
-                      />
-                      <PopoverContent align="start" className="w-auto p-3">
-                        <Input
-                          type="date"
-                          value={dueInput}
-                          onChange={(e) => void handleDueChange(e.target.value)}
-                        />
-                        {dueInput ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="mt-2 w-full"
-                            onClick={() => void handleDueChange("")}
-                          >
-                            Clear due date
-                          </Button>
-                        ) : null}
-                      </PopoverContent>
-                    </Popover>
+                  <div>
+                    <TaskDatesField
+                      startDateIso={task?.startDateIso}
+                      dueDateIso={task?.dueDateIso}
+                      onStartChange={handleStartChange}
+                      onDueChange={handleDueChange}
+                    />
                   </div>
 
                   <PropertyLabel>Priority</PropertyLabel>
@@ -1032,6 +1103,26 @@ export function TaskDrawer({
                         ))}
                       </PopoverContent>
                     </Popover>
+                  </div>
+
+                  <PropertyLabel>Time estimate</PropertyLabel>
+                  <div>
+                    <TaskTimeEstimateField
+                      minutes={timeEstimateMinutes}
+                      onChange={handleTimeEstimateChange}
+                    />
+                  </div>
+
+                  <PropertyLabel>Track time</PropertyLabel>
+                  <div>
+                    <TaskTimeTrackField
+                      trackedSeconds={timeTrackedSeconds}
+                      active={timeTrackingActive}
+                      startedAt={timeTrackingStartedAt}
+                      busy={timerBusy}
+                      onStart={handleStartTimer}
+                      onStop={handleStopTimer}
+                    />
                   </div>
 
                   <PropertyLabel>Tags</PropertyLabel>
@@ -1137,31 +1228,11 @@ export function TaskDrawer({
                 ) : null}
 
                 {attachments.length > 0 ? (
-                  <ul className="mt-4 space-y-1">
+                  <div className="mt-4 flex flex-wrap gap-3">
                     {attachments.map((file) => (
-                      <li key={file.id}>
-                        {file.downloadUrl ? (
-                          <a
-                            href={file.downloadUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
-                          >
-                            <PaperclipIcon className="size-4 shrink-0 text-muted-foreground" />
-                            <span className="truncate">{file.fileName}</span>
-                            <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                              {formatFileSize(file.sizeBytes)}
-                            </span>
-                          </a>
-                        ) : (
-                          <div className="flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground">
-                            <PaperclipIcon className="size-4" />
-                            {file.fileName}
-                          </div>
-                        )}
-                      </li>
+                      <CommentAttachmentCard key={file.id} attachment={file} />
                     ))}
-                  </ul>
+                  </div>
                 ) : null}
 
                 <ul className="mt-4 space-y-1 text-sm text-muted-foreground">
@@ -1228,69 +1299,34 @@ export function TaskDrawer({
                     You opened this task
                   </p>
                   {(task.comments ?? []).map((c) => (
-                    <div key={c.id} className="mb-4">
-                      <p className="text-sm">
-                        <span className="font-semibold">{c.author}</span>{" "}
-                        <span className="text-muted-foreground">commented</span>
-                      </p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {c.body}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {formatCommentTime(c)}
-                      </p>
-                    </div>
+                    <TaskActivityComment
+                      key={c.id}
+                      comment={c}
+                      taskId={taskId ?? null}
+                      workspaceMembers={members}
+                      currentUserId={currentUserId}
+                      replyingToId={replyingToCommentId}
+                      sending={commenting}
+                      onStartReply={setReplyingToCommentId}
+                      onCancelReply={() => setReplyingToCommentId(null)}
+                      onSubmitReply={(parentId, body, attachmentIds) =>
+                        handleAddComment(body, attachmentIds, parentId)
+                      }
+                      onEditComment={handleEditComment}
+                      onDeleteComment={handleDeleteComment}
+                    />
                   ))}
                 </div>
 
                 <div className="border-t border-border p-4">
-                  <div className="rounded-lg border border-border bg-background shadow-sm">
-                    <textarea
-                      value={commentBody}
-                      onChange={(e) => setCommentBody(e.target.value)}
-                      rows={3}
-                      placeholder="Write a comment…"
-                      className="w-full resize-none border-0 bg-transparent px-4 py-3 text-sm leading-relaxed outline-none"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          void handleAddComment();
-                        }
-                      }}
-                    />
-                    <div className="flex items-center justify-between border-t border-border px-2 py-1.5">
-                      <div className="flex items-center gap-0.5">
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={
-                              <Button variant="ghost" size="icon-sm" aria-label="Add">
-                                <PlusIcon className="size-4" />
-                              </Button>
-                            }
-                          />
-                          <TooltipContent side="top">Add</TooltipContent>
-                        </Tooltip>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 gap-1 text-xs"
-                        >
-                          Comment
-                          <ChevronDownIcon className="size-3" />
-                        </Button>
-                      </div>
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        disabled={!commentBody.trim()}
-                        loading={commenting}
-                        onClick={() => void handleAddComment()}
-                        aria-label="Send comment"
-                      >
-                        <SendHorizontalIcon className="size-4" />
-                      </Button>
-                    </div>
-                  </div>
+                  <TaskCommentComposer
+                    taskId={taskId ?? null}
+                    workspaceMembers={members}
+                    sending={commenting}
+                    onSubmit={(body, attachmentIds) =>
+                      handleAddComment(body, attachmentIds)
+                    }
+                  />
                 </div>
               </div>
             </div>

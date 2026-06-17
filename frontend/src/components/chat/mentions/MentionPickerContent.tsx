@@ -48,12 +48,14 @@ function MentionTabButton({
 export function MentionPickerContent({
   conversationType,
   conversationId,
+  members: membersProp,
   query = "",
   onSelect,
   showSearch = true,
 }: {
   conversationType?: ConversationType;
   conversationId?: string;
+  members?: import("@/hooks/use-mention-members").MentionMember[];
   query?: string;
   onSelect: (selection: MentionSelection) => void;
   showSearch?: boolean;
@@ -62,10 +64,12 @@ export function MentionPickerContent({
   const [search, setSearch] = useState("");
   const activeQuery = showSearch ? search : query;
 
-  const { members, loading: membersLoading } = useMentionMembers(
-    conversationType,
-    conversationId
+  const { members: hookMembers, loading: hookLoading } = useMentionMembers(
+    membersProp ? undefined : conversationType,
+    membersProp ? undefined : conversationId
   );
+  const members = membersProp ?? hookMembers;
+  const membersLoading = membersProp ? false : hookLoading;
   const { channels, loading: channelsLoading } = useMentionChannels();
 
   const filteredMembers = useMemo(

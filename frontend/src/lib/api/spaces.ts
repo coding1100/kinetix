@@ -57,6 +57,8 @@ export type UpdateTaskInput = {
   statusId?: string;
   description?: string;
   dueDate?: string;
+  startDate?: string;
+  timeEstimateMinutes?: number | null;
   assigneeIds?: string[];
   priority?: Task["priority"] | null;
   listId?: string;
@@ -228,12 +230,72 @@ export function addTaskComment(
   token: string,
   workspaceId: string,
   taskId: string,
-  body: string
+  body: string,
+  attachmentIds?: string[],
+  parentCommentId?: string
 ) {
   return apiFetch<Task>(wsPath(workspaceId, `/tasks/${taskId}/comments`), {
     method: "POST",
     token,
-    body: JSON.stringify({ body }),
+    body: JSON.stringify({
+      body,
+      ...(attachmentIds && attachmentIds.length > 0 ? { attachmentIds } : {}),
+      ...(parentCommentId ? { parentCommentId } : {}),
+    }),
+  });
+}
+
+export function updateTaskComment(
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  commentId: string,
+  body: string
+) {
+  return apiFetch<Task>(
+    wsPath(workspaceId, `/tasks/${taskId}/comments/${commentId}`),
+    {
+      method: "PATCH",
+      token,
+      body: JSON.stringify({ body }),
+    }
+  );
+}
+
+export function deleteTaskComment(
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  commentId: string
+) {
+  return apiFetch<Task>(
+    wsPath(workspaceId, `/tasks/${taskId}/comments/${commentId}`),
+    {
+      method: "DELETE",
+      token,
+    }
+  );
+}
+
+export function startTaskTimer(
+  token: string,
+  workspaceId: string,
+  taskId: string
+) {
+  return apiFetch<Task>(wsPath(workspaceId, `/tasks/${taskId}/time/start`), {
+    method: "POST",
+    token,
+  });
+}
+
+export function stopTaskTimer(
+  token: string,
+  workspaceId: string,
+  taskId: string
+) {
+  return apiFetch<Task>(wsPath(workspaceId, `/tasks/${taskId}/time/stop`), {
+    method: "POST",
+    token,
   });
 }
 

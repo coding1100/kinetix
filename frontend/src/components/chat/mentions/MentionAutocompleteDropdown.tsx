@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ConversationType } from "@/lib/types/chat";
 import type { MentionSelection } from "@/lib/chat/mention-types";
+import type { MentionMember } from "@/hooks/use-mention-members";
 import { MentionPickerContent } from "./MentionPickerContent";
 
 export function MentionAutocompleteDropdown({
@@ -11,6 +12,7 @@ export function MentionAutocompleteDropdown({
   anchorRef,
   conversationType,
   conversationId,
+  members,
   query,
   onSelect,
   onDismiss,
@@ -19,6 +21,7 @@ export function MentionAutocompleteDropdown({
   anchorRef: React.RefObject<HTMLElement | null>;
   conversationType?: ConversationType;
   conversationId?: string;
+  members?: MentionMember[];
   query: string;
   onSelect: (selection: MentionSelection) => void;
   onDismiss: () => void;
@@ -83,6 +86,7 @@ export function MentionAutocompleteDropdown({
       <MentionPickerContent
         conversationType={conversationType}
         conversationId={conversationId}
+        members={members}
         query={query}
         showSearch={false}
         onSelect={onSelect}

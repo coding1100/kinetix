@@ -2,6 +2,48 @@ from datetime import datetime, timezone
 
 from app.db.models.enums import InboxItemType, TaskStatus
 from app.db.models.home import Task
+from app.services.task_attachment_service import map_task_attachment
+
+
+def _map_task_comment(comment) -> dict:
+    updated = getattr(comment, "updated_at", None)
+    return {
+        "id": comment.id,
+        "authorId": comment.user_id,
+        "author": comment.user.full_name,
+        "body": comment.body,
+        "at": comment_relative_time(comment.created_at),
+        "createdAt": comment.created_at.isoformat() if comment.created_at else None,
+        "updatedAt": updated.isoformat() if updated else None,
+        "isEdited": bool(updated),
+        "parentCommentId": comment.parent_comment_id,
+        "attachments": [
+            map_task_attachment(a)
+            for a in (getattr(comment, "attachments", None) or [])
+            if a.status == "ready"
+        ],
+    }
+
+
+def _map_task_comments_threaded(comments: list) -> list[dict]:
+    sorted_comments = sorted(comments, key=lambda c: c.created_at)
+    replies_by_parent: dict[str, list] = {}
+    for comment in sorted_comments:
+        if comment.parent_comment_id:
+            replies_by_parent.setdefault(comment.parent_comment_id, []).append(comment)
+
+    def with_replies(comment) -> dict:
+        payload = _map_task_comment(comment)
+        replies = sorted(
+            replies_by_parent.get(comment.id, []),
+            key=lambda c: c.created_at,
+        )
+        payload["replyCount"] = len(replies)
+        payload["replies"] = [_map_task_comment(r) for r in replies]
+        return payload
+
+    top_level = [c for c in sorted_comments if not c.parent_comment_id]
+    return [with_replies(c) for c in top_level]
 
 
 STATUS_LABELS: dict[TaskStatus, str] = {
@@ -110,6 +152,9 @@ def map_task(task: Task, current_user_id: str) -> dict:
         "assigneeIds": [a.user_id for a in task.assignees],
         "dueDate": format_due_date(task.due_date),
         "dueDateIso": task.due_date.isoformat() if task.due_date else None,
+        "startDate": format_due_date(task.start_date),
+        "startDateIso": task.start_date.isoformat() if task.start_date else None,
+        "timeEstimateMinutes": task.time_estimate_minutes,
         "assignees": assignee_labels,
         "list": task.task_list.name,
         "listId": task.task_list.id,
@@ -119,16 +164,7 @@ def map_task(task: Task, current_user_id: str) -> dict:
         "description": task.description,
         "commentCount": len(comments),
         "subtaskCount": len(getattr(task, "subtasks", None) or []),
-        "comments": [
-            {
-                "id": c.id,
-                "author": c.user.full_name,
-                "body": c.body,
-                "at": comment_relative_time(c.created_at),
-                "createdAt": c.created_at.isoformat() if c.created_at else None,
-            }
-            for c in comments
-        ],
+        "comments": _map_task_comments_threaded(comments),
     }
 
 

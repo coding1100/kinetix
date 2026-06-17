@@ -1,9 +1,18 @@
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from datetime import datetime, timezone
 
 from app.core.errors import AppError
-from app.db.models.home import Folder, Space, Task, TaskComment, TaskFollower, TaskList
+from app.db.models.home import (
+    Folder,
+    Space,
+    Task,
+    TaskAttachment,
+    TaskComment,
+    TaskFollower,
+    TaskList,
+)
 from app.schemas.spaces import (
     CreateFolderBody,
     CreateListBody,
@@ -12,6 +21,7 @@ from app.schemas.spaces import (
     UpdateFolderBody,
     UpdateListBody,
     UpdateSpaceBody,
+    UpdateTaskCommentBody,
 )
 from app.services.home_service import (
     _SPACE_LOAD,
@@ -23,7 +33,9 @@ from app.services.home_service import (
 from app.services.home_helpers import map_list_entry, map_task
 from app.services.list_status_service import ensure_list_statuses
 from app.services.notification_service import (
+    create_task_comment_mention_notifications,
     create_task_comment_notifications,
+    create_task_comment_reply_notifications,
     emit_home_notifications,
 )
 
@@ -223,6 +235,25 @@ async def delete_list(
     return {"ok": True}
 
 
+async def _resolve_comment_thread_root(
+    session: AsyncSession, parent_comment_id: str
+) -> TaskComment:
+    parent = await session.scalar(
+        select(TaskComment).where(TaskComment.id == parent_comment_id)
+    )
+    if not parent:
+        raise AppError(404, "NOT_FOUND", "Parent comment not found")
+    root = parent
+    while root.parent_comment_id:
+        next_root = await session.scalar(
+            select(TaskComment).where(TaskComment.id == root.parent_comment_id)
+        )
+        if not next_root:
+            break
+        root = next_root
+    return root
+
+
 async def add_task_comment(
     session: AsyncSession,
     workspace_id: str,
@@ -230,6 +261,9 @@ async def add_task_comment(
     task_id: str,
     body: CreateTaskCommentBody,
 ) -> dict:
+    if not body.has_content:
+        raise AppError(400, "VALIDATION_ERROR", "Comment body or attachment is required")
+
     task = await session.scalar(
         select(Task)
         .join(TaskList)
@@ -239,6 +273,23 @@ async def add_task_comment(
     if not task:
         raise AppError(404, "NOT_FOUND", "Task not found")
 
+    parent_author_id: str | None = None
+    thread_parent_id: str | None = None
+    if body.parent_comment_id:
+        direct_parent = await session.scalar(
+            select(TaskComment).where(
+                TaskComment.id == body.parent_comment_id,
+                TaskComment.task_id == task_id,
+            )
+        )
+        if not direct_parent:
+            raise AppError(404, "NOT_FOUND", "Parent comment not found")
+        parent_author_id = direct_parent.user_id
+        thread_root = await _resolve_comment_thread_root(
+            session, body.parent_comment_id
+        )
+        thread_parent_id = thread_root.id
+
     follower_ids = list(
         (
             await session.scalars(
@@ -247,24 +298,192 @@ async def add_task_comment(
         ).all()
     )
 
-    comment = TaskComment(task_id=task_id, user_id=user_id, body=body.body.strip())
+    comment = TaskComment(
+        task_id=task_id,
+        user_id=user_id,
+        body=body.body.strip(),
+        parent_comment_id=thread_parent_id,
+    )
     session.add(comment)
+    await session.flush()
 
-    comment_notifications = await create_task_comment_notifications(
+    if body.attachment_ids:
+        await session.execute(
+            update(TaskAttachment)
+            .where(
+                TaskAttachment.id.in_(body.attachment_ids),
+                TaskAttachment.task_id == task_id,
+                TaskAttachment.workspace_id == workspace_id,
+                TaskAttachment.uploader_id == user_id,
+            )
+            .values(comment_id=comment.id)
+        )
+
+    comment_preview = body.body.strip() or "📎 Attachment"
+    comment_notifications: list[tuple[str, object]] = []
+    reply_notifications: list[tuple[str, object]] = []
+
+    if thread_parent_id:
+        reply_notifications = await create_task_comment_reply_notifications(
+            session,
+            workspace_id=workspace_id,
+            actor_user_id=user_id,
+            task_name=task.name,
+            task_id=task_id,
+            parent_author_id=parent_author_id or "",
+            comment_preview=comment_preview,
+        )
+    else:
+        comment_notifications = await create_task_comment_notifications(
+            session,
+            workspace_id=workspace_id,
+            actor_user_id=user_id,
+            task_name=task.name,
+            task_id=task_id,
+            comment_preview=comment_preview,
+            follower_ids=follower_ids,
+        )
+
+    already_notified = {uid for uid, _ in comment_notifications + reply_notifications}
+    mention_notifications = await create_task_comment_mention_notifications(
         session,
         workspace_id=workspace_id,
         actor_user_id=user_id,
         task_name=task.name,
         task_id=task_id,
-        comment_preview=body.body.strip(),
-        follower_ids=follower_ids,
+        comment_body=body.body.strip(),
+        already_notified_ids=already_notified,
     )
 
     await session.commit()
-    if comment_notifications:
-        await emit_home_notifications(session, workspace_id, comment_notifications)
+    all_notifications = comment_notifications + reply_notifications + mention_notifications
+    if all_notifications:
+        await emit_home_notifications(session, workspace_id, all_notifications)
 
     refreshed = await session.scalar(
         select(Task).where(Task.id == task_id).options(*_TASK_LOAD)
     )
-    return map_task(refreshed, user_id)
+    payload = map_task(refreshed, user_id)
+
+    from app.services.task_attachment_service import map_task_attachment
+
+    task_attachments = (
+        await session.scalars(
+            select(TaskAttachment)
+            .where(
+                TaskAttachment.task_id == task_id,
+                TaskAttachment.workspace_id == workspace_id,
+                TaskAttachment.status == "ready",
+                TaskAttachment.comment_id.is_(None),
+            )
+            .order_by(TaskAttachment.created_at.asc())
+        )
+    ).all()
+    payload["attachments"] = [map_task_attachment(a) for a in task_attachments]
+
+    from app.services.task_time_service import get_task_time_state
+
+    payload.update(await get_task_time_state(session, workspace_id, user_id, task_id))
+    return payload
+
+
+async def update_task_comment(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    task_id: str,
+    comment_id: str,
+    body: UpdateTaskCommentBody,
+) -> dict:
+    comment = await session.scalar(
+        select(TaskComment)
+        .join(Task)
+        .join(TaskList)
+        .join(Space)
+        .where(
+            TaskComment.id == comment_id,
+            TaskComment.task_id == task_id,
+            Space.workspace_id == workspace_id,
+        )
+    )
+    if not comment:
+        raise AppError(404, "NOT_FOUND", "Comment not found")
+    if comment.user_id != user_id:
+        raise AppError(403, "FORBIDDEN", "You can only edit your own comments")
+
+    comment.body = body.body.strip()
+    comment.updated_at = datetime.now(timezone.utc)
+    await session.commit()
+
+    refreshed = await session.scalar(
+        select(Task).where(Task.id == task_id).options(*_TASK_LOAD)
+    )
+    payload = map_task(refreshed, user_id)
+    from app.services.task_attachment_service import map_task_attachment
+    from app.services.task_time_service import get_task_time_state
+
+    task_attachments = (
+        await session.scalars(
+            select(TaskAttachment)
+            .where(
+                TaskAttachment.task_id == task_id,
+                TaskAttachment.workspace_id == workspace_id,
+                TaskAttachment.status == "ready",
+                TaskAttachment.comment_id.is_(None),
+            )
+            .order_by(TaskAttachment.created_at.asc())
+        )
+    ).all()
+    payload["attachments"] = [map_task_attachment(a) for a in task_attachments]
+    payload.update(await get_task_time_state(session, workspace_id, user_id, task_id))
+    return payload
+
+
+async def delete_task_comment(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    task_id: str,
+    comment_id: str,
+) -> dict:
+    comment = await session.scalar(
+        select(TaskComment)
+        .join(Task)
+        .join(TaskList)
+        .join(Space)
+        .where(
+            TaskComment.id == comment_id,
+            TaskComment.task_id == task_id,
+            Space.workspace_id == workspace_id,
+        )
+    )
+    if not comment:
+        raise AppError(404, "NOT_FOUND", "Comment not found")
+    if comment.user_id != user_id:
+        raise AppError(403, "FORBIDDEN", "You can only delete your own comments")
+
+    await session.delete(comment)
+    await session.commit()
+
+    refreshed = await session.scalar(
+        select(Task).where(Task.id == task_id).options(*_TASK_LOAD)
+    )
+    payload = map_task(refreshed, user_id)
+    from app.services.task_attachment_service import map_task_attachment
+    from app.services.task_time_service import get_task_time_state
+
+    task_attachments = (
+        await session.scalars(
+            select(TaskAttachment)
+            .where(
+                TaskAttachment.task_id == task_id,
+                TaskAttachment.workspace_id == workspace_id,
+                TaskAttachment.status == "ready",
+                TaskAttachment.comment_id.is_(None),
+            )
+            .order_by(TaskAttachment.created_at.asc())
+        )
+    ).all()
+    payload["attachments"] = [map_task_attachment(a) for a in task_attachments]
+    payload.update(await get_task_time_state(session, workspace_id, user_id, task_id))
+    return payload

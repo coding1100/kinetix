@@ -32,6 +32,10 @@ class UpdateTaskBody(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=500)
     description: str | None = Field(default=None, max_length=5000)
     due_date: str | None = Field(default=None, alias="dueDate")
+    start_date: str | None = Field(default=None, alias="startDate")
+    time_estimate_minutes: int | None = Field(
+        default=None, alias="timeEstimateMinutes", ge=0, le=60 * 24 * 365
+    )
     assignee_ids: list[str] | None = Field(default=None, alias="assigneeIds")
     priority: Literal["urgent", "high", "normal", "low"] | None = None
     list_id: str | None = Field(default=None, alias="listId")

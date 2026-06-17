@@ -75,6 +75,7 @@ _TASK_LOAD = (
     selectinload(Task.list_status),
     selectinload(Task.assignees).selectinload(TaskAssignee.user),
     selectinload(Task.comments).selectinload(TaskComment.user),
+    selectinload(Task.comments).selectinload(TaskComment.attachments),
     selectinload(Task.subtasks),
 )
 
@@ -613,11 +614,16 @@ async def get_task(
                 TaskAttachment.task_id == task_id,
                 TaskAttachment.workspace_id == workspace_id,
                 TaskAttachment.status == "ready",
+                TaskAttachment.comment_id.is_(None),
             )
             .order_by(TaskAttachment.created_at.asc())
         )
     ).all()
     payload["attachments"] = [map_task_attachment(a) for a in attachments]
+
+    from app.services.task_time_service import get_task_time_state
+
+    payload.update(await get_task_time_state(session, workspace_id, user_id, task_id))
     return payload
 
 
@@ -684,6 +690,19 @@ async def update_task(
             task.due_date = (
                 parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
             )
+
+    if body.start_date is not None:
+        if body.start_date.strip() == "":
+            task.start_date = None
+        else:
+            raw = body.start_date.replace("Z", "+00:00")
+            parsed = datetime.fromisoformat(raw)
+            task.start_date = (
+                parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+            )
+
+    if "time_estimate_minutes" in body.model_fields_set:
+        task.time_estimate_minutes = body.time_estimate_minutes
     if body.assignee_ids is not None:
         members = await workspace_service.list_workspace_members(
             session, workspace_id
@@ -748,6 +767,11 @@ async def update_task(
         task_id=task_id,
         list_id=refreshed.list_id,
         task=mapped,
+    )
+    from app.services.task_time_service import get_task_time_state
+
+    mapped.update(
+        await get_task_time_state(session, workspace_id, user_id, task_id)
     )
     return mapped
 

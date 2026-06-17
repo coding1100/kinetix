@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from sqlalchemy import (
     Boolean,
@@ -139,6 +139,12 @@ class Task(Base):
     due_date: Mapped[datetime | None] = mapped_column(
         "dueDate", DateTime(timezone=True), nullable=True
     )
+    start_date: Mapped[datetime | None] = mapped_column(
+        "startDate", DateTime(timezone=True), nullable=True
+    )
+    time_estimate_minutes: Mapped[int | None] = mapped_column(
+        "timeEstimateMinutes", Integer, nullable=True
+    )
     parent_task_id: Mapped[str | None] = mapped_column(
         "parentTaskId",
         String,
@@ -198,6 +204,9 @@ class TaskAttachment(Base):
     uploader_id: Mapped[str] = mapped_column(
         "uploaderId", String, ForeignKey("User.id", ondelete="CASCADE")
     )
+    comment_id: Mapped[Optional[str]] = mapped_column(
+        "commentId", String, ForeignKey("TaskComment.id", ondelete="SET NULL"), nullable=True
+    )
     storage_key: Mapped[str] = mapped_column("storageKey", String)
     file_name: Mapped[str] = mapped_column("fileName", String)
     mime_type: Mapped[str] = mapped_column("mimeType", String)
@@ -208,6 +217,31 @@ class TaskAttachment(Base):
     )
     task: Mapped["Task"] = relationship(back_populates="attachments")
     uploader: Mapped["User"] = relationship()
+
+
+class TaskTimeEntry(Base):
+    __tablename__ = "TaskTimeEntry"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    task_id: Mapped[str] = mapped_column(
+        "taskId", String, ForeignKey("Task.id", ondelete="CASCADE")
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        "workspaceId", String, ForeignKey("Workspace.id", ondelete="CASCADE")
+    )
+    user_id: Mapped[str] = mapped_column(
+        "userId", String, ForeignKey("User.id", ondelete="CASCADE")
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        "startedAt", DateTime(timezone=True), server_default=func.now()
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(
+        "endedAt", DateTime(timezone=True), nullable=True
+    )
+    task: Mapped["Task"] = relationship()
+    user: Mapped["User"] = relationship()
 
 
 class TaskFollower(Base):
@@ -248,12 +282,38 @@ class TaskComment(Base):
     user_id: Mapped[str] = mapped_column(
         "userId", String, ForeignKey("User.id", ondelete="CASCADE")
     )
+    parent_comment_id: Mapped[Optional[str]] = mapped_column(
+        "parentCommentId",
+        String,
+        ForeignKey("TaskComment.id", ondelete="CASCADE"),
+        nullable=True,
+    )
     body: Mapped[str] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(
         "createdAt", DateTime(timezone=True), server_default=func.now()
     )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        "updatedAt", DateTime(timezone=True), nullable=True
+    )
     task: Mapped["Task"] = relationship(back_populates="comments")
     user: Mapped["User"] = relationship()
+    parent: Mapped[Optional["TaskComment"]] = relationship(
+        "TaskComment",
+        remote_side="TaskComment.id",
+        back_populates="replies",
+        foreign_keys=[parent_comment_id],
+    )
+    replies: Mapped[list["TaskComment"]] = relationship(
+        "TaskComment",
+        back_populates="parent",
+        foreign_keys=[parent_comment_id],
+        lazy="select",
+    )
+    attachments: Mapped[list["TaskAttachment"]] = relationship(
+        "TaskAttachment",
+        foreign_keys="TaskAttachment.comment_id",
+        lazy="select",
+    )
 
 
 class AssignedComment(Base):

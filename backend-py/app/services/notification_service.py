@@ -704,6 +704,94 @@ async def create_task_comment_notifications(
     return created
 
 
+async def create_task_comment_mention_notifications(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    actor_user_id: str,
+    task_name: str,
+    task_id: str,
+    comment_body: str,
+    already_notified_ids: set[str] | None = None,
+) -> list[tuple[str, InboxItem]]:
+    """Send inbox notifications to @mentioned users in a task comment."""
+    labels = parse_person_mention_labels(comment_body)
+    mentioned_ids = await _resolve_mentioned_user_ids(
+        session, workspace_id, labels, exclude_user_id=actor_user_id
+    )
+    if not mentioned_ids:
+        return []
+
+    users = await _load_users(session, [actor_user_id, *mentioned_ids])
+    actor = users.get(actor_user_id)
+    actor_name = actor.full_name if actor else "Someone"
+    href = f"/home/tasks/{task_id}"
+    snippet = _message_snippet(comment_body)
+    created: list[tuple[str, InboxItem]] = []
+
+    for user_id in mentioned_ids:
+        if already_notified_ids and user_id in already_notified_ids:
+            continue
+        item = InboxItem(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            type=InboxItemType.MENTION,
+            title=f"Mentioned you in {task_name}",
+            preview=f"{actor_name}: {snippet}",
+            source=task_name,
+            unread=True,
+            bucket=InboxBucket.ALL,
+            time_group=InboxTimeGroup.TODAY,
+            href=href,
+            activity_kind="task_mention",
+        )
+        session.add(item)
+        created.append((user_id, item))
+
+    if created:
+        await session.flush()
+    return created
+
+
+async def create_task_comment_reply_notifications(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    actor_user_id: str,
+    task_name: str,
+    task_id: str,
+    parent_author_id: str,
+    comment_preview: str,
+    already_notified_ids: set[str] | None = None,
+) -> list[tuple[str, InboxItem]]:
+    if parent_author_id == actor_user_id:
+        return []
+    if already_notified_ids and parent_author_id in already_notified_ids:
+        return []
+
+    users = await _load_users(session, [actor_user_id, parent_author_id])
+    actor = users.get(actor_user_id)
+    actor_name = actor.full_name if actor else "Someone"
+    href = f"/home/tasks/{task_id}"
+    preview = _message_snippet(comment_preview, 120)
+    item = InboxItem(
+        workspace_id=workspace_id,
+        user_id=parent_author_id,
+        type=InboxItemType.COMMENT,
+        title=f"Reply on {task_name}",
+        preview=f"{actor_name}: {preview}",
+        source=task_name,
+        unread=True,
+        bucket=InboxBucket.ALL,
+        time_group=InboxTimeGroup.TODAY,
+        href=href,
+        activity_kind="task_comment_reply",
+    )
+    session.add(item)
+    await session.flush()
+    return [(parent_author_id, item)]
+
+
 async def create_task_assignment_notifications(
     session: AsyncSession,
     *,

@@ -33,4 +33,20 @@ class UpdateListBody(BaseModel):
 
 
 class CreateTaskCommentBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    body: str = Field(default="", min_length=0, max_length=5000)
+    attachment_ids: list[str] | None = Field(
+        default=None, alias="attachmentIds", max_length=20
+    )
+    parent_comment_id: str | None = Field(default=None, alias="parentCommentId")
+
+    @property
+    def has_content(self) -> bool:
+        return bool(self.body.strip() or self.attachment_ids)
+
+
+class UpdateTaskCommentBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     body: str = Field(min_length=1, max_length=5000)

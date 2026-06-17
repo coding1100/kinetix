@@ -24,8 +24,9 @@ from app.schemas.spaces import (
     UpdateFolderBody,
     UpdateListBody,
     UpdateSpaceBody,
+    UpdateTaskCommentBody,
 )
-from app.services import home_service, spaces_service, task_attachment_service
+from app.services import home_service, spaces_service, task_attachment_service, task_time_service
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["home"])
 
@@ -528,6 +529,61 @@ async def post_task_comment(
 ):
     return await spaces_service.add_task_comment(
         session, workspace_id, user.id, task_id, body
+    )
+
+
+@router.patch("/tasks/{task_id}/comments/{comment_id}")
+async def patch_task_comment(
+    body: UpdateTaskCommentBody,
+    workspace_id: str,
+    task_id: str,
+    comment_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await spaces_service.update_task_comment(
+        session, workspace_id, user.id, task_id, comment_id, body
+    )
+
+
+@router.delete("/tasks/{task_id}/comments/{comment_id}")
+async def delete_task_comment(
+    workspace_id: str,
+    task_id: str,
+    comment_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await spaces_service.delete_task_comment(
+        session, workspace_id, user.id, task_id, comment_id
+    )
+
+
+@router.post("/tasks/{task_id}/time/start")
+async def post_task_time_start(
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await task_time_service.start_task_timer(
+        session, workspace_id, user.id, task_id
+    )
+
+
+@router.post("/tasks/{task_id}/time/stop")
+async def post_task_time_stop(
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await task_time_service.stop_task_timer(
+        session, workspace_id, user.id, task_id
     )
 
 

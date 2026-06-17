@@ -26,10 +26,12 @@ export function useMentionMembers(
     { enabled: isChannel }
   );
 
+  const isWorkspaceFallback = !isChannel && !isDm;
+
   const workspaceQuery = useHomeQuery(
     (token, ws) => fetchWorkspaceMembers(token, ws).then((r) => r.data),
     [conversationType, conversationId],
-    { initialData: isDm ? null : null }
+    { initialData: null }
   );
 
   const dmSidebarEntry = useChatStore((s) =>
@@ -47,13 +49,14 @@ export function useMentionMembers(
         avatarUrl: m.avatarUrl,
       }));
     }
-    if (isDm) {
+    if (isDm || isWorkspaceFallback) {
       const fromWorkspace = (workspaceQuery.data ?? []).map((m) => ({
         id: m.id,
         fullName: m.fullName,
         email: m.email,
         avatarUrl: m.avatarUrl,
       }));
+      if (isWorkspaceFallback) return fromWorkspace;
       if (!dmSidebarEntry?.otherUserId || !dmSidebarEntry.name) {
         return fromWorkspace;
       }
@@ -71,9 +74,9 @@ export function useMentionMembers(
       ];
     }
     return [];
-  }, [isChannel, isDm, channelMembers, workspaceQuery.data, dmSidebarEntry]);
+  }, [isChannel, isDm, isWorkspaceFallback, channelMembers, workspaceQuery.data, dmSidebarEntry]);
 
-  const loading = isChannel ? channelLoading : isDm ? workspaceQuery.loading : false;
+  const loading = isChannel ? channelLoading : (isDm || isWorkspaceFallback) ? workspaceQuery.loading : false;
 
   return { members, loading };
 }
