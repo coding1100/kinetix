@@ -89,23 +89,57 @@ docker compose -f docker-compose.yml -f docker-compose.app.yml up -d
 log "Build and start staging Docker stack"
 cd "$APP_ROOT"
 export STAGING_PUBLIC_URL STAGING_FRONTEND_ORIGIN
-docker compose -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
-docker rm -f kinetix-staging-web kinetix-staging-api 2>/dev/null || true
-docker compose -f "$COMPOSE_FILE" up -d --build --remove-orphans --force-recreate
+chmod +x "$APP_ROOT/deploy/reset-staging-docker.sh"
+"$APP_ROOT/deploy/reset-staging-docker.sh"
+
+log "Start postgres first"
+docker compose -f "$COMPOSE_FILE" up -d --build postgres
+for i in $(seq 1 30); do
+  if docker compose -f "$COMPOSE_FILE" ps postgres 2>/dev/null | grep -q "(healthy)"; then
+    log "postgres healthy"
+    break
+  fi
+  if [ "$i" -eq 30 ]; then
+    echo "ERROR: postgres not healthy"
+    docker compose -f "$COMPOSE_FILE" logs postgres --tail 50
+    exit 1
+  fi
+  sleep 2
+done
+
+log "Start api"
+docker compose -f "$COMPOSE_FILE" up -d --build api
+for i in $(seq 1 45); do
+  api_id=$(docker compose -f "$COMPOSE_FILE" ps -q api 2>/dev/null || true)
+  if [ -n "$api_id" ] && docker exec "$api_id" python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health')" >/dev/null 2>&1; then
+    log "api healthy"
+    break
+  fi
+  if [ "$i" -eq 45 ]; then
+    echo "ERROR: api not healthy"
+    docker compose -f "$COMPOSE_FILE" logs api --tail 80
+    exit 1
+  fi
+  sleep 2
+done
+
+log "Start web"
+docker compose -f "$COMPOSE_FILE" up -d --build web
 
 log "Wait for staging containers"
 sleep 8
 docker compose -f "$COMPOSE_FILE" ps
 
-if ! docker compose -f "$COMPOSE_FILE" ps --status running | grep -q kinetix-staging-api; then
-  echo "ERROR: kinetix-staging-api is not running"
-  docker logs kinetix-staging-api --tail 80 2>/dev/null || true
+if ! docker compose -f "$COMPOSE_FILE" ps --status running 2>/dev/null | grep -q "api"; then
+  echo "ERROR: staging api is not running"
+  docker compose -f "$COMPOSE_FILE" logs api --tail 80 2>/dev/null || true
   exit 1
 fi
 
-if ! docker exec kinetix-staging-api python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health')" >/dev/null 2>&1; then
+api_id=$(docker compose -f "$COMPOSE_FILE" ps -q api)
+if ! docker exec "$api_id" python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health')" >/dev/null 2>&1; then
   echo "ERROR: staging API health check failed — logs:"
-  docker logs kinetix-staging-api --tail 80
+  docker compose -f "$COMPOSE_FILE" logs api --tail 80
   exit 1
 fi
 

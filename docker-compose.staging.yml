@@ -2,7 +2,7 @@
 # Public URL: http://HOST/staging via production nginx (kinetix-nginx-1).
 #
 # Deploy:
-#   docker network create kinetix_edge 2>/dev/null || true
+#   ./deploy/reset-staging-docker.sh
 #   docker compose -f docker-compose.staging.yml up -d --build
 
 name: kinetix-staging
@@ -17,7 +17,6 @@ networks:
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: kinetix-staging-postgres
     restart: unless-stopped
     networks:
       - internal
@@ -31,19 +30,20 @@ services:
       - riseup_pg_data_staging:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-riseup} -d ${POSTGRES_DB:-riseup}"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 20s
+      retries: 12
+      start_period: 30s
 
   api:
     build: ./backend-py
     image: kinetix-staging-api
-    container_name: kinetix-staging-api
     restart: unless-stopped
     networks:
-      - internal
-      - edge
+      internal:
+      edge:
+        aliases:
+          - kinetix-staging-api
     env_file:
       - docker-compose.env
     environment:
@@ -83,10 +83,11 @@ services:
         NEXT_PUBLIC_APP_URL: ${STAGING_PUBLIC_URL:-http://3.140.5.67/staging}
         NEXT_PUBLIC_SOCKET_URL: ${STAGING_PUBLIC_URL:-http://3.140.5.67/staging}
     image: kinetix-staging-web
-    container_name: kinetix-staging-web
     restart: unless-stopped
     networks:
-      - edge
+      edge:
+        aliases:
+          - kinetix-staging-web
     environment:
       NODE_ENV: production
       PORT: "3000"
@@ -98,7 +99,7 @@ services:
       - "3000"
     depends_on:
       api:
-        condition: service_healthy
+        condition: service_started
 
 volumes:
   riseup_pg_data_staging:
