@@ -89,7 +89,9 @@ docker compose -f docker-compose.yml -f docker-compose.app.yml up -d
 log "Build and start staging Docker stack"
 cd "$APP_ROOT"
 export STAGING_PUBLIC_URL STAGING_FRONTEND_ORIGIN
-docker compose -f "$COMPOSE_FILE" up -d --build --remove-orphans
+docker compose -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
+docker rm -f kinetix-staging-web kinetix-staging-api 2>/dev/null || true
+docker compose -f "$COMPOSE_FILE" up -d --build --remove-orphans --force-recreate
 
 log "Wait for staging containers"
 sleep 8
