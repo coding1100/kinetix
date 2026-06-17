@@ -8,7 +8,7 @@ User=ubuntu
 Group=ubuntu
 WorkingDirectory=/opt/clickup/kinetix-staging/backend-py
 Environment=PATH=/opt/clickup/kinetix-staging/backend-py/.venv/bin
-ExecStart=/opt/clickup/kinetix-staging/backend-py/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 4050
+ExecStart=/opt/clickup/kinetix-staging/backend-py/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 4050
 Restart=always
 RestartSec=5
 TimeoutStartSec=120

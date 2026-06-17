@@ -10,8 +10,17 @@ STAGING_BASE_PATH="${STAGING_BASE_PATH:-/staging}"
 echo "=== systemd ==="
 systemctl is-active kinetix-staging-api kinetix-staging-web nginx 2>/dev/null || true
 
-echo "=== ports ==="
+echo "=== git (staging app) ==="
+STAGING_ROOT="${STAGING_ROOT:-/opt/clickup/kinetix-staging}"
+if [ -d "$STAGING_ROOT/.git" ]; then
+  git -C "$STAGING_ROOT" log -1 --oneline 2>/dev/null || true
+else
+  echo "WARN: $STAGING_ROOT not a git repo"
+fi
+
+echo "=== ports (systemd vs docker) ==="
 ss -tlnp | grep -E ":3050|:4050|:80 " || true
+docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Ports}}" 2>/dev/null | grep -E "staging|3050|4050|NAMES" || true
 
 echo "=== direct staging ==="
 curl -s -o /dev/null -w "api_health=%{http_code}\n" "http://127.0.0.1:${API_PORT}/health" || echo "api_health=000"

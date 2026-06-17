@@ -164,13 +164,25 @@ cd "$APP_ROOT"
 log "Pull latest code ($DEPLOY_BRANCH)"
 git fetch origin "$DEPLOY_BRANCH"
 git reset --hard "origin/$DEPLOY_BRANCH"
+log "Deployed commit: $(git rev-parse --short HEAD) — $(git log -1 --format='%s')"
 
-log "Stop staging Next.js if running"
-sudo systemctl stop "$WEB_SERVICE" 2>/dev/null || true
-if lsof -i :"$WEB_PORT" -t >/dev/null 2>&1; then
-  fuser -k "${WEB_PORT}/tcp" 2>/dev/null || true
-  sleep 2
+log "Stop Docker staging stack if it is still running (old images bind :3050/:4050)"
+if [ -f "$APP_ROOT/docker-compose.staging.yml" ]; then
+  (
+    cd "$APP_ROOT"
+    docker compose -f docker-compose.staging.yml down --remove-orphans 2>/dev/null || true
+  )
 fi
+
+log "Stop staging systemd services and free ports"
+sudo systemctl stop "$API_SERVICE" "$WEB_SERVICE" 2>/dev/null || true
+for port in "$WEB_PORT" "$API_PORT"; do
+  if ss -tlnp 2>/dev/null | grep -q ":${port} "; then
+    log "Freeing port ${port}"
+    fuser -k "${port}/tcp" 2>/dev/null || true
+    sleep 2
+  fi
+done
 
 log "Install staging systemd units"
 sudo cp "$ROOT/deploy/systemd/kinetix-staging-api.service" /etc/systemd/system/

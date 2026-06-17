@@ -10,7 +10,7 @@ WorkingDirectory=/opt/clickup/kinetix-staging/frontend
 Environment=NODE_ENV=production
 Environment=PORT=3050
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
-ExecStart=/usr/bin/node /opt/clickup/kinetix-staging/frontend/node_modules/next/dist/bin/next start -p 3050 -H 127.0.0.1
+ExecStart=/usr/bin/node /opt/clickup/kinetix-staging/frontend/node_modules/next/dist/bin/next start -p 3050 -H 0.0.0.0
 Restart=always
 RestartSec=5
 TimeoutStartSec=120
