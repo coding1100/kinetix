@@ -10,15 +10,17 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 COPY pyproject.toml uv.lock ./
 COPY app ./app
+COPY docker-entrypoint.sh /docker-entrypoint.sh
 
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev \
+  && chmod +x /docker-entrypoint.sh
 
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 4000
 
-HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=30s \
+HEALTHCHECK --interval=10s --timeout=5s --retries=12 --start-period=90s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health')"
 
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "4000"]
+ENTRYPOINT ["/docker-entrypoint.sh"]

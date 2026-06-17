@@ -95,9 +95,15 @@ log "Wait for staging containers"
 sleep 8
 docker compose -f "$COMPOSE_FILE" ps
 
+if ! docker compose -f "$COMPOSE_FILE" ps --status running | grep -q kinetix-staging-api; then
+  echo "ERROR: kinetix-staging-api is not running"
+  docker logs kinetix-staging-api --tail 80 2>/dev/null || true
+  exit 1
+fi
+
 if ! docker exec kinetix-staging-api python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health')" >/dev/null 2>&1; then
-  echo "ERROR: staging API health check failed"
-  docker logs kinetix-staging-api --tail 40
+  echo "ERROR: staging API health check failed — logs:"
+  docker logs kinetix-staging-api --tail 80
   exit 1
 fi
 
