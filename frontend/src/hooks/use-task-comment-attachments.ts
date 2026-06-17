@@ -16,6 +16,12 @@ export type PendingTaskAttachment = {
   previewUrl?: string;
 };
 
+function attachmentKindForMime(mimeType: string): AttachmentKind {
+  if (mimeType.startsWith("video/")) return "video";
+  if (mimeType.startsWith("audio/")) return "audio";
+  return "file";
+}
+
 function imagePreviewUrl(blob: Blob, mimeType: string) {
   if (mimeType.startsWith("image/")) {
     return URL.createObjectURL(blob);
@@ -65,7 +71,7 @@ export function useTaskCommentAttachments(taskId: string | null) {
       const previewUrl = imagePreviewUrl(blob, mimeType);
       trackPreview(previewUrl);
 
-      const kind: AttachmentKind = mimeType.startsWith("image/") ? "image" : "file";
+      const kind = attachmentKindForMime(mimeType);
 
       setUploading(true);
       setUploadingItem({ fileName, kind, mimeType, sizeBytes: blob.size, previewUrl });
