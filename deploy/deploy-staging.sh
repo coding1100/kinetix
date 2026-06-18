@@ -53,6 +53,18 @@ ensure_edge_network() {
   fi
 }
 
+ensure_nginx_on_edge() {
+  if ! docker ps --format '{{.Names}}' | grep -qx "$NGINX_CONTAINER"; then
+    return 0
+  fi
+  if docker inspect "$NGINX_CONTAINER" --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' \
+    | grep -qw "$EDGE_NETWORK"; then
+    return 0
+  fi
+  log "Attach $NGINX_CONTAINER to $EDGE_NETWORK"
+  docker network connect "$EDGE_NETWORK" "$NGINX_CONTAINER"
+}
+
 reload_prod_nginx() {
   local nginx_src="$ROOT/deploy/nginx/docker.conf"
   local nginx_dst="$PROD_ROOT/deploy/nginx/docker.conf"
@@ -66,9 +78,18 @@ reload_prod_nginx() {
   fi
   mkdir -p "$(dirname "$nginx_dst")"
   cp "$nginx_src" "$nginx_dst"
+  ensure_nginx_on_edge
   log "Reload production nginx ($NGINX_CONTAINER)"
   docker exec "$NGINX_CONTAINER" nginx -t
   docker exec "$NGINX_CONTAINER" nginx -s reload
+  if docker exec "$NGINX_CONTAINER" wget -q -O- --timeout=5 \
+    http://kinetix-staging-web:3000/staging/auth/login >/dev/null 2>&1; then
+    log "nginx can reach kinetix-staging-web"
+  else
+    echo "WARN: nginx cannot reach http://kinetix-staging-web:3000/staging/auth/login"
+    docker network inspect "$EDGE_NETWORK" --format '{{range .Containers}}{{.Name}} {{end}}' || true
+    docker compose -f "$APP_ROOT/$COMPOSE_FILE" ps 2>/dev/null || true
+  fi
 }
 
 log "Staging Docker deploy — branch=$DEPLOY_BRANCH app=$APP_ROOT public=$STAGING_PUBLIC_URL"
