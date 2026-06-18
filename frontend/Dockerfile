@@ -30,17 +30,17 @@ ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PUBLIC_BASE_PATH=/staging
 
-RUN addgroup -S nodejs && adduser -S nextjs -G nodejs
+RUN apk add --no-cache wget
 
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-USER nextjs
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
 EXPOSE 3000
 
-HEALTHCHECK --interval=15s --timeout=5s --retries=8 --start-period=30s \
-  CMD node -e "require('http').get('http://127.0.0.1:3000/staging/auth/login', (r) => process.exit(r.statusCode >= 200 && r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1));"
+HEALTHCHECK --interval=15s --timeout=5s --retries=10 --start-period=60s \
+  CMD wget -q -O /dev/null http://127.0.0.1:3000/staging/auth/login || exit 1
 
-CMD ["node", "server.js"]
+ENTRYPOINT ["/docker-entrypoint.sh"]
