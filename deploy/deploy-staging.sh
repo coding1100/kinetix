@@ -110,6 +110,10 @@ docker compose -f docker-compose.yml -f docker-compose.app.yml up -d
 log "Build and start staging Docker stack"
 cd "$APP_ROOT"
 export STAGING_PUBLIC_URL STAGING_FRONTEND_ORIGIN
+if [ -f "$APP_ROOT/docker-compose.env" ]; then
+  cp "$APP_ROOT/docker-compose.env" "$APP_ROOT/.env"
+  log "Synced docker-compose.env -> .env for compose variable substitution"
+fi
 chmod +x "$APP_ROOT/deploy/reset-staging-docker.sh"
 "$APP_ROOT/deploy/reset-staging-docker.sh"
 

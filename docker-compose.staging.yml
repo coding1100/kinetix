@@ -22,14 +22,10 @@ services:
       - internal
     env_file:
       - docker-compose.env
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-riseup}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-riseup}
-      POSTGRES_DB: ${POSTGRES_DB:-riseup}
     volumes:
       - riseup_pg_data_staging:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-riseup} -d ${POSTGRES_DB:-riseup}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -49,8 +45,6 @@ services:
     environment:
       NODE_ENV: production
       PORT: "4000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-riseup}:${POSTGRES_PASSWORD:-riseup}@postgres:5432/${POSTGRES_DB:-riseup}
-      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-riseup}:${POSTGRES_PASSWORD:-riseup}@postgres:5432/${POSTGRES_DB:-riseup}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-staging-jwt-access-secret-min-32-chars-long}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-staging-jwt-refresh-secret-min-32-chars-long}
       API_PUBLIC_URL: ${STAGING_PUBLIC_URL:-http://3.140.5.67/staging}

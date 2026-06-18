@@ -20,16 +20,42 @@ print("ERROR: postgres not reachable after 90s", file=sys.stderr)
 sys.exit(1)
 PY
 
+echo "Preparing database URL from container env..."
+eval "$(python - <<'PY'
+import os
+import shlex
+import sys
+from urllib.parse import quote_plus
+
+user = os.environ.get("POSTGRES_USER", "riseup")
+password = os.environ.get("POSTGRES_PASSWORD", "")
+db = os.environ.get("POSTGRES_DB", "riseup")
+
+url = os.environ.get("DATABASE_URL", "")
+if not url:
+    if not password:
+        print("echo 'ERROR: POSTGRES_PASSWORD is not set in container env' >&2", file=sys.stderr)
+        print("exit 1")
+        sys.exit(0)
+    url = (
+        f"postgresql://{quote_plus(user)}:{quote_plus(password)}"
+        f"@postgres:5432/{quote_plus(db)}"
+    )
+
+print(f"export DATABASE_URL={shlex.quote(url)}")
+print(f"export DIRECT_DATABASE_URL={shlex.quote(url)}")
+safe = url.split('@')[-1] if '@' in url else url
+print(f"echo DATABASE_URL target: ...@{safe}")
+PY
+)"
+
 echo "Checking database credentials..."
 python - <<'PY'
 import asyncio
 import os
 import sys
 
-url = os.environ.get("DATABASE_URL", "")
-if not url:
-    print("ERROR: DATABASE_URL is not set", file=sys.stderr)
-    sys.exit(1)
+url = os.environ["DATABASE_URL"]
 
 async def check() -> None:
     from sqlalchemy import text
@@ -43,11 +69,6 @@ async def check() -> None:
         print("database connection ok")
     except Exception as exc:
         print(f"ERROR: database connection failed: {exc}", file=sys.stderr)
-        print(
-            "TIP: ensure docker-compose.env POSTGRES_PASSWORD matches the "
-            "existing postgres volume password",
-            file=sys.stderr,
-        )
         sys.exit(1)
     finally:
         await engine.dispose()
