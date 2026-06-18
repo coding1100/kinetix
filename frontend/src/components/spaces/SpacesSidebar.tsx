@@ -231,10 +231,10 @@ export function SpacesSidebar() {
                       </span>
                       <span className="truncate">{space.name}</span>
                     </button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Tooltip>
+                    <Tooltip>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
                             <TooltipTrigger
                               render={
                                 <Button
@@ -247,11 +247,9 @@ export function SpacesSidebar() {
                                 </Button>
                               }
                             />
-                            <TooltipContent side="bottom">Actions</TooltipContent>
-                          </Tooltip>
-                        }
-                      />
-                      <DropdownMenuContent align="end">
+                          }
+                        />
+                        <DropdownMenuContent align="end">
                         <DropdownMenuItem
                           onClick={() =>
                             openDialog({ type: "folder", spaceId: space.id })
@@ -296,8 +294,10 @@ export function SpacesSidebar() {
                             Delete space
                           </DropdownMenuItem>
                         ) : null}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      <TooltipContent side="bottom">Actions</TooltipContent>
+                    </Tooltip>
                   </div>
                   {expandedState[space.id] ? (
                     <div className="mt-0.5 space-y-2 pl-2">
@@ -308,10 +308,10 @@ export function SpacesSidebar() {
                               <FolderIcon className="size-3.5 shrink-0" />
                               <span className="truncate">{folder.name}</span>
                             </div>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger
-                                render={
-                                  <Tooltip>
+                            <Tooltip>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger
+                                  render={
                                     <TooltipTrigger
                                       render={
                                         <Button
@@ -324,11 +324,9 @@ export function SpacesSidebar() {
                                         </Button>
                                       }
                                     />
-                                    <TooltipContent side="bottom">Actions</TooltipContent>
-                                  </Tooltip>
-                                }
-                              />
-                              <DropdownMenuContent align="end">
+                                  }
+                                />
+                                <DropdownMenuContent align="end">
                                 <DropdownMenuItem
                                   onClick={() =>
                                     openDialog({
@@ -367,8 +365,10 @@ export function SpacesSidebar() {
                                   <Trash2Icon className="size-4" />
                                   Delete folder
                                 </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                              <TooltipContent side="bottom">Actions</TooltipContent>
+                            </Tooltip>
                           </div>
                           <ul className="space-y-0.5">
                             {folder.lists.map((list) => (
@@ -518,10 +518,10 @@ function ListNavItem({
           </span>
         ) : null}
       </Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Tooltip>
+      <Tooltip>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
               <TooltipTrigger
                 render={
                   <Button
@@ -534,23 +534,23 @@ function ListNavItem({
                   </Button>
                 }
               />
-              <TooltipContent side="bottom">Actions</TooltipContent>
-            </Tooltip>
-          }
-        />
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={onRename}>
-            <PencilIcon className="size-4" />
-            Rename
-          </DropdownMenuItem>
-          {!isPersonal ? (
-            <DropdownMenuItem variant="destructive" onClick={onDelete}>
-              <Trash2Icon className="size-4" />
-              Delete list
+            }
+          />
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onRename}>
+              <PencilIcon className="size-4" />
+              Rename
             </DropdownMenuItem>
-          ) : null}
-        </DropdownMenuContent>
-      </DropdownMenu>
+            {!isPersonal ? (
+              <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                <Trash2Icon className="size-4" />
+                Delete list
+              </DropdownMenuItem>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <TooltipContent side="bottom">Actions</TooltipContent>
+      </Tooltip>
     </li>
   );
 }
