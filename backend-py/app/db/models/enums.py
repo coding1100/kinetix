@@ -3,6 +3,7 @@ import enum
 
 class WorkspaceRole(str, enum.Enum):
     OWNER = "OWNER"
+    SUPER_ADMIN = "SUPER_ADMIN"
     ADMIN = "ADMIN"
     MEMBER = "MEMBER"
     GUEST = "GUEST"
@@ -13,6 +14,11 @@ class MemberStatus(str, enum.Enum):
     ACTIVE = "ACTIVE"
     INVITED = "INVITED"
     SUSPENDED = "SUSPENDED"
+
+
+class TeamRole(str, enum.Enum):
+    LEAD = "LEAD"
+    MEMBER = "MEMBER"
 
 
 class TaskStatus(str, enum.Enum):

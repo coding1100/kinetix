@@ -15,10 +15,12 @@ from app.db.models.user import User
 from app.db.models.workspace import Workspace, WorkspaceMember
 from app.schemas.workspace import CreateInviteBody
 from app.services import email_service
+from app.services.workspace_permissions import can_assign_role
 from app.services.auth_service import issue_refresh_for_user
 
 _INVITE_ROLES = {
     WorkspaceRole.OWNER,
+    WorkspaceRole.SUPER_ADMIN,
     WorkspaceRole.ADMIN,
     WorkspaceRole.MEMBER,
 }
@@ -43,6 +45,9 @@ async def create_invite(
 ) -> dict:
     if inviter_role not in _INVITE_ROLES:
         raise AppError(403, "FORBIDDEN", "You cannot invite users to this workspace")
+
+    if not can_assign_role(inviter_role, body.role):
+        raise AppError(403, "FORBIDDEN", "You cannot invite users with this role")
 
     email = body.email.lower()
     existing_user = await session.scalar(

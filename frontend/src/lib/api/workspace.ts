@@ -19,6 +19,7 @@ export interface WorkspaceMemberRow {
   status: string;
   joinedAt: string | null;
   presence?: import("@/stores/profile-store").PresenceStatus;
+  teams?: { id: string; name: string; color: string; icon: string }[];
 }
 
 export interface WorkspaceInviteRow {

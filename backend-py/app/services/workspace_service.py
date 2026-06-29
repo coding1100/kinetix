@@ -8,6 +8,13 @@ from app.db.models.enums import MemberStatus, WorkspaceRole
 from app.db.models.workspace import Workspace, WorkspaceMember
 from app.socket.presence import get_presence
 from app.services.personal_space_service import ensure_personal_space
+from app.services.workspace_permissions import (
+    can_assign_role,
+    can_delete_workspace,
+    can_edit_member,
+    can_manage_people,
+    can_transfer_ownership,
+)
 from app.schemas.workspace import CreateWorkspaceBody, UpdateWorkspaceMemberBody
 
 
@@ -112,10 +119,7 @@ async def update_workspace(
             WorkspaceMember.user_id == user_id,
         )
     )
-    if not membership or membership.role not in (
-        WorkspaceRole.OWNER,
-        WorkspaceRole.ADMIN,
-    ):
+    if not membership or not can_manage_people(membership.role):
         raise AppError(
             403, "FORBIDDEN", "Only owners and admins can update workspace"
         )
@@ -132,6 +136,9 @@ async def update_workspace(
 
 
 async def list_workspace_members(session: AsyncSession, workspace_id: str) -> list[dict]:
+    from app.services import team_service
+
+    teams_by_user = await team_service.member_teams_map(session, workspace_id)
     rows = (
         await session.scalars(
             select(WorkspaceMember)
@@ -154,13 +161,14 @@ async def list_workspace_members(session: AsyncSession, workspace_id: str) -> li
             "status": m.status.value,
             "joinedAt": m.joined_at.isoformat() if m.joined_at else None,
             "presence": get_presence(workspace_id, m.user.id),
+            "teams": teams_by_user.get(m.user.id, []),
         }
         for m in rows
     ]
 
 
 def _assert_can_manage_people(actor_role: WorkspaceRole) -> None:
-    if actor_role not in (WorkspaceRole.OWNER, WorkspaceRole.ADMIN):
+    if not can_manage_people(actor_role):
         raise AppError(
             403,
             "FORBIDDEN",
@@ -169,14 +177,11 @@ def _assert_can_manage_people(actor_role: WorkspaceRole) -> None:
 
 
 def _assert_can_edit_target(actor_role: WorkspaceRole, target_role: WorkspaceRole) -> None:
-    if actor_role == WorkspaceRole.ADMIN and target_role in (
-        WorkspaceRole.OWNER,
-        WorkspaceRole.ADMIN,
-    ):
+    if not can_edit_member(actor_role, target_role):
         raise AppError(
             403,
             "FORBIDDEN",
-            "Admins cannot change owners or other admins",
+            "You cannot change this member's role",
         )
 
 
@@ -190,11 +195,8 @@ async def update_workspace_member(
 ) -> dict:
     _assert_can_manage_people(actor_role)
 
-    if actor_role == WorkspaceRole.ADMIN and body.role in (
-        WorkspaceRole.OWNER,
-        WorkspaceRole.ADMIN,
-    ):
-        raise AppError(403, "FORBIDDEN", "Admins can only assign member or guest roles")
+    if not can_assign_role(actor_role, body.role):
+        raise AppError(403, "FORBIDDEN", "You cannot assign this role")
 
     target = await session.scalar(
         select(WorkspaceMember).where(
@@ -251,6 +253,9 @@ async def remove_workspace_member(
 
     if target.role == WorkspaceRole.OWNER:
         raise AppError(403, "FORBIDDEN", "Cannot remove the workspace owner")
+
+    if target.role == WorkspaceRole.SUPER_ADMIN and actor_role != WorkspaceRole.OWNER:
+        raise AppError(403, "FORBIDDEN", "Only the workspace owner can remove a super admin")
 
     _assert_can_edit_target(actor_role, target.role)
 

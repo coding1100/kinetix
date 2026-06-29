@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/sheet";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { useAuthStore, selectActiveWorkspace } from "@/stores/auth-store";
+import { useTeamsStore } from "@/stores/teams-store";
 import {
   cancelWorkspaceInvite,
   fetchWorkspaceInvites,
@@ -62,13 +63,38 @@ import {
 } from "@/lib/user-display";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { fetchTeams } from "@/lib/api/teams";
+import {
+  MemberTeamBadges,
+  TeamFilterLabel,
+} from "@/components/teams/MemberTeamBadges";
 
 function canManagePeople(role: string) {
-  return role === "OWNER" || role === "ADMIN";
+  return role === "OWNER" || role === "SUPER_ADMIN" || role === "ADMIN";
 }
 
 function canInvitePeople(role: string) {
-  return role === "OWNER" || role === "ADMIN" || role === "MEMBER";
+  return (
+    role === "OWNER" ||
+    role === "SUPER_ADMIN" ||
+    role === "ADMIN" ||
+    role === "MEMBER"
+  );
+}
+
+function canEditMemberRole(
+  actorRole: string,
+  manage: boolean,
+  member: WorkspaceMemberRow,
+  currentUserId: string | undefined
+) {
+  if (!manage || member.id === currentUserId || member.role === "OWNER") {
+    return false;
+  }
+  if (member.role === "SUPER_ADMIN" && actorRole !== "OWNER") {
+    return false;
+  }
+  return true;
 }
 
 function formatJoined(iso: string | null) {
@@ -87,6 +113,8 @@ function formatJoined(iso: string | null) {
 function memberRoleSelectValue(role: string) {
   const map: Record<string, string> = {
     MEMBER: "member",
+    OWNER: "owner",
+    SUPER_ADMIN: "super-admin",
     ADMIN: "admin",
     GUEST: "guest",
     LIMITED_MEMBER: "limited-member",
@@ -133,6 +161,7 @@ export function PeopleView() {
   const workspace = useAuthStore(selectActiveWorkspace);
   const currentUserId = useAuthStore((s) => s.user?.id);
   const actorRole = workspace?.role ?? "MEMBER";
+  const teamsRefreshKey = useTeamsStore((s) => s.refreshKey);
 
   const [reloadKey, setReloadKey] = useState(0);
   const [query, setQuery] = useState("");
@@ -145,11 +174,15 @@ export function PeopleView() {
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
   const [memberToRemove, setMemberToRemove] =
     useState<WorkspaceMemberRow | null>(null);
+  const [teamFilter, setTeamFilter] = useState<string>("all");
+  const [teams, setTeams] = useState<
+    { id: string; name: string; color: string; icon: string }[]
+  >([]);
   const seedPresence = usePresenceStore((s) => s.seedPresence);
 
   const manage = canManagePeople(actorRole);
   const canInvite = canInvitePeople(actorRole);
-  const canInviteAdmin = actorRole === "OWNER";
+  const canInviteAdmin = actorRole === "OWNER" || actorRole === "SUPER_ADMIN";
 
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 
@@ -159,6 +192,15 @@ export function PeopleView() {
     try {
       const peopleRes = await fetchWorkspacePeople(accessToken, workspaceId);
       setMembers(peopleRes.data);
+      const teamsRes = await fetchTeams(accessToken, workspaceId);
+      setTeams(
+        teamsRes.data.map((t) => ({
+          id: t.id,
+          name: t.name,
+          color: t.color,
+          icon: t.icon,
+        }))
+      );
       if (canInvite || manage) {
         const invitesRes = await fetchWorkspaceInvites(accessToken, workspaceId);
         setInvites(invitesRes.data);
@@ -176,7 +218,7 @@ export function PeopleView() {
 
   useEffect(() => {
     void load();
-  }, [load, reloadKey]);
+  }, [load, reloadKey, teamsRefreshKey]);
 
   useEffect(() => {
     if (showInvitePanel) setInviteOpen(true);
@@ -188,15 +230,22 @@ export function PeopleView() {
   };
 
   const q = query.trim().toLowerCase();
+
   const filteredMembers = useMemo(
     () =>
-      members.filter(
-        (m) =>
+      members.filter((m) => {
+        const qMatch =
+          !q ||
           m.fullName.toLowerCase().includes(q) ||
-          m.email.toLowerCase().includes(q)
-      ),
-    [members, q]
+          m.email.toLowerCase().includes(q);
+        const teamMatch =
+          teamFilter === "all" ||
+          (m.teams ?? []).some((t) => t.id === teamFilter);
+        return qMatch && teamMatch;
+      }),
+    [members, q, teamFilter]
   );
+
   const filteredInvites = useMemo(
     () =>
       invites.filter(
@@ -215,6 +264,11 @@ export function PeopleView() {
         .map((m) => ({ userId: m.id, status: m.presence! }))
     );
   }, [members, seedPresence]);
+
+  const selectedFilterTeam = useMemo(
+    () => teams.find((t) => t.id === teamFilter),
+    [teams, teamFilter]
+  );
 
   const showMembers =
     tab === "all" || tab === "members"
@@ -326,6 +380,7 @@ export function PeopleView() {
               accessToken={accessToken}
               workspaceId={workspaceId}
               canInviteAdmin={canInviteAdmin}
+              canInviteSuperAdmin={actorRole === "OWNER"}
               compact
               onSuccess={() => {
                 reload();
@@ -369,6 +424,25 @@ export function PeopleView() {
               onChange={(e) => setQuery(e.target.value)}
             />
           </div>
+          <Select value={teamFilter} onValueChange={(v) => v && setTeamFilter(v)}>
+            <SelectTrigger className="h-9 w-[200px]">
+              <SelectValue placeholder="All teams">
+                {teamFilter === "all" ? (
+                  "All teams"
+                ) : selectedFilterTeam ? (
+                  <TeamFilterLabel team={selectedFilterTeam} />
+                ) : null}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All teams</SelectItem>
+              {teams.map((t) => (
+                <SelectItem key={t.id} value={t.id} label={t.name}>
+                  <TeamFilterLabel team={t} />
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {loading ? (
@@ -381,6 +455,7 @@ export function PeopleView() {
                   <th className="px-4 py-2.5 font-medium">Name</th>
                   <th className="px-4 py-2.5 font-medium">Email</th>
                   <th className="px-4 py-2.5 font-medium">Role</th>
+                  <th className="min-w-[200px] px-4 py-2.5 font-medium">Teams</th>
                   <th className="px-4 py-2.5 font-medium">Joined</th>
                   <th className="px-4 py-2.5 font-medium">Invited by</th>
                   <th className="px-4 py-2.5 font-medium">Status</th>
@@ -408,7 +483,7 @@ export function PeopleView() {
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{m.email}</td>
                     <td className="px-4 py-3">
-                      {manage && m.role !== "OWNER" && m.id !== currentUserId ? (
+                      {canEditMemberRole(actorRole, manage, m, currentUserId) ? (
                         <Select
                           value={memberRoleSelectValue(m.role)}
                           onValueChange={(v) => v && handleRoleChange(m, v)}
@@ -425,6 +500,9 @@ export function PeopleView() {
                             {canInviteAdmin ? (
                               <SelectItem value="admin">Admin</SelectItem>
                             ) : null}
+                            {actorRole === "OWNER" ? (
+                              <SelectItem value="super-admin">Super admin</SelectItem>
+                            ) : null}
                           </SelectContent>
                         </Select>
                       ) : (
@@ -432,6 +510,9 @@ export function PeopleView() {
                           {ROLE_LABELS[m.role] ?? m.role}
                         </span>
                       )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <MemberTeamBadges teams={m.teams ?? []} />
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {formatJoined(m.joinedAt)}
@@ -442,7 +523,7 @@ export function PeopleView() {
                     </td>
                     {manage ? (
                       <td className="px-4 py-3 text-right">
-                        {m.role !== "OWNER" && m.id !== currentUserId ? (
+                        {canEditMemberRole(actorRole, manage, m, currentUserId) ? (
                           <DropdownMenu>
                             <DropdownMenuTrigger
                               render={

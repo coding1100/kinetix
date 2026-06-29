@@ -134,7 +134,9 @@ export function ChannelDetailsPanel({ channelId }: { channelId: string }) {
 }
 
 function accessPermission(role?: string | null) {
-  if (role === "OWNER" || role === "ADMIN") return "admin";
+  if (role === "OWNER" || role === "SUPER_ADMIN" || role === "ADMIN") {
+    return "admin";
+  }
   return "member";
 }
 
@@ -217,6 +219,7 @@ function FollowersView({ channelId }: { channelId: string }) {
   const canAddToAccess = channelIsPrivate;
   const canManageMembers =
     workspaceRole === "OWNER" ||
+    workspaceRole === "SUPER_ADMIN" ||
     workspaceRole === "ADMIN" ||
     isChannelCreator;
   const canRemoveMember = (member: ChannelMember) =>

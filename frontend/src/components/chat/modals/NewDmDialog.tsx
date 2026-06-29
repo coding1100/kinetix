@@ -26,6 +26,7 @@ import {
 } from "@/lib/user-display";
 import { upsertDmInSidebar } from "@/lib/chat/sidebar-dm";
 import { cn } from "@/lib/utils";
+import { ApiError } from "@/lib/api/client";
 
 export function NewDmDialog() {
   const router = useRouter();
@@ -92,7 +93,11 @@ export function NewDmDialog() {
   };
 
   const startConversation = async () => {
-    if (!ready || selectedIds.size === 0) return;
+    if (!ready) {
+      toast.error("Workspace is still loading. Try again in a moment.");
+      return;
+    }
+    if (selectedIds.size === 0) return;
     setCreating(true);
     try {
       const userIds = Array.from(selectedIds);
@@ -103,8 +108,10 @@ export function NewDmDialog() {
       closeModal();
       reset();
       router.push(`/chat/dm/${dm.id}`);
-    } catch {
-      toast.error("Failed to start conversation");
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : "Failed to start conversation"
+      );
     } finally {
       setCreating(false);
     }

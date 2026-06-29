@@ -32,6 +32,7 @@ class Workspace(Base):
 
     members: Mapped[list["WorkspaceMember"]] = relationship(back_populates="workspace")
     invites: Mapped[list["Invite"]] = relationship(back_populates="workspace")
+    teams: Mapped[list["Team"]] = relationship(back_populates="workspace")
 
 
 class WorkspaceMember(Base):

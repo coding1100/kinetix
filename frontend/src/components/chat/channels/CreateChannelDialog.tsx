@@ -82,7 +82,10 @@ export function CreateChannelDialog() {
       toast.error("Channel name is required");
       return;
     }
-    if (!ready) return;
+    if (!ready) {
+      toast.error("Workspace is still loading. Try again in a moment.");
+      return;
+    }
 
     setCreating(true);
     try {

@@ -11,6 +11,7 @@ from app.config import get_settings
 
 ROLE_LABELS = {
     "OWNER": "Owner",
+    "SUPER_ADMIN": "Super admin",
     "ADMIN": "Admin",
     "MEMBER": "Member",
     "GUEST": "Guest",

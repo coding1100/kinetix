@@ -897,7 +897,13 @@ export function ConversationView({
     overrideChannelName ?? cachedChannelName ?? channel?.name ?? "Channel";
   const canDeleteChannel = useMemo(() => {
     if (type !== "channel") return false;
-    if (workspaceRole === "OWNER" || workspaceRole === "ADMIN") return true;
+    if (
+      workspaceRole === "OWNER" ||
+      workspaceRole === "SUPER_ADMIN" ||
+      workspaceRole === "ADMIN"
+    ) {
+      return true;
+    }
     const createdById =
       channel?.createdById ?? cachedSidebarChannel?.createdById ?? null;
     if (currentUserId && createdById === currentUserId) return true;

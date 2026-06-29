@@ -110,6 +110,7 @@ export function ChatSidebar() {
   const sidebarListsCache = useChatStore((s) => s.sidebarListsCache);
   const setSidebarListsCache = useChatStore((s) => s.setSidebarListsCache);
   const openModal = useUiStore((s) => s.openModal);
+  const openModalDeferred = useUiStore((s) => s.openModalDeferred);
   const { secondaryPanelOpen, setSecondaryPanelOpen } = useShellStore();
   const seedPresence = usePresenceStore((s) => s.seedPresence);
   const userId = useAuthStore((s) => s.user?.id);
@@ -216,7 +217,8 @@ export function ChatSidebar() {
         dms={dms}
         pathname={pathname}
         currentUserId={userId}
-        onAddChannel={goToAllChannels}
+        onAddChannel={() => openModal("new-channel")}
+        onNewDm={() => openModal("new-dm")}
       />
     ) : (
       <OrganizedList
@@ -224,7 +226,8 @@ export function ChatSidebar() {
         dms={dms}
         pathname={pathname}
         currentUserId={userId}
-        onAddChannel={goToAllChannels}
+        onAddChannel={() => openModal("new-channel")}
+        onNewDm={() => openModal("new-dm")}
       />
     );
 
@@ -258,24 +261,27 @@ export function ChatSidebar() {
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button variant="ghost" size="icon-sm" aria-label="Create chat">
-                        <PlusIcon className="size-4" />
-                      </Button>
-                    }
-                  />
-                  <TooltipContent side="bottom">Create</TooltipContent>
-                </Tooltip>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Create chat"
+                  title="Create"
+                >
+                  <PlusIcon className="size-4" />
+                </Button>
               }
             />
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => openModal("new-channel")}>
+              <DropdownMenuItem
+                onClick={() => openModalDeferred("new-channel")}
+              >
                 New channel
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => openModal("new-dm")}>
+              <DropdownMenuItem onClick={() => openModalDeferred("new-dm")}>
                 New DM
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={goToAllChannels}>
+                Browse channels
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -381,12 +387,14 @@ function OrganizedList({
   pathname,
   currentUserId,
   onAddChannel,
+  onNewDm,
 }: {
   channels: Channel[];
   dms: DirectMessage[];
   pathname: string;
   currentUserId?: string | null;
   onAddChannel: () => void;
+  onNewDm: () => void;
 }) {
   const favoriteChannels = channels.filter((c) => c.starred);
   const otherChannels = channels.filter((c) => !c.starred);
@@ -464,6 +472,15 @@ function OrganizedList({
               isGroup={d.isGroup}
             />
           ))}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-full justify-start gap-2 px-2 text-muted-foreground"
+            onClick={onNewDm}
+          >
+            <PlusIcon className="size-3.5" />
+            New message
+          </Button>
         </div>
       </div>
     </div>
@@ -476,12 +493,14 @@ function RecentsList({
   pathname,
   currentUserId,
   onAddChannel,
+  onNewDm,
 }: {
   channels: Channel[];
   dms: DirectMessage[];
   pathname: string;
   currentUserId?: string | null;
   onAddChannel: () => void;
+  onNewDm: () => void;
 }) {
   return (
     <OrganizedList
@@ -490,6 +509,7 @@ function RecentsList({
       pathname={pathname}
       currentUserId={currentUserId}
       onAddChannel={onAddChannel}
+      onNewDm={onNewDm}
     />
   );
 }

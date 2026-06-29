@@ -146,9 +146,12 @@ If SMTP is not configured, invites are still created and the invite link is copi
 
 ### Seed credentials
 
-- `owner@demo.com` / `password123`
-- `alex@demo.com` / `password123`
+- `owner@demo.com` / `password123` (Owner)
+- `admin@demo.com` / `password123` (Admin)
+- `alex@demo.com` / `password123` (Member)
 - Workspace: **Acme Demo**
+
+Create or refresh the admin user: `cd backend-py && uv run python scripts/seed_demo_admin.py`
 
 ### Database (Supabase)
 

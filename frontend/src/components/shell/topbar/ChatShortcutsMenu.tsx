@@ -25,6 +25,7 @@ import { useShellStore } from "@/stores/shell-store";
 export function ChatShortcutsMenu() {
   const router = useRouter();
   const openModal = useUiStore((s) => s.openModal);
+  const openModalDeferred = useUiStore((s) => s.openModalDeferred);
   const setSecondaryPanelOpen = useShellStore((s) => s.setSecondaryPanelOpen);
 
   const goChat = () => {
@@ -57,11 +58,11 @@ export function ChatShortcutsMenu() {
           <MessageSquareIcon className="size-4" />
           Open Chat
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => openModal("new-dm")}>
+        <DropdownMenuItem onClick={() => openModalDeferred("new-dm")}>
           <MessageCircleIcon className="size-4" />
           New direct message
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => openModal("new-channel")}>
+        <DropdownMenuItem onClick={() => openModalDeferred("new-channel")}>
           <PlusIcon className="size-4" />
           New channel
         </DropdownMenuItem>

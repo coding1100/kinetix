@@ -139,6 +139,7 @@ export function HomeSidebar() {
   const mainItems = visibleItems.filter((i) => i.id !== "favorites");
   const favoritesItem = visibleItems.find((i) => i.id === "favorites");
   const openModal = useUiStore((s) => s.openModal);
+  const openModalDeferred = useUiStore((s) => s.openModalDeferred);
   const { secondaryPanelOpen, setSecondaryPanelOpen } = useShellStore();
   const { unreadCount } = useNotificationsUnread();
   const onMyTasksRoute = pathname.startsWith("/home/my-tasks");
@@ -217,8 +218,8 @@ export function HomeSidebar() {
                 <DropdownMenuItem
                   key={item}
                   onClick={() => {
-                    if (item === "Channel") openModal("new-channel");
-                    else if (item === "Message") openModal("new-dm");
+                    if (item === "Channel") openModalDeferred("new-channel");
+                    else if (item === "Message") openModalDeferred("new-dm");
                     else if (item === "Task") {
                       window.location.href = "/home/all-tasks";
                     } else toast(`${item} — coming soon`);
