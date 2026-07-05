@@ -24,11 +24,13 @@ RUN npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 
+ARG NEXT_PUBLIC_BASE_PATH=
+ENV NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH
+
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NEXT_PUBLIC_BASE_PATH=/staging
 
 RUN apk add --no-cache wget
 
@@ -41,6 +43,6 @@ RUN chmod +x /docker-entrypoint.sh
 EXPOSE 3000
 
 HEALTHCHECK --interval=15s --timeout=5s --retries=10 --start-period=60s \
-  CMD wget -q -O /dev/null http://127.0.0.1:3000/staging/auth/login || exit 1
+  CMD wget -q -O /dev/null "http://127.0.0.1:3000${NEXT_PUBLIC_BASE_PATH:-}/auth/login" || exit 1
 
 ENTRYPOINT ["/docker-entrypoint.sh"]

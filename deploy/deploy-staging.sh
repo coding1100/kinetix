@@ -105,7 +105,7 @@ ensure_edge_network
 
 log "Ensure production stack + nginx edge network ($PROD_ROOT)"
 cd "$PROD_ROOT"
-docker compose -f docker-compose.yml -f docker-compose.app.yml up -d
+docker compose --env-file docker-compose.env -f docker-compose.yml -f docker-compose.app.yml up -d
 
 log "Build and start staging Docker stack"
 cd "$APP_ROOT"

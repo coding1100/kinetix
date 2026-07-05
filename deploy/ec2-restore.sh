@@ -12,7 +12,7 @@ log() { echo "==> $*"; }
 log "1) Production Docker stack ($PROD_ROOT)"
 cd "$PROD_ROOT"
 docker network create kinetix_edge 2>/dev/null || true
-docker compose -f docker-compose.yml -f docker-compose.app.yml up -d
+docker compose --env-file docker-compose.env -f docker-compose.yml -f docker-compose.app.yml up -d
 sleep 3
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
