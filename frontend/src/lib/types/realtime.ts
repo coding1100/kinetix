@@ -73,3 +73,9 @@ export type ChatReadPayload = {
 };
 
 export type { TaskRealtimePayload } from "@/lib/tasks/realtime";
+
+export type WorkspaceMemberRolePayload = {
+  workspaceId: string;
+  userId: string;
+  role: string;
+};

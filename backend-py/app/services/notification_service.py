@@ -223,6 +223,39 @@ async def create_channel_access_notifications(
     return created
 
 
+async def create_invite_accepted_notification(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    actor_user_id: str,
+    recipient_id: str,
+    workspace_name: str,
+) -> list[tuple[str, InboxItem]]:
+    if recipient_id == actor_user_id:
+        return []
+
+    users = await _load_users(session, [actor_user_id])
+    actor = users.get(actor_user_id)
+    actor_name = actor.full_name if actor else "Someone"
+
+    item = InboxItem(
+        workspace_id=workspace_id,
+        user_id=recipient_id,
+        type=InboxItemType.REMINDER,
+        title="Invite accepted",
+        preview=f"{actor_name} accepted your invite to {workspace_name}",
+        source=workspace_name,
+        unread=True,
+        bucket=InboxBucket.ALL,
+        time_group=InboxTimeGroup.TODAY,
+        href="/people",
+        activity_kind="invite_accepted",
+    )
+    session.add(item)
+    await session.flush()
+    return [(recipient_id, item)]
+
+
 async def _resolve_mentioned_user_ids(
     session: AsyncSession,
     workspace_id: str,
@@ -396,15 +429,22 @@ async def create_thread_reply_notifications(
 
     replies = (
         await session.scalars(
-            select(ChatMessage.author_id).where(
-                ChatMessage.parent_id == parent.id,
-                ChatMessage.author_id != author_user_id,
-            )
+            select(ChatMessage).where(ChatMessage.parent_id == parent.id)
         )
     ).all()
-    for author_id in replies:
-        if author_id != author_user_id:
-            users_to_notify.add(author_id)
+    for reply in replies:
+        if reply.author_id != author_user_id:
+            users_to_notify.add(reply.author_id)
+
+    # Anyone @mentioned anywhere in the thread (parent or earlier replies)
+    # also hears about new activity, even if they never replied themselves.
+    thread_bodies = [parent.body, *[r.body for r in replies]]
+    for text in thread_bodies:
+        labels = parse_person_mention_labels(text)
+        mentioned = await _resolve_mentioned_user_ids(
+            session, workspace_id, labels, exclude_user_id=author_user_id
+        )
+        users_to_notify.update(mentioned)
 
     if not users_to_notify:
         return []
@@ -887,6 +927,8 @@ async def create_task_activity_notifications(
     created: list[tuple[str, InboxItem]] = []
 
     for recipient_id in dict.fromkeys(recipient_ids):
+        if recipient_id == actor_user_id:
+            continue
         item = InboxItem(
             workspace_id=workspace_id,
             user_id=recipient_id,

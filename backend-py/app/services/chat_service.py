@@ -45,6 +45,7 @@ from app.services.chat_helpers import (
 from app.services.workspace_permissions import (
     get_active_workspace_role,
     has_privileged_workspace_access,
+    is_privileged,
     is_workspace_admin as _role_is_workspace_admin,
 )
 from app.socket.emit import (
@@ -720,7 +721,20 @@ async def create_channel(
                 "Some users are not active workspace members",
             )
     else:
-        member_ids = list(active_set)
+        # Public channels auto-include every active member EXCEPT Guests —
+        # Guests only get channels they're explicitly shared into, matching
+        # ClickUp's "guests only access what's shared with them".
+        non_guest_ids = (
+            await session.scalars(
+                select(WorkspaceMember.user_id).where(
+                    WorkspaceMember.workspace_id == workspace_id,
+                    WorkspaceMember.status == MemberStatus.ACTIVE,
+                    WorkspaceMember.role != WorkspaceRole.GUEST,
+                )
+            )
+        ).all()
+        explicit_guests = set(body.memberIds or []) & active_set
+        member_ids = list(set(non_guest_ids) | explicit_guests)
 
     channel = ChatChannel(
         workspace_id=workspace_id,
@@ -926,14 +940,21 @@ async def send_channel_message(
     return payload
 
 
+def _as_aware_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def _thread_has_new(
     replies: list[ChatMessage],
     user_id: str,
     last_read_at: datetime | None,
 ) -> bool:
-    last_read = last_read_at or _epoch()
+    last_read = _as_aware_utc(last_read_at) if last_read_at else _epoch()
     return any(
-        r.author_id != user_id and r.created_at > last_read for r in replies
+        r.author_id != user_id and _as_aware_utc(r.created_at) > last_read
+        for r in replies
     )
 
 
@@ -1725,12 +1746,33 @@ async def list_channel_members(
     if channel.is_private:
         user_ids = [m.user_id for m in rows]
         roles = await _workspace_role_map(session, workspace_id, user_ids)
-        return {
-            "data": [
-                _channel_member_json(m.user, m, roles.get(m.user_id))
-                for m in rows
-            ]
-        }
+        data = [
+            _channel_member_json(m.user, m, roles.get(m.user_id)) for m in rows
+        ]
+
+        explicit_ids = set(user_ids)
+        privileged_members = (
+            await session.scalars(
+                select(WorkspaceMember)
+                .where(
+                    WorkspaceMember.workspace_id == workspace_id,
+                    WorkspaceMember.status == MemberStatus.ACTIVE,
+                    WorkspaceMember.role.in_(
+                        [WorkspaceRole.OWNER, WorkspaceRole.SUPER_ADMIN]
+                    ),
+                )
+                .options(selectinload(WorkspaceMember.user))
+            )
+        ).all()
+        for pm in privileged_members:
+            if pm.user_id in explicit_ids:
+                continue
+            data.append(
+                _workspace_member_as_channel_json(
+                    pm.user, pm.role.value, is_following=False
+                )
+            )
+        return {"data": data}
 
     workspace_members = (
         await session.scalars(
@@ -2018,8 +2060,6 @@ async def update_channel_member_target(
         )
     )
     if not target:
-        if channel.is_private:
-            raise AppError(404, "NOT_FOUND", "User is not a channel member")
         workspace_member = await session.scalar(
             select(WorkspaceMember).where(
                 WorkspaceMember.workspace_id == workspace_id,
@@ -2029,6 +2069,12 @@ async def update_channel_member_target(
         )
         if not workspace_member:
             raise AppError(404, "NOT_FOUND", "User is not a workspace member")
+        # A private channel's OWNER/SUPER_ADMIN have bypass access but no
+        # explicit membership row until an action like this needs one — lazily
+        # create it. Anyone else without an explicit row is genuinely not in
+        # a private channel.
+        if channel.is_private and not is_privileged(workspace_member.role):
+            raise AppError(404, "NOT_FOUND", "User is not a channel member")
         target = ChatChannelMember(
             channel_id=channel_id,
             user_id=target_user_id,

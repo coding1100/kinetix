@@ -23,10 +23,43 @@ def auth_headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+_SHARED_DEMO_WS: str | None = None
+
+
+async def _shared_demo_workspace_id(client: AsyncClient) -> str:
+    """The workspace both demo users belong to, with owner@demo.com as OWNER.
+
+    Dev databases accumulate extra workspaces, so "first workspace of the
+    owner" is not reliable — cross-user tests need the one they share.
+    """
+    global _SHARED_DEMO_WS
+    if _SHARED_DEMO_WS:
+        return _SHARED_DEMO_WS
+    owner_token = await login(client, *OWNER)
+    member_token = await login(client, *MEMBER)
+    owner_me = await client.get("/api/v1/auth/me", headers=auth_headers(owner_token))
+    assert owner_me.status_code == 200, owner_me.text
+    owner_ws = {w["id"]: w for w in owner_me.json()["workspaces"]}
+    member_me = await client.get("/api/v1/auth/me", headers=auth_headers(member_token))
+    assert member_me.status_code == 200, member_me.text
+    for ws in member_me.json()["workspaces"]:
+        overlap = owner_ws.get(ws["id"])
+        if overlap and overlap["role"] == "OWNER":
+            _SHARED_DEMO_WS = ws["id"]
+            return _SHARED_DEMO_WS
+    raise AssertionError(
+        "No workspace shared by owner@demo.com (as OWNER) and alex@demo.com — reseed demo data"
+    )
+
+
 async def workspace_id(client: AsyncClient, token: str) -> str:
     me = await client.get("/api/v1/auth/me", headers=auth_headers(token))
     assert me.status_code == 200, me.text
-    return me.json()["workspaces"][0]["id"]
+    workspaces = me.json()["workspaces"]
+    shared = await _shared_demo_workspace_id(client)
+    if any(w["id"] == shared for w in workspaces):
+        return shared
+    return workspaces[0]["id"]
 
 
 async def user_id(client: AsyncClient, token: str) -> str:

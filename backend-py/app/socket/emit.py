@@ -227,6 +227,24 @@ async def broadcast_chat_reaction(
     )
 
 
+async def broadcast_workspace_member_role_updated(
+    *,
+    workspace_id: str,
+    user_id: str,
+    role: str,
+) -> None:
+    sio = get_sio()
+    await sio.emit(
+        "workspace:member:role",
+        {
+            "workspaceId": workspace_id,
+            "userId": user_id,
+            "role": role,
+        },
+        room=f"ws:{workspace_id}",
+    )
+
+
 async def broadcast_task_event(
     *,
     workspace_id: str,

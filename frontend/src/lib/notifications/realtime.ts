@@ -23,9 +23,12 @@ export function bumpNotificationsRefresh() {
 
 export function applyHomeNotification(
   event: HomeNotificationPayload,
-  currentUserId: string | undefined
+  currentUserId: string | undefined,
+  currentWorkspaceId?: string | null
 ) {
   if (!currentUserId || !event.userIds.includes(currentUserId)) return;
+  // Never surface another workspace's notifications in this one.
+  if (currentWorkspaceId && event.workspaceId !== currentWorkspaceId) return;
   const { notification } = event;
   ingestLiveNotification(notification);
   toast(notification.title, {

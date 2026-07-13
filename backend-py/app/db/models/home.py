@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSON
@@ -20,6 +21,7 @@ from app.db.models.enums import (
     InboxBucket,
     InboxItemType,
     InboxTimeGroup,
+    PermissionLevel,
     StatusGroup,
     TaskPriority,
     TaskStatus,
@@ -41,6 +43,9 @@ class Space(Base):
     is_personal: Mapped[bool] = mapped_column(
         "isPersonal", Boolean, default=False, server_default="false"
     )
+    is_private: Mapped[bool] = mapped_column(
+        "isPrivate", Boolean, default=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(
         "createdAt", DateTime(timezone=True), server_default=func.now()
     )
@@ -50,6 +55,41 @@ class Space(Base):
     lists: Mapped[list["TaskList"]] = relationship(
         back_populates="space", passive_deletes=True
     )
+    members: Mapped[list["SpaceMember"]] = relationship(
+        back_populates="space", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class SpaceMember(Base):
+    """Explicit per-user permission override on a Space.
+
+    Only meaningful for private Spaces (grants access) or to hand a
+    GUEST/LIMITED_MEMBER a higher level than their role default. Owner/
+    Super Admin always bypass this and don't need a row here.
+    """
+
+    __tablename__ = "SpaceMember"
+    __table_args__ = (
+        UniqueConstraint("spaceId", "userId", name="SpaceMember_spaceId_userId_key"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    space_id: Mapped[str] = mapped_column(
+        "spaceId", String, ForeignKey("Space.id", ondelete="CASCADE")
+    )
+    user_id: Mapped[str] = mapped_column(
+        "userId", String, ForeignKey("User.id", ondelete="CASCADE")
+    )
+    permission_level: Mapped[PermissionLevel] = mapped_column(
+        "permissionLevel", Enum(PermissionLevel, name="PermissionLevel")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        "createdAt", DateTime(timezone=True), server_default=func.now()
+    )
+    space: Mapped["Space"] = relationship(back_populates="members")
+    user: Mapped["User"] = relationship()
 
 
 class Folder(Base):

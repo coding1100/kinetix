@@ -91,7 +91,12 @@ export function deleteTask(
 export function createSpace(
   token: string,
   workspaceId: string,
-  input: { name: string; color?: string; description?: string }
+  input: {
+    name: string;
+    color?: string;
+    description?: string;
+    isPrivate?: boolean;
+  }
 ) {
   return apiFetch<SpaceDto>(wsPath(workspaceId, "/spaces"), {
     method: "POST",
@@ -128,7 +133,12 @@ export function patchSpace(
   token: string,
   workspaceId: string,
   spaceId: string,
-  input: { name?: string; color?: string; description?: string }
+  input: {
+    name?: string;
+    color?: string;
+    description?: string;
+    isPrivate?: boolean;
+  }
 ) {
   return apiFetch<SpaceDto>(wsPath(workspaceId, `/spaces/${spaceId}`), {
     method: "PATCH",

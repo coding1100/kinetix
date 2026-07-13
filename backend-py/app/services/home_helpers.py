@@ -211,6 +211,7 @@ def map_space_row(
         "listCount": list_count,
         "description": space.description,
         "isPersonal": bool(getattr(space, "is_personal", False)),
+        "isPrivate": bool(getattr(space, "is_private", False)),
         "folders": folder_payload,
         "standaloneLists": standalone_payload,
     }

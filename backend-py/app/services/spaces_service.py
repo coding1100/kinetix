@@ -4,16 +4,21 @@ from sqlalchemy.orm import selectinload
 from datetime import datetime, timezone
 
 from app.core.errors import AppError
+from app.db.models.enums import PermissionLevel, WorkspaceRole
 from app.db.models.home import (
     Folder,
     Space,
+    SpaceMember,
     Task,
     TaskAttachment,
     TaskComment,
     TaskFollower,
     TaskList,
 )
+from app.db.models.workspace import WorkspaceMember
+from app.db.models.enums import MemberStatus
 from app.schemas.spaces import (
+    AddSpaceMemberBody,
     CreateFolderBody,
     CreateListBody,
     CreateSpaceBody,
@@ -38,18 +43,91 @@ from app.services.notification_service import (
     create_task_comment_reply_notifications,
     emit_home_notifications,
 )
+from app.services.space_permissions import (
+    DEFAULT_LEVEL_BY_ROLE,
+    get_space_or_403,
+    level_at_least,
+    require_space_permission,
+)
+
+
+def _require_can_create_space(role: WorkspaceRole) -> None:
+    if not level_at_least(DEFAULT_LEVEL_BY_ROLE.get(role), PermissionLevel.EDIT) and role not in (
+        WorkspaceRole.OWNER,
+        WorkspaceRole.SUPER_ADMIN,
+    ):
+        raise AppError(403, "FORBIDDEN", "You don't have permission to create a Space")
+
+
+async def _folder_with_space(
+    session: AsyncSession, workspace_id: str, folder_id: str
+) -> Folder:
+    folder = await session.scalar(
+        select(Folder)
+        .join(Space)
+        .where(Folder.id == folder_id, Space.workspace_id == workspace_id)
+        .options(selectinload(Folder.space))
+    )
+    if not folder:
+        raise AppError(404, "NOT_FOUND", "Folder not found")
+    return folder
+
+
+async def _list_with_space(
+    session: AsyncSession, workspace_id: str, list_id: str
+) -> TaskList:
+    task_list = await session.scalar(
+        select(TaskList)
+        .join(Space)
+        .where(TaskList.id == list_id, Space.workspace_id == workspace_id)
+        .options(selectinload(TaskList.space))
+    )
+    if not task_list:
+        raise AppError(404, "NOT_FOUND", "List not found")
+    return task_list
+
+
+async def _task_with_space(
+    session: AsyncSession, workspace_id: str, task_id: str
+) -> Task:
+    task = await session.scalar(
+        select(Task)
+        .join(TaskList)
+        .join(Space)
+        .where(Task.id == task_id, Space.workspace_id == workspace_id)
+        .options(selectinload(Task.task_list).selectinload(TaskList.space))
+    )
+    if not task:
+        raise AppError(404, "NOT_FOUND", "Task not found")
+    return task
 
 
 async def create_space(
-    session: AsyncSession, workspace_id: str, body: CreateSpaceBody
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    body: CreateSpaceBody,
 ) -> dict:
+    _require_can_create_space(role)
     space = Space(
         workspace_id=workspace_id,
         name=body.name.strip(),
         color=body.color or "#7B68EE",
         description=body.description,
+        is_private=body.is_private,
     )
     session.add(space)
+    await session.flush()
+    if body.is_private:
+        # Creator always keeps explicit EDIT on their own private Space.
+        session.add(
+            SpaceMember(
+                space_id=space.id,
+                user_id=user_id,
+                permission_level=PermissionLevel.EDIT,
+            )
+        )
     await session.commit()
     refreshed = await session.scalar(
         select(Space).where(Space.id == space.id).options(*_SPACE_LOAD)
@@ -62,19 +140,21 @@ async def update_space(
     session: AsyncSession,
     workspace_id: str,
     space_id: str,
+    user_id: str,
+    role: WorkspaceRole,
     body: UpdateSpaceBody,
 ) -> dict:
-    space = await session.scalar(
-        select(Space).where(Space.id == space_id, Space.workspace_id == workspace_id)
+    space = await get_space_or_403(
+        session, workspace_id, space_id, user_id, role, PermissionLevel.EDIT
     )
-    if not space:
-        raise AppError(404, "NOT_FOUND", "Space not found")
     if body.name is not None:
         space.name = body.name.strip()
     if body.color is not None:
         space.color = body.color
     if body.description is not None:
         space.description = body.description or None
+    if body.is_private is not None:
+        space.is_private = body.is_private
     await session.commit()
     refreshed = await session.scalar(
         select(Space)
@@ -87,16 +167,109 @@ async def update_space(
 
 
 async def delete_space(
-    session: AsyncSession, workspace_id: str, space_id: str
+    session: AsyncSession,
+    workspace_id: str,
+    space_id: str,
+    user_id: str,
+    role: WorkspaceRole,
 ) -> dict:
-    space = await session.scalar(
-        select(Space).where(Space.id == space_id, Space.workspace_id == workspace_id)
+    space = await get_space_or_403(
+        session, workspace_id, space_id, user_id, role, PermissionLevel.EDIT
     )
-    if not space:
-        raise AppError(404, "NOT_FOUND", "Space not found")
     if space.is_personal:
         raise AppError(400, "VALIDATION_ERROR", "Cannot delete the Personal space")
     await session.delete(space)
+    await session.commit()
+    return {"ok": True}
+
+
+async def list_space_members(
+    session: AsyncSession,
+    workspace_id: str,
+    space_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+) -> dict:
+    space = await get_space_or_403(
+        session, workspace_id, space_id, user_id, role, PermissionLevel.VIEW
+    )
+    rows = (
+        await session.scalars(
+            select(SpaceMember)
+            .where(SpaceMember.space_id == space.id)
+            .options(selectinload(SpaceMember.user))
+        )
+    ).all()
+    return {
+        "isPrivate": space.is_private,
+        "data": [
+            {
+                "userId": row.user_id,
+                "name": row.user.full_name,
+                "email": row.user.email,
+                "permissionLevel": row.permission_level.value,
+            }
+            for row in rows
+        ],
+    }
+
+
+async def add_space_member(
+    session: AsyncSession,
+    workspace_id: str,
+    space_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    body: AddSpaceMemberBody,
+) -> dict:
+    space = await get_space_or_403(
+        session, workspace_id, space_id, user_id, role, PermissionLevel.EDIT
+    )
+    target_active = await session.scalar(
+        select(WorkspaceMember.user_id).where(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.user_id == body.user_id,
+            WorkspaceMember.status == MemberStatus.ACTIVE,
+        )
+    )
+    if not target_active:
+        raise AppError(400, "VALIDATION_ERROR", "User is not an active workspace member")
+
+    existing = await session.scalar(
+        select(SpaceMember).where(
+            SpaceMember.space_id == space.id, SpaceMember.user_id == body.user_id
+        )
+    )
+    if existing:
+        existing.permission_level = body.permission_level
+    else:
+        session.add(
+            SpaceMember(
+                space_id=space.id,
+                user_id=body.user_id,
+                permission_level=body.permission_level,
+            )
+        )
+    await session.commit()
+    return await list_space_members(session, workspace_id, space_id, user_id, role)
+
+
+async def remove_space_member(
+    session: AsyncSession,
+    workspace_id: str,
+    space_id: str,
+    target_user_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+) -> dict:
+    space = await get_space_or_403(
+        session, workspace_id, space_id, user_id, role, PermissionLevel.EDIT
+    )
+    await session.execute(
+        delete(SpaceMember).where(
+            SpaceMember.space_id == space.id, SpaceMember.user_id == target_user_id
+        )
+    )
     await session.commit()
     return {"ok": True}
 
@@ -105,18 +278,18 @@ async def create_folder(
     session: AsyncSession,
     workspace_id: str,
     space_id: str,
+    user_id: str,
+    role: WorkspaceRole,
     body: CreateFolderBody,
 ) -> dict:
-    space = await session.scalar(
-        select(Space).where(Space.id == space_id, Space.workspace_id == workspace_id)
+    space = await get_space_or_403(
+        session, workspace_id, space_id, user_id, role, PermissionLevel.EDIT
     )
-    if not space:
-        raise AppError(404, "NOT_FOUND", "Space not found")
     max_order = await session.scalar(
         select(func.max(Folder.sort_order)).where(Folder.space_id == space_id)
     )
     folder = Folder(
-        space_id=space_id,
+        space_id=space.id,
         name=body.name.strip(),
         sort_order=int(max_order or 0) + 1,
     )
@@ -129,15 +302,14 @@ async def update_folder(
     session: AsyncSession,
     workspace_id: str,
     folder_id: str,
+    user_id: str,
+    role: WorkspaceRole,
     body: UpdateFolderBody,
 ) -> dict:
-    folder = await session.scalar(
-        select(Folder)
-        .join(Space)
-        .where(Folder.id == folder_id, Space.workspace_id == workspace_id)
+    folder = await _folder_with_space(session, workspace_id, folder_id)
+    await require_space_permission(
+        session, folder.space, user_id, role, PermissionLevel.EDIT
     )
-    if not folder:
-        raise AppError(404, "NOT_FOUND", "Folder not found")
     if body.name is not None:
         folder.name = body.name.strip()
     await session.commit()
@@ -145,15 +317,16 @@ async def update_folder(
 
 
 async def delete_folder(
-    session: AsyncSession, workspace_id: str, folder_id: str
+    session: AsyncSession,
+    workspace_id: str,
+    folder_id: str,
+    user_id: str,
+    role: WorkspaceRole,
 ) -> dict:
-    folder = await session.scalar(
-        select(Folder)
-        .join(Space)
-        .where(Folder.id == folder_id, Space.workspace_id == workspace_id)
+    folder = await _folder_with_space(session, workspace_id, folder_id)
+    await require_space_permission(
+        session, folder.space, user_id, role, PermissionLevel.EDIT
     )
-    if not folder:
-        raise AppError(404, "NOT_FOUND", "Folder not found")
     await session.delete(folder)
     await session.commit()
     return {"ok": True}
@@ -163,13 +336,13 @@ async def create_list(
     session: AsyncSession,
     workspace_id: str,
     space_id: str,
+    user_id: str,
+    role: WorkspaceRole,
     body: CreateListBody,
 ) -> dict:
-    space = await session.scalar(
-        select(Space).where(Space.id == space_id, Space.workspace_id == workspace_id)
+    space = await get_space_or_403(
+        session, workspace_id, space_id, user_id, role, PermissionLevel.EDIT
     )
-    if not space:
-        raise AppError(404, "NOT_FOUND", "Space not found")
     folder_id = body.folder_id
     if folder_id:
         folder = await session.scalar(
@@ -183,7 +356,7 @@ async def create_list(
         select(func.max(TaskList.sort_order)).where(TaskList.space_id == space_id)
     )
     task_list = TaskList(
-        space_id=space_id,
+        space_id=space.id,
         folder_id=folder_id,
         name=body.name.strip(),
         sort_order=int(max_order or 0) + 1,
@@ -199,15 +372,14 @@ async def update_list(
     session: AsyncSession,
     workspace_id: str,
     list_id: str,
+    user_id: str,
+    role: WorkspaceRole,
     body: UpdateListBody,
 ) -> dict:
-    task_list = await session.scalar(
-        select(TaskList)
-        .join(Space)
-        .where(TaskList.id == list_id, Space.workspace_id == workspace_id)
+    task_list = await _list_with_space(session, workspace_id, list_id)
+    await require_space_permission(
+        session, task_list.space, user_id, role, PermissionLevel.EDIT
     )
-    if not task_list:
-        raise AppError(404, "NOT_FOUND", "List not found")
     if body.name is not None:
         task_list.name = body.name.strip()
     await session.commit()
@@ -218,16 +390,16 @@ async def update_list(
 
 
 async def delete_list(
-    session: AsyncSession, workspace_id: str, list_id: str
+    session: AsyncSession,
+    workspace_id: str,
+    list_id: str,
+    user_id: str,
+    role: WorkspaceRole,
 ) -> dict:
-    task_list = await session.scalar(
-        select(TaskList)
-        .join(Space)
-        .where(TaskList.id == list_id, Space.workspace_id == workspace_id)
-        .options(selectinload(TaskList.space))
+    task_list = await _list_with_space(session, workspace_id, list_id)
+    await require_space_permission(
+        session, task_list.space, user_id, role, PermissionLevel.EDIT
     )
-    if not task_list:
-        raise AppError(404, "NOT_FOUND", "List not found")
     if task_list.space.is_personal and task_list.name == "Personal List":
         raise AppError(400, "VALIDATION_ERROR", "Cannot delete the Personal list")
     await session.delete(task_list)
@@ -258,20 +430,17 @@ async def add_task_comment(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     task_id: str,
     body: CreateTaskCommentBody,
 ) -> dict:
     if not body.has_content:
         raise AppError(400, "VALIDATION_ERROR", "Comment body or attachment is required")
 
-    task = await session.scalar(
-        select(Task)
-        .join(TaskList)
-        .join(Space)
-        .where(Task.id == task_id, Space.workspace_id == workspace_id)
+    task = await _task_with_space(session, workspace_id, task_id)
+    await require_space_permission(
+        session, task.task_list.space, user_id, role, PermissionLevel.COMMENT
     )
-    if not task:
-        raise AppError(404, "NOT_FOUND", "Task not found")
 
     parent_author_id: str | None = None
     thread_parent_id: str | None = None

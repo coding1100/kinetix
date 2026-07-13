@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -52,6 +52,16 @@ class WorkspaceMember(Base):
     )
     status: Mapped[MemberStatus] = mapped_column(
         Enum(MemberStatus, name="MemberStatus"), default=MemberStatus.ACTIVE
+    )
+    # Per-member overrides for Guest / Limited Member (ClickUp's "individual
+    # permissions": time estimates + time tracking). Default True for
+    # everyone so this is a no-op unless an admin explicitly toggles it off
+    # for a Guest/Limited Member.
+    can_see_time_estimate: Mapped[bool] = mapped_column(
+        "canSeeTimeEstimate", Boolean, default=True, server_default="true"
+    )
+    can_track_time: Mapped[bool] = mapped_column(
+        "canTrackTime", Boolean, default=True, server_default="true"
     )
     joined_at: Mapped[datetime] = mapped_column(
         "joinedAt", DateTime(timezone=True), server_default=func.now()

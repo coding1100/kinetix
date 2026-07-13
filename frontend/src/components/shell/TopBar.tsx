@@ -67,7 +67,7 @@ export function TopBar() {
             }
           />
           <DropdownMenuContent align="start" className="w-auto p-0">
-            <WorkspaceSwitcherPopup />
+            <WorkspaceSwitcherPopup onClose={() => setWorkspaceMenuOpen(false)} />
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

@@ -7,6 +7,7 @@ from app.schemas.workspace import (
     CreateWorkspaceBody,
     DeleteWorkspaceBody,
     TransferWorkspaceOwnershipBody,
+    UpdateMemberPermissionsBody,
     UpdateWorkspaceBody,
     UpdateWorkspaceMemberBody,
 )
@@ -160,6 +161,26 @@ async def patch_member(
         session,
         workspace_id,
         user.id,
+        ctx.role,
+        member_user_id,
+        body,
+    )
+
+
+@router.patch("/{workspace_id}/members/{member_user_id}/permissions")
+async def patch_member_permissions(
+    body: UpdateMemberPermissionsBody,
+    workspace_id: str,
+    member_user_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    ctx: WorkspaceMemberDep,
+):
+    """Toggle a member's individual permissions (time estimate / time
+    tracking visibility) — ClickUp's Guest/Limited Member controls."""
+    return await workspace_service.update_member_permissions(
+        session,
+        workspace_id,
         ctx.role,
         member_user_id,
         body,

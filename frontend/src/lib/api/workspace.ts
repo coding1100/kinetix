@@ -20,6 +20,7 @@ export interface WorkspaceMemberRow {
   joinedAt: string | null;
   presence?: import("@/stores/profile-store").PresenceStatus;
   teams?: { id: string; name: string; color: string; icon: string }[];
+  invitedBy?: string | null;
 }
 
 export interface WorkspaceInviteRow {
@@ -129,6 +130,18 @@ export function removeWorkspaceMember(
     wsPath(workspaceId, `/members/${userId}`),
     { method: "DELETE", token }
   );
+}
+
+export function updateWorkspace(
+  token: string,
+  workspaceId: string,
+  name: string
+) {
+  return apiFetch<CreatedWorkspace>(wsPath(workspaceId, ""), {
+    method: "PATCH",
+    token,
+    body: JSON.stringify({ name }),
+  });
 }
 
 export function deleteWorkspace(

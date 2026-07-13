@@ -65,7 +65,7 @@ import {
   avatarColorClassForKey,
   avatarInitialFromName,
 } from "@/lib/user-display";
-import { cn } from "@/lib/utils";
+import { appPath, cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -428,6 +428,15 @@ export function ConversationView({
       }
       if (err instanceof DOMException && err.name === "AbortError") return;
 
+      if (err instanceof ApiError && err.status === 404 && type === "channel") {
+        // Stale sidebar entry pointing at a since-deleted channel — drop it
+        // instead of leaving a permanent dead link.
+        removeChannelFromSidebar(conversationId);
+        toast.info("This channel no longer exists");
+        router.replace("/chat");
+        return;
+      }
+
       const cached = getConversationCache(workspaceId, type, conversationId);
       if (!cached?.messages.length) {
         setError(
@@ -445,6 +454,7 @@ export function ConversationView({
     type,
     id,
     resolveCachedMeta,
+    router,
   ]);
 
   const loadOlderMessages = useCallback(async () => {
@@ -521,6 +531,16 @@ export function ConversationView({
       );
     }
   }, [ready, accessToken, workspaceId, type, id, setConversationUnread]);
+
+  const handleCopyChannelLink = useCallback(async () => {
+    const href = `${window.location.origin}${appPath(`/chat/c/${id}`)}`;
+    try {
+      await navigator.clipboard.writeText(href);
+      toast.success("Link copied");
+    } catch {
+      toast.error("Could not copy link");
+    }
+  }, [id]);
 
   useEffect(() => {
     loadAbortRef.current?.abort();
@@ -630,6 +650,25 @@ export function ConversationView({
     setConversationUnread,
     markConversationRead,
   ]);
+
+  useEffect(() => {
+    if (!realtimeEvent || realtimeEvent.workspaceId !== workspaceId) return;
+    if (realtimeEvent.kind !== type || realtimeEvent.conversationId !== id) {
+      return;
+    }
+    if (!realtimeEvent.parentId || !currentUserId) return;
+    const parentId = realtimeEvent.parentId;
+    if (realtimeEvent.message.authorId === currentUserId) return;
+
+    setMessages((prev) => {
+      if (!prev.some((m) => m.id === parentId)) return prev;
+      const next = prev.map((m) =>
+        m.id === parentId ? { ...m, threadCount: (m.threadCount ?? 0) + 1 } : m
+      );
+      setConversationCache(workspaceId, type, id, { messages: next });
+      return next;
+    });
+  }, [realtimeEvent, workspaceId, type, id, currentUserId]);
 
   const applyReactions = useCallback(
     (messageId: string, reactions: { emoji: string; count: number }[]) => {
@@ -1182,19 +1221,17 @@ export function ConversationView({
             />
             <TooltipContent side="bottom">Search</TooltipContent>
           </Tooltip>
+          <Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button variant="ghost" size="icon-sm" aria-label="More options">
-                        <MoreHorizontalIcon className="size-4" strokeWidth={1.75} />
-                      </Button>
-                    }
-                  />
-                  <TooltipContent side="bottom">More options</TooltipContent>
-                </Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button variant="ghost" size="icon-sm" aria-label="More options">
+                      <MoreHorizontalIcon className="size-4" strokeWidth={1.75} />
+                    </Button>
+                  }
+                />
               }
             />
             <DropdownMenuContent align="end" className="w-52">
@@ -1209,7 +1246,7 @@ export function ConversationView({
                   >
                     Rename
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => toast.success("Link copied")}>
+                  <DropdownMenuItem onClick={() => void handleCopyChannelLink()}>
                     <LinkIcon className="size-4" />
                     Copy link
                   </DropdownMenuItem>
@@ -1247,6 +1284,8 @@ export function ConversationView({
                 </>
             </DropdownMenuContent>
           </DropdownMenu>
+          <TooltipContent side="bottom">More options</TooltipContent>
+          </Tooltip>
         </div>
         ) : null}
       </header>

@@ -9,9 +9,11 @@ from app.db.models.enums import (
     InboxBucket,
     InboxItemType,
     MemberStatus,
+    PermissionLevel,
     StatusGroup,
     TaskPriority,
     TaskStatus,
+    WorkspaceRole,
 )
 from app.db.models.home import (
     AssignedComment,
@@ -39,6 +41,12 @@ from app.services.list_status_service import (
     list_statuses_for_list,
 )
 from app.services.personal_space_service import ensure_personal_space
+from app.services.space_permissions import (
+    get_space_or_403,
+    require_space_permission,
+    visible_space_ids,
+)
+from app.services.workspace_permissions import get_member_time_flags
 from app.db.models.workspace import WorkspaceMember
 from app.schemas.home import (
     AddLineupBody,
@@ -353,9 +361,12 @@ async def list_drafts_sent(
     }
 
 
-async def list_spaces(session: AsyncSession, workspace_id: str) -> dict:
+async def list_spaces(
+    session: AsyncSession, workspace_id: str, user_id: str, role: WorkspaceRole
+) -> dict:
     await ensure_personal_space(session, workspace_id)
     await session.commit()
+    visible = await visible_space_ids(session, workspace_id, user_id, role)
     spaces = (
         await session.scalars(
             select(Space)
@@ -367,21 +378,28 @@ async def list_spaces(session: AsyncSession, workspace_id: str) -> dict:
     member_count = await _active_member_count(session, workspace_id)
     data = []
     for space in spaces:
+        if visible is not None and space.id not in visible:
+            continue
         list_count = await _list_count_for_space(session, space.id)
         data.append(_build_space_payload(space, member_count, list_count))
     return {"data": data}
 
 
 async def get_space(
-    session: AsyncSession, workspace_id: str, space_id: str
+    session: AsyncSession,
+    workspace_id: str,
+    space_id: str,
+    user_id: str,
+    role: WorkspaceRole,
 ) -> dict:
+    space = await get_space_or_403(
+        session, workspace_id, space_id, user_id, role, PermissionLevel.VIEW
+    )
     space = await session.scalar(
         select(Space)
         .where(Space.id == space_id, Space.workspace_id == workspace_id)
         .options(*_SPACE_LOAD)
     )
-    if not space:
-        raise AppError(404, "NOT_FOUND", "Space not found")
     member_count = await _active_member_count(session, workspace_id)
     list_count = await _list_count_for_space(session, space.id)
     return _build_space_payload(space, member_count, list_count)
@@ -418,7 +436,11 @@ def _task_filters(
 
 
 async def get_list(
-    session: AsyncSession, workspace_id: str, list_id: str
+    session: AsyncSession,
+    workspace_id: str,
+    list_id: str,
+    user_id: str,
+    role: WorkspaceRole,
 ) -> dict:
     task_list = await session.scalar(
         select(TaskList)
@@ -429,6 +451,7 @@ async def get_list(
     if not task_list:
         raise AppError(404, "NOT_FOUND", "List not found")
     space = task_list.space
+    await require_space_permission(session, space, user_id, role, PermissionLevel.VIEW)
     statuses = await list_statuses_for_list(session, task_list.id)
     await session.commit()
     return {
@@ -447,15 +470,20 @@ async def list_tasks_for_list(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     list_id: str,
 ) -> dict:
     task_list = await session.scalar(
         select(TaskList)
         .join(Space)
         .where(TaskList.id == list_id, Space.workspace_id == workspace_id)
+        .options(selectinload(TaskList.space))
     )
     if not task_list:
         raise AppError(404, "NOT_FOUND", "List not found")
+    await require_space_permission(
+        session, task_list.space, user_id, role, PermissionLevel.VIEW
+    )
     tasks = (
         await session.scalars(
             select(Task)
@@ -471,6 +499,7 @@ async def create_task(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     list_id: str,
     body: CreateTaskBody,
 ) -> dict:
@@ -478,9 +507,13 @@ async def create_task(
         select(TaskList)
         .join(Space)
         .where(TaskList.id == list_id, Space.workspace_id == workspace_id)
+        .options(selectinload(TaskList.space))
     )
     if not task_list:
         raise AppError(404, "NOT_FOUND", "List not found")
+    await require_space_permission(
+        session, task_list.space, user_id, role, PermissionLevel.EDIT
+    )
     await ensure_list_statuses(session, list_id)
     default_status = await default_status_for_list(session, list_id)
     now = datetime.now(timezone.utc)
@@ -498,20 +531,6 @@ async def create_task(
         select(Task).where(Task.id == task.id).options(*_TASK_LOAD)
     )
     mapped = map_task(refreshed, user_id)
-    created_notifications = await create_task_activity_notifications(
-        session,
-        workspace_id=workspace_id,
-        actor_user_id=user_id,
-        task_name=task.name,
-        task_id=task.id,
-        recipient_ids=[user_id],
-        title=f"Task created: {task.name}",
-        preview_template="{actor} created {task}",
-        activity_kind="task_created",
-    )
-    if created_notifications:
-        await session.commit()
-        await emit_home_notifications(session, workspace_id, created_notifications)
     await broadcast_task_event(
         workspace_id=workspace_id,
         action="created",
@@ -526,6 +545,7 @@ async def create_subtask(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     parent_task_id: str,
     body: CreateSubtaskBody,
 ) -> dict:
@@ -534,9 +554,13 @@ async def create_subtask(
         .join(Task.task_list)
         .join(TaskList.space)
         .where(Task.id == parent_task_id, Space.workspace_id == workspace_id)
+        .options(selectinload(Task.task_list).selectinload(TaskList.space))
     )
     if not parent:
         raise AppError(404, "NOT_FOUND", "Task not found")
+    await require_space_permission(
+        session, parent.task_list.space, user_id, role, PermissionLevel.EDIT
+    )
     if parent.parent_task_id:
         raise AppError(400, "VALIDATION_ERROR", "Nested subtasks are not supported")
 
@@ -589,18 +613,23 @@ async def list_tasks(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     filter_name: str | None,
     search: str | None = None,
 ) -> dict:
     if filter_name == "personal":
         await ensure_personal_space(session, workspace_id)
         await session.commit()
+    visible = await visible_space_ids(session, workspace_id, user_id, role)
+    filters = _task_filters(workspace_id, user_id, filter_name, search)
+    if visible is not None:
+        filters.append(Space.id.in_(visible))
     tasks = (
         await session.scalars(
             select(Task)
             .join(Task.task_list)
             .join(TaskList.space)
-            .where(*_task_filters(workspace_id, user_id, filter_name, search))
+            .where(*filters)
             .options(*_TASK_LOAD)
             .order_by(Task.updated_at.desc())
         )
@@ -612,6 +641,7 @@ async def get_task(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     task_id: str,
 ) -> dict:
     task = await session.scalar(
@@ -623,6 +653,9 @@ async def get_task(
     )
     if not task:
         raise AppError(404, "NOT_FOUND", "Task not found")
+    await require_space_permission(
+        session, task.task_list.space, user_id, role, PermissionLevel.VIEW
+    )
     payload = map_task(task, user_id)
     payload["inLineup"] = await is_task_in_lineup(
         session, workspace_id, user_id, task_id
@@ -666,6 +699,7 @@ async def update_task(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     task_id: str,
     body: UpdateTaskBody,
 ) -> dict:
@@ -674,9 +708,13 @@ async def update_task(
         .join(Task.task_list)
         .join(TaskList.space)
         .where(Task.id == task_id, Space.workspace_id == workspace_id)
+        .options(selectinload(Task.task_list).selectinload(TaskList.space))
     )
     if not task:
         raise AppError(404, "NOT_FOUND", "Task not found")
+    await require_space_permission(
+        session, task.task_list.space, user_id, role, PermissionLevel.EDIT
+    )
     original_name = task.name
     original_description = task.description
     original_status_id = task.status_id
@@ -745,6 +783,11 @@ async def update_task(
             )
 
     if "time_estimate_minutes" in body.model_fields_set:
+        can_see_estimate, _ = await get_member_time_flags(session, workspace_id, user_id)
+        if not can_see_estimate:
+            raise AppError(
+                403, "FORBIDDEN", "Time estimates are disabled for your account"
+            )
         task.time_estimate_minutes = body.time_estimate_minutes
     if body.assignee_ids is not None:
         members = await workspace_service.list_workspace_members(
@@ -777,6 +820,11 @@ async def update_task(
         if not target_list:
             raise AppError(400, "VALIDATION_ERROR", "Invalid list")
         task.list_id = target_list.id
+        # task.task_list was eager-loaded above for the permission check;
+        # SQLAlchemy won't refresh an already-populated relationship on the
+        # later re-select, so map_task's `task.task_list.id` would keep
+        # pointing at the old list unless we expire it here.
+        session.expire(task, ["task_list"])
 
     task.updated_at = datetime.now(timezone.utc)
 
@@ -884,6 +932,7 @@ async def delete_task(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     task_id: str,
 ) -> dict:
     task = await session.scalar(
@@ -891,9 +940,13 @@ async def delete_task(
         .join(Task.task_list)
         .join(TaskList.space)
         .where(Task.id == task_id, Space.workspace_id == workspace_id)
+        .options(selectinload(Task.task_list).selectinload(TaskList.space))
     )
     if not task:
         raise AppError(404, "NOT_FOUND", "Task not found")
+    await require_space_permission(
+        session, task.task_list.space, user_id, role, PermissionLevel.EDIT
+    )
     task_name = task.name
     task_id = task.id
     list_id = task.list_id

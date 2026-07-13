@@ -52,7 +52,7 @@ import {
   useChatStore,
   type ChannelDetailsView,
 } from "@/stores/chat-store";
-import { cn, formatRelativeTime } from "@/lib/utils";
+import { appPath, cn, formatRelativeTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -959,7 +959,16 @@ function SettingsView({ channelId }: { channelId: string }) {
           icon={<LinkIcon className="size-4" />}
           label="Copy link"
           shortcut="C"
-          onClick={() => toast.success("Link copied")}
+          onClick={() => {
+            void navigator.clipboard
+              .writeText(
+                `${window.location.origin}${appPath(`/chat/c/${channelId}`)}`
+              )
+              .then(
+                () => toast.success("Link copied"),
+                () => toast.error("Could not copy link")
+              );
+          }}
         />
         <OptionRow
           icon={

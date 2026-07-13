@@ -33,6 +33,7 @@ export interface SpaceDto {
   listCount: number;
   description?: string;
   isPersonal?: boolean;
+  isPrivate?: boolean;
   folders?: {
     id: string;
     name: string;

@@ -15,6 +15,10 @@ from app.db.models.user import User
 from app.db.models.workspace import Workspace, WorkspaceMember
 from app.schemas.workspace import CreateInviteBody
 from app.services import email_service
+from app.services.notification_service import (
+    create_invite_accepted_notification,
+    emit_home_notifications,
+)
 from app.services.workspace_permissions import can_assign_role
 from app.services.auth_service import issue_refresh_for_user
 
@@ -308,6 +312,17 @@ async def accept_invite_for_user(
     await session.commit()
 
     workspace = await session.get(Workspace, invite.workspace_id)
+    if invite.invited_by_id:
+        notifications = await create_invite_accepted_notification(
+            session,
+            workspace_id=invite.workspace_id,
+            actor_user_id=user_id,
+            recipient_id=invite.invited_by_id,
+            workspace_name=workspace.name,
+        )
+        if notifications:
+            await session.commit()
+            await emit_home_notifications(session, invite.workspace_id, notifications)
     return {
         "workspace": {
             "id": workspace.id,
@@ -356,6 +371,17 @@ async def accept_invite_with_signup(
     await session.commit()
 
     workspace = await session.get(Workspace, invite.workspace_id)
+    if invite.invited_by_id:
+        notifications = await create_invite_accepted_notification(
+            session,
+            workspace_id=invite.workspace_id,
+            actor_user_id=user.id,
+            recipient_id=invite.invited_by_id,
+            workspace_name=workspace.name,
+        )
+        if notifications:
+            await session.commit()
+            await emit_home_notifications(session, invite.workspace_id, notifications)
     access_token = sign_access_token(sub=str(user.id), email=user.email)
     refresh_token = await issue_refresh_for_user(session, user.id)
 
