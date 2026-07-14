@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.db.models.chat import ChatChannel, ChatChannelMember, ChatMessage
 from app.db.models.enums import InboxBucket, InboxItemType, InboxTimeGroup, MemberStatus
-from app.db.models.home import InboxItem, TaskAssignee, TaskFollower
+from app.db.models.home import InboxItem, Task
 from app.db.models.user import User
 from app.db.models.workspace import WorkspaceMember
 from app.services.home_helpers import map_inbox_type
@@ -880,16 +880,13 @@ async def task_notification_recipients(
     task_id: str,
     exclude_user_id: str | None = None,
 ) -> list[str]:
-    assignees = (
-        await session.scalars(
-            select(TaskAssignee.user_id).where(TaskAssignee.task_id == task_id)
+    row = (
+        await session.execute(
+            select(Task.assignee_ids, Task.follower_ids).where(Task.id == task_id)
         )
-    ).all()
-    followers = (
-        await session.scalars(
-            select(TaskFollower.user_id).where(TaskFollower.task_id == task_id)
-        )
-    ).all()
+    ).first()
+    assignees = row[0] if row else []
+    followers = row[1] if row else []
     recipient_ids: list[str] = []
     seen: set[str] = set()
     for user_id in [*assignees, *followers]:

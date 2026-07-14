@@ -13,7 +13,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy.dialects.postgresql import ARRAY, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -185,6 +185,12 @@ class Task(Base):
     time_estimate_minutes: Mapped[int | None] = mapped_column(
         "timeEstimateMinutes", Integer, nullable=True
     )
+    assignee_ids: Mapped[list[str]] = mapped_column(
+        "assigneeIds", ARRAY(String), nullable=False, default=list, server_default="{}"
+    )
+    follower_ids: Mapped[list[str]] = mapped_column(
+        "followerIds", ARRAY(String), nullable=False, default=list, server_default="{}"
+    )
     parent_task_id: Mapped[str | None] = mapped_column(
         "parentTaskId",
         String,
@@ -202,13 +208,7 @@ class Task(Base):
     )
     task_list: Mapped["TaskList"] = relationship(back_populates="tasks")
     list_status: Mapped["ListStatus | None"] = relationship(back_populates="tasks")
-    assignees: Mapped[list["TaskAssignee"]] = relationship(
-        back_populates="task", cascade="all, delete-orphan"
-    )
     comments: Mapped[list["TaskComment"]] = relationship(
-        back_populates="task", cascade="all, delete-orphan"
-    )
-    followers: Mapped[list["TaskFollower"]] = relationship(
         back_populates="task", cascade="all, delete-orphan"
     )
     parent_task: Mapped["Task | None"] = relationship(
@@ -284,19 +284,6 @@ class TaskTimeEntry(Base):
     user: Mapped["User"] = relationship()
 
 
-class TaskFollower(Base):
-    __tablename__ = "TaskFollower"
-
-    task_id: Mapped[str] = mapped_column(
-        "taskId", String, ForeignKey("Task.id", ondelete="CASCADE"), primary_key=True
-    )
-    user_id: Mapped[str] = mapped_column(
-        "userId", String, ForeignKey("User.id", ondelete="CASCADE"), primary_key=True
-    )
-    task: Mapped["Task"] = relationship(back_populates="followers")
-    user: Mapped["User"] = relationship()
-
-
 class TaskDependency(Base):
     __tablename__ = "TaskDependency"
 
@@ -315,19 +302,6 @@ class TaskDependency(Base):
     )
     task: Mapped["Task"] = relationship(foreign_keys=[task_id])
     related_task: Mapped["Task"] = relationship(foreign_keys=[related_task_id])
-
-
-class TaskAssignee(Base):
-    __tablename__ = "TaskAssignee"
-
-    task_id: Mapped[str] = mapped_column(
-        "taskId", String, ForeignKey("Task.id", ondelete="CASCADE"), primary_key=True
-    )
-    user_id: Mapped[str] = mapped_column(
-        "userId", String, ForeignKey("User.id", ondelete="CASCADE"), primary_key=True
-    )
-    task: Mapped["Task"] = relationship(back_populates="assignees")
-    user: Mapped["User"] = relationship()
 
 
 class TaskComment(Base):

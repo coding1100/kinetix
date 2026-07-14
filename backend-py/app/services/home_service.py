@@ -26,15 +26,14 @@ from app.db.models.home import (
     Post,
     Space,
     Task,
-    TaskAssignee,
     TaskAttachment,
     TaskComment,
     TaskDependency,
-    TaskFollower,
     TaskList,
     UserHomeSidebar,
     UserTaskLineup,
 )
+from app.db.models.user import User
 from app.services.list_status_service import (
     default_status_for_list,
     ensure_list_statuses,
@@ -86,12 +85,31 @@ from app.services.home_helpers import (
 _TASK_LOAD = (
     selectinload(Task.task_list).selectinload(TaskList.space),
     selectinload(Task.list_status),
-    selectinload(Task.assignees).selectinload(TaskAssignee.user),
-    selectinload(Task.followers).selectinload(TaskFollower.user),
     selectinload(Task.comments).selectinload(TaskComment.user),
     selectinload(Task.comments).selectinload(TaskComment.attachments),
     selectinload(Task.subtasks),
 )
+
+
+async def _assignee_name_map(
+    session: AsyncSession, tasks: Task | list[Task]
+) -> dict[str, str]:
+    """Batch-resolve first names for every assignee across one or many tasks.
+
+    Task.assignee_ids is a plain array column (no join table), so unlike a
+    relationship there's nothing for selectinload to batch automatically -
+    callers must resolve names themselves. Passing the whole task list here
+    keeps it to one query per request instead of one per task.
+    """
+    task_list = tasks if isinstance(tasks, list) else [tasks]
+    ids = {uid for t in task_list for uid in (t.assignee_ids or [])}
+    if not ids:
+        return {}
+    rows = (
+        await session.execute(select(User.id, User.full_name).where(User.id.in_(ids)))
+    ).all()
+    return {row[0]: row[1] for row in rows}
+
 
 _SPACE_LOAD = (
     selectinload(Space.folders)
@@ -416,7 +434,7 @@ def _task_filters(
         term = f"%{search.strip()}%"
         base.append(Task.name.ilike(term))
     if filter_name == "assigned":
-        base.append(Task.assignees.any(TaskAssignee.user_id == user_id))
+        base.append(Task.assignee_ids.any(user_id))
     elif filter_name == "personal":
         base.append(
             or_(Space.is_personal.is_(True), Space.name == "Personal")
@@ -495,7 +513,8 @@ async def list_tasks_for_list(
             .order_by(Task.updated_at.desc())
         )
     ).all()
-    return {"data": [map_task(t, user_id) for t in tasks]}
+    names = await _assignee_name_map(session, list(tasks))
+    return {"data": [map_task(t, user_id, names) for t in tasks]}
 
 
 async def create_task(
@@ -689,7 +708,8 @@ async def list_tasks(
             .order_by(Task.updated_at.desc())
         )
     ).all()
-    return {"data": [map_task(t, user_id) for t in tasks]}
+    names = await _assignee_name_map(session, list(tasks))
+    return {"data": [map_task(t, user_id, names) for t in tasks]}
 
 
 async def get_task(
@@ -711,7 +731,8 @@ async def get_task(
     await require_space_permission(
         session, task.task_list.space, user_id, role, PermissionLevel.VIEW
     )
-    payload = map_task(task, user_id)
+    names = await _assignee_name_map(session, task)
+    payload = map_task(task, user_id, names)
     payload["inLineup"] = await is_task_in_lineup(
         session, workspace_id, user_id, task_id
     )
@@ -779,17 +800,7 @@ async def update_task(
     original_start_date = task.start_date
     original_list_id = task.list_id
 
-    old_assignee_ids: set[str] = set()
-    if body.assignee_ids is not None:
-        old_assignee_ids = set(
-            (
-                await session.scalars(
-                    select(TaskAssignee.user_id).where(
-                        TaskAssignee.task_id == task_id
-                    )
-                )
-            ).all()
-        )
+    old_assignee_ids: set[str] = set(task.assignee_ids) if body.assignee_ids is not None else set()
 
     if body.name is not None:
         task.name = body.name.strip()
@@ -852,11 +863,7 @@ async def update_task(
         for uid in body.assignee_ids:
             if uid not in allowed:
                 raise AppError(400, "VALIDATION_ERROR", "Invalid assignee")
-        await session.execute(
-            delete(TaskAssignee).where(TaskAssignee.task_id == task_id)
-        )
-        for uid in body.assignee_ids:
-            session.add(TaskAssignee(task_id=task_id, user_id=uid))
+        task.assignee_ids = list(dict.fromkeys(body.assignee_ids))
 
     if body.follower_ids is not None:
         members = await workspace_service.list_workspace_members(
@@ -866,11 +873,7 @@ async def update_task(
         for uid in body.follower_ids:
             if uid not in allowed:
                 raise AppError(400, "VALIDATION_ERROR", "Invalid follower")
-        await session.execute(
-            delete(TaskFollower).where(TaskFollower.task_id == task_id)
-        )
-        for uid in set(body.follower_ids):
-            session.add(TaskFollower(task_id=task_id, user_id=uid))
+        task.follower_ids = list(dict.fromkeys(body.follower_ids))
 
     if "priority" in body.model_fields_set:
         task.priority = (
@@ -931,7 +934,8 @@ async def update_task(
         .where(Task.id == task_id)
         .options(*_TASK_LOAD)
     )
-    mapped = map_task(refreshed, user_id)
+    names = await _assignee_name_map(session, refreshed)
+    mapped = map_task(refreshed, user_id, names)
     if assignment_notifications:
         await emit_home_notifications(
             session, workspace_id, assignment_notifications
@@ -1371,7 +1375,8 @@ async def list_lineup(
             .order_by(UserTaskLineup.sort_order.asc())
         )
     ).all()
-    return {"data": [map_task(t, user_id) for t in rows]}
+    names = await _assignee_name_map(session, list(rows))
+    return {"data": [map_task(t, user_id, names) for t in rows]}
 
 
 async def add_to_lineup(
@@ -1470,13 +1475,8 @@ async def is_task_in_lineup(
 async def is_task_followed_by(
     session: AsyncSession, task_id: str, user_id: str
 ) -> bool:
-    row = await session.scalar(
-        select(TaskFollower.user_id).where(
-            TaskFollower.task_id == task_id,
-            TaskFollower.user_id == user_id,
-        )
-    )
-    return row is not None
+    ids = await session.scalar(select(Task.follower_ids).where(Task.id == task_id))
+    return user_id in (ids or [])
 
 
 async def follow_task(
@@ -1485,17 +1485,10 @@ async def follow_task(
     user_id: str,
     task_id: str,
 ) -> dict:
-    await _get_workspace_task(session, workspace_id, task_id)
-    existing = await session.scalar(
-        select(TaskFollower).where(
-            TaskFollower.task_id == task_id,
-            TaskFollower.user_id == user_id,
-        )
-    )
-    if not existing:
-        session.add(TaskFollower(task_id=task_id, user_id=user_id))
-        await session.commit()
     task = await _get_workspace_task(session, workspace_id, task_id)
+    if user_id not in task.follower_ids:
+        task.follower_ids = [*task.follower_ids, user_id]
+        await session.commit()
     recipients = await task_notification_recipients(
         session, task_id=task_id, exclude_user_id=user_id
     )
@@ -1523,21 +1516,10 @@ async def unfollow_task(
     user_id: str,
     task_id: str,
 ) -> dict:
-    row = await session.scalar(
-        select(TaskFollower)
-        .join(Task)
-        .join(TaskList)
-        .join(Space)
-        .where(
-            TaskFollower.task_id == task_id,
-            TaskFollower.user_id == user_id,
-            Space.workspace_id == workspace_id,
-        )
-    )
-    if row:
-        await session.delete(row)
-        await session.commit()
     task = await _get_workspace_task(session, workspace_id, task_id)
+    if user_id in task.follower_ids:
+        task.follower_ids = [uid for uid in task.follower_ids if uid != user_id]
+        await session.commit()
     recipients = await task_notification_recipients(
         session, task_id=task_id, exclude_user_id=user_id
     )

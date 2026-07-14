@@ -127,11 +127,16 @@ def map_inbox_type(item_type: InboxItemType) -> str:
     return item_type.value.lower()
 
 
-def map_task(task: Task, current_user_id: str) -> dict:
+def map_task(
+    task: Task, current_user_id: str, assignee_names: dict[str, str] | None = None
+) -> dict:
     assignee_labels = []
-    for a in task.assignees:
-        name = a.user.full_name.split(" ")[0] if a.user.full_name else "User"
-        assignee_labels.append("You" if a.user_id == current_user_id else name)
+    for uid in task.assignee_ids:
+        if uid == current_user_id:
+            assignee_labels.append("You")
+            continue
+        full_name = (assignee_names or {}).get(uid)
+        assignee_labels.append(full_name.split(" ")[0] if full_name else "User")
 
     comments = sorted(task.comments, key=lambda c: c.created_at)
     if task.list_status:
@@ -149,8 +154,8 @@ def map_task(task: Task, current_user_id: str) -> dict:
         "statusKey": status_key,
         "statusId": task.status_id,
         "statusColor": status_color,
-        "assigneeIds": [a.user_id for a in task.assignees],
-        "followerIds": [f.user_id for f in task.followers],
+        "assigneeIds": list(task.assignee_ids),
+        "followerIds": list(task.follower_ids),
         "dueDate": format_due_date(task.due_date),
         "dueDateIso": task.due_date.isoformat() if task.due_date else None,
         "startDate": format_due_date(task.start_date),

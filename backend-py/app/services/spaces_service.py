@@ -12,7 +12,6 @@ from app.db.models.home import (
     Task,
     TaskAttachment,
     TaskComment,
-    TaskFollower,
     TaskList,
 )
 from app.db.models.workspace import WorkspaceMember
@@ -32,6 +31,7 @@ from app.services.home_service import (
     _SPACE_LOAD,
     _TASK_LOAD,
     _active_member_count,
+    _assignee_name_map,
     _build_space_payload,
     _list_count_for_space,
 )
@@ -459,13 +459,7 @@ async def add_task_comment(
         )
         thread_parent_id = thread_root.id
 
-    follower_ids = list(
-        (
-            await session.scalars(
-                select(TaskFollower.user_id).where(TaskFollower.task_id == task_id)
-            )
-        ).all()
-    )
+    follower_ids = list(task.follower_ids)
 
     comment = TaskComment(
         task_id=task_id,
@@ -532,7 +526,8 @@ async def add_task_comment(
     refreshed = await session.scalar(
         select(Task).where(Task.id == task_id).options(*_TASK_LOAD)
     )
-    payload = map_task(refreshed, user_id)
+    names = await _assignee_name_map(session, refreshed)
+    payload = map_task(refreshed, user_id, names)
 
     from app.services.task_attachment_service import map_task_attachment
 
@@ -587,7 +582,8 @@ async def update_task_comment(
     refreshed = await session.scalar(
         select(Task).where(Task.id == task_id).options(*_TASK_LOAD)
     )
-    payload = map_task(refreshed, user_id)
+    names = await _assignee_name_map(session, refreshed)
+    payload = map_task(refreshed, user_id, names)
     from app.services.task_attachment_service import map_task_attachment
     from app.services.task_time_service import get_task_time_state
 
@@ -637,7 +633,8 @@ async def delete_task_comment(
     refreshed = await session.scalar(
         select(Task).where(Task.id == task_id).options(*_TASK_LOAD)
     )
-    payload = map_task(refreshed, user_id)
+    names = await _assignee_name_map(session, refreshed)
+    payload = map_task(refreshed, user_id, names)
     from app.services.task_attachment_service import map_task_attachment
     from app.services.task_time_service import get_task_time_state
 
