@@ -1,5 +1,11 @@
 import { apiFetch } from "./client";
-import type { ListStatus, Task, TaskActivityEvent } from "@/lib/types/task";
+import type {
+  ListStatus,
+  Task,
+  TaskActivityEvent,
+  TaskDependency,
+  TaskDependencyType,
+} from "@/lib/types/task";
 import type { SpaceDto } from "./home";
 
 function wsPath(workspaceId: string, path: string) {
@@ -60,6 +66,7 @@ export type UpdateTaskInput = {
   startDate?: string;
   timeEstimateMinutes?: number | null;
   assigneeIds?: string[];
+  followerIds?: string[];
   priority?: Task["priority"] | null;
   listId?: string;
 };
@@ -86,6 +93,22 @@ export function deleteTask(
     method: "DELETE",
     token,
   });
+}
+
+export function addTaskDependency(
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  input: { relatedTaskId: string; type: TaskDependencyType }
+) {
+  return apiFetch<TaskDependency>(
+    wsPath(workspaceId, `/tasks/${taskId}/dependencies`),
+    {
+      method: "POST",
+      token,
+      body: JSON.stringify(input),
+    }
+  );
 }
 
 export function createSpace(

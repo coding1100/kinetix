@@ -1335,13 +1335,6 @@ export function TaskDrawer({
                         }
                       />
                       <PopoverContent align="start" className="w-44 p-1">
-                        <button
-                          type="button"
-                          className="flex w-full rounded-md px-2 py-2 text-sm hover:bg-muted"
-                          onClick={() => void handlePriorityChange(NO_PRIORITY)}
-                        >
-                          Empty
-                        </button>
                         {TASK_PRIORITIES.map((p) => (
                           <button
                             key={p.value}

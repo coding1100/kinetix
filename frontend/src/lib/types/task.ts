@@ -54,6 +54,7 @@ export interface Task {
   statusId?: string | null;
   statusColor: string;
   assigneeIds?: string[];
+  followerIds?: string[];
   dueDate?: string;
   dueDateIso?: string | null;
   startDate?: string | null;
@@ -77,6 +78,14 @@ export interface Task {
   attachments?: TaskAttachment[];
   inLineup?: boolean;
   isFollowing?: boolean;
+}
+
+export type TaskDependencyType = "blocking" | "blocked_by" | "linked";
+
+export interface TaskDependency {
+  id: string;
+  type: TaskDependencyType;
+  task: TaskSubtask;
 }
 
 export interface TaskActivityEvent {

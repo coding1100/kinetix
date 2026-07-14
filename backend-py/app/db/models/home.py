@@ -297,6 +297,26 @@ class TaskFollower(Base):
     user: Mapped["User"] = relationship()
 
 
+class TaskDependency(Base):
+    __tablename__ = "TaskDependency"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    task_id: Mapped[str] = mapped_column(
+        "taskId", String, ForeignKey("Task.id", ondelete="CASCADE")
+    )
+    related_task_id: Mapped[str] = mapped_column(
+        "relatedTaskId", String, ForeignKey("Task.id", ondelete="CASCADE")
+    )
+    dependency_type: Mapped[str] = mapped_column("dependencyType", String)
+    created_at: Mapped[datetime] = mapped_column(
+        "createdAt", DateTime(timezone=True), server_default=func.now()
+    )
+    task: Mapped["Task"] = relationship(foreign_keys=[task_id])
+    related_task: Mapped["Task"] = relationship(foreign_keys=[related_task_id])
+
+
 class TaskAssignee(Base):
     __tablename__ = "TaskAssignee"
 

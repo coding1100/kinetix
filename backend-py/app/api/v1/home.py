@@ -9,6 +9,7 @@ from app.schemas.home import (
     CreateReminderBody,
     CreateSubtaskBody,
     CreateTaskBody,
+    CreateTaskDependencyBody,
     PresignTaskAttachmentBody,
     RecordRecentBody,
     ReorderLineupBody,
@@ -767,6 +768,20 @@ async def unfollow_task(
 ):
     return await home_service.unfollow_task(
         session, workspace_id, user.id, task_id
+    )
+
+
+@router.post("/tasks/{task_id}/dependencies", status_code=status.HTTP_201_CREATED)
+async def add_task_dependency(
+    body: CreateTaskDependencyBody,
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await home_service.add_task_dependency(
+        session, workspace_id, user.id, member.role, task_id, body
     )
 
 

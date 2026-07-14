@@ -29,6 +29,7 @@ from app.db.models.home import (
     TaskAssignee,
     TaskAttachment,
     TaskComment,
+    TaskDependency,
     TaskFollower,
     TaskList,
     UserHomeSidebar,
@@ -55,6 +56,7 @@ from app.schemas.home import (
     CreateReminderBody,
     CreateSubtaskBody,
     CreateTaskBody,
+    CreateTaskDependencyBody,
     RecordRecentBody,
     ReorderLineupBody,
     UpdateInboxItemBody,
@@ -85,6 +87,7 @@ _TASK_LOAD = (
     selectinload(Task.task_list).selectinload(TaskList.space),
     selectinload(Task.list_status),
     selectinload(Task.assignees).selectinload(TaskAssignee.user),
+    selectinload(Task.followers).selectinload(TaskFollower.user),
     selectinload(Task.comments).selectinload(TaskComment.user),
     selectinload(Task.comments).selectinload(TaskComment.attachments),
     selectinload(Task.subtasks),
@@ -609,6 +612,58 @@ async def create_subtask(
     return mapped
 
 
+async def add_task_dependency(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    task_id: str,
+    body: CreateTaskDependencyBody,
+) -> dict:
+    task = await session.scalar(
+        select(Task)
+        .join(Task.task_list)
+        .join(TaskList.space)
+        .where(Task.id == task_id, Space.workspace_id == workspace_id)
+        .options(selectinload(Task.task_list).selectinload(TaskList.space))
+    )
+    if not task:
+        raise AppError(404, "NOT_FOUND", "Task not found")
+    await require_space_permission(
+        session, task.task_list.space, user_id, role, PermissionLevel.EDIT
+    )
+
+    if body.related_task_id == task_id:
+        raise AppError(400, "VALIDATION_ERROR", "A task cannot depend on itself")
+
+    related = await session.scalar(
+        select(Task)
+        .join(Task.task_list)
+        .join(TaskList.space)
+        .where(Task.id == body.related_task_id, Space.workspace_id == workspace_id)
+        .options(
+            selectinload(Task.task_list).selectinload(TaskList.space),
+            selectinload(Task.list_status),
+        )
+    )
+    if not related:
+        raise AppError(404, "NOT_FOUND", "Related task not found")
+    await require_space_permission(
+        session, related.task_list.space, user_id, role, PermissionLevel.VIEW
+    )
+
+    dependency = TaskDependency(
+        task_id=task_id, related_task_id=body.related_task_id, dependency_type=body.type
+    )
+    session.add(dependency)
+    await session.commit()
+    return {
+        "id": dependency.id,
+        "type": body.type,
+        "task": map_subtask_summary(related, user_id),
+    }
+
+
 async def list_tasks(
     session: AsyncSession,
     workspace_id: str,
@@ -802,6 +857,20 @@ async def update_task(
         )
         for uid in body.assignee_ids:
             session.add(TaskAssignee(task_id=task_id, user_id=uid))
+
+    if body.follower_ids is not None:
+        members = await workspace_service.list_workspace_members(
+            session, workspace_id
+        )
+        allowed = {m["id"] for m in members}
+        for uid in body.follower_ids:
+            if uid not in allowed:
+                raise AppError(400, "VALIDATION_ERROR", "Invalid follower")
+        await session.execute(
+            delete(TaskFollower).where(TaskFollower.task_id == task_id)
+        )
+        for uid in set(body.follower_ids):
+            session.add(TaskFollower(task_id=task_id, user_id=uid))
 
     if "priority" in body.model_fields_set:
         task.priority = (

@@ -150,6 +150,7 @@ def map_task(task: Task, current_user_id: str) -> dict:
         "statusId": task.status_id,
         "statusColor": status_color,
         "assigneeIds": [a.user_id for a in task.assignees],
+        "followerIds": [f.user_id for f in task.followers],
         "dueDate": format_due_date(task.due_date),
         "dueDateIso": task.due_date.isoformat() if task.due_date else None,
         "startDate": format_due_date(task.start_date),
