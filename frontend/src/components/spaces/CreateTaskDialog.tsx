@@ -66,6 +66,7 @@ import {
   addChecklistItem,
   addTaskDependency,
   createListTask,
+  createSubtask,
   deleteChecklist,
   deleteChecklistItem,
   fetchListMeta,
@@ -106,6 +107,8 @@ type StagedChecklist = {
   draftItemText: string;
   draftItemAssigneeId: string | null;
 };
+
+type StagedSubtask = { id: string; name: string };
 
 type CreateAction = "default" | "open" | "start-another" | "duplicate";
 
@@ -244,6 +247,9 @@ export function CreateTaskDialog({
   const [taskPickerFor, setTaskPickerFor] = useState<TaskDependencyType | null>(
     null
   );
+  const [subtasks, setSubtasks] = useState<StagedSubtask[]>([]);
+  const [subtasksOpen, setSubtasksOpen] = useState(false);
+  const [draftSubtaskName, setDraftSubtaskName] = useState("");
   const [checklists, setChecklists] = useState<StagedChecklist[]>([]);
   const [checklistAssigneeOpen, setChecklistAssigneeOpen] = useState<string | null>(null);
   const [checklistAssigneeSearch, setChecklistAssigneeSearch] = useState("");
@@ -366,6 +372,9 @@ export function CreateTaskDialog({
     setFollowerSearch("");
     setPendingAttachments([]);
     setDependencies([]);
+    setSubtasks([]);
+    setSubtasksOpen(false);
+    setDraftSubtaskName("");
     setChecklists([]);
   }
 
@@ -387,6 +396,24 @@ export function CreateTaskDialog({
 
   function removeDependency(id: string) {
     setDependencies((prev) => prev.filter((d) => d.id !== id));
+  }
+
+  function focusSubtaskComposer() {
+    setSubtasksOpen(true);
+    setTimeout(() => {
+      document.getElementById("subtask-draft-input")?.focus();
+    }, 0);
+  }
+
+  function stageSubtask() {
+    const name = draftSubtaskName.trim();
+    if (!name) return;
+    setSubtasks((prev) => [...prev, { id: crypto.randomUUID(), name }]);
+    setDraftSubtaskName("");
+  }
+
+  function removeSubtask(id: string) {
+    setSubtasks((prev) => prev.filter((s) => s.id !== id));
   }
 
   function stageChecklist() {
@@ -662,6 +689,18 @@ export function CreateTaskDialog({
             e instanceof Error
               ? `Failed to link ${dep.task.name}: ${e.message}`
               : `Failed to link ${dep.task.name}`
+          );
+        }
+      }
+
+      for (const subtask of subtasks) {
+        try {
+          await createSubtask(accessToken, workspaceId, finalTask.id, subtask.name);
+        } catch (e) {
+          toast.error(
+            e instanceof Error
+              ? `Failed to add subtask "${subtask.name}": ${e.message}`
+              : `Failed to add subtask "${subtask.name}"`
           );
         }
       }
@@ -1026,9 +1065,7 @@ export function CreateTaskDialog({
                 }
               />
               <DropdownMenuContent align="start">
-                <DropdownMenuItem
-                  onClick={() => toast("Subtasks — coming soon")}
-                >
+                <DropdownMenuItem onClick={() => focusSubtaskComposer()}>
                   Subtasks
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => stageChecklist()}>
@@ -1040,6 +1077,59 @@ export function CreateTaskDialog({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+
+          {subtasksOpen || subtasks.length > 0 ? (
+            <div className="pt-3 space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground">
+                Subtasks
+              </p>
+              <div className="divide-y divide-border rounded-md border border-border overflow-hidden">
+                {subtasks.map((subtask) => (
+                  <div
+                    key={subtask.id}
+                    className="group flex items-center gap-2 px-3 py-2 hover:bg-muted/30"
+                  >
+                    <SquareCheckBigIcon className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate text-sm">
+                      {subtask.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeSubtask(subtask.id)}
+                      className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                      aria-label="Remove subtask"
+                    >
+                      <Trash2Icon className="size-3.5" />
+                    </button>
+                  </div>
+                ))}
+                <div className="flex items-center gap-2 px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => stageSubtask()}
+                    disabled={!draftSubtaskName.trim()}
+                    className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                    aria-label="Add subtask"
+                  >
+                    <PlusIcon className="size-3.5" />
+                  </button>
+                  <Input
+                    id="subtask-draft-input"
+                    value={draftSubtaskName}
+                    onChange={(e) => setDraftSubtaskName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        stageSubtask();
+                      }
+                    }}
+                    placeholder="Add subtask"
+                    className="h-7 flex-1 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
+                  />
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           {checklists.length > 0 ? (
             <div className="pt-3 space-y-3">

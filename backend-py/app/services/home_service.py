@@ -714,6 +714,7 @@ async def add_checklist(
     )
     session.add(checklist)
     await session.commit()
+    await session.refresh(checklist, attribute_names=["items"])
     return map_checklist(checklist)
 
 
@@ -751,6 +752,7 @@ async def update_checklist(
         checklist.name = body.name.strip()
 
     await session.commit()
+    await session.refresh(checklist, attribute_names=["items"])
     return map_checklist(checklist)
 
 
