@@ -27,6 +27,8 @@ from app.db.models.home import (
     Space,
     Task,
     TaskAttachment,
+    TaskChecklist,
+    TaskChecklistItem,
     TaskComment,
     TaskDependency,
     TaskList,
@@ -53,11 +55,15 @@ from app.schemas.home import (
     CreateFavoriteBody,
     CreatePostBody,
     CreateReminderBody,
+    CreateChecklistBody,
+    CreateChecklistItemBody,
     CreateSubtaskBody,
     CreateTaskBody,
     CreateTaskDependencyBody,
     RecordRecentBody,
     ReorderLineupBody,
+    UpdateChecklistBody,
+    UpdateChecklistItemBody,
     UpdateInboxItemBody,
     UpdateTaskBody,
 )
@@ -73,6 +79,8 @@ from app.services.home_helpers import (
     STATUS_COLORS,
     end_of_today,
     format_due_date,
+    map_checklist,
+    map_checklist_item,
     map_inbox_type,
     map_list_entry,
     map_space_row,
@@ -88,6 +96,9 @@ _TASK_LOAD = (
     selectinload(Task.comments).selectinload(TaskComment.user),
     selectinload(Task.comments).selectinload(TaskComment.attachments),
     selectinload(Task.subtasks),
+    selectinload(Task.checklists).selectinload(TaskChecklist.items).selectinload(
+        TaskChecklistItem.assignee
+    ),
 )
 
 
@@ -639,18 +650,7 @@ async def add_task_dependency(
     task_id: str,
     body: CreateTaskDependencyBody,
 ) -> dict:
-    task = await session.scalar(
-        select(Task)
-        .join(Task.task_list)
-        .join(TaskList.space)
-        .where(Task.id == task_id, Space.workspace_id == workspace_id)
-        .options(selectinload(Task.task_list).selectinload(TaskList.space))
-    )
-    if not task:
-        raise AppError(404, "NOT_FOUND", "Task not found")
-    await require_space_permission(
-        session, task.task_list.space, user_id, role, PermissionLevel.EDIT
-    )
+    task = await _get_editable_task(session, workspace_id, user_id, role, task_id)
 
     if body.related_task_id == task_id:
         raise AppError(400, "VALIDATION_ERROR", "A task cannot depend on itself")
@@ -681,6 +681,247 @@ async def add_task_dependency(
         "type": body.type,
         "task": map_subtask_summary(related, user_id),
     }
+
+
+async def add_checklist(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    task_id: str,
+    body: CreateChecklistBody,
+) -> dict:
+    task = await session.scalar(
+        select(Task)
+        .join(Task.task_list)
+        .join(TaskList.space)
+        .where(Task.id == task_id, Space.workspace_id == workspace_id)
+        .options(selectinload(Task.task_list).selectinload(TaskList.space))
+    )
+    if not task:
+        raise AppError(404, "NOT_FOUND", "Task not found")
+    await require_space_permission(
+        session, task.task_list.space, user_id, role, PermissionLevel.EDIT
+    )
+
+    max_position = await session.scalar(
+        select(func.max(TaskChecklist.position)).where(TaskChecklist.task_id == task_id)
+    )
+    next_position = (max_position or -1) + 1
+
+    checklist = TaskChecklist(
+        task_id=task_id, name=body.name.strip(), position=next_position
+    )
+    session.add(checklist)
+    await session.commit()
+    return map_checklist(checklist)
+
+
+async def update_checklist(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    task_id: str,
+    checklist_id: str,
+    body: UpdateChecklistBody,
+) -> dict:
+    task = await session.scalar(
+        select(Task)
+        .join(Task.task_list)
+        .join(TaskList.space)
+        .where(Task.id == task_id, Space.workspace_id == workspace_id)
+        .options(selectinload(Task.task_list).selectinload(TaskList.space))
+    )
+    if not task:
+        raise AppError(404, "NOT_FOUND", "Task not found")
+    await require_space_permission(
+        session, task.task_list.space, user_id, role, PermissionLevel.EDIT
+    )
+
+    checklist = await session.scalar(
+        select(TaskChecklist).where(
+            TaskChecklist.id == checklist_id, TaskChecklist.task_id == task_id
+        )
+    )
+    if not checklist:
+        raise AppError(404, "NOT_FOUND", "Checklist not found")
+
+    if body.name is not None:
+        checklist.name = body.name.strip()
+
+    await session.commit()
+    return map_checklist(checklist)
+
+
+async def delete_checklist(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    task_id: str,
+    checklist_id: str,
+) -> dict:
+    task = await session.scalar(
+        select(Task)
+        .join(Task.task_list)
+        .join(TaskList.space)
+        .where(Task.id == task_id, Space.workspace_id == workspace_id)
+        .options(selectinload(Task.task_list).selectinload(TaskList.space))
+    )
+    if not task:
+        raise AppError(404, "NOT_FOUND", "Task not found")
+    await require_space_permission(
+        session, task.task_list.space, user_id, role, PermissionLevel.EDIT
+    )
+
+    checklist = await session.scalar(
+        select(TaskChecklist).where(
+            TaskChecklist.id == checklist_id, TaskChecklist.task_id == task_id
+        )
+    )
+    if not checklist:
+        raise AppError(404, "NOT_FOUND", "Checklist not found")
+    await session.delete(checklist)
+    await session.commit()
+    return {"ok": True}
+
+
+async def _get_editable_task(
+    session: AsyncSession, workspace_id: str, user_id: str, role: WorkspaceRole, task_id: str
+) -> Task:
+    task = await session.scalar(
+        select(Task)
+        .join(Task.task_list)
+        .join(TaskList.space)
+        .where(Task.id == task_id, Space.workspace_id == workspace_id)
+        .options(selectinload(Task.task_list).selectinload(TaskList.space))
+    )
+    if not task:
+        raise AppError(404, "NOT_FOUND", "Task not found")
+    await require_space_permission(
+        session, task.task_list.space, user_id, role, PermissionLevel.EDIT
+    )
+    return task
+
+
+async def _validate_checklist_assignee(
+    session: AsyncSession, workspace_id: str, assignee_id: str | None
+) -> None:
+    if not assignee_id:
+        return
+    members = await workspace_service.list_workspace_members(session, workspace_id)
+    if assignee_id not in {m["id"] for m in members}:
+        raise AppError(400, "VALIDATION_ERROR", "Invalid assignee")
+
+
+async def add_checklist_item(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    task_id: str,
+    checklist_id: str,
+    body: CreateChecklistItemBody,
+) -> dict:
+    await _get_editable_task(session, workspace_id, user_id, role, task_id)
+    checklist = await session.scalar(
+        select(TaskChecklist).where(
+            TaskChecklist.id == checklist_id, TaskChecklist.task_id == task_id
+        )
+    )
+    if not checklist:
+        raise AppError(404, "NOT_FOUND", "Checklist not found")
+    await _validate_checklist_assignee(session, workspace_id, body.assignee_id)
+
+    item = TaskChecklistItem(
+        checklist_id=checklist_id,
+        text=body.text.strip(),
+        assignee_id=body.assignee_id,
+        is_checked=body.is_checked,
+    )
+    session.add(item)
+    await session.commit()
+    refreshed = await session.scalar(
+        select(TaskChecklistItem)
+        .where(TaskChecklistItem.id == item.id)
+        .options(selectinload(TaskChecklistItem.assignee))
+    )
+    return map_checklist_item(refreshed)
+
+
+async def update_checklist_item(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    task_id: str,
+    checklist_id: str,
+    item_id: str,
+    body: UpdateChecklistItemBody,
+) -> dict:
+    await _get_editable_task(session, workspace_id, user_id, role, task_id)
+    checklist = await session.scalar(
+        select(TaskChecklist).where(
+            TaskChecklist.id == checklist_id, TaskChecklist.task_id == task_id
+        )
+    )
+    if not checklist:
+        raise AppError(404, "NOT_FOUND", "Checklist not found")
+
+    item = await session.scalar(
+        select(TaskChecklistItem).where(
+            TaskChecklistItem.id == item_id, TaskChecklistItem.checklist_id == checklist_id
+        )
+    )
+    if not item:
+        raise AppError(404, "NOT_FOUND", "Checklist item not found")
+
+    if "text" in body.model_fields_set and body.text is not None:
+        item.text = body.text.strip()
+    if "is_checked" in body.model_fields_set and body.is_checked is not None:
+        item.is_checked = body.is_checked
+    if "assignee_id" in body.model_fields_set:
+        await _validate_checklist_assignee(session, workspace_id, body.assignee_id)
+        item.assignee_id = body.assignee_id
+
+    await session.commit()
+    refreshed = await session.scalar(
+        select(TaskChecklistItem)
+        .where(TaskChecklistItem.id == item.id)
+        .options(selectinload(TaskChecklistItem.assignee))
+    )
+    return map_checklist_item(refreshed)
+
+
+async def delete_checklist_item(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    task_id: str,
+    checklist_id: str,
+    item_id: str,
+) -> dict:
+    await _get_editable_task(session, workspace_id, user_id, role, task_id)
+    checklist = await session.scalar(
+        select(TaskChecklist).where(
+            TaskChecklist.id == checklist_id, TaskChecklist.task_id == task_id
+        )
+    )
+    if not checklist:
+        raise AppError(404, "NOT_FOUND", "Checklist not found")
+
+    item = await session.scalar(
+        select(TaskChecklistItem).where(
+            TaskChecklistItem.id == item_id, TaskChecklistItem.checklist_id == checklist_id
+        )
+    )
+    if not item:
+        raise AppError(404, "NOT_FOUND", "Checklist item not found")
+    await session.delete(item)
+    await session.commit()
+    return {"ok": True}
 
 
 async def list_tasks(
@@ -779,18 +1020,7 @@ async def update_task(
     task_id: str,
     body: UpdateTaskBody,
 ) -> dict:
-    task = await session.scalar(
-        select(Task)
-        .join(Task.task_list)
-        .join(TaskList.space)
-        .where(Task.id == task_id, Space.workspace_id == workspace_id)
-        .options(selectinload(Task.task_list).selectinload(TaskList.space))
-    )
-    if not task:
-        raise AppError(404, "NOT_FOUND", "Task not found")
-    await require_space_permission(
-        session, task.task_list.space, user_id, role, PermissionLevel.EDIT
-    )
+    task = await _get_editable_task(session, workspace_id, user_id, role, task_id)
     original_name = task.name
     original_description = task.description
     original_status_id = task.status_id

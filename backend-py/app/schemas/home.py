@@ -24,6 +24,34 @@ class CreateTaskDependencyBody(BaseModel):
     type: Literal["blocking", "blocked_by", "linked"]
 
 
+class CreateChecklistBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(min_length=1, max_length=255)
+
+
+class UpdateChecklistBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+
+
+class CreateChecklistItemBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    text: str = Field(min_length=1, max_length=500)
+    assignee_id: str | None = Field(default=None, alias="assigneeId")
+    is_checked: bool = Field(default=False, alias="isChecked")
+
+
+class UpdateChecklistItemBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    text: str | None = Field(default=None, min_length=1, max_length=500)
+    is_checked: bool | None = Field(default=None, alias="isChecked")
+    assignee_id: str | None = Field(default=None, alias="assigneeId")
+
+
 class PresignTaskAttachmentBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

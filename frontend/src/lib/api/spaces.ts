@@ -3,6 +3,8 @@ import type {
   ListStatus,
   Task,
   TaskActivityEvent,
+  TaskChecklist,
+  TaskChecklistItem,
   TaskDependency,
   TaskDependencyType,
 } from "@/lib/types/task";
@@ -107,6 +109,105 @@ export function addTaskDependency(
       method: "POST",
       token,
       body: JSON.stringify(input),
+    }
+  );
+}
+
+export function addChecklist(
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  input: { name: string }
+) {
+  return apiFetch<TaskChecklist>(
+    wsPath(workspaceId, `/tasks/${taskId}/checklists`),
+    {
+      method: "POST",
+      token,
+      body: JSON.stringify(input),
+    }
+  );
+}
+
+export function updateChecklist(
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  checklistId: string,
+  input: { name?: string }
+) {
+  return apiFetch<TaskChecklist>(
+    wsPath(workspaceId, `/tasks/${taskId}/checklists/${checklistId}`),
+    {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(input),
+    }
+  );
+}
+
+export function deleteChecklist(
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  checklistId: string
+) {
+  return apiFetch<{ ok: boolean }>(
+    wsPath(workspaceId, `/tasks/${taskId}/checklists/${checklistId}`),
+    {
+      method: "DELETE",
+      token,
+    }
+  );
+}
+
+export function addChecklistItem(
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  checklistId: string,
+  input: { text: string; assigneeId?: string | null; isChecked?: boolean }
+) {
+  return apiFetch<TaskChecklistItem>(
+    wsPath(workspaceId, `/tasks/${taskId}/checklists/${checklistId}/items`),
+    {
+      method: "POST",
+      token,
+      body: JSON.stringify(input),
+    }
+  );
+}
+
+export function updateChecklistItem(
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  checklistId: string,
+  itemId: string,
+  input: { text?: string; isChecked?: boolean; assigneeId?: string | null }
+) {
+  return apiFetch<TaskChecklistItem>(
+    wsPath(workspaceId, `/tasks/${taskId}/checklists/${checklistId}/items/${itemId}`),
+    {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(input),
+    }
+  );
+}
+
+export function deleteChecklistItem(
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  checklistId: string,
+  itemId: string
+) {
+  return apiFetch<{ ok: boolean }>(
+    wsPath(workspaceId, `/tasks/${taskId}/checklists/${checklistId}/items/${itemId}`),
+    {
+      method: "DELETE",
+      token,
     }
   );
 }

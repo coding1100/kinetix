@@ -127,6 +127,31 @@ def map_inbox_type(item_type: InboxItemType) -> str:
     return item_type.value.lower()
 
 
+def map_checklist_item(item) -> dict:
+    return {
+        "id": item.id,
+        "text": item.text,
+        "isChecked": item.is_checked,
+        "assigneeId": item.assignee_id,
+        "assigneeName": item.assignee.full_name if item.assignee else None,
+    }
+
+
+def map_checklist(checklist) -> dict:
+    items = sorted(
+        getattr(checklist, "items", None) or [],
+        key=lambda i: i.created_at,
+    )
+    checked_count = sum(1 for i in items if i.is_checked)
+    return {
+        "id": checklist.id,
+        "name": checklist.name,
+        "itemCount": len(items),
+        "checkedCount": checked_count,
+        "items": [map_checklist_item(i) for i in items],
+    }
+
+
 def map_task(
     task: Task, current_user_id: str, assignee_names: dict[str, str] | None = None
 ) -> dict:
@@ -173,6 +198,13 @@ def map_task(
         "commentCount": len(comments),
         "subtaskCount": len(getattr(task, "subtasks", None) or []),
         "comments": _map_task_comments_threaded(comments),
+        "checklists": [
+            map_checklist(c)
+            for c in sorted(
+                getattr(task, "checklists", None) or [],
+                key=lambda c: c.position,
+            )
+        ],
     }
 
 

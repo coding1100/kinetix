@@ -227,6 +227,9 @@ class Task(Base):
     attachments: Mapped[list["TaskAttachment"]] = relationship(
         back_populates="task", cascade="all, delete-orphan"
     )
+    checklists: Mapped[list["TaskChecklist"]] = relationship(
+        back_populates="task", cascade="all, delete-orphan"
+    )
 
 
 class TaskAttachment(Base):
@@ -302,6 +305,49 @@ class TaskDependency(Base):
     )
     task: Mapped["Task"] = relationship(foreign_keys=[task_id])
     related_task: Mapped["Task"] = relationship(foreign_keys=[related_task_id])
+
+
+class TaskChecklist(Base):
+    __tablename__ = "TaskChecklist"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    task_id: Mapped[str] = mapped_column(
+        "taskId", String, ForeignKey("Task.id", ondelete="CASCADE")
+    )
+    name: Mapped[str] = mapped_column(String)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        "createdAt", DateTime(timezone=True), server_default=func.now()
+    )
+    task: Mapped["Task"] = relationship(back_populates="checklists")
+    items: Mapped[list["TaskChecklistItem"]] = relationship(
+        back_populates="checklist", cascade="all, delete-orphan"
+    )
+
+
+class TaskChecklistItem(Base):
+    __tablename__ = "TaskChecklistItem"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    checklist_id: Mapped[str] = mapped_column(
+        "checklistId", String, ForeignKey("TaskChecklist.id", ondelete="CASCADE")
+    )
+    text: Mapped[str] = mapped_column(String)
+    is_checked: Mapped[bool] = mapped_column(
+        "isChecked", Boolean, default=False, server_default="false"
+    )
+    assignee_id: Mapped[str | None] = mapped_column(
+        "assigneeId", String, ForeignKey("User.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        "createdAt", DateTime(timezone=True), server_default=func.now()
+    )
+    checklist: Mapped["TaskChecklist"] = relationship(back_populates="items")
+    assignee: Mapped["User | None"] = relationship()
 
 
 class TaskComment(Base):

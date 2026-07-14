@@ -27,6 +27,22 @@ export interface TaskSubtask {
   statusColor: string;
 }
 
+export interface TaskChecklistItem {
+  id: string;
+  text: string;
+  isChecked: boolean;
+  assigneeId?: string | null;
+  assigneeName?: string | null;
+}
+
+export interface TaskChecklist {
+  id: string;
+  name: string;
+  itemCount: number;
+  checkedCount: number;
+  items: TaskChecklistItem[];
+}
+
 export interface TaskAttachment {
   id: string;
   fileName: string;
@@ -76,6 +92,7 @@ export interface Task {
   comments?: TaskComment[];
   subtasks?: TaskSubtask[];
   attachments?: TaskAttachment[];
+  checklists?: TaskChecklist[];
   inLineup?: boolean;
   isFollowing?: boolean;
 }

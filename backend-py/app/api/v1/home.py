@@ -4,6 +4,8 @@ from app.deps.auth import CurrentUserDep, DbSession
 from app.deps.workspace import WorkspaceMemberDep
 from app.schemas.home import (
     AddLineupBody,
+    CreateChecklistBody,
+    CreateChecklistItemBody,
     CreateFavoriteBody,
     CreatePostBody,
     CreateReminderBody,
@@ -13,6 +15,8 @@ from app.schemas.home import (
     PresignTaskAttachmentBody,
     RecordRecentBody,
     ReorderLineupBody,
+    UpdateChecklistBody,
+    UpdateChecklistItemBody,
     UpdateInboxItemBody,
     UpdateSidebarBody,
     UpdateTaskBody,
@@ -782,6 +786,101 @@ async def add_task_dependency(
 ):
     return await home_service.add_task_dependency(
         session, workspace_id, user.id, member.role, task_id, body
+    )
+
+
+@router.post(
+    "/tasks/{task_id}/checklists",
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_task_checklist(
+    body: CreateChecklistBody,
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await home_service.add_checklist(
+        session, workspace_id, user.id, member.role, task_id, body
+    )
+
+
+@router.patch("/tasks/{task_id}/checklists/{checklist_id}")
+async def patch_task_checklist(
+    body: UpdateChecklistBody,
+    workspace_id: str,
+    task_id: str,
+    checklist_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await home_service.update_checklist(
+        session, workspace_id, user.id, member.role, task_id, checklist_id, body
+    )
+
+
+@router.delete("/tasks/{task_id}/checklists/{checklist_id}")
+async def delete_task_checklist(
+    workspace_id: str,
+    task_id: str,
+    checklist_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await home_service.delete_checklist(
+        session, workspace_id, user.id, member.role, task_id, checklist_id
+    )
+
+
+@router.post(
+    "/tasks/{task_id}/checklists/{checklist_id}/items",
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_task_checklist_item(
+    body: CreateChecklistItemBody,
+    workspace_id: str,
+    task_id: str,
+    checklist_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await home_service.add_checklist_item(
+        session, workspace_id, user.id, member.role, task_id, checklist_id, body
+    )
+
+
+@router.patch("/tasks/{task_id}/checklists/{checklist_id}/items/{item_id}")
+async def patch_task_checklist_item(
+    body: UpdateChecklistItemBody,
+    workspace_id: str,
+    task_id: str,
+    checklist_id: str,
+    item_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await home_service.update_checklist_item(
+        session, workspace_id, user.id, member.role, task_id, checklist_id, item_id, body
+    )
+
+
+@router.delete("/tasks/{task_id}/checklists/{checklist_id}/items/{item_id}")
+async def delete_task_checklist_item(
+    workspace_id: str,
+    task_id: str,
+    checklist_id: str,
+    item_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await home_service.delete_checklist_item(
+        session, workspace_id, user.id, member.role, task_id, checklist_id, item_id
     )
 
 

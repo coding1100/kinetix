@@ -10,6 +10,7 @@ import {
   CircleDashedIcon,
   CircleDotIcon,
   CircleIcon,
+  Edit2Icon,
   FlagIcon,
   FlaskConicalIcon,
   LinkIcon,
@@ -21,7 +22,9 @@ import {
   SearchIcon,
   ShieldCheckIcon,
   SquareCheckBigIcon,
+  Trash2Icon,
   Undo2Icon,
+  UserMinusIcon,
   UserPlusIcon,
   WandSparklesIcon,
   XIcon,
@@ -33,8 +36,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -48,6 +53,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -56,12 +62,18 @@ import { toast } from "sonner";
 import { fetchWorkspaceMembers } from "@/lib/api/chat";
 import { fetchRecents, type SpaceDto } from "@/lib/api/home";
 import {
+  addChecklist,
+  addChecklistItem,
   addTaskDependency,
   createListTask,
+  deleteChecklist,
+  deleteChecklistItem,
   fetchListMeta,
   fetchSpacesTree,
   flattenListsFromSpaces,
   patchTask,
+  updateChecklist,
+  updateChecklistItem,
 } from "@/lib/api/spaces";
 import { uploadTaskAttachment } from "@/lib/tasks/upload-task-attachment";
 import { TaskPickerDialog } from "@/components/spaces/TaskPickerDialog";
@@ -79,6 +91,21 @@ type Member = { id: string; fullName: string };
 type StagedAttachment = { id: string; file: File };
 
 type StagedDependency = { id: string; type: TaskDependencyType; task: Task };
+
+type StagedChecklistItem = {
+  id: string;
+  text: string;
+  checked: boolean;
+  assigneeId: string | null;
+};
+
+type StagedChecklist = {
+  id: string;
+  name: string;
+  items: StagedChecklistItem[];
+  draftItemText: string;
+  draftItemAssigneeId: string | null;
+};
 
 type CreateAction = "default" | "open" | "start-another" | "duplicate";
 
@@ -217,6 +244,20 @@ export function CreateTaskDialog({
   const [taskPickerFor, setTaskPickerFor] = useState<TaskDependencyType | null>(
     null
   );
+  const [checklists, setChecklists] = useState<StagedChecklist[]>([]);
+  const [checklistAssigneeOpen, setChecklistAssigneeOpen] = useState<string | null>(null);
+  const [checklistAssigneeSearch, setChecklistAssigneeSearch] = useState("");
+  const [checklistAssignAllOpen, setChecklistAssignAllOpen] = useState<string | null>(null);
+  const [checklistAssignAllSearch, setChecklistAssignAllSearch] = useState("");
+  const [renameTarget, setRenameTarget] = useState<
+    | { type: "checklist"; checklistId: string }
+    | { type: "item"; checklistId: string; itemId: string }
+    | null
+  >(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [unassignAllChecklistId, setUnassignAllChecklistId] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     if (!open || !ready || !accessToken || !workspaceId) return;
@@ -303,6 +344,12 @@ export function CreateTaskDialog({
     return members.filter((m) => m.fullName.toLowerCase().includes(q));
   }, [members, followerSearch]);
 
+  const filteredChecklistAssigneeMembers = useMemo(() => {
+    const q = checklistAssigneeSearch.trim().toLowerCase();
+    if (!q) return members;
+    return members.filter((m) => m.fullName.toLowerCase().includes(q));
+  }, [members, checklistAssigneeSearch]);
+
   const canCreate = useMemo(
     () => Boolean(name.trim() && listId && !saving),
     [name, listId, saving]
@@ -319,6 +366,7 @@ export function CreateTaskDialog({
     setFollowerSearch("");
     setPendingAttachments([]);
     setDependencies([]);
+    setChecklists([]);
   }
 
   function toggleAssignee(userId: string) {
@@ -339,6 +387,213 @@ export function CreateTaskDialog({
 
   function removeDependency(id: string) {
     setDependencies((prev) => prev.filter((d) => d.id !== id));
+  }
+
+  function stageChecklist() {
+    setChecklists((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        name: `Checklist ${prev.length + 1}`,
+        items: [],
+        draftItemText: "",
+        draftItemAssigneeId: null,
+      },
+    ]);
+  }
+
+  function focusChecklistComposer(checklistId: string) {
+    setTimeout(() => {
+      document
+        .getElementById(`checklist-draft-input-${checklistId}`)
+        ?.focus();
+    }, 0);
+  }
+
+  function stageChecklistItem(checklistId: string) {
+    setChecklists((prev) =>
+      prev.map((c) => {
+        if (c.id !== checklistId) return c;
+        const text = c.draftItemText.trim();
+        if (!text) return c;
+        return {
+          ...c,
+          items: [
+            ...c.items,
+            {
+              id: crypto.randomUUID(),
+              text,
+              checked: false,
+              assigneeId: c.draftItemAssigneeId,
+            },
+          ],
+          draftItemText: "",
+          draftItemAssigneeId: null,
+        };
+      })
+    );
+  }
+
+  function toggleChecklistItemChecked(checklistId: string, itemId: string) {
+    setChecklists((prev) =>
+      prev.map((c) =>
+        c.id === checklistId
+          ? {
+              ...c,
+              items: c.items.map((i) =>
+                i.id === itemId ? { ...i, checked: !i.checked } : i
+              ),
+            }
+          : c
+      )
+    );
+  }
+
+  function removeChecklistItem(checklistId: string, itemId: string) {
+    setChecklists((prev) =>
+      prev.map((c) =>
+        c.id === checklistId ? { ...c, items: c.items.filter((i) => i.id !== itemId) } : c
+      )
+    );
+  }
+
+  function setChecklistDraftAssignee(checklistId: string, assigneeId: string | null) {
+    setChecklists((prev) =>
+      prev.map((c) => (c.id === checklistId ? { ...c, draftItemAssigneeId: assigneeId } : c))
+    );
+  }
+
+  function pickChecklistDraftAssignee(checklistId: string, userId: string) {
+    setChecklists((prev) =>
+      prev.map((c) =>
+        c.id === checklistId
+          ? { ...c, draftItemAssigneeId: c.draftItemAssigneeId === userId ? null : userId }
+          : c
+      )
+    );
+    setChecklistAssigneeOpen(null);
+    setChecklistAssigneeSearch("");
+  }
+
+  function renameChecklist(checklistId: string, newName: string) {
+    setChecklists((prev) =>
+      prev.map((c) => (c.id === checklistId ? { ...c, name: newName } : c))
+    );
+  }
+
+  function removeChecklist(checklistId: string) {
+    setChecklists((prev) => prev.filter((c) => c.id !== checklistId));
+  }
+
+  function updateChecklistItemText(
+    checklistId: string,
+    itemId: string,
+    text: string
+  ) {
+    setChecklists((prev) =>
+      prev.map((c) =>
+        c.id === checklistId
+          ? {
+              ...c,
+              items: c.items.map((i) => (i.id === itemId ? { ...i, text } : i)),
+            }
+          : c
+      )
+    );
+  }
+
+  function updateChecklistDraftText(checklistId: string, text: string) {
+    setChecklists((prev) =>
+      prev.map((c) => (c.id === checklistId ? { ...c, draftItemText: text } : c))
+    );
+  }
+
+  function checkAllInChecklist(checklistId: string) {
+    setChecklists((prev) =>
+      prev.map((c) =>
+        c.id === checklistId
+          ? {
+              ...c,
+              items: c.items.map((i) => ({ ...i, checked: true })),
+            }
+          : c
+      )
+    );
+  }
+
+  function uncheckAllInChecklist(checklistId: string) {
+    setChecklists((prev) =>
+      prev.map((c) =>
+        c.id === checklistId
+          ? {
+              ...c,
+              items: c.items.map((i) => ({ ...i, checked: false })),
+            }
+          : c
+      )
+    );
+  }
+
+  function assignAllChecklistItemsInChecklist(checklistId: string, userId: string) {
+    setChecklists((prev) =>
+      prev.map((c) =>
+        c.id === checklistId
+          ? {
+              ...c,
+              items: c.items.map((i) => ({ ...i, assigneeId: userId })),
+            }
+          : c
+      )
+    );
+  }
+
+  function unassignAllChecklistItemsInChecklist(checklistId: string) {
+    setChecklists((prev) =>
+      prev.map((c) =>
+        c.id === checklistId
+          ? {
+              ...c,
+              items: c.items.map((i) => ({ ...i, assigneeId: null })),
+            }
+          : c
+      )
+    );
+  }
+
+  function handleUnassignAll(checklistId: string) {
+    const checklist = checklists.find((c) => c.id === checklistId);
+    if (!checklist || checklist.items.length === 0) return;
+    setUnassignAllChecklistId(checklistId);
+  }
+
+  function confirmUnassignAll() {
+    if (unassignAllChecklistId) {
+      unassignAllChecklistItemsInChecklist(unassignAllChecklistId);
+    }
+    setUnassignAllChecklistId(null);
+  }
+
+  function openRenameChecklist(checklistId: string, currentName: string) {
+    setRenameTarget({ type: "checklist", checklistId });
+    setRenameValue(currentName);
+  }
+
+  function openRenameItem(checklistId: string, itemId: string, currentText: string) {
+    setRenameTarget({ type: "item", checklistId, itemId });
+    setRenameValue(currentText);
+  }
+
+  function submitRename(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = renameValue.trim();
+    if (!trimmed || !renameTarget) return;
+    if (renameTarget.type === "checklist") {
+      renameChecklist(renameTarget.checklistId, trimmed);
+    } else {
+      updateChecklistItemText(renameTarget.checklistId, renameTarget.itemId, trimmed);
+    }
+    setRenameTarget(null);
+    setRenameValue("");
   }
 
   function pickAttachment() {
@@ -407,6 +662,44 @@ export function CreateTaskDialog({
             e instanceof Error
               ? `Failed to link ${dep.task.name}: ${e.message}`
               : `Failed to link ${dep.task.name}`
+          );
+        }
+      }
+
+      for (const checklist of checklists) {
+        try {
+          const createdChecklist = await addChecklist(
+            accessToken,
+            workspaceId,
+            finalTask.id,
+            { name: checklist.name }
+          );
+          for (const item of checklist.items) {
+            try {
+              await addChecklistItem(
+                accessToken,
+                workspaceId,
+                finalTask.id,
+                createdChecklist.id,
+                {
+                  text: item.text,
+                  assigneeId: item.assigneeId,
+                  isChecked: item.checked,
+                }
+              );
+            } catch (e) {
+              toast.error(
+                e instanceof Error
+                  ? `Failed to add item "${item.text}": ${e.message}`
+                  : `Failed to add item "${item.text}"`
+              );
+            }
+          }
+        } catch (e) {
+          toast.error(
+            e instanceof Error
+              ? `Failed to create checklist "${checklist.name}": ${e.message}`
+              : `Failed to create checklist "${checklist.name}"`
           );
         }
       }
@@ -738,9 +1031,7 @@ export function CreateTaskDialog({
                 >
                   Subtasks
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => toast("Checklist — coming soon")}
-                >
+                <DropdownMenuItem onClick={() => stageChecklist()}>
                   Checklist
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setDependenciesOpen(true)}>
@@ -749,6 +1040,437 @@ export function CreateTaskDialog({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+
+          {checklists.length > 0 ? (
+            <div className="pt-3 space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground">
+                Checklist
+              </p>
+              {checklists.map((checklist) => {
+                const checkedCount = checklist.items.filter((i) => i.checked).length;
+                return (
+                  <div key={checklist.id} className="border border-border rounded-md overflow-hidden">
+                    <div className="flex items-center justify-between bg-muted/40 px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-foreground">
+                          {checklist.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {checkedCount} of {checklist.items.length}
+                        </span>
+                      </div>
+                      <div className="relative">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-1"
+                                aria-label="Checklist options"
+                              >
+                                <MoreHorizontalIcon className="size-3.5" />
+                              </Button>
+                            }
+                          />
+                          <DropdownMenuContent align="end" className="min-w-48">
+                            <DropdownMenuItem
+                              onClick={() => focusChecklistComposer(checklist.id)}
+                              className="text-xs gap-2 whitespace-nowrap"
+                            >
+                              <PlusIcon className="size-3.5 shrink-0" />
+                              Add Item
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() =>
+                                openRenameChecklist(checklist.id, checklist.name)
+                              }
+                              className="text-xs gap-2 whitespace-nowrap"
+                            >
+                              <Edit2Icon className="size-3.5 shrink-0" />
+                              Rename checklist
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator className="my-1" />
+                            <DropdownMenuItem
+                              onClick={() => setChecklistAssignAllOpen(checklist.id)}
+                              disabled={checklist.items.length === 0}
+                              className="text-xs gap-2 whitespace-nowrap"
+                            >
+                              <UserPlusIcon className="size-3.5 shrink-0" />
+                              Assign all to
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleUnassignAll(checklist.id)}
+                              disabled={checklist.items.length === 0}
+                              className="text-xs gap-2 whitespace-nowrap"
+                            >
+                              <UserMinusIcon className="size-3.5 shrink-0" />
+                              Unassign all
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => checkAllInChecklist(checklist.id)}
+                              disabled={checklist.items.length === 0}
+                              className="text-xs gap-2 whitespace-nowrap"
+                            >
+                              <CheckCircle2Icon className="size-3.5 shrink-0" />
+                              Check All
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => uncheckAllInChecklist(checklist.id)}
+                              disabled={checklist.items.length === 0}
+                              className="text-xs gap-2 whitespace-nowrap"
+                            >
+                              <CircleIcon className="size-3.5 shrink-0" />
+                              Uncheck All
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => removeChecklist(checklist.id)}
+                              className="text-xs gap-2 whitespace-nowrap text-destructive"
+                            >
+                              <Trash2Icon className="size-3.5 shrink-0" />
+                              Delete checklist
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        <Popover
+                          open={checklistAssignAllOpen === checklist.id}
+                          onOpenChange={(open) => {
+                            if (!open) {
+                              setChecklistAssignAllOpen(null);
+                              setChecklistAssignAllSearch("");
+                            }
+                          }}
+                        >
+                          <PopoverTrigger
+                            render={
+                              <span className="absolute right-0 top-full h-0 w-0" />
+                            }
+                          />
+                          <PopoverContent align="end" className="w-64 p-2">
+                            <div className="relative mb-2">
+                              <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                              <Input
+                                value={checklistAssignAllSearch}
+                                onChange={(e) =>
+                                  setChecklistAssignAllSearch(e.target.value)
+                                }
+                                placeholder="Search people…"
+                                className="h-8 pl-8"
+                                autoFocus
+                              />
+                            </div>
+                            <ul className="max-h-48 space-y-0.5 overflow-y-auto">
+                              {filteredChecklistAssigneeMembers
+                                .filter((m) =>
+                                  m.fullName
+                                    .toLowerCase()
+                                    .includes(checklistAssignAllSearch.toLowerCase())
+                                ).length === 0 ? (
+                                <li className="px-2 py-3 text-center text-xs text-muted-foreground">
+                                  No people found
+                                </li>
+                              ) : (
+                                filteredChecklistAssigneeMembers
+                                  .filter((m) =>
+                                    m.fullName
+                                      .toLowerCase()
+                                      .includes(checklistAssignAllSearch.toLowerCase())
+                                  )
+                                  .map((m) => (
+                                    <li key={m.id}>
+                                      <button
+                                        type="button"
+                                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                                        onClick={() => {
+                                          assignAllChecklistItemsInChecklist(
+                                            checklist.id,
+                                            m.id
+                                          );
+                                          setChecklistAssignAllOpen(null);
+                                          setChecklistAssignAllSearch("");
+                                        }}
+                                      >
+                                        <Avatar className="size-6">
+                                          <AvatarFallback
+                                            className={cn(
+                                              "text-[10px] font-semibold",
+                                              avatarColorClassForKey(
+                                                m.id,
+                                                m.fullName
+                                              )
+                                            )}
+                                          >
+                                            {avatarInitialFromName(m.fullName)}
+                                          </AvatarFallback>
+                                        </Avatar>
+                                        <span className="min-w-0 flex-1 truncate">
+                                          {m.fullName}
+                                        </span>
+                                      </button>
+                                    </li>
+                                  ))
+                              )}
+                            </ul>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                    </div>
+                    <div className="divide-y divide-border">
+                      {checklist.items.map((item, itemIndex) => {
+                        const assignee = members.find((m) => m.id === item.assigneeId);
+                        return (
+                          <div
+                            key={item.id}
+                            className="group flex items-center gap-2 px-3 py-2 hover:bg-muted/30"
+                          >
+                            <button
+                              type="button"
+                              onClick={() =>
+                                toggleChecklistItemChecked(checklist.id, item.id)
+                              }
+                              className="shrink-0 text-muted-foreground hover:text-foreground"
+                              aria-label={
+                                item.checked ? "Mark incomplete" : "Mark complete"
+                              }
+                            >
+                              {item.checked ? (
+                                <CheckCircle2Icon className="size-4 text-primary" />
+                              ) : (
+                                <CircleIcon className="size-4" />
+                              )}
+                            </button>
+                            <span
+                              className={cn(
+                                "min-w-0 flex-1 truncate text-sm",
+                                item.checked && "line-through text-muted-foreground"
+                              )}
+                            >
+                              {item.text}
+                            </span>
+                            {assignee && (
+                              <Avatar className="size-5 shrink-0">
+                                <AvatarFallback
+                                  className={cn(
+                                    "text-[9px] font-semibold",
+                                    avatarColorClassForKey(
+                                      assignee.id,
+                                      assignee.fullName
+                                    )
+                                  )}
+                                >
+                                  {avatarInitialFromName(assignee.fullName)}
+                                </AvatarFallback>
+                              </Avatar>
+                            )}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger
+                                render={
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                                    aria-label="Item options"
+                                  >
+                                    <MoreHorizontalIcon className="size-3" />
+                                  </button>
+                                }
+                              />
+                              <DropdownMenuContent align="end" className="min-w-48">
+                                <DropdownMenuItem
+                                  onClick={() => focusChecklistComposer(checklist.id)}
+                                  className="text-xs gap-2 whitespace-nowrap"
+                                >
+                                  <PlusIcon className="size-3.5 shrink-0" />
+                                  Add Item
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    openRenameItem(checklist.id, item.id, item.text)
+                                  }
+                                  className="text-xs gap-2 whitespace-nowrap"
+                                >
+                                  <Edit2Icon className="size-3.5 shrink-0" />
+                                  Rename
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    setChecklistAssigneeOpen(item.id)
+                                  }
+                                  className="text-xs gap-2 whitespace-nowrap"
+                                >
+                                  <UserPlusIcon className="size-3.5 shrink-0" />
+                                  Assign to
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    removeChecklistItem(checklist.id, item.id)
+                                  }
+                                  className="text-xs gap-2 whitespace-nowrap text-destructive"
+                                >
+                                  <Trash2Icon className="size-3.5 shrink-0" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        );
+                      })}
+                      <div className="flex items-center gap-2 px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => stageChecklistItem(checklist.id)}
+                          disabled={!checklist.draftItemText.trim()}
+                          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                          aria-label="Add item"
+                        >
+                          <PlusIcon className="size-3.5" />
+                        </button>
+                        <Input
+                          id={`checklist-draft-input-${checklist.id}`}
+                          value={checklist.draftItemText}
+                          onChange={(e) =>
+                            updateChecklistDraftText(checklist.id, e.target.value)
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              stageChecklistItem(checklist.id);
+                            }
+                          }}
+                          placeholder="Add item"
+                          className="h-7 flex-1 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
+                        />
+                        <Popover
+                          open={checklistAssigneeOpen === checklist.id}
+                          onOpenChange={(open) => {
+                            if (!open) {
+                              setChecklistAssigneeOpen(null);
+                              setChecklistAssigneeSearch("");
+                            }
+                          }}
+                        >
+                          <PopoverTrigger
+                            render={
+                              <button
+                                type="button"
+                                className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                aria-label="Pick assignee"
+                                onClick={() =>
+                                  setChecklistAssigneeOpen(checklist.id)
+                                }
+                              >
+                                {checklist.draftItemAssigneeId ? (
+                                  (() => {
+                                    const draftAssignee = members.find(
+                                      (m) => m.id === checklist.draftItemAssigneeId
+                                    );
+                                    return draftAssignee ? (
+                                      <Avatar className="size-5">
+                                        <AvatarFallback
+                                          className={cn(
+                                            "text-[9px] font-semibold",
+                                            avatarColorClassForKey(
+                                              draftAssignee.id,
+                                              draftAssignee.fullName
+                                            )
+                                          )}
+                                        >
+                                          {avatarInitialFromName(
+                                            draftAssignee.fullName
+                                          )}
+                                        </AvatarFallback>
+                                      </Avatar>
+                                    ) : (
+                                      <UserPlusIcon className="size-3.5" />
+                                    );
+                                  })()
+                                ) : (
+                                  <UserPlusIcon className="size-3.5" />
+                                )}
+                              </button>
+                            }
+                          />
+                          <PopoverContent align="end" className="w-64 p-2">
+                            <div className="relative mb-2">
+                              <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                              <Input
+                                value={checklistAssigneeSearch}
+                                onChange={(e) =>
+                                  setChecklistAssigneeSearch(e.target.value)
+                                }
+                                placeholder="Search people…"
+                                className="h-8 pl-8"
+                                autoFocus
+                              />
+                            </div>
+                            <ul className="max-h-48 space-y-0.5 overflow-y-auto">
+                              {filteredChecklistAssigneeMembers.length === 0 ? (
+                                <li className="px-2 py-3 text-center text-xs text-muted-foreground">
+                                  No people found
+                                </li>
+                              ) : (
+                                filteredChecklistAssigneeMembers.map((m) => {
+                                  const checked =
+                                    checklist.draftItemAssigneeId === m.id;
+                                  return (
+                                    <li key={m.id}>
+                                      <button
+                                        type="button"
+                                        className={cn(
+                                          "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted",
+                                          checked && "bg-primary/5"
+                                        )}
+                                        onClick={() => {
+                                          pickChecklistDraftAssignee(
+                                            checklist.id,
+                                            m.id
+                                          );
+                                        }}
+                                      >
+                                        <Avatar className="size-6">
+                                          <AvatarFallback
+                                            className={cn(
+                                              "text-[10px] font-semibold",
+                                              avatarColorClassForKey(
+                                                m.id,
+                                                m.fullName
+                                              )
+                                            )}
+                                          >
+                                            {avatarInitialFromName(m.fullName)}
+                                          </AvatarFallback>
+                                        </Avatar>
+                                        <span className="min-w-0 flex-1 truncate">
+                                          {m.fullName}
+                                        </span>
+                                        {checked && (
+                                          <CheckCircle2Icon className="size-4 text-primary" />
+                                        )}
+                                      </button>
+                                    </li>
+                                  );
+                                })
+                              )}
+                            </ul>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => stageChecklist()}
+                className="w-full"
+              >
+                <PlusIcon className="size-3.5 mr-1.5" />
+                Add Checklist
+              </Button>
+            </div>
+          ) : null}
 
           {dependencies.length > 0 ? (
             <div className="pt-3">
@@ -1063,6 +1785,53 @@ export function CreateTaskDialog({
         onSelect={(task) => {
           if (taskPickerFor) addDependency(taskPickerFor, task);
         }}
+      />
+
+      <Dialog
+        open={renameTarget !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setRenameTarget(null);
+            setRenameValue("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {renameTarget?.type === "checklist"
+                ? "Rename checklist"
+                : "Rename item"}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={submitRename} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="rename-checklist-value">Name</Label>
+              <Input
+                id="rename-checklist-value"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                placeholder="Name"
+                autoFocus
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={!renameValue.trim()}>
+              Save
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={unassignAllChecklistId !== null}
+        onOpenChange={(next) => {
+          if (!next) setUnassignAllChecklistId(null);
+        }}
+        title="Unassign all"
+        description="Remove the assignee from every item in this checklist?"
+        confirmLabel="Unassign all"
+        confirmVariant="destructive"
+        onConfirm={confirmUnassignAll}
       />
     </Dialog>
   );
