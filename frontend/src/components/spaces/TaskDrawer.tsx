@@ -88,6 +88,7 @@ import {
 } from "@/lib/user-display";
 import { toast } from "sonner";
 import { appPath, cn } from "@/lib/utils";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import {
   ArchiveIcon,
   BellIcon,
@@ -1940,7 +1941,7 @@ export function TaskDrawer({
                   />
                 )}
 
-                {(subtasks.length > 0 || subtaskOpen) && (
+                {FEATURE_FLAGS.subtasks && (subtasks.length > 0 || subtaskOpen) && (
                   <div className="mt-6 border-t border-border pt-4">
                     <p className="mb-2 text-sm font-medium">Subtasks</p>
                     <ul className="space-y-1">
@@ -1983,7 +1984,7 @@ export function TaskDrawer({
                   </div>
                 )}
 
-                {subtaskOpen ? (
+                {FEATURE_FLAGS.subtasks && subtaskOpen ? (
                   <div className="mt-3 flex gap-2">
                     <Input
                       value={subtaskInput}
@@ -2555,14 +2556,16 @@ export function TaskDrawer({
                 ) : null}
 
                 <div className="mt-4 space-y-0.5">
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-                    onClick={() => setSubtaskOpen(true)}
-                  >
-                    <PlusIcon className="size-4" />
-                    Add subtask
-                  </button>
+                  {FEATURE_FLAGS.subtasks ? (
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                      onClick={() => setSubtaskOpen(true)}
+                    >
+                      <PlusIcon className="size-4" />
+                      Add subtask
+                    </button>
+                  ) : null}
                   {checklists.length === 0 ? (
                     <button
                       type="button"

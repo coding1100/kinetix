@@ -37,6 +37,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1065,9 +1066,11 @@ export function CreateTaskDialog({
                 }
               />
               <DropdownMenuContent align="start">
-                <DropdownMenuItem onClick={() => focusSubtaskComposer()}>
-                  Subtasks
-                </DropdownMenuItem>
+                {FEATURE_FLAGS.subtasks ? (
+                  <DropdownMenuItem onClick={() => focusSubtaskComposer()}>
+                    Subtasks
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuItem onClick={() => stageChecklist()}>
                   Checklist
                 </DropdownMenuItem>
@@ -1078,7 +1081,7 @@ export function CreateTaskDialog({
             </DropdownMenu>
           </div>
 
-          {subtasksOpen || subtasks.length > 0 ? (
+          {FEATURE_FLAGS.subtasks && (subtasksOpen || subtasks.length > 0) ? (
             <div className="pt-3 space-y-2">
               <p className="text-xs font-semibold text-muted-foreground">
                 Subtasks
