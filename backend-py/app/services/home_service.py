@@ -759,7 +759,41 @@ async def add_task_dependency(
         task_id=task_id, related_task_id=body.related_task_id, dependency_type=body.type
     )
     session.add(dependency)
+    actor_name = await _resolve_user_name(session, user_id)
+    relation_label = {
+        "blocking": f"is now blocking \"{related.name}\"",
+        "blocked_by": f"is now waiting on \"{related.name}\"",
+        "linked": f"is now linked to \"{related.name}\"",
+    }[body.type]
+    _record_task_activity(
+        task,
+        actor_name=actor_name,
+        activity_kind="task_dependency_added",
+        preview=f"{actor_name} added a dependency: this task {relation_label}",
+    )
     await session.commit()
+
+    recipients = await task_notification_recipients(
+        session, task_id=task_id, exclude_user_id=user_id
+    )
+    safe_related_name = related.name.replace("{", "{{").replace("}", "}}")
+    dependency_notifications = await create_task_activity_notifications(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=user_id,
+        task_name=task.name,
+        task_id=task_id,
+        recipient_ids=recipients,
+        title=f"Dependency added: {task.name}",
+        preview_template=(
+            "{actor} added a dependency on {task} (\"" + safe_related_name + "\")"
+        ),
+        activity_kind="task_dependency_added",
+        item_type=InboxItemType.COMMENT,
+    )
+    if dependency_notifications:
+        await session.commit()
+        await emit_home_notifications(session, workspace_id, dependency_notifications)
     return {
         "id": dependency.id,
         "type": body.type,
@@ -806,6 +840,26 @@ async def add_checklist(
     )
     await session.commit()
     await session.refresh(checklist, attribute_names=["items"])
+
+    recipients = await task_notification_recipients(
+        session, task_id=task_id, exclude_user_id=user_id
+    )
+    safe_checklist_name = checklist.name.replace("{", "{{").replace("}", "}}")
+    checklist_notifications = await create_task_activity_notifications(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=user_id,
+        task_name=task.name,
+        task_id=task_id,
+        recipient_ids=recipients,
+        title=f"Checklist added: {task.name}",
+        preview_template=f'{{actor}} added checklist "{safe_checklist_name}" to {{task}}',
+        activity_kind="task_checklist_created",
+        item_type=InboxItemType.COMMENT,
+    )
+    if checklist_notifications:
+        await session.commit()
+        await emit_home_notifications(session, workspace_id, checklist_notifications)
     return map_checklist(checklist)
 
 
@@ -1471,6 +1525,25 @@ async def update_task(
         await emit_home_notifications(
             session, workspace_id, assignment_notifications
         )
+    if added_followers:
+        # Auto-follows from assignment already got the "assigned" notification
+        # above; only notify people explicitly added as a watcher, same as
+        # real ClickUp does ("X added you as a watcher").
+        follow_notifications = await create_task_activity_notifications(
+            session,
+            workspace_id=workspace_id,
+            actor_user_id=user_id,
+            task_name=task.name,
+            task_id=task_id,
+            recipient_ids=list(added_followers),
+            title=f"Added as watcher: {task.name}",
+            preview_template="{actor} added you as a watcher on {task}",
+            activity_kind="task_followed",
+            item_type=InboxItemType.CHAT,
+        )
+        if follow_notifications:
+            await session.commit()
+            await emit_home_notifications(session, workspace_id, follow_notifications)
     if change_labels:
         recipients = await task_notification_recipients(
             session, task_id=task_id, exclude_user_id=user_id
