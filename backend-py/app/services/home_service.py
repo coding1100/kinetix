@@ -1184,7 +1184,8 @@ async def update_task(
     original_list_name = task.task_list.name
 
     old_assignee_ids: set[str] = set(task.assignee_ids) if body.assignee_ids is not None else set()
-    old_follower_ids: set[str] = set(task.follower_ids) if body.follower_ids is not None else set()
+    old_follower_ids: set[str] = set(task.follower_ids)
+    auto_followed_via_assignment: set[str] = set()
 
     if body.name is not None:
         task.name = body.name.strip()
@@ -1258,6 +1259,17 @@ async def update_task(
             if uid not in allowed:
                 raise AppError(400, "VALIDATION_ERROR", "Invalid follower")
         task.follower_ids = list(dict.fromkeys(body.follower_ids))
+
+    if body.assignee_ids is not None:
+        # Assigning someone auto-follows them, same as real ClickUp - keeps
+        # this after the follower_ids block so it wins even when both
+        # fields are patched in the same request. Tracked separately so the
+        # activity log below only records "assigned", not a second
+        # "added follower" entry for the same action.
+        newly_followed = [uid for uid in task.assignee_ids if uid not in task.follower_ids]
+        if newly_followed:
+            task.follower_ids = [*task.follower_ids, *newly_followed]
+            auto_followed_via_assignment.update(newly_followed)
 
     if "priority" in body.model_fields_set:
         task.priority = (
@@ -1429,10 +1441,10 @@ async def update_task(
                 preview=f"{actor_name} removed assignee {assignee_names.get(uid, 'Someone')}",
             )
             logged_activity = True
-    if body.follower_ids is not None:
-        new_follower_ids = set(refreshed.follower_ids)
-        added_followers = new_follower_ids - old_follower_ids
-        removed_followers = old_follower_ids - new_follower_ids
+    new_follower_ids = set(refreshed.follower_ids)
+    added_followers = new_follower_ids - old_follower_ids - auto_followed_via_assignment
+    removed_followers = old_follower_ids - new_follower_ids
+    if added_followers or removed_followers:
         follower_names = await _user_name_map(
             session, added_followers | removed_followers
         )

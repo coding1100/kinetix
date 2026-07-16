@@ -55,13 +55,9 @@ import {
   fetchListMeta,
   fetchSpacesTree,
   fetchTaskActivity,
-  fetchTaskNotifications,
-  followTask,
-  markTaskNotificationsRead,
   patchTask,
   startTaskTimer,
   stopTaskTimer,
-  unfollowTask,
   updateChecklist,
   updateChecklistItem,
   updateTaskComment,
@@ -76,6 +72,8 @@ import { TaskTimeTrackField } from "@/components/tasks/TaskTimeTrackField";
 import { fetchWorkspaceMembers } from "@/lib/api/chat";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { useAuthStore } from "@/stores/auth-store";
+import { UserAvatarWithPresence } from "@/components/shared/AvatarWithPresence";
+import { useUserPresence } from "@/stores/presence-store";
 import {
   taskStatusKeyFromLabel,
   type TaskStatusKey,
@@ -93,7 +91,9 @@ import { appPath, cn } from "@/lib/utils";
 import {
   ArchiveIcon,
   BellIcon,
+  BellOffIcon,
   CalendarIcon,
+  CheckIcon,
   CheckCircle2Icon,
   ChevronDownIcon,
   ChevronUpIcon,
@@ -128,6 +128,21 @@ import {
 } from "lucide-react";
 
 type Member = { id: string; fullName: string; email: string; avatarUrl?: string | null };
+
+function FollowerAvatar({ member }: { member: Member }) {
+  const presence = useUserPresence(member.id);
+  return (
+    <UserAvatarWithPresence
+      name={member.fullName}
+      avatarUrl={member.avatarUrl}
+      presence={presence}
+      avatarClassName="size-6"
+      dotSize="xs"
+      fallbackClassName={cn("text-[10px] text-white", avatarColorClassForKey(member.id))}
+      fallback={avatarInitialFromName(member.fullName)}
+    />
+  );
+}
 
 const NO_PRIORITY = "__none__";
 
@@ -285,8 +300,7 @@ export function TaskDrawer({
   const [inLineup, setInLineup] = useState(false);
   const [lineupBusy, setLineupBusy] = useState(false);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
-  const [following, setFollowing] = useState(false);
-  const [followBusy, setFollowBusy] = useState(false);
+  const [followerSearch, setFollowerSearch] = useState("");
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareSearch, setShareSearch] = useState("");
@@ -323,18 +337,6 @@ export function TaskDrawer({
   const [activitySearchOpen, setActivitySearchOpen] = useState(false);
   const [activitySearch, setActivitySearch] = useState("");
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [notificationsBusy, setNotificationsBusy] = useState(false);
-  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
-  const [notifications, setNotifications] = useState<
-    {
-      id: string;
-      title: string;
-      preview: string;
-      createdAt: string;
-      href?: string;
-      unread: boolean;
-    }[]
-  >([]);
   const [subtaskInput, setSubtaskInput] = useState("");
   const [subtaskOpen, setSubtaskOpen] = useState(false);
   const [subtaskBusy, setSubtaskBusy] = useState(false);
@@ -475,7 +477,6 @@ export function TaskDrawer({
         setTimeTrackingActive(Boolean(t.timeTracking?.active));
         setTimeTrackingStartedAt(t.timeTracking?.startedAt ?? null);
         setInLineup(Boolean(t.inLineup));
-        setFollowing(Boolean(t.isFollowing));
         setSubtasks(t.subtasks ?? []);
         setAttachments(t.attachments ?? []);
         setChecklists(t.checklists ?? []);
@@ -574,6 +575,23 @@ export function TaskDrawer({
     () => members.filter((m) => assigneeIds.includes(m.id)),
     [members, assigneeIds]
   );
+
+  const followerIds = task?.followerIds ?? [];
+  const following = Boolean(currentUserId && followerIds.includes(currentUserId));
+  const followerMembers = useMemo(() => {
+    const q = followerSearch.trim().toLowerCase();
+    return members.filter(
+      (m) => followerIds.includes(m.id) && (!q || m.fullName.toLowerCase().includes(q))
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [members, task?.followerIds, followerSearch]);
+  const nonFollowerMembers = useMemo(() => {
+    const q = followerSearch.trim().toLowerCase();
+    return members.filter(
+      (m) => !followerIds.includes(m.id) && (!q || m.fullName.toLowerCase().includes(q))
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [members, task?.followerIds, followerSearch]);
   const filteredChecklistAssigneeMembers = useMemo(() => {
     const q = checklistAssigneeSearch.trim().toLowerCase();
     if (!q) return members;
@@ -1346,24 +1364,19 @@ export function TaskDrawer({
     }
   }
 
-  async function handleToggleFollow() {
-    if (!taskId || !ready || !accessToken || !workspaceId) return;
-    setFollowBusy(true);
-    try {
-      if (following) {
-        await unfollowTask(accessToken, workspaceId, taskId);
-        setFollowing(false);
-        toast.success("Unfollowed task");
-      } else {
-        await followTask(accessToken, workspaceId, taskId);
-        setFollowing(true);
-        toast.success("Following task");
-      }
-      await refreshActivity();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not update follow");
-    } finally {
-      setFollowBusy(false);
+  async function toggleFollower(userId: string) {
+    if (!userId) return;
+    const current = task?.followerIds ?? [];
+    const isFollower = current.includes(userId);
+    const next = isFollower
+      ? current.filter((id) => id !== userId)
+      : [...current, userId];
+    const updated = await persistPatch({ followerIds: next });
+    if (!updated) return;
+    if (userId === currentUserId) {
+      toast.success(isFollower ? "Unfollowed task" : "Following task");
+    } else {
+      toast.success(isFollower ? "Removed follower" : "Added follower");
     }
   }
 
@@ -1407,49 +1420,6 @@ export function TaskDrawer({
       setArchiveBusy(false);
     }
   }
-
-  const loadNotifications = useCallback(
-    async (options?: { markRead?: boolean }) => {
-      if (!taskId || !ready || !accessToken || !workspaceId) return;
-      setNotificationsBusy(true);
-      try {
-        const res = await fetchTaskNotifications(accessToken, workspaceId, taskId);
-        const items = (res.data ?? []).map((item) => ({
-          id: item.id,
-          title: item.title,
-          preview: item.preview,
-          createdAt: item.createdAt,
-          href: item.href,
-          unread: item.unread,
-        }));
-        if (options?.markRead) {
-          await markTaskNotificationsRead(accessToken, workspaceId, taskId);
-          setNotifications(items.map((item) => ({ ...item, unread: false })));
-          setNotificationUnreadCount(0);
-        } else {
-          setNotifications(items);
-          setNotificationUnreadCount(res.unreadCount ?? 0);
-        }
-      } catch {
-        setNotifications([]);
-        if (!options?.markRead) {
-          setNotificationUnreadCount(0);
-        }
-      } finally {
-        setNotificationsBusy(false);
-      }
-    },
-    [taskId, ready, accessToken, workspaceId]
-  );
-
-  useEffect(() => {
-    void loadNotifications();
-  }, [loadNotifications]);
-
-  useEffect(() => {
-    if (!notificationsOpen) return;
-    void loadNotifications({ markRead: true });
-  }, [notificationsOpen, loadNotifications]);
 
   function buildTaskShareUrl(isPublic = false) {
     if (!taskId || typeof window === "undefined") return "";
@@ -1585,8 +1555,8 @@ export function TaskDrawer({
                     {inLineup ? "Remove from LineUp" : "Add to LineUp"}
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    disabled={followBusy || !task}
-                    onClick={() => void handleToggleFollow()}
+                    disabled={saving || !task || !currentUserId}
+                    onClick={() => void toggleFollower(currentUserId ?? "")}
                   >
                     {following ? "Unfollow" : "Follow"}
                   </DropdownMenuItem>
@@ -2637,64 +2607,127 @@ export function TaskDrawer({
                     </Button>
                     <Popover
                       open={notificationsOpen}
-                      onOpenChange={setNotificationsOpen}
+                      onOpenChange={(next) => {
+                        setNotificationsOpen(next);
+                        if (!next) setFollowerSearch("");
+                      }}
                     >
                       <PopoverTrigger
                         render={
-                          <Button
+                          <button
                             type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label="Task notifications"
-                            className="relative"
+                            aria-label="Followers"
+                            className={cn(
+                              "flex h-7 items-center gap-1 rounded-md px-1.5 text-xs font-medium transition-colors",
+                              followerIds.length > 0
+                                ? "bg-primary/15 text-primary hover:bg-primary/20"
+                                : "text-muted-foreground hover:bg-muted"
+                            )}
                           >
                             <BellIcon className="size-4" />
-                            {notificationUnreadCount > 0 ? (
-                              <span className="absolute -top-1 -right-1 inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] text-primary-foreground">
-                                {notificationUnreadCount > 9
-                                  ? "9+"
-                                  : notificationUnreadCount}
-                              </span>
-                            ) : null}
-                          </Button>
+                            {followerIds.length > 0 ? followerIds.length : null}
+                          </button>
                         }
                       />
                       <PopoverContent
                         align="end"
-                        className="max-h-[380px] w-[340px] overflow-y-auto p-0"
+                        className="max-h-[420px] w-[320px] overflow-y-auto p-0"
                       >
-                        <div className="border-b border-border px-3 py-2">
-                          <p className="text-sm font-semibold">Notifications</p>
+                        <div className="p-1.5">
+                          <button
+                            type="button"
+                            disabled={saving || !task}
+                            className="flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left hover:bg-muted/60 disabled:opacity-60"
+                            onClick={() => {
+                              if (!following) void toggleFollower(currentUserId ?? "");
+                            }}
+                          >
+                            <BellIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                            <span className="flex-1">
+                              <span className="block text-sm font-medium">Follow</span>
+                              <span className="block text-xs text-muted-foreground">
+                                Notify me on all activity for this task.
+                              </span>
+                            </span>
+                            {following ? (
+                              <CheckIcon className="mt-0.5 size-4 shrink-0 text-primary" />
+                            ) : null}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={saving || !task}
+                            className="flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left hover:bg-muted/60 disabled:opacity-60"
+                            onClick={() => {
+                              if (following) void toggleFollower(currentUserId ?? "");
+                            }}
+                          >
+                            <BellOffIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                            <span className="flex-1">
+                              <span className="block text-sm font-medium">Unfollow</span>
+                              <span className="block text-xs text-muted-foreground">
+                                Notify me only on @mentions or assignment.
+                              </span>
+                            </span>
+                            {!following ? (
+                              <CheckIcon className="mt-0.5 size-4 shrink-0 text-primary" />
+                            ) : null}
+                          </button>
                         </div>
-                        {notificationsBusy ? (
-                          <p className="px-3 py-4 text-xs text-muted-foreground">
-                            Loading...
+
+                        <div className="border-t border-border p-2">
+                          <div className="relative">
+                            <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                              value={followerSearch}
+                              onChange={(e) => setFollowerSearch(e.target.value)}
+                              placeholder="Search Followers..."
+                              className="h-8 pl-8"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="px-2 pb-2">
+                          <p className="px-1 pb-1 text-xs font-medium text-muted-foreground">
+                            {followerMembers.length}{" "}
+                            {followerMembers.length === 1 ? "follower" : "followers"}
                           </p>
-                        ) : notifications.length === 0 ? (
-                          <p className="px-3 py-4 text-xs text-muted-foreground">
-                            No notifications
-                          </p>
-                        ) : (
-                          <div className="p-2">
-                            {notifications.map((item) => (
+                          {followerMembers.map((m) => (
+                            <button
+                              key={m.id}
+                              type="button"
+                              className="group/follower flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-muted/60"
+                              onClick={() => void toggleFollower(m.id)}
+                            >
+                              <FollowerAvatar member={m} />
+                              <span className="flex-1 truncate text-sm">
+                                {m.id === currentUserId ? "Me" : m.fullName}
+                              </span>
+                              <UserMinusIcon className="size-3.5 shrink-0 text-muted-foreground opacity-0 group-hover/follower:opacity-100" />
+                            </button>
+                          ))}
+                        </div>
+
+                        {nonFollowerMembers.length > 0 ? (
+                          <div className="border-t border-border px-2 py-2">
+                            <p className="px-1 pb-1 text-xs font-medium text-muted-foreground">
+                              People
+                            </p>
+                            {nonFollowerMembers.map((m) => (
                               <button
-                                key={item.id}
+                                key={m.id}
                                 type="button"
-                                className="mb-1 w-full rounded-md px-2 py-2 text-left hover:bg-muted/60"
-                                onClick={() => {
-                                  if (item.href) {
-                                    window.location.href = appPath(item.href);
-                                  }
-                                }}
+                                className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-muted/60"
+                                onClick={() => void toggleFollower(m.id)}
                               >
-                                <p className="text-xs font-medium">{item.title}</p>
-                                <p className="text-[11px] text-muted-foreground">
-                                  {item.preview}
-                                </p>
+                                <FollowerAvatar member={m} />
+                                <span className="flex-1 truncate text-sm">
+                                  {m.fullName}
+                                </span>
+                                <UserPlusIcon className="size-3.5 shrink-0 text-muted-foreground" />
                               </button>
                             ))}
                           </div>
-                        )}
+                        ) : null}
                       </PopoverContent>
                     </Popover>
                   </div>
