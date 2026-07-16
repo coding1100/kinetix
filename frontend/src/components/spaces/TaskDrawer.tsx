@@ -6,15 +6,18 @@ import type {
   Task,
   TaskActivityEvent,
   TaskAttachment,
+  TaskChecklist,
   TaskSubtask,
 } from "@/lib/types/task";
 import {
   Dialog,
   DialogContent,
+  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -40,8 +43,12 @@ import {
   type SpaceDto,
 } from "@/lib/api/home";
 import {
+  addChecklist,
+  addChecklistItem,
   addTaskComment,
   createSubtask,
+  deleteChecklist,
+  deleteChecklistItem,
   deleteTask,
   deleteTaskComment,
   fetchListMeta,
@@ -54,6 +61,8 @@ import {
   startTaskTimer,
   stopTaskTimer,
   unfollowTask,
+  updateChecklist,
+  updateChecklistItem,
   updateTaskComment,
 } from "@/lib/api/spaces";
 import { uploadTaskAttachment } from "@/lib/tasks/upload-task-attachment";
@@ -83,16 +92,21 @@ import { appPath, cn } from "@/lib/utils";
 import {
   ArchiveIcon,
   BellIcon,
+  CalendarIcon,
   CheckCircle2Icon,
   ChevronDownIcon,
+  ChevronUpIcon,
   CircleDashedIcon,
   CircleDotIcon,
   CircleIcon,
+  Edit2Icon,
   FlagIcon,
   FlaskConicalIcon,
+  HourglassIcon,
   ListChecksIcon,
   LinkIcon,
   Loader2Icon,
+  Maximize2Icon,
   MoreHorizontalIcon,
   PaperclipIcon,
   PlusIcon,
@@ -102,9 +116,13 @@ import {
   Share2Icon,
   SquareCheckBigIcon,
   StarIcon,
+  TagIcon,
+  TimerIcon,
   Trash2Icon,
   Undo2Icon,
+  UserMinusIcon,
   UserPlusIcon,
+  UsersIcon,
   WandSparklesIcon,
 } from "lucide-react";
 
@@ -169,11 +187,37 @@ function priorityFlagClass(priority: TaskPriority) {
   }
 }
 
-function PropertyLabel({ children }: { children: React.ReactNode }) {
+function PropertyLabel({
+  icon: Icon,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  children: React.ReactNode;
+}) {
   return (
-    <span className="pt-1 text-sm font-medium text-muted-foreground">
+    <span className="flex items-center gap-1.5 pt-1 text-xs font-medium text-muted-foreground">
+      <Icon className="size-3.5 shrink-0" />
       {children}
     </span>
+  );
+}
+
+function PropertyValue({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "-mx-1.5 flex h-8 w-fit items-center rounded-md px-1.5 text-xs transition-colors hover:bg-muted/60",
+        className
+      )}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -293,6 +337,34 @@ export function TaskDrawer({
   const [subtaskBusy, setSubtaskBusy] = useState(false);
   const [attachBusy, setAttachBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [checklists, setChecklists] = useState<TaskChecklist[]>([]);
+  const [checklistBusy, setChecklistBusy] = useState(false);
+  const [checklistItemInput, setChecklistItemInput] = useState<
+    Record<string, string>
+  >({});
+  const [checklistDraftAssignee, setChecklistDraftAssignee] = useState<
+    Record<string, string | null>
+  >({});
+  const [checklistAssigneeOpen, setChecklistAssigneeOpen] = useState<
+    string | null
+  >(null);
+  const [checklistAssigneeSearch, setChecklistAssigneeSearch] = useState("");
+  const [checklistAssignAllOpen, setChecklistAssignAllOpen] = useState<
+    string | null
+  >(null);
+  const [checklistAssignAllSearch, setChecklistAssignAllSearch] = useState("");
+  const [checklistRenameTarget, setChecklistRenameTarget] = useState<
+    | { type: "checklist"; checklistId: string }
+    | { type: "item"; checklistId: string; itemId: string }
+    | null
+  >(null);
+  const [checklistRenameValue, setChecklistRenameValue] = useState("");
+  const [unassignAllChecklistId, setUnassignAllChecklistId] = useState<
+    string | null
+  >(null);
+  const [checklistsSectionOpen, setChecklistsSectionOpen] = useState(true);
+  const [checklistItemsExpanded, setChecklistItemsExpanded] = useState(true);
+  const [galleryExpanded, setGalleryExpanded] = useState(false);
 
   const refreshActivity = useCallback(async () => {
     if (!taskId || !ready || !accessToken || !workspaceId) return;
@@ -346,6 +418,7 @@ export function TaskDrawer({
       setTask(refreshed);
       setSubtasks(refreshed.subtasks ?? []);
       setAttachments(refreshed.attachments ?? []);
+      setChecklists(refreshed.checklists ?? []);
       setTimeEstimateMinutes(refreshed.timeEstimateMinutes ?? null);
       setTimeTrackedSeconds(refreshed.timeTrackedSeconds ?? 0);
       setTimeTrackingActive(Boolean(refreshed.timeTracking?.active));
@@ -402,8 +475,11 @@ export function TaskDrawer({
         setFollowing(Boolean(t.isFollowing));
         setSubtasks(t.subtasks ?? []);
         setAttachments(t.attachments ?? []);
+        setChecklists(t.checklists ?? []);
         setSubtaskInput("");
         setSubtaskOpen(false);
+        setGalleryExpanded(false);
+        setChecklistItemInput({});
         setReplyingToCommentId(null);
         if (t.listId) {
           try {
@@ -492,6 +568,37 @@ export function TaskDrawer({
   const selectedAssignees = useMemo(
     () => members.filter((m) => assigneeIds.includes(m.id)),
     [members, assigneeIds]
+  );
+  const filteredChecklistAssigneeMembers = useMemo(() => {
+    const q = checklistAssigneeSearch.trim().toLowerCase();
+    if (!q) return members;
+    return members.filter((m) => m.fullName.toLowerCase().includes(q));
+  }, [members, checklistAssigneeSearch]);
+
+  const filteredChecklistAssignAllMembers = useMemo(() => {
+    const q = checklistAssignAllSearch.trim().toLowerCase();
+    if (!q) return members;
+    return members.filter((m) => m.fullName.toLowerCase().includes(q));
+  }, [members, checklistAssignAllSearch]);
+
+  const checklistTotals = useMemo(() => {
+    const totalItems = checklists.reduce((sum, c) => sum + c.itemCount, 0);
+    const totalChecked = checklists.reduce((sum, c) => sum + c.checkedCount, 0);
+    return {
+      totalItems,
+      totalChecked,
+      open: totalItems - totalChecked,
+      pct: totalItems > 0 ? (totalChecked / totalItems) * 100 : 0,
+    };
+  }, [checklists]);
+
+  const imageAttachments = useMemo(
+    () => attachments.filter((a) => a.mimeType?.startsWith("image/")),
+    [attachments]
+  );
+  const fileAttachments = useMemo(
+    () => attachments.filter((a) => !a.mimeType?.startsWith("image/")),
+    [attachments]
   );
   const shareCandidates = useMemo(() => {
     const q = shareSearch.trim().toLowerCase();
@@ -606,6 +713,376 @@ export function TaskDrawer({
     } finally {
       setAttachBusy(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function handleCreateChecklist() {
+    if (!taskId || !ready || !accessToken || !workspaceId) return;
+    setChecklistBusy(true);
+    try {
+      const created = await addChecklist(accessToken, workspaceId, taskId, {
+        name: `Checklist ${checklists.length + 1}`,
+      });
+      setChecklists((rows) => [...rows, created]);
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not create checklist");
+    } finally {
+      setChecklistBusy(false);
+    }
+  }
+
+  async function handleRemoveChecklist(checklistId: string) {
+    if (!taskId || !ready || !accessToken || !workspaceId) return;
+    try {
+      await deleteChecklist(accessToken, workspaceId, taskId, checklistId);
+      setChecklists((rows) => rows.filter((c) => c.id !== checklistId));
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not delete checklist");
+    }
+  }
+
+  async function handleAddChecklistItem(checklistId: string) {
+    const text = (checklistItemInput[checklistId] ?? "").trim();
+    if (!text || !taskId || !ready || !accessToken || !workspaceId) return;
+    try {
+      const item = await addChecklistItem(
+        accessToken,
+        workspaceId,
+        taskId,
+        checklistId,
+        { text, assigneeId: checklistDraftAssignee[checklistId] ?? null }
+      );
+      setChecklists((rows) =>
+        rows.map((c) =>
+          c.id === checklistId
+            ? {
+                ...c,
+                items: [...c.items, item],
+                itemCount: c.itemCount + 1,
+              }
+            : c
+        )
+      );
+      setChecklistItemInput((prev) => ({ ...prev, [checklistId]: "" }));
+      setChecklistDraftAssignee((prev) => ({ ...prev, [checklistId]: null }));
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not add item");
+    }
+  }
+
+  async function handleAssignChecklistItem(
+    checklistId: string,
+    itemId: string,
+    userId: string | null
+  ) {
+    if (!taskId || !ready || !accessToken || !workspaceId) return;
+    const assignee = userId ? members.find((m) => m.id === userId) : undefined;
+    try {
+      await updateChecklistItem(
+        accessToken,
+        workspaceId,
+        taskId,
+        checklistId,
+        itemId,
+        { assigneeId: userId }
+      );
+      setChecklists((rows) =>
+        rows.map((c) =>
+          c.id === checklistId
+            ? {
+                ...c,
+                items: c.items.map((i) =>
+                  i.id === itemId
+                    ? {
+                        ...i,
+                        assigneeId: userId,
+                        assigneeName: assignee?.fullName ?? null,
+                      }
+                    : i
+                ),
+              }
+            : c
+        )
+      );
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not assign item");
+    } finally {
+      setChecklistAssigneeOpen(null);
+      setChecklistAssigneeSearch("");
+    }
+  }
+
+  function pickChecklistDraftAssignee(checklistId: string, userId: string) {
+    setChecklistDraftAssignee((prev) => ({
+      ...prev,
+      [checklistId]: prev[checklistId] === userId ? null : userId,
+    }));
+    setChecklistAssigneeOpen(null);
+    setChecklistAssigneeSearch("");
+  }
+
+  function focusChecklistComposer(checklistId: string) {
+    setTimeout(() => {
+      document
+        .getElementById(`task-checklist-draft-input-${checklistId}`)
+        ?.focus();
+    }, 0);
+  }
+
+  function openRenameChecklist(checklistId: string, currentName: string) {
+    setChecklistRenameTarget({ type: "checklist", checklistId });
+    setChecklistRenameValue(currentName);
+  }
+
+  function openRenameChecklistItem(
+    checklistId: string,
+    itemId: string,
+    currentText: string
+  ) {
+    setChecklistRenameTarget({ type: "item", checklistId, itemId });
+    setChecklistRenameValue(currentText);
+  }
+
+  async function submitChecklistRename(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = checklistRenameValue.trim();
+    const target = checklistRenameTarget;
+    if (!trimmed || !target || !taskId || !ready || !accessToken || !workspaceId) return;
+    try {
+      if (target.type === "checklist") {
+        await updateChecklist(accessToken, workspaceId, taskId, target.checklistId, {
+          name: trimmed,
+        });
+        setChecklists((rows) =>
+          rows.map((c) =>
+            c.id === target.checklistId ? { ...c, name: trimmed } : c
+          )
+        );
+      } else {
+        await updateChecklistItem(
+          accessToken,
+          workspaceId,
+          taskId,
+          target.checklistId,
+          target.itemId,
+          { text: trimmed }
+        );
+        setChecklists((rows) =>
+          rows.map((c) =>
+            c.id === target.checklistId
+              ? {
+                  ...c,
+                  items: c.items.map((i) =>
+                    i.id === target.itemId ? { ...i, text: trimmed } : i
+                  ),
+                }
+              : c
+          )
+        );
+      }
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not rename");
+    } finally {
+      setChecklistRenameTarget(null);
+      setChecklistRenameValue("");
+    }
+  }
+
+  async function handleCheckAllChecklist(checklistId: string) {
+    if (!taskId || !ready || !accessToken || !workspaceId) return;
+    const checklist = checklists.find((c) => c.id === checklistId);
+    if (!checklist || checklist.items.length === 0) return;
+    try {
+      await Promise.all(
+        checklist.items
+          .filter((i) => !i.isChecked)
+          .map((i) =>
+            updateChecklistItem(accessToken, workspaceId, taskId, checklistId, i.id, {
+              isChecked: true,
+            })
+          )
+      );
+      setChecklists((rows) =>
+        rows.map((c) =>
+          c.id === checklistId
+            ? {
+                ...c,
+                checkedCount: c.items.length,
+                items: c.items.map((i) => ({ ...i, isChecked: true })),
+              }
+            : c
+        )
+      );
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not check all items");
+    }
+  }
+
+  async function handleUncheckAllChecklist(checklistId: string) {
+    if (!taskId || !ready || !accessToken || !workspaceId) return;
+    const checklist = checklists.find((c) => c.id === checklistId);
+    if (!checklist || checklist.items.length === 0) return;
+    try {
+      await Promise.all(
+        checklist.items
+          .filter((i) => i.isChecked)
+          .map((i) =>
+            updateChecklistItem(accessToken, workspaceId, taskId, checklistId, i.id, {
+              isChecked: false,
+            })
+          )
+      );
+      setChecklists((rows) =>
+        rows.map((c) =>
+          c.id === checklistId
+            ? {
+                ...c,
+                checkedCount: 0,
+                items: c.items.map((i) => ({ ...i, isChecked: false })),
+              }
+            : c
+        )
+      );
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not uncheck all items");
+    }
+  }
+
+  async function handleAssignAllChecklist(checklistId: string, userId: string) {
+    if (!taskId || !ready || !accessToken || !workspaceId) return;
+    const checklist = checklists.find((c) => c.id === checklistId);
+    if (!checklist || checklist.items.length === 0) return;
+    const assignee = members.find((m) => m.id === userId);
+    try {
+      await Promise.all(
+        checklist.items.map((i) =>
+          updateChecklistItem(accessToken, workspaceId, taskId, checklistId, i.id, {
+            assigneeId: userId,
+          })
+        )
+      );
+      setChecklists((rows) =>
+        rows.map((c) =>
+          c.id === checklistId
+            ? {
+                ...c,
+                items: c.items.map((i) => ({
+                  ...i,
+                  assigneeId: userId,
+                  assigneeName: assignee?.fullName ?? i.assigneeName,
+                })),
+              }
+            : c
+        )
+      );
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not assign all items");
+    } finally {
+      setChecklistAssignAllOpen(null);
+      setChecklistAssignAllSearch("");
+    }
+  }
+
+  function handleUnassignAllChecklist(checklistId: string) {
+    const checklist = checklists.find((c) => c.id === checklistId);
+    if (!checklist || checklist.items.length === 0) return;
+    setUnassignAllChecklistId(checklistId);
+  }
+
+  async function confirmUnassignAllChecklist() {
+    const checklistId = unassignAllChecklistId;
+    setUnassignAllChecklistId(null);
+    if (!checklistId || !taskId || !ready || !accessToken || !workspaceId) return;
+    const checklist = checklists.find((c) => c.id === checklistId);
+    if (!checklist) return;
+    try {
+      await Promise.all(
+        checklist.items.map((i) =>
+          updateChecklistItem(accessToken, workspaceId, taskId, checklistId, i.id, {
+            assigneeId: null,
+          })
+        )
+      );
+      setChecklists((rows) =>
+        rows.map((c) =>
+          c.id === checklistId
+            ? {
+                ...c,
+                items: c.items.map((i) => ({
+                  ...i,
+                  assigneeId: null,
+                  assigneeName: null,
+                })),
+              }
+            : c
+        )
+      );
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not unassign all items");
+    }
+  }
+
+  async function handleToggleChecklistItem(
+    checklistId: string,
+    itemId: string,
+    isChecked: boolean
+  ) {
+    if (!taskId || !ready || !accessToken || !workspaceId) return;
+    try {
+      await updateChecklistItem(
+        accessToken,
+        workspaceId,
+        taskId,
+        checklistId,
+        itemId,
+        { isChecked }
+      );
+      setChecklists((rows) =>
+        rows.map((c) =>
+          c.id === checklistId
+            ? {
+                ...c,
+                checkedCount: c.checkedCount + (isChecked ? 1 : -1),
+                items: c.items.map((i) =>
+                  i.id === itemId ? { ...i, isChecked } : i
+                ),
+              }
+            : c
+        )
+      );
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not update item");
+    }
+  }
+
+  async function handleRemoveChecklistItem(checklistId: string, itemId: string) {
+    if (!taskId || !ready || !accessToken || !workspaceId) return;
+    try {
+      await deleteChecklistItem(accessToken, workspaceId, taskId, checklistId, itemId);
+      setChecklists((rows) =>
+        rows.map((c) =>
+          c.id === checklistId
+            ? {
+                ...c,
+                itemCount: c.itemCount - 1,
+                items: c.items.filter((i) => i.id !== itemId),
+              }
+            : c
+        )
+      );
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not remove item");
     }
   }
 
@@ -1143,22 +1620,22 @@ export function TaskDrawer({
                   placeholder="Task name"
                 />
 
-                <div className="grid grid-cols-[minmax(7rem,9rem)_1fr_minmax(7rem,9rem)_1fr] gap-x-8 gap-y-5 text-sm">
-                  <PropertyLabel>Status</PropertyLabel>
-                  <div>
+                <div className="grid grid-cols-[minmax(6rem,8rem)_1fr_minmax(6rem,8rem)_1fr] gap-x-4 gap-y-1 text-xs">
+                  <PropertyLabel icon={StatusIcon}>Status</PropertyLabel>
+                  <PropertyValue>
                     {statusColumns ? (
                       <Popover open={statusOpen} onOpenChange={setStatusOpen}>
                         <PopoverTrigger
                           render={
                             <button
                               type="button"
-                              className="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-bold tracking-wide text-white uppercase"
+                              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-bold tracking-wide text-white uppercase"
                               style={{
                                 backgroundColor:
                                   selectedStatus?.color ?? task.statusColor,
                               }}
                             >
-                              <StatusIcon className="size-3.5" />
+                              <StatusIcon className="size-3" />
                               {selectedStatus?.name ?? task.status}
                               <ChevronDownIcon className="size-3 opacity-80" />
                             </button>
@@ -1203,16 +1680,16 @@ export function TaskDrawer({
                       </Popover>
                     ) : (
                       <span
-                        className="inline-flex rounded-md px-3 py-1.5 text-xs font-bold text-white uppercase"
+                        className="inline-flex rounded-md px-2 py-1 text-[11px] font-bold text-white uppercase"
                         style={{ backgroundColor: task.statusColor }}
                       >
                         {task.status}
                       </span>
                     )}
-                  </div>
+                  </PropertyValue>
 
-                  <PropertyLabel>Assignees</PropertyLabel>
-                  <div>
+                  <PropertyLabel icon={UsersIcon}>Assignees</PropertyLabel>
+                  <PropertyValue className="h-auto min-h-8 w-full">
                     <Popover
                       open={assigneeOpen}
                       onOpenChange={(next) => {
@@ -1224,18 +1701,18 @@ export function TaskDrawer({
                         render={
                           <button
                             type="button"
-                            className="flex min-h-8 flex-wrap items-center gap-1.5 rounded-md border border-dashed border-border px-2 py-1 hover:bg-muted/50"
+                            className="flex min-h-7 w-full flex-wrap items-center gap-1.5"
                           >
                             {selectedAssignees.length === 0 ? (
-                              <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                                <UserPlusIcon className="size-4" />
+                              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <UserPlusIcon className="size-3.5" />
                                 Empty
                               </span>
                             ) : (
                               selectedAssignees.map((m) => (
                                 <span
                                   key={m.id}
-                                  className="flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium"
+                                  className="flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium"
                                 >
                                   <Avatar className="size-5">
                                     <AvatarFallback
@@ -1297,26 +1774,26 @@ export function TaskDrawer({
                         </ul>
                       </PopoverContent>
                     </Popover>
-                  </div>
+                  </PropertyValue>
 
-                  <PropertyLabel>Dates</PropertyLabel>
-                  <div>
+                  <PropertyLabel icon={CalendarIcon}>Dates</PropertyLabel>
+                  <PropertyValue>
                     <TaskDatesField
                       startDateIso={task?.startDateIso}
                       dueDateIso={task?.dueDateIso}
                       onStartChange={handleStartChange}
                       onDueChange={handleDueChange}
                     />
-                  </div>
+                  </PropertyValue>
 
-                  <PropertyLabel>Priority</PropertyLabel>
-                  <div>
+                  <PropertyLabel icon={FlagIcon}>Priority</PropertyLabel>
+                  <PropertyValue>
                     <Popover open={priorityOpen} onOpenChange={setPriorityOpen}>
                       <PopoverTrigger
                         render={
                           <button
                             type="button"
-                            className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-1 text-sm hover:bg-muted/50"
+                            className="inline-flex items-center gap-1.5 text-xs"
                           >
                             {priority === NO_PRIORITY ? (
                               <span className="text-muted-foreground">Empty</span>
@@ -1356,18 +1833,18 @@ export function TaskDrawer({
                         ))}
                       </PopoverContent>
                     </Popover>
-                  </div>
+                  </PropertyValue>
 
-                  <PropertyLabel>Time estimate</PropertyLabel>
-                  <div>
+                  <PropertyLabel icon={HourglassIcon}>Time estimate</PropertyLabel>
+                  <PropertyValue>
                     <TaskTimeEstimateField
                       minutes={timeEstimateMinutes}
                       onChange={handleTimeEstimateChange}
                     />
-                  </div>
+                  </PropertyValue>
 
-                  <PropertyLabel>Track time</PropertyLabel>
-                  <div>
+                  <PropertyLabel icon={TimerIcon}>Track time</PropertyLabel>
+                  <PropertyValue className="w-full">
                     <TaskTimeTrackField
                       trackedSeconds={timeTrackedSeconds}
                       active={timeTrackingActive}
@@ -1376,15 +1853,17 @@ export function TaskDrawer({
                       onStart={handleStartTimer}
                       onStop={handleStopTimer}
                     />
-                  </div>
+                  </PropertyValue>
 
-                  <PropertyLabel>Tags</PropertyLabel>
-                  <button
-                    type="button"
-                    className="col-span-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-                  >
-                    Empty
-                  </button>
+                  <PropertyLabel icon={TagIcon}>Tags</PropertyLabel>
+                  <PropertyValue className="col-span-3 w-full">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      Empty
+                    </button>
+                  </PropertyValue>
                 </div>
 
                 <div className="mt-8 border-t border-border pt-6">
@@ -1405,6 +1884,86 @@ export function TaskDrawer({
                     Press Enter to save · Shift+Enter for new line
                   </p>
                 </div>
+
+                {attachments.length > 0 ? (
+                  <div className="mt-6 border-t border-border pt-4">
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className="text-sm font-medium">Attachments</p>
+                      <button
+                        type="button"
+                        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-60"
+                        disabled={attachBusy}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <PaperclipIcon className="size-3.5" />
+                        {attachBusy ? "Uploading…" : "Attach"}
+                      </button>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => void handleAttachFiles(e.target.files)}
+                      />
+                    </div>
+
+                    {imageAttachments.length > 0 ? (
+                      <div className="mb-3">
+                        {galleryExpanded || imageAttachments.length === 1 ? (
+                          <div className="flex flex-wrap gap-3">
+                            {imageAttachments.map((file) => (
+                              <CommentAttachmentCard key={file.id} attachment={file} />
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="relative w-full max-w-sm overflow-hidden rounded-lg border border-border">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={imageAttachments[0].downloadUrl ?? ""}
+                              alt={imageAttachments[0].fileName}
+                              className="aspect-video w-full object-cover"
+                            />
+                            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-black/70 to-transparent" />
+                            <button
+                              type="button"
+                              onClick={() => setGalleryExpanded(true)}
+                              className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-black/50 px-2 py-1 text-xs font-medium text-white backdrop-blur-sm hover:bg-black/70"
+                            >
+                              1/{imageAttachments.length}
+                              <ChevronDownIcon className="size-3.5" />
+                            </button>
+                          </div>
+                        )}
+                        {galleryExpanded && imageAttachments.length > 1 ? (
+                          <button
+                            type="button"
+                            onClick={() => setGalleryExpanded(false)}
+                            className="mt-2 flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                          >
+                            <ChevronUpIcon className="size-3.5" />
+                            Collapse
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {fileAttachments.length > 0 ? (
+                      <div className="flex flex-wrap gap-3">
+                        {fileAttachments.map((file) => (
+                          <CommentAttachmentCard key={file.id} attachment={file} />
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => void handleAttachFiles(e.target.files)}
+                  />
+                )}
 
                 {(subtasks.length > 0 || subtaskOpen) && (
                   <div className="mt-6 border-t border-border pt-4">
@@ -1480,44 +2039,567 @@ export function TaskDrawer({
                   </div>
                 ) : null}
 
-                {attachments.length > 0 ? (
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    {attachments.map((file) => (
-                      <CommentAttachmentCard key={file.id} attachment={file} />
+                {checklists.length > 0 ? (
+                  <div className="mt-6 border-t border-border pt-4">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setChecklistsSectionOpen((o) => !o)}
+                        className="shrink-0 text-muted-foreground hover:text-foreground"
+                        aria-label={
+                          checklistsSectionOpen ? "Collapse checklists" : "Expand checklists"
+                        }
+                      >
+                        <ChevronDownIcon
+                          className={cn(
+                            "size-3.5 transition-transform",
+                            !checklistsSectionOpen && "-rotate-90"
+                          )}
+                        />
+                      </button>
+                      <span className="text-sm font-semibold">Checklists</span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {checklistTotals.open} open
+                      </span>
+                      <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-muted-foreground/50"
+                          style={{ width: `${checklistTotals.pct}%` }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleCreateChecklist()}
+                        disabled={checklistBusy}
+                        className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-60"
+                        aria-label="Add checklist"
+                      >
+                        <PlusIcon className="size-3.5" />
+                      </button>
+                    </div>
+
+                    {checklistsSectionOpen ? (
+                      <div className="mt-3 space-y-3">
+                        {checklists.map((checklist) => (
+                          <div
+                            key={checklist.id}
+                            className="overflow-hidden rounded-md border border-border"
+                          >
+                            <div className="group flex items-center justify-between px-4 py-1.5">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold text-foreground">
+                                  {checklist.name}
+                                </span>
+                                <span className="text-[11px] text-muted-foreground">
+                                  {checklist.checkedCount} of {checklist.itemCount}
+                                </span>
+                              </div>
+                              <div className="relative opacity-0 group-hover:opacity-100">
+                                <DropdownMenu>
+                              <DropdownMenuTrigger
+                                render={
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-5 px-1"
+                                    aria-label="Checklist options"
+                                  >
+                                    <MoreHorizontalIcon className="size-3" />
+                                  </Button>
+                                }
+                              />
+                              <DropdownMenuContent align="end" className="min-w-48">
+                                <DropdownMenuItem
+                                  onClick={() => focusChecklistComposer(checklist.id)}
+                                  className="text-xs gap-2 whitespace-nowrap"
+                                >
+                                  <PlusIcon className="size-3.5 shrink-0" />
+                                  Add Item
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    openRenameChecklist(checklist.id, checklist.name)
+                                  }
+                                  className="text-xs gap-2 whitespace-nowrap"
+                                >
+                                  <Edit2Icon className="size-3.5 shrink-0" />
+                                  Rename checklist
+                                </DropdownMenuItem>
+                                {checklist.items.length > 0 ? (
+                                  <>
+                                    <DropdownMenuSeparator className="my-1" />
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        setChecklistAssignAllOpen(checklist.id)
+                                      }
+                                      className="text-xs gap-2 whitespace-nowrap"
+                                    >
+                                      <UserPlusIcon className="size-3.5 shrink-0" />
+                                      Assign all to
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        handleUnassignAllChecklist(checklist.id)
+                                      }
+                                      className="text-xs gap-2 whitespace-nowrap"
+                                    >
+                                      <UserMinusIcon className="size-3.5 shrink-0" />
+                                      Unassign all
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        void handleCheckAllChecklist(checklist.id)
+                                      }
+                                      className="text-xs gap-2 whitespace-nowrap"
+                                    >
+                                      <CheckCircle2Icon className="size-3.5 shrink-0" />
+                                      Check All
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        void handleUncheckAllChecklist(checklist.id)
+                                      }
+                                      className="text-xs gap-2 whitespace-nowrap"
+                                    >
+                                      <CircleIcon className="size-3.5 shrink-0" />
+                                      Uncheck All
+                                    </DropdownMenuItem>
+                                  </>
+                                ) : null}
+                                <DropdownMenuSeparator className="my-1" />
+                                <DropdownMenuItem
+                                  onClick={() => void handleRemoveChecklist(checklist.id)}
+                                  className="text-xs gap-2 whitespace-nowrap text-destructive"
+                                >
+                                  <Trash2Icon className="size-3.5 shrink-0" />
+                                  Delete checklist
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                            <Popover
+                              open={checklistAssignAllOpen === checklist.id}
+                              onOpenChange={(open) => {
+                                if (!open) {
+                                  setChecklistAssignAllOpen(null);
+                                  setChecklistAssignAllSearch("");
+                                }
+                              }}
+                            >
+                              <PopoverTrigger
+                                render={
+                                  <span className="absolute right-0 top-full h-0 w-0" />
+                                }
+                              />
+                              <PopoverContent align="end" className="w-64 p-2">
+                                <div className="relative mb-2">
+                                  <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                                  <Input
+                                    value={checklistAssignAllSearch}
+                                    onChange={(e) =>
+                                      setChecklistAssignAllSearch(e.target.value)
+                                    }
+                                    placeholder="Search people…"
+                                    className="h-8 pl-8"
+                                    autoFocus
+                                  />
+                                </div>
+                                <ul className="max-h-48 space-y-0.5 overflow-y-auto">
+                                  {filteredChecklistAssignAllMembers.length === 0 ? (
+                                    <li className="px-2 py-3 text-center text-xs text-muted-foreground">
+                                      No people found
+                                    </li>
+                                  ) : (
+                                    filteredChecklistAssignAllMembers.map((m) => (
+                                      <li key={m.id}>
+                                        <button
+                                          type="button"
+                                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                                          onClick={() =>
+                                            void handleAssignAllChecklist(checklist.id, m.id)
+                                          }
+                                        >
+                                          <Avatar className="size-6">
+                                            <AvatarFallback
+                                              className={cn(
+                                                "text-[10px] font-semibold",
+                                                avatarColorClassForKey(m.id, m.fullName)
+                                              )}
+                                            >
+                                              {avatarInitialFromName(m.fullName)}
+                                            </AvatarFallback>
+                                          </Avatar>
+                                          <span className="min-w-0 flex-1 truncate">
+                                            {m.fullName}
+                                          </span>
+                                        </button>
+                                      </li>
+                                    ))
+                                  )}
+                                </ul>
+                              </PopoverContent>
+                            </Popover>
+                          </div>
+                        </div>
+                        <div>
+                          {checklistItemsExpanded
+                            ? checklist.items.map((item) => {
+                                const assignee = members.find(
+                                  (m) => m.id === item.assigneeId
+                                );
+                                return (
+                                  <div
+                                    key={item.id}
+                                    className="group flex items-center gap-1.5 px-4 py-1.5 hover:bg-muted/30"
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void handleToggleChecklistItem(
+                                          checklist.id,
+                                          item.id,
+                                          !item.isChecked
+                                        )
+                                      }
+                                      className="shrink-0 text-muted-foreground hover:text-foreground"
+                                      aria-label={
+                                        item.isChecked ? "Mark incomplete" : "Mark complete"
+                                      }
+                                    >
+                                      {item.isChecked ? (
+                                        <CheckCircle2Icon className="size-3.5 text-primary" />
+                                      ) : (
+                                        <CircleIcon className="size-3.5" />
+                                      )}
+                                    </button>
+                                    <span
+                                      className={cn(
+                                        "min-w-0 flex-1 truncate text-xs",
+                                        item.isChecked && "line-through text-muted-foreground"
+                                      )}
+                                    >
+                                      {item.text}
+                                    </span>
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger
+                                        render={
+                                          <button
+                                            type="button"
+                                            className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                                            aria-label="Item options"
+                                          >
+                                            <MoreHorizontalIcon className="size-3" />
+                                          </button>
+                                        }
+                                      />
+                                      <DropdownMenuContent align="end" className="min-w-48">
+                                        <DropdownMenuItem
+                                          onClick={() => focusChecklistComposer(checklist.id)}
+                                          className="text-xs gap-2 whitespace-nowrap"
+                                        >
+                                          <PlusIcon className="size-3.5 shrink-0" />
+                                          Add Item
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          onClick={() =>
+                                            openRenameChecklistItem(
+                                              checklist.id,
+                                              item.id,
+                                              item.text
+                                            )
+                                          }
+                                          className="text-xs gap-2 whitespace-nowrap"
+                                        >
+                                          <Edit2Icon className="size-3.5 shrink-0" />
+                                          Rename
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          onClick={() =>
+                                            void handleRemoveChecklistItem(checklist.id, item.id)
+                                          }
+                                          className="text-xs gap-2 whitespace-nowrap text-destructive"
+                                        >
+                                          <Trash2Icon className="size-3.5 shrink-0" />
+                                          Delete
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                    <Popover
+                                      open={checklistAssigneeOpen === item.id}
+                                      onOpenChange={(open) => {
+                                        if (!open) {
+                                          setChecklistAssigneeOpen(null);
+                                          setChecklistAssigneeSearch("");
+                                        }
+                                      }}
+                                    >
+                                      <PopoverTrigger
+                                        render={
+                                          <button
+                                            type="button"
+                                            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                            aria-label="Assign to"
+                                            onClick={() => setChecklistAssigneeOpen(item.id)}
+                                          >
+                                            {assignee ? (
+                                              <Avatar className="size-4">
+                                                <AvatarFallback
+                                                  className={cn(
+                                                    "text-[8px] font-semibold",
+                                                    avatarColorClassForKey(
+                                                      assignee.id,
+                                                      assignee.fullName
+                                                    )
+                                                  )}
+                                                >
+                                                  {avatarInitialFromName(assignee.fullName)}
+                                                </AvatarFallback>
+                                              </Avatar>
+                                            ) : (
+                                              <UserPlusIcon className="size-3" />
+                                            )}
+                                          </button>
+                                        }
+                                      />
+                                      <PopoverContent align="end" className="w-64 p-2">
+                                        <div className="relative mb-2">
+                                          <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                                          <Input
+                                            value={checklistAssigneeSearch}
+                                            onChange={(e) =>
+                                              setChecklistAssigneeSearch(e.target.value)
+                                            }
+                                            placeholder="Search people…"
+                                            className="h-8 pl-8"
+                                            autoFocus
+                                          />
+                                        </div>
+                                        <ul className="max-h-48 space-y-0.5 overflow-y-auto">
+                                          {filteredChecklistAssigneeMembers.length === 0 ? (
+                                            <li className="px-2 py-3 text-center text-xs text-muted-foreground">
+                                              No people found
+                                            </li>
+                                          ) : (
+                                            filteredChecklistAssigneeMembers.map((m) => {
+                                              const checked = item.assigneeId === m.id;
+                                              return (
+                                                <li key={m.id}>
+                                                  <button
+                                                    type="button"
+                                                    className={cn(
+                                                      "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted",
+                                                      checked && "bg-primary/5"
+                                                    )}
+                                                    onClick={() =>
+                                                      void handleAssignChecklistItem(
+                                                        checklist.id,
+                                                        item.id,
+                                                        checked ? null : m.id
+                                                      )
+                                                    }
+                                                  >
+                                                    <Avatar className="size-6">
+                                                      <AvatarFallback
+                                                        className={cn(
+                                                          "text-[10px] font-semibold",
+                                                          avatarColorClassForKey(
+                                                            m.id,
+                                                            m.fullName
+                                                          )
+                                                        )}
+                                                      >
+                                                        {avatarInitialFromName(m.fullName)}
+                                                      </AvatarFallback>
+                                                    </Avatar>
+                                                    <span className="min-w-0 flex-1 truncate">
+                                                      {m.fullName}
+                                                    </span>
+                                                    {checked && (
+                                                      <CheckCircle2Icon className="size-4 text-primary" />
+                                                    )}
+                                                  </button>
+                                                </li>
+                                              );
+                                            })
+                                          )}
+                                        </ul>
+                                      </PopoverContent>
+                                    </Popover>
+                                  </div>
+                                );
+                              })
+                            : null}
+                          <div className="flex items-center gap-1 px-4 py-1.5 hover:bg-muted/30">
+                            <button
+                              type="button"
+                              onClick={() => void handleAddChecklistItem(checklist.id)}
+                              disabled={!(checklistItemInput[checklist.id] ?? "").trim()}
+                              className="shrink-0 text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                              aria-label="Add item"
+                            >
+                              <PlusIcon className="size-3.5" />
+                            </button>
+                            <Input
+                              id={`task-checklist-draft-input-${checklist.id}`}
+                              value={checklistItemInput[checklist.id] ?? ""}
+                              onChange={(e) =>
+                                setChecklistItemInput((prev) => ({
+                                  ...prev,
+                                  [checklist.id]: e.target.value,
+                                }))
+                              }
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  void handleAddChecklistItem(checklist.id);
+                                }
+                              }}
+                              placeholder="Add item"
+                              className="h-7 flex-1 border-0 bg-transparent px-0 text-xs shadow-none placeholder:text-xs focus-visible:ring-0 dark:bg-transparent"
+                            />
+                            <Popover
+                              open={checklistAssigneeOpen === checklist.id}
+                              onOpenChange={(open) => {
+                                if (!open) {
+                                  setChecklistAssigneeOpen(null);
+                                  setChecklistAssigneeSearch("");
+                                }
+                              }}
+                            >
+                              <PopoverTrigger
+                                render={
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                    aria-label="Pick assignee"
+                                    onClick={() => setChecklistAssigneeOpen(checklist.id)}
+                                  >
+                                    {checklistDraftAssignee[checklist.id] ? (
+                                      (() => {
+                                        const draftAssignee = members.find(
+                                          (m) => m.id === checklistDraftAssignee[checklist.id]
+                                        );
+                                        return draftAssignee ? (
+                                          <Avatar className="size-3.5">
+                                            <AvatarFallback
+                                              className={cn(
+                                                "text-[7px] font-semibold",
+                                                avatarColorClassForKey(
+                                                  draftAssignee.id,
+                                                  draftAssignee.fullName
+                                                )
+                                              )}
+                                            >
+                                              {avatarInitialFromName(draftAssignee.fullName)}
+                                            </AvatarFallback>
+                                          </Avatar>
+                                        ) : (
+                                          <UserPlusIcon className="size-3" />
+                                        );
+                                      })()
+                                    ) : (
+                                      <UserPlusIcon className="size-3" />
+                                    )}
+                                  </button>
+                                }
+                              />
+                              <PopoverContent align="end" className="w-64 p-2">
+                                <div className="relative mb-2">
+                                  <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                                  <Input
+                                    value={checklistAssigneeSearch}
+                                    onChange={(e) =>
+                                      setChecklistAssigneeSearch(e.target.value)
+                                    }
+                                    placeholder="Search people…"
+                                    className="h-8 pl-8"
+                                    autoFocus
+                                  />
+                                </div>
+                                <ul className="max-h-48 space-y-0.5 overflow-y-auto">
+                                  {filteredChecklistAssigneeMembers.length === 0 ? (
+                                    <li className="px-2 py-3 text-center text-xs text-muted-foreground">
+                                      No people found
+                                    </li>
+                                  ) : (
+                                    filteredChecklistAssigneeMembers.map((m) => {
+                                      const checked =
+                                        checklistDraftAssignee[checklist.id] === m.id;
+                                      return (
+                                        <li key={m.id}>
+                                          <button
+                                            type="button"
+                                            className={cn(
+                                              "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted",
+                                              checked && "bg-primary/5"
+                                            )}
+                                            onClick={() =>
+                                              pickChecklistDraftAssignee(checklist.id, m.id)
+                                            }
+                                          >
+                                            <Avatar className="size-6">
+                                              <AvatarFallback
+                                                className={cn(
+                                                  "text-[10px] font-semibold",
+                                                  avatarColorClassForKey(m.id, m.fullName)
+                                                )}
+                                              >
+                                                {avatarInitialFromName(m.fullName)}
+                                              </AvatarFallback>
+                                            </Avatar>
+                                            <span className="min-w-0 flex-1 truncate">
+                                              {m.fullName}
+                                            </span>
+                                            {checked && (
+                                              <CheckCircle2Icon className="size-4 text-primary" />
+                                            )}
+                                          </button>
+                                        </li>
+                                      );
+                                    })
+                                  )}
+                                </ul>
+                              </PopoverContent>
+                            </Popover>
+                          </div>
+                        </div>
+                      </div>
                     ))}
+                        <button
+                          type="button"
+                          onClick={() => void handleCreateChecklist()}
+                          disabled={checklistBusy}
+                          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-60"
+                        >
+                          <PlusIcon className="size-3.5" />
+                          Add checklist
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
 
-                <ul className="mt-4 space-y-1 text-sm text-muted-foreground">
-                  <li>
+                <div className="mt-4 space-y-0.5">
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    onClick={() => setSubtaskOpen(true)}
+                  >
+                    <PlusIcon className="size-4" />
+                    Add subtask
+                  </button>
+                  {checklists.length === 0 ? (
                     <button
                       type="button"
-                      className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted hover:text-foreground"
-                      onClick={() => setSubtaskOpen(true)}
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-60"
+                      disabled={checklistBusy}
+                      onClick={() => void handleCreateChecklist()}
                     >
-                      <PlusIcon className="size-4" />
-                      Add subtask
+                      <ListChecksIcon className="size-4" />
+                      Create checklist
                     </button>
-                  </li>
-                  <li>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      className="hidden"
-                      onChange={(e) => void handleAttachFiles(e.target.files)}
-                    />
-                    <button
-                      type="button"
-                      className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted hover:text-foreground"
-                      disabled={attachBusy}
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <PaperclipIcon className="size-4" />
-                      {attachBusy ? "Uploading…" : "Attach file"}
-                    </button>
-                  </li>
-                </ul>
+                  ) : null}
+                </div>
               </div>
 
               <div className="flex w-[min(42%,520px)] min-w-[400px] shrink-0 flex-col border-l border-border bg-muted/20">
@@ -1669,6 +2751,57 @@ export function TaskDrawer({
         confirmLabel="Delete task"
         loading={deleting}
         onConfirm={() => void handleDelete()}
+      />
+
+      <Dialog
+        open={checklistRenameTarget !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setChecklistRenameTarget(null);
+            setChecklistRenameValue("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {checklistRenameTarget?.type === "checklist"
+                ? "Rename checklist"
+                : "Rename item"}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={submitChecklistRename} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="rename-task-checklist-value">Name</Label>
+              <Input
+                id="rename-task-checklist-value"
+                value={checklistRenameValue}
+                onChange={(e) => setChecklistRenameValue(e.target.value)}
+                placeholder="Name"
+                autoFocus
+              />
+            </div>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={!checklistRenameValue.trim()}
+            >
+              Save
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={unassignAllChecklistId !== null}
+        onOpenChange={(next) => {
+          if (!next) setUnassignAllChecklistId(null);
+        }}
+        title="Unassign all"
+        description="Remove the assignee from every item in this checklist?"
+        confirmLabel="Unassign all"
+        confirmVariant="destructive"
+        onConfirm={() => void confirmUnassignAllChecklist()}
       />
 
       <Dialog open={shareOpen} onOpenChange={setShareOpen}>

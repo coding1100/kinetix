@@ -53,11 +53,11 @@ export function TaskTimeEstimateField({ minutes, onChange }: TaskTimeEstimateFie
           <button
             type="button"
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-1 text-sm hover:bg-muted/50",
+              "inline-flex items-center gap-1.5 text-xs",
               isEmpty && "text-muted-foreground"
             )}
           >
-            <HourglassIcon className="size-3.5" />
+            <HourglassIcon className="size-3" />
             {label}
           </button>
         }
