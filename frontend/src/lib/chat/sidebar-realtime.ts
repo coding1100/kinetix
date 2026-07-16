@@ -2,6 +2,7 @@ import { fetchChannel, fetchDm } from "@/lib/api/chat";
 import { stripMessageHtml } from "@/lib/chat/rich-text/sanitize";
 import {
   patchChannelActivityInSidebar,
+  patchSidebarChannel,
   removeChannelFromSidebar,
   upsertChannelInSidebar,
 } from "@/lib/chat/sidebar-channel";
@@ -15,6 +16,7 @@ import type {
   ChatChannelJoinedPayload,
   ChatChannelMemberPayload,
   ChatChannelRemovedPayload,
+  ChatChannelRenamedPayload,
   ChatRealtimePayload,
 } from "@/lib/types/realtime";
 
@@ -56,6 +58,10 @@ export function applyChannelRemovedFromSidebar(
   }
 
   return viewingRemovedChannel;
+}
+
+export function applyChannelRenamedToSidebar(event: ChatChannelRenamedPayload) {
+  patchSidebarChannel(event.channelId, { name: event.name });
 }
 
 const pendingChannelFetches = new Set<string>();

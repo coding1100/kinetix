@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.errors import AppError
+from app.db.models.chat import ChatChannel
 from app.db.models.enums import (
     InboxBucket,
     InboxItemType,
@@ -485,6 +486,12 @@ async def get_list(
     space = task_list.space
     await require_space_permission(session, space, user_id, role, PermissionLevel.VIEW)
     statuses = await list_statuses_for_list(session, task_list.id)
+    channel_id = await session.scalar(
+        select(ChatChannel.id).where(
+            ChatChannel.list_id == task_list.id,
+            ChatChannel.is_list_primary.is_(True),
+        )
+    )
     await session.commit()
     return {
         "id": task_list.id,
@@ -495,6 +502,7 @@ async def get_list(
             "color": space.color,
         },
         "statuses": statuses,
+        "channelId": channel_id,
     }
 
 

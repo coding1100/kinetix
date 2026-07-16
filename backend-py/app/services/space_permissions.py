@@ -13,8 +13,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
-from app.db.models.enums import PermissionLevel, WorkspaceRole
+from app.db.models.enums import MemberStatus, PermissionLevel, WorkspaceRole
 from app.db.models.home import Space, SpaceMember
+from app.db.models.workspace import WorkspaceMember
 from app.services.workspace_permissions import is_privileged
 
 _LEVEL_RANK = {
@@ -126,3 +127,31 @@ async def visible_space_ids(
         if level_at_least(level, PermissionLevel.VIEW):
             visible.add(space.id)
     return visible
+
+
+async def user_ids_with_space_access(
+    session: AsyncSession, workspace_id: str, space: Space
+) -> set[str]:
+    """Active workspace member ids with at least VIEW on `space`.
+
+    Source of truth for a list-primary channel's membership - a list's
+    channel members should mirror whoever can see the list's Space, and this
+    needs re-running whenever workspace/space membership changes (see
+    sync_list_channel_members_for_space in chat_service.py).
+    """
+    members = (
+        await session.scalars(
+            select(WorkspaceMember).where(
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.status == MemberStatus.ACTIVE,
+            )
+        )
+    ).all()
+    result: set[str] = set()
+    for member in members:
+        level = await resolve_space_permission(
+            session, space, member.user_id, member.role
+        )
+        if level_at_least(level, PermissionLevel.VIEW):
+            result.add(member.user_id)
+    return result

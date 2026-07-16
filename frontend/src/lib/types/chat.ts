@@ -21,6 +21,11 @@ export interface Channel {
   customIconColor?: string;
   createdById?: string | null;
   canDelete?: boolean;
+  listId?: string | null;
+  // True only for a List's own auto-created channel - a regular channel can
+  // also optionally reference a list (listId set) without being its primary
+  // channel, so this is the explicit signal for the list icon / behavior.
+  isListPrimary?: boolean;
 }
 
 export interface DmParticipant {

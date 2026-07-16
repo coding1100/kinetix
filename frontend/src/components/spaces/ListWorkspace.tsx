@@ -10,8 +10,9 @@ import { CalendarView } from "@/components/spaces/CalendarView";
 import { ListViewGrouped } from "@/components/spaces/ListViewGrouped";
 import { SpacesListToolbar } from "@/components/spaces/SpacesListToolbar";
 import { TaskDrawer } from "@/components/spaces/TaskDrawer";
+import { ConversationView } from "@/components/chat/ConversationView";
 
-type ViewMode = "list" | "board" | "calendar";
+type ViewMode = "channel" | "list" | "board" | "calendar";
 
 type ListWorkspaceProps = {
   listId: string;
@@ -20,6 +21,11 @@ type ListWorkspaceProps = {
   loading: boolean;
   error: string | null;
   onTasksChange: () => void;
+  /** URL this workspace's tabs/task-drawer navigate within - defaults to the
+   * Spaces list URL, but the same tabbed layout is also used from the Chat
+   * route for a list's primary channel (see /chat/c/[channelId]/page.tsx),
+   * where it must stay on that URL instead of jumping to /spaces/l/. */
+  basePath?: string;
 };
 
 export function ListWorkspace({
@@ -29,6 +35,7 @@ export function ListWorkspace({
   loading,
   error,
   onTasksChange,
+  basePath,
 }: ListWorkspaceProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -36,8 +43,11 @@ export function ListWorkspace({
   const [statusFilter, setStatusFilter] = useState("all");
   const viewParam = searchParams.get("view");
   const view: ViewMode =
-    viewParam === "board" || viewParam === "calendar" ? viewParam : "list";
+    viewParam === "board" || viewParam === "calendar" || viewParam === "channel"
+      ? viewParam
+      : "list";
   const selectedTaskId = searchParams.get("task");
+  const path = basePath ?? `/spaces/l/${listId}`;
 
   const setView = useCallback(
     (mode: ViewMode) => {
@@ -45,26 +55,26 @@ export function ListWorkspace({
       if (mode === "list") params.delete("view");
       else params.set("view", mode);
       const q = params.toString();
-      router.replace(`/spaces/l/${listId}${q ? `?${q}` : ""}`);
+      router.replace(`${path}${q ? `?${q}` : ""}`);
     },
-    [router, listId, searchParams]
+    [router, path, searchParams]
   );
 
   const openTask = useCallback(
     (taskId: string) => {
       const params = new URLSearchParams(searchParams.toString());
       params.set("task", taskId);
-      router.replace(`/spaces/l/${listId}?${params.toString()}`);
+      router.replace(`${path}?${params.toString()}`);
     },
-    [router, listId, searchParams]
+    [router, path, searchParams]
   );
 
   const closeTask = useCallback(() => {
     const params = new URLSearchParams(searchParams.toString());
     params.delete("task");
     const q = params.toString();
-    router.replace(`/spaces/l/${listId}${q ? `?${q}` : ""}`);
-  }, [router, listId, searchParams]);
+    router.replace(`${path}${q ? `?${q}` : ""}`);
+  }, [router, path, searchParams]);
 
   const openCreateTask = useCallback(() => {
     openModal("create-task");
@@ -85,7 +95,15 @@ export function ListWorkspace({
         onCreateTask={openCreateTask}
       />
 
-      {view === "calendar" ? (
+      {view === "channel" ? (
+        meta.channelId ? (
+          <ConversationView type="channel" id={meta.channelId} hideHeaderTitle />
+        ) : (
+          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+            No channel linked to this list yet.
+          </div>
+        )
+      ) : view === "calendar" ? (
         <CalendarView
           tasks={tasks}
           loading={loading}

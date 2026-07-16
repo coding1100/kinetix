@@ -9,6 +9,7 @@ import type {
   ChatChannelJoinedPayload,
   ChatChannelMemberPayload,
   ChatChannelRemovedPayload,
+  ChatChannelRenamedPayload,
   ChatMessageDeletePayload,
   ChatMessageEditPayload,
   ChatReactionPayload,
@@ -31,6 +32,7 @@ import {
   applyChannelJoinedToSidebar,
   applyChannelMemberUpdate,
   applyChannelRemovedFromSidebar,
+  applyChannelRenamedToSidebar,
   applyRealtimeMessageToSidebar,
 } from "@/lib/chat/sidebar-realtime";
 import { useAuthStore } from "@/stores/auth-store";
@@ -119,6 +121,9 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     socket.on("chat:channel:member", (payload: ChatChannelMemberPayload) => {
       applyChannelMemberUpdate(payload, userId, accessToken);
     });
+    socket.on("chat:channel:renamed", (payload: ChatChannelRenamedPayload) => {
+      applyChannelRenamedToSidebar(payload);
+    });
     socket.on("home:notification", (payload: HomeNotificationPayload) => {
       applyHomeNotification(payload, userId, workspaceId);
     });
@@ -179,6 +184,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       socket.off("chat:channel:joined");
       socket.off("chat:channel:removed");
       socket.off("chat:channel:member");
+      socket.off("chat:channel:renamed");
       socket.off("home:notification");
       socket.off("workspace:member:role");
       socket.off("chat:message:edit");

@@ -21,6 +21,7 @@ export interface ListMetaDto {
   name: string;
   space: { id: string; name: string; color: string };
   statuses?: ListStatus[];
+  channelId: string | null;
 }
 
 export function fetchSpacesTree(token: string, workspaceId: string) {

@@ -8,6 +8,7 @@ from app.db.models.enums import MemberStatus, WorkspaceRole
 from app.db.models.workspace import Workspace, WorkspaceMember
 from app.socket.presence import get_presence
 from app.socket.emit import broadcast_workspace_member_role_updated
+from app.services.chat_service import sync_list_channel_members_for_workspace
 from app.services.personal_space_service import ensure_personal_space
 from app.services.workspace_permissions import (
     can_assign_role,
@@ -331,6 +332,7 @@ async def remove_workspace_member(
 
     await session.delete(target)
     await session.commit()
+    await sync_list_channel_members_for_workspace(session, workspace_id)
     return {"ok": True}
 
 

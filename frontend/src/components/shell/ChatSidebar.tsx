@@ -416,6 +416,7 @@ function OrganizedList({
                 name={c.name}
                 unread={c.unread}
                 privateChannel={c.isPrivate}
+                listChannel={c.isListPrimary}
                 starred
               />
             ))}
@@ -437,6 +438,7 @@ function OrganizedList({
               name={c.name}
               unread={c.unread}
               privateChannel={c.isPrivate}
+              listChannel={c.isListPrimary}
             />
           ))}
           <Button
@@ -521,6 +523,7 @@ function ChannelRow({
   name,
   unread,
   privateChannel,
+  listChannel,
   starred,
 }: {
   channelId: string;
@@ -529,6 +532,7 @@ function ChannelRow({
   name: string;
   unread: number;
   privateChannel?: boolean;
+  listChannel?: boolean;
   starred?: boolean;
 }) {
   const unreadBadgeHold = useChatStore((s) => s.unreadBadgeHold);
@@ -551,7 +555,14 @@ function ChannelRow({
       )}
     >
       <span className="flex min-w-0 items-center gap-2 text-sm">
-        <HashIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        {listChannel ? (
+          <span className="flex shrink-0 items-center gap-0.5">
+            <HashIcon className="size-3.5 text-muted-foreground" />
+            <ListIcon className="size-3.5 text-muted-foreground" />
+          </span>
+        ) : (
+          <HashIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        )}
         {starred ? (
           <StarIcon className="size-3 shrink-0 fill-amber-400 text-amber-400" />
         ) : null}

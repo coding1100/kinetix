@@ -43,6 +43,12 @@ export type ChatChannelMemberPayload = {
   removed?: boolean;
 };
 
+export type ChatChannelRenamedPayload = {
+  workspaceId: string;
+  channelId: string;
+  name: string;
+};
+
 export type { HomeNotificationPayload } from "@/lib/notifications/realtime";
 
 export type PresenceSyncPayload = {

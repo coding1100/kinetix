@@ -1,9 +1,12 @@
+import asyncio
+
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timezone
 
 from app.core.errors import AppError
+from app.db.models.chat import ChatChannel
 from app.db.models.enums import PermissionLevel, WorkspaceRole
 from app.db.models.home import (
     Folder,
@@ -35,6 +38,10 @@ from app.services.home_service import (
     _build_space_payload,
     _list_count_for_space,
 )
+from app.services.chat_service import (
+    create_list_channel,
+    sync_list_channel_members_for_space,
+)
 from app.services.home_helpers import map_list_entry, map_task
 from app.services.list_status_service import ensure_list_statuses
 from app.services.notification_service import (
@@ -49,6 +56,7 @@ from app.services.space_permissions import (
     level_at_least,
     require_space_permission,
 )
+from app.socket.emit import broadcast_channel_renamed
 
 
 def _require_can_create_space(role: WorkspaceRole) -> None:
@@ -251,6 +259,7 @@ async def add_space_member(
             )
         )
     await session.commit()
+    await sync_list_channel_members_for_space(session, workspace_id, space)
     return await list_space_members(session, workspace_id, space_id, user_id, role)
 
 
@@ -271,6 +280,7 @@ async def remove_space_member(
         )
     )
     await session.commit()
+    await sync_list_channel_members_for_space(session, workspace_id, space)
     return {"ok": True}
 
 
@@ -365,6 +375,9 @@ async def create_list(
     await session.flush()
     await ensure_list_statuses(session, task_list.id)
     await session.commit()
+    # Every list is mandatory 1:1 with its own chat channel - see
+    # chat_service.create_list_channel.
+    await create_list_channel(session, workspace_id, task_list, space, user_id)
     return map_list_entry(task_list, 0)
 
 
@@ -380,9 +393,41 @@ async def update_list(
     await require_space_permission(
         session, task_list.space, user_id, role, PermissionLevel.EDIT
     )
+    renamed = False
     if body.name is not None:
         task_list.name = body.name.strip()
+        renamed = True
     await session.commit()
+
+    if renamed:
+        # List name is the source of truth for its primary channel's name
+        # (two-way sync - the reverse direction lives in
+        # chat_service.update_channel). Best-effort: a list rename should
+        # never fail just because the channel side hit a name conflict.
+        channel = await session.scalar(
+            select(ChatChannel).where(
+                ChatChannel.list_id == list_id,
+                ChatChannel.is_list_primary.is_(True),
+            )
+        )
+        if channel and channel.name != task_list.name:
+            name = task_list.name
+            if await session.scalar(
+                select(ChatChannel).where(
+                    ChatChannel.workspace_id == workspace_id,
+                    ChatChannel.name == name,
+                    ChatChannel.id != channel.id,
+                )
+            ):
+                name = f"{name}-{list_id[:6]}"
+            channel.name = name
+            await session.commit()
+            asyncio.create_task(
+                broadcast_channel_renamed(
+                    workspace_id=workspace_id, channel_id=channel.id, name=name
+                )
+            )
+
     count = await session.scalar(
         select(func.count()).select_from(Task).where(Task.list_id == list_id)
     )

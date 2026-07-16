@@ -16,6 +16,7 @@ from app.db.models.chat import (
     MessageReaction,
 )
 from app.db.models.enums import MemberStatus, WorkspaceRole
+from app.db.models.home import Space, TaskList
 from app.db.models.user import User
 from app.db.models.workspace import WorkspaceMember
 from app.schemas.chat import (
@@ -42,6 +43,7 @@ from app.services.chat_helpers import (
     map_message_broadcast,
     map_search_message,
 )
+from app.services.space_permissions import user_ids_with_space_access
 from app.services.workspace_permissions import (
     get_active_workspace_role,
     has_privileged_workspace_access,
@@ -52,6 +54,7 @@ from app.socket.emit import (
     broadcast_channel_joined,
     broadcast_channel_member_updated,
     broadcast_channel_removed,
+    broadcast_channel_renamed,
     broadcast_chat_message,
     broadcast_chat_message_delete,
     broadcast_chat_message_edit,
@@ -317,6 +320,8 @@ def _channel_payload(
         "isFollowing": member.is_following,
         "customIconColor": channel.custom_icon_color,
         "createdById": channel.created_by_id,
+        "listId": channel.list_id,
+        "isListPrimary": channel.is_list_primary,
         "canDelete": can_delete,
         "notificationLevel": (
             getattr(member, "notification_level", None) or "MENTIONS"
@@ -547,6 +552,7 @@ async def update_channel(
     if member.channel.workspace_id != workspace_id:
         raise AppError(404, "NOT_FOUND", "Channel not found")
 
+    renamed = False
     if body.name is not None:
         trimmed = body.name.strip().lstrip("#").strip()
         if not trimmed:
@@ -561,12 +567,33 @@ async def update_channel(
         if existing:
             raise AppError(409, "CONFLICT", "A channel with this name already exists")
         member.channel.name = trimmed
+        renamed = True
 
     if body.topic is not None:
         topic = body.topic.strip()
         member.channel.topic = topic or None
 
+    # A list-primary channel's name IS the list's name (two-way sync) - the
+    # reverse direction lives in spaces_service.update_list. Non-primary
+    # channels that merely reference a list are left alone.
+    if renamed and member.channel.is_list_primary and member.channel.list_id:
+        list_row = await session.scalar(
+            select(TaskList).where(TaskList.id == member.channel.list_id)
+        )
+        if list_row:
+            list_row.name = member.channel.name
+
     await session.commit()
+
+    if renamed:
+        asyncio.create_task(
+            broadcast_channel_renamed(
+                workspace_id=workspace_id,
+                channel_id=channel_id,
+                name=member.channel.name,
+            )
+        )
+
     return await get_channel(session, workspace_id, user_id, channel_id)
 
 
@@ -793,6 +820,146 @@ async def create_channel(
         0,
         can_delete=True,
     )
+
+
+async def create_list_channel(
+    session: AsyncSession,
+    workspace_id: str,
+    task_list: TaskList,
+    space: Space,
+    user_id: str,
+) -> ChatChannel:
+    """Auto-create a List's mandatory 1:1 primary channel. Unlike the manual
+    `create_channel` path (blanket workspace membership), members here mirror
+    whoever can see the list's Space, via `user_ids_with_space_access` - kept
+    in sync afterwards by `sync_list_channel_members_for_space` whenever
+    Space/Workspace membership changes.
+    """
+    name = task_list.name.strip()
+    if await session.scalar(
+        select(ChatChannel).where(
+            ChatChannel.workspace_id == workspace_id, ChatChannel.name == name
+        )
+    ):
+        candidate = f"{name} ({space.name})"
+        if await session.scalar(
+            select(ChatChannel).where(
+                ChatChannel.workspace_id == workspace_id,
+                ChatChannel.name == candidate,
+            )
+        ):
+            candidate = f"{name}-{task_list.id[:6]}"
+        name = candidate
+
+    member_ids = await user_ids_with_space_access(session, workspace_id, space)
+    member_ids.add(user_id)
+
+    channel = ChatChannel(
+        workspace_id=workspace_id,
+        name=name,
+        is_private=False,
+        space_label=space.name,
+        created_by_id=user_id,
+        list_id=task_list.id,
+        is_list_primary=True,
+    )
+    session.add(channel)
+    await session.flush()
+
+    for uid in member_ids:
+        session.add(
+            ChatChannelMember(
+                channel_id=channel.id,
+                user_id=uid,
+                starred=False,
+                is_following=uid == user_id,
+            )
+        )
+
+    await session.commit()
+    await session.refresh(channel)
+
+    joined_notify = [uid for uid in member_ids if uid != user_id]
+    if joined_notify:
+        await _emit_channel_joined(session, workspace_id, channel, joined_notify)
+
+    return channel
+
+
+async def sync_list_channel_members_for_space(
+    session: AsyncSession, workspace_id: str, space: Space
+) -> None:
+    """Re-derive membership for every list-primary channel under `space`
+    after a Space/Workspace membership change. Adds newly-visible users,
+    removes users who lost access; leaves existing members' starred/following
+    state untouched.
+    """
+    channels = (
+        await session.scalars(
+            select(ChatChannel)
+            .join(TaskList, TaskList.id == ChatChannel.list_id)
+            .where(
+                ChatChannel.is_list_primary.is_(True),
+                TaskList.space_id == space.id,
+            )
+        )
+    ).all()
+    if not channels:
+        return
+
+    target_ids = await user_ids_with_space_access(session, workspace_id, space)
+
+    for channel in channels:
+        current_ids = set(
+            (
+                await session.scalars(
+                    select(ChatChannelMember.user_id).where(
+                        ChatChannelMember.channel_id == channel.id
+                    )
+                )
+            ).all()
+        )
+        to_add = target_ids - current_ids
+        to_remove = current_ids - target_ids
+        for uid in to_add:
+            session.add(
+                ChatChannelMember(channel_id=channel.id, user_id=uid, starred=False)
+            )
+        if to_remove:
+            await session.execute(
+                delete(ChatChannelMember).where(
+                    ChatChannelMember.channel_id == channel.id,
+                    ChatChannelMember.user_id.in_(to_remove),
+                )
+            )
+        await session.commit()
+
+        if to_add:
+            await _emit_channel_joined(session, workspace_id, channel, list(to_add))
+        for uid in to_remove:
+            asyncio.create_task(
+                broadcast_channel_member_updated(
+                    workspace_id=workspace_id,
+                    channel_id=channel.id,
+                    member={"id": uid},
+                    removed=True,
+                )
+            )
+
+
+async def sync_list_channel_members_for_workspace(
+    session: AsyncSession, workspace_id: str
+) -> None:
+    """Workspace-wide membership changes (join/leave/role change) can shift
+    who can see every Space, so re-sync every Space's list-primary channels.
+    Thin wrapper around sync_list_channel_members_for_space for the three
+    call sites that only have a workspace_id, not a specific Space.
+    """
+    spaces = (
+        await session.scalars(select(Space).where(Space.workspace_id == workspace_id))
+    ).all()
+    for space in spaces:
+        await sync_list_channel_members_for_space(session, workspace_id, space)
 
 
 async def list_channel_messages(
