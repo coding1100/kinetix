@@ -15,6 +15,7 @@ export function MentionPickerPopover({
   open,
   onOpenChange,
   onSelectMention,
+  peopleOnly = false,
 }: {
   trigger: React.ReactElement;
   conversationType?: ConversationType;
@@ -23,6 +24,7 @@ export function MentionPickerPopover({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onSelectMention: (selection: MentionSelection) => void;
+  peopleOnly?: boolean;
 }) {
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = open !== undefined;
@@ -45,6 +47,7 @@ export function MentionPickerPopover({
           conversationType={conversationType}
           conversationId={conversationId}
           members={members}
+          peopleOnly={peopleOnly}
           onSelect={(selection) => {
             onSelectMention(selection);
             setPickerOpen(false);

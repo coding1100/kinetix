@@ -709,6 +709,7 @@ async def post_task_attachment_upload(
     user: CurrentUserDep,
     _member: WorkspaceMemberDep,
     file: UploadFile = File(...),
+    for_comment: bool = False,
 ):
     _ = task_id
     data = await file.read()
@@ -719,6 +720,7 @@ async def post_task_attachment_upload(
         attachment_id,
         data,
         file.content_type,
+        for_comment=for_comment,
     )
 
 

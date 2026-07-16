@@ -535,14 +535,16 @@ export function uploadTaskAttachmentContent(
   taskId: string,
   attachmentId: string,
   file: Blob,
-  fileName: string
+  fileName: string,
+  forComment = false
 ) {
   const form = new FormData();
   form.append("file", file, fileName);
+  const query = forComment ? "?for_comment=true" : "";
   return apiFetch<{ ok: boolean; attachmentId: string; status: string }>(
     wsPath(
       workspaceId,
-      `/tasks/${taskId}/attachments/${attachmentId}/upload`
+      `/tasks/${taskId}/attachments/${attachmentId}/upload${query}`
     ),
     { method: "POST", token, body: form }
   );

@@ -4,7 +4,8 @@ import { useState } from "react";
 import dynamic from "next/dynamic";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { EmojiClickData } from "emoji-picker-react";
-import { EmojiStyle } from "emoji-picker-react";
+import { EmojiStyle, Theme } from "emoji-picker-react";
+import { useTheme } from "@/lib/theme";
 
 const EmojiPicker = dynamic(() => import("emoji-picker-react"), { ssr: false });
 
@@ -18,6 +19,7 @@ export function EmojiPickerPopover({
   onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const { resolvedTheme } = useTheme();
 
   const handleOpenChange = (next: boolean) => {
     setOpen(next);
@@ -33,6 +35,7 @@ export function EmojiPickerPopover({
           height={380}
           searchPlaceHolder="Search emoji"
           emojiStyle={EmojiStyle.NATIVE}
+          theme={resolvedTheme === "dark" ? Theme.DARK : Theme.LIGHT}
           lazyLoadEmojis
           onEmojiClick={(emojiData: EmojiClickData) => {
             onSelectEmoji(emojiData.emoji);

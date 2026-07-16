@@ -11,7 +11,7 @@ export type MentionChannel = {
   name: string;
 };
 
-export function useMentionChannels() {
+export function useMentionChannels(disabled = false) {
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const userId = useAuthStore((s) => s.user?.id);
   const sidebarListsCache = useChatStore((s) => s.sidebarListsCache);
@@ -30,7 +30,7 @@ export function useMentionChannels() {
   }, [sidebarListsCache, userId, workspaceId]);
 
   useEffect(() => {
-    if (!ready || cached || inflight.current) return;
+    if (disabled || !ready || cached || inflight.current) return;
 
     inflight.current = true;
     setLoading(true);
@@ -47,7 +47,7 @@ export function useMentionChannels() {
         inflight.current = false;
         setLoading(false);
       });
-  }, [ready, cached, accessToken, workspaceId]);
+  }, [disabled, ready, cached, accessToken, workspaceId]);
 
   const channels = cached ?? fetched ?? [];
 

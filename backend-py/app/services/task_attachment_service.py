@@ -89,6 +89,7 @@ async def upload_file_content(
     attachment_id: str,
     data: bytes,
     content_type: str | None = None,
+    for_comment: bool = False,
 ) -> dict:
     row = await session.scalar(
         select(TaskAttachment).where(
@@ -111,7 +112,14 @@ async def upload_file_content(
     row.size_bytes = len(data)
     row.status = "ready"
     await session.commit()
-    if row.comment_id is None:
+    # Attachments staged from the comment/reply composer are uploaded before
+    # the comment exists (comment_id gets linked afterward by add_task_comment),
+    # so `row.comment_id is None` can't distinguish "standalone task
+    # attachment" from "about-to-be-a-comment-attachment" at this point -
+    # the caller must say which one this is. Comment attachments get no
+    # separate notification/activity entry: the comment itself already shows
+    # up in the feed with the attachment embedded in it.
+    if not for_comment:
         from app.services.notification_service import (
             create_task_activity_notifications,
             emit_home_notifications,

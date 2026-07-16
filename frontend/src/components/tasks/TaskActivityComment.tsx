@@ -6,6 +6,7 @@ import {
   ChevronUpIcon,
   MoreHorizontalIcon,
   PencilIcon,
+  SmilePlusIcon,
   ThumbsUpIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -14,6 +15,7 @@ import type { MentionMember } from "@/hooks/use-mention-members";
 import { MessageBodyWithMentions } from "@/components/chat/thread/MessageBodyWithMentions";
 import { CommentAttachmentCard } from "@/components/tasks/CommentAttachmentCard";
 import { TaskCommentComposer } from "@/components/tasks/TaskCommentComposer";
+import { EmojiPickerPopover } from "@/components/chat/emoji/EmojiPickerPopover";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -86,7 +88,14 @@ function CommentActivityItem({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [liked, setLiked] = useState(false);
+  const [reactions, setReactions] = useState<string[]>([]);
   const canManage = Boolean(currentUserId && comment.authorId === currentUserId);
+
+  const toggleReaction = (emoji: string) => {
+    setReactions((prev) =>
+      prev.includes(emoji) ? prev.filter((e) => e !== emoji) : [...prev, emoji]
+    );
+  };
 
   return (
     <div
@@ -172,19 +181,46 @@ function CommentActivityItem({
 
       {!editing ? (
         <div className="mt-2 flex items-center justify-between pl-9">
-          <button
-            type="button"
-            className={cn(
-              "flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium",
-              liked
-                ? "bg-primary/15 text-primary hover:bg-primary/20"
-                : "text-muted-foreground hover:bg-muted"
-            )}
-            onClick={() => setLiked((v) => !v)}
-          >
-            <ThumbsUpIcon className="size-3.5" />
-            {liked ? 1 : null}
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              className={cn(
+                "flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium",
+                liked
+                  ? "bg-primary/15 text-primary hover:bg-primary/20"
+                  : "text-muted-foreground hover:bg-muted"
+              )}
+              onClick={() => setLiked((v) => !v)}
+            >
+              <ThumbsUpIcon className="size-3.5" />
+              {liked ? 1 : null}
+            </button>
+
+            <EmojiPickerPopover
+              onSelectEmoji={toggleReaction}
+              trigger={
+                <button
+                  type="button"
+                  className="flex items-center rounded-full p-1 text-muted-foreground hover:bg-muted"
+                  aria-label="Add reaction"
+                >
+                  <SmilePlusIcon className="size-3.5" />
+                </button>
+              }
+            />
+
+            {reactions.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                className="flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-xs text-primary hover:bg-primary/20"
+                onClick={() => toggleReaction(emoji)}
+              >
+                <span>{emoji}</span>
+                <span>1</span>
+              </button>
+            ))}
+          </div>
           {onStartReply ? (
             <button
               type="button"

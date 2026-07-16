@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SearchIcon } from "lucide-react";
 import type { ConversationType } from "@/lib/types/chat";
 import type { MentionSelection } from "@/lib/chat/mention-types";
@@ -52,6 +52,7 @@ export function MentionPickerContent({
   query = "",
   onSelect,
   showSearch = true,
+  peopleOnly = false,
 }: {
   conversationType?: ConversationType;
   conversationId?: string;
@@ -59,6 +60,9 @@ export function MentionPickerContent({
   query?: string;
   onSelect: (selection: MentionSelection) => void;
   showSearch?: boolean;
+  /** Task comments only ever mention people - hides the People/Channels tabs
+   * and skips fetching channels entirely. */
+  peopleOnly?: boolean;
 }) {
   const [tab, setTab] = useState<MentionTab>("people");
   const [search, setSearch] = useState("");
@@ -70,7 +74,7 @@ export function MentionPickerContent({
   );
   const members = membersProp ?? hookMembers;
   const membersLoading = membersProp ? false : hookLoading;
-  const { channels, loading: channelsLoading } = useMentionChannels();
+  const { channels, loading: channelsLoading } = useMentionChannels(peopleOnly);
 
   const filteredMembers = useMemo(
     () => filterMentionMembers(members, activeQuery).slice(0, 12),
@@ -82,6 +86,57 @@ export function MentionPickerContent({
     [channels, activeQuery]
   );
 
+  const activeTab = peopleOnly ? "people" : tab;
+  const activeListLength =
+    activeTab === "people" ? filteredMembers.length : filteredChannels.length;
+
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  // Reset the highlighted row whenever the visible list changes shape (query
+  // typed, tab switched) so it never points past the end or lingers on a row
+  // that's no longer first - adjusted during render rather than an effect
+  // (react.dev "you might not need an effect": derived state on prop change).
+  const resetKey = `${activeTab}:${activeQuery}`;
+  const [prevResetKey, setPrevResetKey] = useState(resetKey);
+  if (resetKey !== prevResetKey) {
+    setPrevResetKey(resetKey);
+    setActiveIndex(0);
+  }
+
+  // Arrow keys/Enter should navigate the list even though focus stays in the
+  // message editor - a capture-phase document listener intercepts them
+  // before the editor's own keydown handling (Enter-to-send, cursor moves).
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (activeListLength === 0) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        e.stopPropagation();
+        setActiveIndex((i) => (i + 1) % activeListLength);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        e.stopPropagation();
+        setActiveIndex((i) => (i - 1 + activeListLength) % activeListLength);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (activeTab === "people") {
+          const member = filteredMembers[activeIndex];
+          if (member) {
+            onSelect({ mentionType: "person", id: member.id, label: member.fullName });
+          }
+        } else {
+          const channel = filteredChannels[activeIndex];
+          if (channel) {
+            onSelect({ mentionType: "channel", id: channel.id, label: channel.name });
+          }
+        }
+      }
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, [activeListLength, activeIndex, activeTab, filteredMembers, filteredChannels, onSelect]);
+
   return (
     <div className="flex w-full flex-col bg-card text-foreground">
       {showSearch ? (
@@ -91,7 +146,7 @@ export function MentionPickerContent({
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search people or channels"
+              placeholder={peopleOnly ? "Search people" : "Search people or channels"}
               className="h-9 bg-background pl-8"
               autoFocus
             />
@@ -99,26 +154,34 @@ export function MentionPickerContent({
         </div>
       ) : null}
 
-      <div className="flex items-center gap-1 border-b border-border px-1">
-        <MentionTabButton
-          active={tab === "people"}
-          onClick={() => setTab("people")}
-        >
+      {!peopleOnly ? (
+        <div className="flex items-center gap-1 border-b border-border px-1">
+          <MentionTabButton
+            active={activeTab === "people"}
+            onClick={() => setTab("people")}
+          >
+            People
+          </MentionTabButton>
+          <MentionTabButton
+            active={activeTab === "channels"}
+            onClick={() => setTab("channels")}
+          >
+            Channels
+          </MentionTabButton>
+        </div>
+      ) : (
+        <p className="px-3 pt-2.5 pb-1 text-xs font-medium text-muted-foreground">
           People
-        </MentionTabButton>
-        <MentionTabButton
-          active={tab === "channels"}
-          onClick={() => setTab("channels")}
-        >
-          Channels
-        </MentionTabButton>
-      </div>
+        </p>
+      )}
 
       <div className="w-full bg-card">
-        {tab === "people" ? (
+        {activeTab === "people" ? (
           <MentionMemberList
             members={filteredMembers}
             loading={membersLoading}
+            compact={peopleOnly}
+            activeIndex={activeIndex}
             onSelect={(member) =>
               onSelect({
                 mentionType: "person",
@@ -132,6 +195,7 @@ export function MentionPickerContent({
           <MentionChannelList
             channels={filteredChannels}
             loading={channelsLoading}
+            activeIndex={activeIndex}
             onSelect={(channel) =>
               onSelect({
                 mentionType: "channel",
