@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import {
-  MessageCircleIcon,
   ChevronDownIcon,
   ChevronUpIcon,
   MoreHorizontalIcon,
   PencilIcon,
+  ThumbsUpIcon,
   Trash2Icon,
 } from "lucide-react";
 import type { TaskComment } from "@/lib/types/task";
@@ -16,12 +16,14 @@ import { CommentAttachmentCard } from "@/components/tasks/CommentAttachmentCard"
 import { TaskCommentComposer } from "@/components/tasks/TaskCommentComposer";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { avatarColorClassForKey, avatarInitialFromName } from "@/lib/user-display";
 import { cn } from "@/lib/utils";
 
 function formatCommentTime(c: TaskComment) {
@@ -61,7 +63,7 @@ function CommentBody({ comment }: { comment: TaskComment }) {
 
 function CommentActivityItem({
   comment,
-  verb,
+  onStartReply,
   isReply = false,
   currentUserId,
   taskId,
@@ -71,7 +73,7 @@ function CommentActivityItem({
   onDelete,
 }: {
   comment: TaskComment;
-  verb: "commented" | "replied";
+  onStartReply?: () => void;
   isReply?: boolean;
   currentUserId?: string | null;
   taskId: string | null;
@@ -83,15 +85,36 @@ function CommentActivityItem({
   const [editing, setEditing] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [liked, setLiked] = useState(false);
   const canManage = Boolean(currentUserId && comment.authorId === currentUserId);
 
   return (
-    <div className={cn("group", isReply && "relative pl-4 before:absolute before:left-0 before:top-0 before:bottom-0 before:w-0.5 before:rounded-full before:bg-border")}>
+    <div
+      className={cn(
+        "group/comment rounded-lg border border-border/60 bg-muted/30 p-3",
+        isReply && "relative ml-4"
+      )}
+    >
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm">
-          <span className="font-semibold">{comment.author}</span>{" "}
-          <span className="text-muted-foreground">{verb}</span>
-        </p>
+        <div className="flex items-center gap-2">
+          <Avatar className="size-7">
+            <AvatarFallback
+              className={cn(
+                "text-[11px]",
+                avatarColorClassForKey(comment.authorId, comment.author)
+              )}
+            >
+              {avatarInitialFromName(comment.author)}
+            </AvatarFallback>
+          </Avatar>
+          <div>
+            <span className="text-sm font-semibold">{comment.author}</span>{" "}
+            <span className="text-xs text-muted-foreground">
+              {formatCommentTime(comment)}
+              {comment.isEdited ? " · edited" : ""}
+            </span>
+          </div>
+        </div>
         {canManage && !editing ? (
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -100,7 +123,7 @@ function CommentActivityItem({
                   type="button"
                   variant="ghost"
                   size="icon-sm"
-                  className="size-7 opacity-0 transition-opacity group-hover:opacity-100"
+                  className="size-7 text-muted-foreground opacity-0 transition-opacity group-hover/comment:opacity-100"
                   aria-label="Comment actions"
                 />
               }
@@ -125,7 +148,7 @@ function CommentActivityItem({
       </div>
 
       {editing ? (
-        <div className="mt-2">
+        <div className="mt-2 pl-9">
           <TaskCommentComposer
             key={`edit-${comment.id}`}
             taskId={taskId}
@@ -142,14 +165,37 @@ function CommentActivityItem({
           />
         </div>
       ) : (
-        <>
+        <div className="pl-9">
           <CommentBody comment={comment} />
-          <p className="mt-1 text-xs text-muted-foreground">
-            {formatCommentTime(comment)}
-            {comment.isEdited ? " · edited" : ""}
-          </p>
-        </>
+        </div>
       )}
+
+      {!editing ? (
+        <div className="mt-2 flex items-center justify-between pl-9">
+          <button
+            type="button"
+            className={cn(
+              "flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium",
+              liked
+                ? "bg-primary/15 text-primary hover:bg-primary/20"
+                : "text-muted-foreground hover:bg-muted"
+            )}
+            onClick={() => setLiked((v) => !v)}
+          >
+            <ThumbsUpIcon className="size-3.5" />
+            {liked ? 1 : null}
+          </button>
+          {onStartReply ? (
+            <button
+              type="button"
+              className="text-xs font-medium text-muted-foreground hover:text-foreground"
+              onClick={onStartReply}
+            >
+              Reply
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <ConfirmDialog
         open={deleteOpen}
@@ -207,23 +253,10 @@ export function TaskActivityComment({
   const isReplying = replyingToId === comment.id;
 
   return (
-    <div className="group mb-5">
-      <div className="mb-1 flex justify-end">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground"
-          onClick={() => onStartReply(comment.id)}
-        >
-          <MessageCircleIcon className="mr-1 size-3.5" />
-          Reply
-        </Button>
-      </div>
-
+    <div className="group mb-3">
       <CommentActivityItem
         comment={comment}
-        verb="commented"
+        onStartReply={() => onStartReply(comment.id)}
         currentUserId={currentUserId}
         taskId={taskId}
         workspaceMembers={workspaceMembers}
@@ -255,7 +288,6 @@ export function TaskActivityComment({
                 <CommentActivityItem
                   key={reply.id}
                   comment={reply}
-                  verb="replied"
                   isReply
                   currentUserId={currentUserId}
                   taskId={taskId}

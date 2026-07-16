@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, func, or_, select, update
@@ -78,6 +79,7 @@ from app.services.notification_service import (
 from app.socket.emit import broadcast_task_event
 from app.services.home_helpers import (
     STATUS_COLORS,
+    STATUS_LABELS,
     end_of_today,
     format_due_date,
     map_checklist,
@@ -121,6 +123,60 @@ async def _assignee_name_map(
         await session.execute(select(User.id, User.full_name).where(User.id.in_(ids)))
     ).all()
     return {row[0]: row[1] for row in rows}
+
+
+async def _user_name_map(session: AsyncSession, ids: set[str]) -> dict[str, str]:
+    """Batch-resolve full names for an arbitrary set of user ids (e.g. an
+    assignee/follower diff spanning both added and removed ids, which
+    _assignee_name_map can't cover since it only reads a task's *current*
+    assignee_ids)."""
+    if not ids:
+        return {}
+    rows = (
+        await session.execute(select(User.id, User.full_name).where(User.id.in_(ids)))
+    ).all()
+    return {row[0]: row[1] for row in rows}
+
+
+async def _resolve_user_name(session: AsyncSession, user_id: str) -> str:
+    user = await session.get(User, user_id)
+    return user.full_name if user else "Someone"
+
+
+def _status_label(status: TaskStatus, list_status: "ListStatus | None") -> str:
+    if list_status is not None:
+        return list_status.name
+    return STATUS_LABELS.get(status, status.value.lower())
+
+
+def _priority_label(priority: TaskPriority | None) -> str:
+    return priority.value.title() if priority else "None"
+
+
+def _record_task_activity(
+    task: Task,
+    *,
+    actor_name: str,
+    activity_kind: str,
+    preview: str,
+    title: str | None = None,
+) -> None:
+    """Append a view-only, append-only entry to Task.activity (JSONB).
+
+    Reassigns the list (rather than task.activity.append(...)) so SQLAlchemy
+    detects the change without needing flag_modified.
+    """
+    entry = {
+        "id": str(uuid.uuid4()),
+        "type": "activity",
+        "title": title or preview,
+        "preview": preview,
+        "source": task.name,
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "activityKind": activity_kind,
+        "actorName": actor_name,
+    }
+    task.activity = [*(task.activity or []), entry]
 
 
 _SPACE_LOAD = (
@@ -566,6 +622,13 @@ async def create_task(
         status_id=default_status.id if default_status else None,
         status_color=default_status.color if default_status else "#87909e",
     )
+    actor_name = await _resolve_user_name(session, user_id)
+    _record_task_activity(
+        task,
+        actor_name=actor_name,
+        activity_kind="task_created",
+        preview=f"{actor_name} created this task",
+    )
     session.add(task)
     await session.commit()
     refreshed = await session.scalar(
@@ -615,6 +678,19 @@ async def create_subtask(
         updated_at=now,
         status_id=default_status.id if default_status else None,
         status_color=default_status.color if default_status else "#87909e",
+    )
+    actor_name = await _resolve_user_name(session, user_id)
+    _record_task_activity(
+        task,
+        actor_name=actor_name,
+        activity_kind="task_created",
+        preview=f"{actor_name} created this task",
+    )
+    _record_task_activity(
+        parent,
+        actor_name=actor_name,
+        activity_kind="task_subtask_created",
+        preview=f"{actor_name} added subtask \"{task.name}\"",
     )
     session.add(task)
     await session.commit()
@@ -721,6 +797,13 @@ async def add_checklist(
         task_id=task_id, name=body.name.strip(), position=next_position
     )
     session.add(checklist)
+    actor_name = await _resolve_user_name(session, user_id)
+    _record_task_activity(
+        task,
+        actor_name=actor_name,
+        activity_kind="task_checklist_created",
+        preview=f"{actor_name} added checklist \"{checklist.name}\"",
+    )
     await session.commit()
     await session.refresh(checklist, attribute_names=["items"])
     return map_checklist(checklist)
@@ -756,8 +839,16 @@ async def update_checklist(
     if not checklist:
         raise AppError(404, "NOT_FOUND", "Checklist not found")
 
-    if body.name is not None:
+    if body.name is not None and body.name.strip() != checklist.name:
+        old_name = checklist.name
         checklist.name = body.name.strip()
+        actor_name = await _resolve_user_name(session, user_id)
+        _record_task_activity(
+            task,
+            actor_name=actor_name,
+            activity_kind="task_checklist_renamed",
+            preview=f"{actor_name} renamed checklist \"{old_name}\" to \"{checklist.name}\"",
+        )
 
     await session.commit()
     await session.refresh(checklist, attribute_names=["items"])
@@ -792,6 +883,13 @@ async def delete_checklist(
     )
     if not checklist:
         raise AppError(404, "NOT_FOUND", "Checklist not found")
+    actor_name = await _resolve_user_name(session, user_id)
+    _record_task_activity(
+        task,
+        actor_name=actor_name,
+        activity_kind="task_checklist_deleted",
+        preview=f"{actor_name} deleted checklist \"{checklist.name}\"",
+    )
     await session.delete(checklist)
     await session.commit()
     return {"ok": True}
@@ -834,7 +932,7 @@ async def add_checklist_item(
     checklist_id: str,
     body: CreateChecklistItemBody,
 ) -> dict:
-    await _get_editable_task(session, workspace_id, user_id, role, task_id)
+    task = await _get_editable_task(session, workspace_id, user_id, role, task_id)
     checklist = await session.scalar(
         select(TaskChecklist).where(
             TaskChecklist.id == checklist_id, TaskChecklist.task_id == task_id
@@ -851,6 +949,13 @@ async def add_checklist_item(
         is_checked=body.is_checked,
     )
     session.add(item)
+    actor_name = await _resolve_user_name(session, user_id)
+    _record_task_activity(
+        task,
+        actor_name=actor_name,
+        activity_kind="task_checklist_item_added",
+        preview=f"{actor_name} added \"{item.text}\" to checklist \"{checklist.name}\"",
+    )
     await session.commit()
     refreshed = await session.scalar(
         select(TaskChecklistItem)
@@ -870,7 +975,7 @@ async def update_checklist_item(
     item_id: str,
     body: UpdateChecklistItemBody,
 ) -> dict:
-    await _get_editable_task(session, workspace_id, user_id, role, task_id)
+    task = await _get_editable_task(session, workspace_id, user_id, role, task_id)
     checklist = await session.scalar(
         select(TaskChecklist).where(
             TaskChecklist.id == checklist_id, TaskChecklist.task_id == task_id
@@ -887,10 +992,34 @@ async def update_checklist_item(
     if not item:
         raise AppError(404, "NOT_FOUND", "Checklist item not found")
 
+    actor_name = await _resolve_user_name(session, user_id)
     if "text" in body.model_fields_set and body.text is not None:
-        item.text = body.text.strip()
+        new_text = body.text.strip()
+        if new_text != item.text:
+            _record_task_activity(
+                task,
+                actor_name=actor_name,
+                activity_kind="task_checklist_item_renamed",
+                preview=f"{actor_name} renamed checklist item \"{item.text}\" to \"{new_text}\"",
+            )
+            item.text = new_text
     if "is_checked" in body.model_fields_set and body.is_checked is not None:
-        item.is_checked = body.is_checked
+        if body.is_checked != item.is_checked:
+            item.is_checked = body.is_checked
+            _record_task_activity(
+                task,
+                actor_name=actor_name,
+                activity_kind=(
+                    "task_checklist_item_checked"
+                    if body.is_checked
+                    else "task_checklist_item_unchecked"
+                ),
+                preview=(
+                    f"{actor_name} checked \"{item.text}\""
+                    if body.is_checked
+                    else f"{actor_name} unchecked \"{item.text}\""
+                ),
+            )
     if "assignee_id" in body.model_fields_set:
         await _validate_checklist_assignee(session, workspace_id, body.assignee_id)
         item.assignee_id = body.assignee_id
@@ -913,7 +1042,7 @@ async def delete_checklist_item(
     checklist_id: str,
     item_id: str,
 ) -> dict:
-    await _get_editable_task(session, workspace_id, user_id, role, task_id)
+    task = await _get_editable_task(session, workspace_id, user_id, role, task_id)
     checklist = await session.scalar(
         select(TaskChecklist).where(
             TaskChecklist.id == checklist_id, TaskChecklist.task_id == task_id
@@ -929,6 +1058,13 @@ async def delete_checklist_item(
     )
     if not item:
         raise AppError(404, "NOT_FOUND", "Checklist item not found")
+    actor_name = await _resolve_user_name(session, user_id)
+    _record_task_activity(
+        task,
+        actor_name=actor_name,
+        activity_kind="task_checklist_item_deleted",
+        preview=f"{actor_name} deleted \"{item.text}\" from checklist \"{checklist.name}\"",
+    )
     await session.delete(item)
     await session.commit()
     return {"ok": True}
@@ -1035,12 +1171,20 @@ async def update_task(
     original_description = task.description
     original_status_id = task.status_id
     original_status = task.status
+    original_status_row = (
+        await session.scalar(select(ListStatus).where(ListStatus.id == original_status_id))
+        if original_status_id
+        else None
+    )
+    original_status_label = _status_label(original_status, original_status_row)
     original_priority = task.priority
     original_due_date = task.due_date
     original_start_date = task.start_date
     original_list_id = task.list_id
+    original_list_name = task.task_list.name
 
     old_assignee_ids: set[str] = set(task.assignee_ids) if body.assignee_ids is not None else set()
+    old_follower_ids: set[str] = set(task.follower_ids) if body.follower_ids is not None else set()
 
     if body.name is not None:
         task.name = body.name.strip()
@@ -1120,6 +1264,7 @@ async def update_task(
             TaskPriority(body.priority.upper()) if body.priority else None
         )
 
+    moved_to_list_name: str | None = None
     if body.list_id is not None:
         target_list = await session.scalar(
             select(TaskList)
@@ -1132,6 +1277,7 @@ async def update_task(
         if not target_list:
             raise AppError(400, "VALIDATION_ERROR", "Invalid list")
         task.list_id = target_list.id
+        moved_to_list_name = target_list.name
         # task.task_list was eager-loaded above for the permission check;
         # SQLAlchemy won't refresh an already-populated relationship on the
         # later re-select, so map_task's `task.task_list.id` would keep
@@ -1176,6 +1322,139 @@ async def update_task(
     )
     names = await _assignee_name_map(session, refreshed)
     mapped = map_task(refreshed, user_id, names)
+
+    actor_name = await _resolve_user_name(session, user_id)
+    logged_activity = False
+    if task.status_id != original_status_id or task.status != original_status:
+        new_status_label = _status_label(refreshed.status, refreshed.list_status)
+        _record_task_activity(
+            refreshed,
+            actor_name=actor_name,
+            activity_kind="task_status_changed",
+            preview=f"{actor_name} changed status from {original_status_label} to {new_status_label}",
+        )
+        logged_activity = True
+    if task.name != original_name:
+        _record_task_activity(
+            refreshed,
+            actor_name=actor_name,
+            activity_kind="task_renamed",
+            preview=f'{actor_name} renamed "{original_name}" to "{task.name}"',
+        )
+        logged_activity = True
+    if task.description != original_description:
+        _record_task_activity(
+            refreshed,
+            actor_name=actor_name,
+            activity_kind="task_description_changed",
+            preview=f"{actor_name} updated the description",
+        )
+        logged_activity = True
+    if task.priority != original_priority:
+        old_priority_label = _priority_label(original_priority)
+        new_priority_label = _priority_label(task.priority)
+        if original_priority is None:
+            preview = f"{actor_name} set priority to {new_priority_label}"
+        elif task.priority is None:
+            preview = f"{actor_name} removed priority (was {old_priority_label})"
+        else:
+            preview = f"{actor_name} changed priority from {old_priority_label} to {new_priority_label}"
+        _record_task_activity(
+            refreshed,
+            actor_name=actor_name,
+            activity_kind="task_priority_changed",
+            preview=preview,
+        )
+        logged_activity = True
+    if task.due_date != original_due_date:
+        old_due_label = format_due_date(original_due_date) or "no due date"
+        new_due_label = format_due_date(task.due_date) or "no due date"
+        if original_due_date is None:
+            preview = f"{actor_name} set due date to {new_due_label}"
+        elif task.due_date is None:
+            preview = f"{actor_name} removed the due date"
+        else:
+            preview = f"{actor_name} changed due date from {old_due_label} to {new_due_label}"
+        _record_task_activity(
+            refreshed,
+            actor_name=actor_name,
+            activity_kind="task_due_date_changed",
+            preview=preview,
+        )
+        logged_activity = True
+    if task.start_date != original_start_date:
+        old_start_label = format_due_date(original_start_date) or "no start date"
+        new_start_label = format_due_date(task.start_date) or "no start date"
+        if original_start_date is None:
+            preview = f"{actor_name} set start date to {new_start_label}"
+        elif task.start_date is None:
+            preview = f"{actor_name} removed the start date"
+        else:
+            preview = f"{actor_name} changed start date from {old_start_label} to {new_start_label}"
+        _record_task_activity(
+            refreshed,
+            actor_name=actor_name,
+            activity_kind="task_start_date_changed",
+            preview=preview,
+        )
+        logged_activity = True
+    if task.list_id != original_list_id and moved_to_list_name:
+        _record_task_activity(
+            refreshed,
+            actor_name=actor_name,
+            activity_kind="task_list_changed",
+            preview=f'{actor_name} moved this task from "{original_list_name}" to "{moved_to_list_name}"',
+        )
+        logged_activity = True
+    if body.assignee_ids is not None:
+        new_assignee_ids = set(refreshed.assignee_ids)
+        added_assignees = new_assignee_ids - old_assignee_ids
+        removed_assignees = old_assignee_ids - new_assignee_ids
+        assignee_names = await _user_name_map(
+            session, added_assignees | removed_assignees
+        )
+        for uid in added_assignees:
+            _record_task_activity(
+                refreshed,
+                actor_name=actor_name,
+                activity_kind="task_assignee_added",
+                preview=f"{actor_name} added assignee {assignee_names.get(uid, 'Someone')}",
+            )
+            logged_activity = True
+        for uid in removed_assignees:
+            _record_task_activity(
+                refreshed,
+                actor_name=actor_name,
+                activity_kind="task_assignee_removed",
+                preview=f"{actor_name} removed assignee {assignee_names.get(uid, 'Someone')}",
+            )
+            logged_activity = True
+    if body.follower_ids is not None:
+        new_follower_ids = set(refreshed.follower_ids)
+        added_followers = new_follower_ids - old_follower_ids
+        removed_followers = old_follower_ids - new_follower_ids
+        follower_names = await _user_name_map(
+            session, added_followers | removed_followers
+        )
+        for uid in added_followers:
+            _record_task_activity(
+                refreshed,
+                actor_name=actor_name,
+                activity_kind="task_followed",
+                preview=f"{actor_name} added follower: {follower_names.get(uid, 'Someone')}",
+            )
+            logged_activity = True
+        for uid in removed_followers:
+            _record_task_activity(
+                refreshed,
+                actor_name=actor_name,
+                activity_kind="task_unfollowed",
+                preview=f"{actor_name} removed follower: {follower_names.get(uid, 'Someone')}",
+            )
+            logged_activity = True
+    if logged_activity:
+        await session.commit()
+
     if assignment_notifications:
         await emit_home_notifications(
             session, workspace_id, assignment_notifications
@@ -1788,35 +2067,27 @@ async def list_task_activity(
     task_id: str,
     limit: int = 50,
 ) -> dict:
-    await _get_workspace_task(session, workspace_id, task_id)
+    # Task.activity is a shared, append-only JSONB log (every viewer sees the
+    # same full history, including their own actions) - unlike InboxItem,
+    # which is a per-user notification inbox and never records the actor's
+    # own actions. See scripts/migrate_task_activity_log.sql.
+    task = await _get_workspace_task(session, workspace_id, task_id)
     href = f"/home/tasks/{task_id}"
-    rows = (
-        await session.scalars(
-            select(InboxItem)
-            .where(
-                InboxItem.workspace_id == workspace_id,
-                InboxItem.user_id == user_id,
-                InboxItem.href == href,
-            )
-            .order_by(InboxItem.created_at.desc())
-            .limit(limit)
-        )
-    ).all()
+    entries = list(task.activity or [])
+    entries.sort(key=lambda e: e.get("createdAt") or "", reverse=True)
     return {
         "data": [
             {
-                "id": row.id,
-                "type": map_inbox_type(row.type),
-                "title": row.title,
-                "preview": row.preview,
-                "source": row.source,
-                "href": row.href,
-                "createdAt": row.created_at.isoformat(),
-                "activityKind": row.activity_kind,
+                "id": entry.get("id"),
+                "type": entry.get("type", "activity"),
+                "title": entry.get("title"),
+                "preview": entry.get("preview"),
+                "source": entry.get("source"),
+                "href": href,
+                "createdAt": entry.get("createdAt"),
+                "activityKind": entry.get("activityKind"),
             }
-            for row in rows
-            if row.activity_kind
-            not in {"task_comment", "task_comment_reply", "task_mention"}
+            for entry in entries[:limit]
         ]
     }
 

@@ -7,6 +7,7 @@ import type {
   TaskActivityEvent,
   TaskAttachment,
   TaskChecklist,
+  TaskComment,
   TaskSubtask,
 } from "@/lib/types/task";
 import {
@@ -240,15 +241,16 @@ function formatActivityTime(iso: string | null | undefined) {
   });
 }
 
-function extractActorFromPreview(preview: string | undefined) {
-  if (!preview) return null;
-  const normalized = preview.trim();
-  const separators = [":", " created ", " updated ", " deleted ", " started ", " stopped "];
-  for (const sep of separators) {
-    const idx = normalized.indexOf(sep);
-    if (idx > 0) return normalized.slice(0, idx).trim();
-  }
-  return null;
+function ActivityEventRow({ event }: { event: TaskActivityEvent }) {
+  return (
+    <div className="flex items-start gap-2 py-1 text-xs">
+      <span className="mt-1.5 size-1 shrink-0 rounded-full bg-muted-foreground/60" />
+      <span className="flex-1 text-muted-foreground">{event.preview || event.title}</span>
+      <span className="shrink-0 whitespace-nowrap text-muted-foreground">
+        {formatActivityTime(event.createdAt)}
+      </span>
+    </div>
+  );
 }
 
 export function TaskDrawer({
@@ -317,6 +319,7 @@ export function TaskDrawer({
   const [subtasks, setSubtasks] = useState<TaskSubtask[]>([]);
   const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
   const [activityEvents, setActivityEvents] = useState<TaskActivityEvent[]>([]);
+  const [feedExpanded, setFeedExpanded] = useState(false);
   const [activitySearchOpen, setActivitySearchOpen] = useState(false);
   const [activitySearch, setActivitySearch] = useState("");
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -525,20 +528,22 @@ export function TaskDrawer({
     );
   }, [task?.comments, activitySearch]);
 
-  const createdByLabel = useMemo(() => {
-    const creationEvent = activityEvents.find(
-      (event) => event.activityKind === "task_created"
-    );
-    const fromEvent = extractActorFromPreview(creationEvent?.preview);
-    if (fromEvent) return fromEvent;
-    const firstCommentAuthor = [...(task?.comments ?? [])]
-      .sort((a, b) => {
-        const aTs = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const bTs = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return aTs - bTs;
-      })[0]?.author;
-    return firstCommentAuthor ?? "Unknown";
-  }, [activityEvents, task?.comments]);
+  const activityFeed = useMemo(() => {
+    type FeedItem =
+      | { kind: "event"; ts: number; event: TaskActivityEvent }
+      | { kind: "comment"; ts: number; comment: TaskComment };
+    const events: FeedItem[] = filteredActivityEvents.map((event) => ({
+      kind: "event",
+      ts: event.createdAt ? new Date(event.createdAt).getTime() : 0,
+      event,
+    }));
+    const comments: FeedItem[] = filteredComments.map((comment) => ({
+      kind: "comment",
+      ts: comment.createdAt ? new Date(comment.createdAt).getTime() : 0,
+      comment,
+    }));
+    return [...events, ...comments].sort((a, b) => a.ts - b.ts);
+  }, [filteredActivityEvents, filteredComments]);
 
   const statusColumns = useMemo(
     () =>
@@ -2696,33 +2701,56 @@ export function TaskDrawer({
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-                  <p className="mb-1 text-xs text-muted-foreground">
-                    Created by {createdByLabel}
-                  </p>
-                  {task?.createdAt ? (
-                    <p className="mb-4 text-xs text-muted-foreground">
-                      Task created {formatActivityTime(task.createdAt)}
-                    </p>
-                  ) : null}
-                  {filteredComments.map((c) => (
-                    <TaskActivityComment
-                      key={c.id}
-                      comment={c}
-                      taskId={taskId ?? null}
-                      workspaceMembers={members}
-                      currentUserId={currentUserId}
-                      replyingToId={replyingToCommentId}
-                      sending={commenting}
-                      onStartReply={setReplyingToCommentId}
-                      onCancelReply={() => setReplyingToCommentId(null)}
-                      onSubmitReply={(parentId, body, attachmentIds) =>
-                        handleAddComment(body, attachmentIds, parentId)
-                      }
-                      onEditComment={handleEditComment}
-                      onDeleteComment={handleDeleteComment}
-                    />
-                  ))}
-                  {!filteredComments.length ? (
+                  {(() => {
+                    const hasHidden = activityFeed.length > 6;
+                    const visible =
+                      feedExpanded || !hasHidden
+                        ? activityFeed
+                        : activityFeed.slice(-6);
+                    return (
+                      <>
+                        {hasHidden ? (
+                          <button
+                            type="button"
+                            className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+                            onClick={() => setFeedExpanded((v) => !v)}
+                          >
+                            {feedExpanded ? (
+                              <ChevronUpIcon className="size-3.5" />
+                            ) : (
+                              <ChevronDownIcon className="size-3.5" />
+                            )}
+                            {feedExpanded
+                              ? "Hide"
+                              : `Show ${activityFeed.length - 6} earlier`}
+                          </button>
+                        ) : null}
+                        {visible.map((item) =>
+                          item.kind === "event" ? (
+                            <ActivityEventRow key={item.event.id} event={item.event} />
+                          ) : (
+                            <TaskActivityComment
+                              key={item.comment.id}
+                              comment={item.comment}
+                              taskId={taskId ?? null}
+                              workspaceMembers={members}
+                              currentUserId={currentUserId}
+                              replyingToId={replyingToCommentId}
+                              sending={commenting}
+                              onStartReply={setReplyingToCommentId}
+                              onCancelReply={() => setReplyingToCommentId(null)}
+                              onSubmitReply={(parentId, body, attachmentIds) =>
+                                handleAddComment(body, attachmentIds, parentId)
+                              }
+                              onEditComment={handleEditComment}
+                              onDeleteComment={handleDeleteComment}
+                            />
+                          )
+                        )}
+                      </>
+                    );
+                  })()}
+                  {!activityFeed.length ? (
                     <p className="text-xs text-muted-foreground">No matching activity.</p>
                   ) : null}
                 </div>

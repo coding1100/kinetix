@@ -1,5 +1,6 @@
 import re
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.core.errors import AppError
 from app.db.models.home import Space, Task, TaskAttachment, TaskList
+from app.db.models.user import User
 from app.services.s3_service import object_exists, presign_get, presign_put, put_object
 
 _SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9._-]+")
@@ -134,6 +136,21 @@ async def upload_file_content(
         if notifications:
             await session.commit()
             await emit_home_notifications(session, workspace_id, notifications)
+
+        actor = await session.get(User, user_id)
+        actor_name = actor.full_name if actor else "Someone"
+        entry = {
+            "id": str(uuid.uuid4()),
+            "type": "activity",
+            "title": f"{actor_name} added attachment \"{row.file_name}\"",
+            "preview": f'{actor_name} added attachment "{row.file_name}"',
+            "source": task.name,
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "activityKind": "task_attachment_uploaded",
+            "actorName": actor_name,
+        }
+        task.activity = [*(task.activity or []), entry]
+        await session.commit()
     return {"ok": True, "attachmentId": attachment_id, "status": "ready"}
 
 

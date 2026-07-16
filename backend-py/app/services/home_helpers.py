@@ -5,16 +5,28 @@ from app.db.models.home import Task
 from app.services.task_attachment_service import map_task_attachment
 
 
+def _as_aware_utc(dt: datetime) -> datetime:
+    """asyncpg sometimes returns a naive datetime for a DateTime(timezone=True)
+    column (same driver/schema quirk fixed for chat threads in
+    chat_service._as_aware_utc) - without this, isoformat() omits the UTC
+    offset and the frontend's `new Date(...)` misparses it as local time."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def _map_task_comment(comment) -> dict:
     updated = getattr(comment, "updated_at", None)
+    created_at = _as_aware_utc(comment.created_at) if comment.created_at else None
+    updated_at = _as_aware_utc(updated) if updated else None
     return {
         "id": comment.id,
         "authorId": comment.user_id,
         "author": comment.user.full_name,
         "body": comment.body,
-        "at": comment_relative_time(comment.created_at),
-        "createdAt": comment.created_at.isoformat() if comment.created_at else None,
-        "updatedAt": updated.isoformat() if updated else None,
+        "at": comment_relative_time(created_at),
+        "createdAt": created_at.isoformat() if created_at else None,
+        "updatedAt": updated_at.isoformat() if updated_at else None,
         "isEdited": bool(updated),
         "parentCommentId": comment.parent_comment_id,
         "attachments": [
