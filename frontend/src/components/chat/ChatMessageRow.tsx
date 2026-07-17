@@ -6,7 +6,7 @@ import type {
   ConversationType,
   UpdateMessagePayload,
 } from "@/lib/types/chat";
-import { formatChatMessageTime } from "@/lib/chat/dates";
+import { formatChatMessageTime, formatThreadReplyTime } from "@/lib/chat/dates";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 import { useChatStore } from "@/stores/chat-store";
@@ -141,7 +141,7 @@ export function ChatMessageRow({
       id={`message-${message.id}`}
       className={cn(
         "group relative -mx-3 rounded-md px-3 transition-colors",
-        showHeader ? "py-1" : "py-0.5",
+        showHeader ? "pt-2.5 pb-1" : "py-0.5",
         "hover:bg-muted/70",
         threadOpen && !actionsActive && "bg-muted/50",
         actionsActive && "bg-muted/70",
@@ -256,32 +256,40 @@ export function ChatMessageRow({
       </div>
       ) : null}
 
-      <div className="flex items-start gap-3">
-        {showHeader ? (
-          <MessageAuthorButton
-            authorId={message.authorId}
-            authorName={displayName}
-            className="mt-0.5 shrink-0 self-start rounded-full"
-          >
-            <Avatar className="size-6">
-              <AvatarFallback
-                className={cn(
-                  "text-xs font-semibold",
-                  avatarColorClassForKey(message.authorId, displayName)
-                )}
-              >
-                {avatarInitialFromName(displayName)}
-              </AvatarFallback>
-            </Avatar>
-          </MessageAuthorButton>
-        ) : null}
-        <div className={cn("min-w-0 flex-1 pr-16", !showHeader && "ml-10")}>
+      <div className="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-x-3">
+        <div className="relative">
+          {showHeader ? (
+            <MessageAuthorButton
+              authorId={message.authorId}
+              authorName={displayName}
+              className="mt-0.5 shrink-0 rounded-full"
+            >
+              <Avatar className="size-9">
+                <AvatarFallback
+                  className={cn(
+                    "text-sm font-semibold",
+                    avatarColorClassForKey(message.authorId, displayName)
+                  )}
+                >
+                  {avatarInitialFromName(displayName)}
+                </AvatarFallback>
+              </Avatar>
+            </MessageAuthorButton>
+          ) : null}
+          {showHeader && repliesLabel ? (
+            <span
+              aria-hidden
+              className="absolute left-[18px] top-12 bottom-3.5 w-[30px] rounded-bl-2xl border-b border-l border-border"
+            />
+          ) : null}
+        </div>
+        <div className="min-w-0 pr-16">
           {showHeader && (
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
               <MessageAuthorButton
                 authorId={message.authorId}
                 authorName={displayName}
-                className="text-sm font-bold text-foreground hover:text-primary"
+                className="text-[15px] font-bold text-foreground hover:text-primary"
               >
                 {displayName}
               </MessageAuthorButton>
@@ -336,16 +344,42 @@ export function ChatMessageRow({
             </div>
           )}
           {!isEditing && repliesLabel && (
-            <Button
-              variant="link"
-              className={cn(
-                "h-auto p-0 text-xs font-medium",
-                threadOpen && "text-primary underline"
-              )}
+            <button
+              type="button"
+              className="group/thread mt-2.5 flex items-center gap-2 rounded-md py-1 pl-3 pr-2 hover:bg-muted"
               onClick={() => setActiveThread(threadOpen ? null : message.id)}
             >
-              {repliesLabel}
-            </Button>
+              <Avatar className="size-5 shrink-0">
+                <AvatarFallback
+                  className={cn(
+                    "text-[10px] font-semibold",
+                    message.lastReplyAuthorId
+                      ? avatarColorClassForKey(
+                          message.lastReplyAuthorId,
+                          message.lastReplyAuthorName ?? ""
+                        )
+                      : undefined
+                  )}
+                >
+                  {message.lastReplyAuthorName
+                    ? avatarInitialFromName(message.lastReplyAuthorName)
+                    : ""}
+                </AvatarFallback>
+              </Avatar>
+              <span
+                className={cn(
+                  "text-xs font-semibold text-primary",
+                  threadOpen && "underline"
+                )}
+              >
+                {repliesLabel}
+              </span>
+              {message.lastReplyAt ? (
+                <span className="text-xs text-muted-foreground">
+                  {formatThreadReplyTime(new Date(message.lastReplyAt))}
+                </span>
+              ) : null}
+            </button>
           )}
           {!isEditing && isPinned ? (
             <p className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">

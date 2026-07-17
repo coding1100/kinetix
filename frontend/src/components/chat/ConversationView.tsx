@@ -633,7 +633,15 @@ export function ConversationView({
     setMessages((prev) => {
       if (!prev.some((m) => m.id === parentId)) return prev;
       const next = prev.map((m) =>
-        m.id === parentId ? { ...m, threadCount: (m.threadCount ?? 0) + 1 } : m
+        m.id === parentId
+          ? {
+              ...m,
+              threadCount: (m.threadCount ?? 0) + 1,
+              lastReplyAuthorId: realtimeEvent.message.authorId,
+              lastReplyAuthorName: realtimeEvent.message.authorName,
+              lastReplyAt: realtimeEvent.message.createdAt,
+            }
+          : m
       );
       setConversationCache(workspaceId, type, id, { messages: next });
       return next;
@@ -1077,11 +1085,11 @@ export function ConversationView({
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-card">
       {showHeader ? (
-      <header className="flex h-10 shrink-0 items-center justify-between px-3">
+      <header className="flex h-14 shrink-0 items-center justify-between px-4">
         <div className="flex min-w-0 items-center gap-2">
           {type === "channel" ? (
             <div className="min-w-0">
-              <h2 className="truncate text-sm font-semibold leading-tight">
+              <h2 className="truncate text-base font-semibold leading-tight">
                 <ChannelNameLabel
                   name={title}
                   starred={starred}
@@ -1106,7 +1114,7 @@ export function ConversationView({
                   size="md"
                 />
               ) : (
-                <Avatar className="size-7 shrink-0">
+                <Avatar className="size-9 shrink-0">
                   <AvatarFallback
                     className={cn(
                       "text-sm font-semibold",
@@ -1118,7 +1126,7 @@ export function ConversationView({
                 </Avatar>
               )}
               <div className="min-w-0">
-                <h2 className="truncate text-sm font-semibold leading-tight">
+                <h2 className="truncate text-base font-semibold leading-tight">
                   {title}
                 </h2>
                 <p className="truncate text-xs text-muted-foreground">
@@ -1185,10 +1193,17 @@ export function ConversationView({
             channelLabel={type === "channel" ? title : undefined}
             onReplySent={() => {
               if (!activeThreadMessageId) return;
+              const replierName = useAuthStore.getState().user?.fullName;
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === activeThreadMessageId
-                    ? { ...m, threadCount: (m.threadCount ?? 0) + 1 }
+                    ? {
+                        ...m,
+                        threadCount: (m.threadCount ?? 0) + 1,
+                        lastReplyAuthorId: currentUserId ?? m.lastReplyAuthorId,
+                        lastReplyAuthorName: replierName ?? m.lastReplyAuthorName,
+                        lastReplyAt: new Date().toISOString(),
+                      }
                     : m
                 )
               );

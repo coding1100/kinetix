@@ -38,6 +38,7 @@ from app.services.notification_service import (
     emit_home_notifications,
 )
 from app.services.chat_helpers import (
+    ThreadSummary,
     dm_display_name,
     map_message,
     map_message_broadcast,
@@ -78,17 +79,57 @@ _MESSAGE_SEND_LOAD = _MESSAGE_LIST_LOAD
 
 async def _thread_counts_for_messages(
     session: AsyncSession, message_ids: list[str]
-) -> dict[str, int]:
+) -> dict[str, ThreadSummary]:
     if not message_ids:
         return {}
-    rows = (
+    count_rows = (
         await session.execute(
             select(ChatMessage.parent_id, func.count())
             .where(ChatMessage.parent_id.in_(message_ids))
             .group_by(ChatMessage.parent_id)
         )
     ).all()
-    return {str(row[0]): int(row[1]) for row in rows}
+    counts = {str(row[0]): int(row[1]) for row in count_rows}
+    if not counts:
+        return {}
+
+    last_created = (
+        select(
+            ChatMessage.parent_id.label("parent_id"),
+            func.max(ChatMessage.created_at).label("max_created"),
+        )
+        .where(ChatMessage.parent_id.in_(message_ids))
+        .group_by(ChatMessage.parent_id)
+        .subquery()
+    )
+    last_reply_rows = (
+        await session.execute(
+            select(
+                ChatMessage.parent_id,
+                ChatMessage.author_id,
+                User.full_name,
+                ChatMessage.created_at,
+            )
+            .join(
+                last_created,
+                and_(
+                    ChatMessage.parent_id == last_created.c.parent_id,
+                    ChatMessage.created_at == last_created.c.max_created,
+                ),
+            )
+            .join(User, User.id == ChatMessage.author_id)
+        )
+    ).all()
+
+    return {
+        str(parent_id): ThreadSummary(
+            count=counts.get(str(parent_id), 0),
+            last_reply_author_id=author_id,
+            last_reply_author_name=author_name,
+            last_reply_at=created_at,
+        )
+        for parent_id, author_id, author_name, created_at in last_reply_rows
+    }
 
 
 def _epoch() -> datetime:
@@ -999,12 +1040,12 @@ async def list_channel_messages(
         )
     ).all()
 
-    thread_counts = await _thread_counts_for_messages(
+    thread_summaries = await _thread_counts_for_messages(
         session, [m.id for m in messages]
     )
     return {
         "data": [
-            map_message(m, user_id, thread_count=thread_counts.get(m.id, 0))
+            map_message(m, user_id, thread_summary=thread_summaries.get(m.id))
             for m in messages
         ]
     }
@@ -1490,12 +1531,12 @@ async def list_dm_messages(
         )
     ).all()
 
-    thread_counts = await _thread_counts_for_messages(
+    thread_summaries = await _thread_counts_for_messages(
         session, [m.id for m in messages]
     )
     return {
         "data": [
-            map_message(m, user_id, thread_count=thread_counts.get(m.id, 0))
+            map_message(m, user_id, thread_summary=thread_summaries.get(m.id))
             for m in messages
         ]
     }
