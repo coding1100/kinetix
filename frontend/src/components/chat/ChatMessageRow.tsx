@@ -322,7 +322,11 @@ export function ChatMessageRow({
                   data-message-author-id={message.authorId}
                   data-message-author-name={displayName}
                 >
-                  <MessageBodyWithMentions body={message.body} />
+                  <MessageBodyWithMentions
+                    body={message.body}
+                    conversationType={conversationType}
+                    conversationId={conversationId}
+                  />
                 </div>
               ) : null}
               <MessageAttachmentList attachments={message.attachments ?? []} />
