@@ -1,8 +1,16 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { SearchIcon } from "lucide-react";
+import {
+  ActivityIcon,
+  CheckCheckIcon,
+  ClockIcon,
+  FilterIcon,
+  InboxIcon,
+  SettingsIcon,
+} from "lucide-react";
 import { mergeInboxItems } from "@/lib/notifications/live-cache";
 import { resolveInboxHref } from "@/lib/notifications/inbox-item-utils";
 import { subscribeNotificationsRefresh } from "@/lib/notifications/realtime";
@@ -11,45 +19,97 @@ import {
   markNotificationReadAndSync,
 } from "@/lib/notifications/sync";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { HomeDataState } from "@/components/home/HomeDataState";
 import { HomePageShell } from "@/components/home/HomePageShell";
 import { InboxFeedDateHeader, InboxFeedRow } from "@/components/home/InboxFeedRow";
 import { UnderlineTabBar } from "@/components/shared/Tabs";
-import { fetchInbox, type InboxItemDto } from "@/lib/api/home";
+import { fetchInbox, type InboxItemDto, type InboxItemType } from "@/lib/api/home";
 import { useHomeQuery } from "@/hooks/use-home-query";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 
-export type InboxTab = "all" | "replies" | "mentions" | "later";
+export type InboxTab = "primary" | "other" | "later" | "cleared";
 
-const INBOX_TABS: { id: InboxTab; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "replies", label: "Replies" },
-  { id: "mentions", label: "Mentions" },
-  { id: "later", label: "Later" },
+const INBOX_TABS: { id: InboxTab; label: string; icon: ReactNode }[] = [
+  { id: "primary", label: "Primary", icon: <InboxIcon className="size-4" /> },
+  { id: "other", label: "Other", icon: <ActivityIcon className="size-4" /> },
+  { id: "later", label: "Later", icon: <ClockIcon className="size-4" /> },
+  { id: "cleared", label: "Cleared", icon: <CheckCheckIcon className="size-4" /> },
+];
+
+// Items that need direct action from the user surface in Primary; lower-signal
+// activity (channel chatter, reactions, your own sent/scheduled/drafts) goes to Other.
+const PRIMARY_TYPES: InboxItemType[] = [
+  "mention",
+  "assignment",
+  "comment",
+  "reply",
+  "reminder",
+];
+const OTHER_TYPES: InboxItemType[] = ["chat", "reaction", "sent", "draft", "scheduled"];
+
+const TYPE_FILTER_OPTIONS: { id: InboxItemType; label: string }[] = [
+  { id: "mention", label: "Mentions" },
+  { id: "assignment", label: "Assignments" },
+  { id: "comment", label: "Comments" },
+  { id: "reply", label: "Replies" },
+  { id: "reminder", label: "Reminders" },
+  { id: "chat", label: "Chat" },
+  { id: "reaction", label: "Reactions" },
+  { id: "sent", label: "Sent" },
+  { id: "draft", label: "Drafts" },
+  { id: "scheduled", label: "Scheduled" },
 ];
 
 function parseInboxTab(value: string | null): InboxTab {
-  if (value === "replies" || value === "mentions" || value === "later") return value;
-  return "all";
+  if (value === "other" || value === "later" || value === "cleared") return value;
+  return "primary";
 }
 
 function filterByTab(items: InboxItemDto[], tab: InboxTab) {
-  if (tab === "replies") return items.filter((i) => i.type === "reply");
-  if (tab === "mentions") return items.filter((i) => i.type === "mention");
-  return items;
+  if (tab === "other") return items.filter((i) => OTHER_TYPES.includes(i.type));
+  if (tab === "cleared") return items.filter((i) => !i.unread);
+  if (tab === "later") return items;
+  return items.filter((i) => PRIMARY_TYPES.includes(i.type));
 }
 
-function filterBySearch(items: InboxItemDto[], query: string) {
-  const q = query.trim().toLowerCase();
-  if (!q) return items;
-  return items.filter(
-    (item) =>
-      item.title.toLowerCase().includes(q) ||
-      item.preview.toLowerCase().includes(q) ||
-      item.source.toLowerCase().includes(q)
-  );
+function filterByTypes(items: InboxItemDto[], types: Set<InboxItemType>) {
+  if (types.size === 0) return items;
+  return items.filter((item) => types.has(item.type));
 }
+
+type DateGroup = "Today" | "Yesterday" | "Last 7 days" | "Earlier this month" | "Older";
+
+function dateGroupFor(value: string, now: Date): DateGroup {
+  const date = new Date(value);
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const today = startOfDay(now);
+  const day = startOfDay(date);
+  const diffDays = Math.round((today.getTime() - day.getTime()) / 86400000);
+
+  if (diffDays <= 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays <= 7) return "Last 7 days";
+  if (date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()) {
+    return "Earlier this month";
+  }
+  return "Older";
+}
+
+const DATE_GROUP_ORDER: DateGroup[] = [
+  "Today",
+  "Yesterday",
+  "Last 7 days",
+  "Earlier this month",
+  "Older",
+];
 
 export function InboxView() {
   const router = useRouter();
@@ -58,7 +118,7 @@ export function InboxView() {
   const [tab, setTab] = useState<InboxTab>(() =>
     parseInboxTab(searchParams.get("tab"))
   );
-  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<Set<InboxItemType>>(new Set());
   const [refreshKey, setRefreshKey] = useState(0);
   const [liveTick, setLiveTick] = useState(0);
 
@@ -89,20 +149,27 @@ export function InboxView() {
   const items = useMemo(() => {
     const merged = apiItems ? mergeInboxItems(apiItems) : apiItems;
     if (!merged) return merged;
-    return filterBySearch(filterByTab(merged, tab), query);
-  }, [apiItems, liveTick, tab, query]);
+    return filterByTypes(filterByTab(merged, tab), typeFilter);
+  }, [apiItems, liveTick, tab, typeFilter]);
 
-  const today = items?.filter((i) => i.group === "today") ?? [];
-  const earlier = items?.filter((i) => i.group === "earlier") ?? [];
   const hasUnread = (items ?? []).some((item) => item.unread);
 
   const changeTab = (next: InboxTab) => {
     setTab(next);
     const params = new URLSearchParams(searchParams.toString());
-    if (next === "all") params.delete("tab");
+    if (next === "primary") params.delete("tab");
     else params.set("tab", next);
     const qs = params.toString();
     router.replace(`/home/inbox${qs ? `?${qs}` : ""}`, { scroll: false });
+  };
+
+  const toggleTypeFilter = (type: InboxItemType) => {
+    setTypeFilter((current) => {
+      const next = new Set(current);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
   };
 
   const clearAll = async () => {
@@ -133,16 +200,31 @@ export function InboxView() {
     router.push(resolveInboxHref(item));
   };
 
+  const groupedSections = useMemo(() => {
+    if (!items) return [];
+    const now = new Date();
+    const buckets = new Map<DateGroup, InboxItemDto[]>();
+    for (const item of items) {
+      const group = dateGroupFor(item.createdAt, now);
+      const bucket = buckets.get(group);
+      if (bucket) bucket.push(item);
+      else buckets.set(group, [item]);
+    }
+    return DATE_GROUP_ORDER.filter((group) => buckets.has(group)).map((group) => ({
+      label: group,
+      items: buckets.get(group)!,
+    }));
+  }, [items]);
+
   const emptyMessage = (() => {
-    if (query.trim()) return "No notifications match your search.";
     if (tab === "later") {
       return "Nothing saved for later. Snooze notifications to review them here.";
     }
-    if (tab === "replies") {
-      return "No thread replies yet. When someone replies to your messages, they'll show up here.";
+    if (tab === "cleared") {
+      return "Nothing cleared yet. Items you clear will show up here.";
     }
-    if (tab === "mentions") {
-      return "No mentions yet. When someone @mentions you, they'll show up here.";
+    if (tab === "other") {
+      return "No lower-priority activity right now.";
     }
     return "You're all caught up. New notifications will appear here.";
   })();
@@ -150,19 +232,6 @@ export function InboxView() {
   return (
     <HomePageShell
       title="Inbox"
-      subtitle="Comments, mentions, assignments, and chat notifications in one place."
-      headerRight={
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 text-xs"
-          disabled={!hasUnread || !ready}
-          onClick={() => void clearAll()}
-        >
-          Mark all as read
-        </Button>
-      }
       tabs={
         <UnderlineTabBar
           className="shrink-0 border-b border-border bg-card px-6"
@@ -172,15 +241,60 @@ export function InboxView() {
         />
       }
       toolbar={
-        <div className="border-b border-border px-6 py-2.5">
-          <div className="relative max-w-2xl">
-            <SearchIcon className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search notifications"
-              className="h-8 pl-9 text-sm focus-visible:ring-[0.5px]"
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs"
+                >
+                  <FilterIcon className="size-3.5" />
+                  Filter
+                  {typeFilter.size > 0 ? ` (${typeFilter.size})` : ""}
+                </Button>
+              }
             />
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuLabel>Notification type</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {TYPE_FILTER_OPTIONS.map((option) => (
+                <DropdownMenuCheckboxItem
+                  key={option.id}
+                  checked={typeFilter.has(option.id)}
+                  onCheckedChange={() => toggleTypeFilter(option.id)}
+                  onSelect={(e) => e.preventDefault()}
+                >
+                  {option.label}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Notification settings"
+              title="Notification settings"
+              onClick={() => router.push("/settings")}
+            >
+              <SettingsIcon className="size-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 text-xs text-muted-foreground"
+              disabled={!hasUnread || !ready}
+              onClick={() => void clearAll()}
+            >
+              <CheckCheckIcon className="size-3.5" />
+              Clear all
+            </Button>
           </div>
         </div>
       }
@@ -191,14 +305,16 @@ export function InboxView() {
         empty={!loading && !error && (items?.length ?? 0) === 0}
         emptyMessage={emptyMessage}
       >
-        <div className="w-full px-6 py-2">
-          <InboxFeedSection label="Today" items={today} onOpen={openItem} onClear={clearItem} />
-          <InboxFeedSection
-            label="Earlier"
-            items={earlier}
-            onOpen={openItem}
-            onClear={clearItem}
-          />
+        <div className="w-full px-4 py-2">
+          {groupedSections.map((section) => (
+            <InboxFeedSection
+              key={section.label}
+              label={section.label}
+              items={section.items}
+              onOpen={openItem}
+              onClear={clearItem}
+            />
+          ))}
         </div>
       </HomeDataState>
     </HomePageShell>
@@ -218,9 +334,9 @@ function InboxFeedSection({
 }) {
   if (items.length === 0) return null;
   return (
-    <section className="mb-1">
+    <section className="mb-2">
       <InboxFeedDateHeader label={label} />
-      <ul className="divide-y divide-border/60">
+      <ul className="overflow-hidden rounded-lg border border-border/60 bg-card/40 divide-y divide-border/50">
         {items.map((item) => (
           <li key={item.id}>
             <InboxFeedRow item={item} onOpen={onOpen} onClear={onClear} />
