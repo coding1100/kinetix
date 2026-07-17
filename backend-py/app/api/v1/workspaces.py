@@ -7,6 +7,7 @@ from app.schemas.workspace import (
     CreateWorkspaceBody,
     DeleteWorkspaceBody,
     TransferWorkspaceOwnershipBody,
+    UpdateMemberManagerBody,
     UpdateMemberPermissionsBody,
     UpdateWorkspaceBody,
     UpdateWorkspaceMemberBody,
@@ -184,6 +185,27 @@ async def patch_member_permissions(
         ctx.role,
         member_user_id,
         body,
+    )
+
+
+@router.patch("/{workspace_id}/members/{member_user_id}/manager")
+async def patch_member_manager(
+    body: UpdateMemberManagerBody,
+    workspace_id: str,
+    member_user_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    ctx: WorkspaceMemberDep,
+):
+    """Set or clear who a member reports to. A member can set their own
+    manager; changing someone else's requires people-management permission."""
+    return await workspace_service.update_member_manager(
+        session,
+        workspace_id,
+        user.id,
+        ctx.role,
+        member_user_id,
+        body.manager_id,
     )
 
 

@@ -27,6 +27,12 @@ class UpdateMemberPermissionsBody(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class UpdateMemberManagerBody(BaseModel):
+    manager_id: str | None = Field(default=None, alias="managerId")
+
+    model_config = {"populate_by_name": True}
+
+
 class DeleteWorkspaceBody(BaseModel):
     confirm_name: str = Field(min_length=1, max_length=80, alias="confirmName")
 

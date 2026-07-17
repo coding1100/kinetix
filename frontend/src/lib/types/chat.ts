@@ -66,7 +66,11 @@ export interface ChatMessage {
   body: string;
   createdAt: string;
   isSelf?: boolean;
-  reactions?: { emoji: string; count: number }[];
+  reactions?: {
+    emoji: string;
+    count: number;
+    users?: { id: string; fullName: string }[];
+  }[];
   threadCount?: number;
   lastReplyAuthorId?: string;
   lastReplyAuthorName?: string;

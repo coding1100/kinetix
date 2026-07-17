@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmojiPickerPopover } from "@/components/chat/emoji/EmojiPickerPopover";
+import { ReactionTooltip } from "@/components/chat/ReactionTooltip";
 import { MessageBodyWithMentions } from "./MessageBodyWithMentions";
 import { MessageAttachmentList } from "@/components/chat/attachments/MessageAttachmentList";
 import {
@@ -238,15 +239,21 @@ export function ThreadMessageRow({
           {reactions.length > 0 && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               {reactions.map((r) => (
-                <button
+                <ReactionTooltip
                   key={r.emoji}
-                  type="button"
-                  className="inline-flex h-6 items-center gap-1 rounded-full border border-border bg-muted/40 px-2 text-xs hover:bg-muted"
-                  onClick={() => void onToggleReaction(message.id, r.emoji)}
-                >
-                  <span className="text-base leading-none">{r.emoji}</span>
-                  <span className="text-muted-foreground">{r.count}</span>
-                </button>
+                  emoji={r.emoji}
+                  users={r.users}
+                  trigger={
+                    <button
+                      type="button"
+                      className="inline-flex h-6 items-center gap-1 rounded-full border border-border bg-muted/40 px-2 text-xs hover:bg-muted"
+                      onClick={() => void onToggleReaction(message.id, r.emoji)}
+                    >
+                      <span className="text-base leading-none">{r.emoji}</span>
+                      <span className="text-muted-foreground">{r.count}</span>
+                    </button>
+                  }
+                />
               ))}
               {!canEdit && (
                 <EmojiPickerPopover

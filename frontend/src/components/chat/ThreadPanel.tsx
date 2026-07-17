@@ -597,11 +597,15 @@ export function ThreadPanel({
           />
 
           {replies.length > 0 && (
-            <div className="relative my-5 flex items-center gap-2">
-              <div className="h-px flex-1 bg-border" />
-              <span className="shrink-0 text-xs font-medium text-[#e8384f]">
+            <div className="my-5 flex items-center gap-2">
+              <span className="shrink-0 text-xs font-medium text-muted-foreground">
                 {replyLabel}
-                {hasNew && " · New"}
+                {hasNew && (
+                  <>
+                    {" "}
+                    · <span className="text-[#e8384f]">New</span>
+                  </>
+                )}
               </span>
               <div className="h-px flex-1 bg-border" />
             </div>

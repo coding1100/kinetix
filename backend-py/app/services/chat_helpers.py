@@ -22,12 +22,14 @@ def _default_thread_count(msg: ChatMessage) -> int:
 
 
 def _reaction_list(msg: ChatMessage) -> list[dict]:
-    reaction_map: dict[str, int] = {}
+    reaction_map: dict[str, list[dict]] = {}
     for r in msg.reactions:
-        reaction_map[r.emoji] = reaction_map.get(r.emoji, 0) + 1
+        reaction_map.setdefault(r.emoji, []).append(
+            {"id": r.user_id, "fullName": r.user.full_name}
+        )
     return [
-        {"emoji": emoji, "count": count}
-        for emoji, count in reaction_map.items()
+        {"emoji": emoji, "count": len(users), "users": users}
+        for emoji, users in reaction_map.items()
     ]
 
 

@@ -66,6 +66,15 @@ class WorkspaceMember(Base):
     joined_at: Mapped[datetime] = mapped_column(
         "joinedAt", DateTime(timezone=True), server_default=func.now()
     )
+    manager_id: Mapped[str | None] = mapped_column(
+        "managerId",
+        String,
+        ForeignKey("User.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     workspace: Mapped["Workspace"] = relationship(back_populates="members")
-    user: Mapped["User"] = relationship(back_populates="memberships")
+    user: Mapped["User"] = relationship(
+        back_populates="memberships", foreign_keys=[user_id]
+    )
+    manager: Mapped["User | None"] = relationship(foreign_keys=[manager_id])

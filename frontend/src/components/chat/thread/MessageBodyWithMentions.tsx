@@ -14,6 +14,7 @@ import {
 } from "@/lib/chat/rich-text/sanitize";
 import { useMentionMembers } from "@/hooks/use-mention-members";
 import { UserProfilePeek } from "@/components/chat/UserProfilePeek";
+import { useAuthStore } from "@/stores/auth-store";
 import type { ConversationType } from "@/lib/types/chat";
 
 function RichTextPart({ html }: { html: string }) {
@@ -32,14 +33,16 @@ function PersonMentionToken({
   part,
   userId,
   channelId,
+  isSelf,
 }: {
   part: string;
   userId?: string;
   channelId?: string;
+  isSelf?: boolean;
 }) {
   const label = displayMentionToken(part);
   if (!userId) {
-    return <span className="font-medium text-violet-700">{label}</span>;
+    return <span className="font-medium text-[#4F8EF7]">{label}</span>;
   }
   return (
     <UserProfilePeek
@@ -48,7 +51,10 @@ function PersonMentionToken({
       trigger={
         <button
           type="button"
-          className="rounded-sm font-medium text-violet-700 hover:underline"
+          className={cn(
+            "rounded-sm px-0.5 font-medium text-[#4F8EF7] hover:bg-[#4F8EF7]/15",
+            isSelf && "bg-[#4F8EF7]/15"
+          )}
         >
           {label}
         </button>
@@ -70,6 +76,7 @@ export function MessageBodyWithMentions({
   const hasHtml = messageBodyHasHtml(body);
   const { members } = useMentionMembers(conversationType, conversationId);
   const channelId = conversationType === "channel" ? conversationId : undefined;
+  const currentUserId = useAuthStore((s) => s.user?.id);
 
   const idByName = useMemo(() => {
     const map = new Map<string, string>();
@@ -91,6 +98,10 @@ export function MessageBodyWithMentions({
                 part={part}
                 userId={resolveMentionUserId(part)}
                 channelId={channelId}
+                isSelf={
+                  !!currentUserId &&
+                  resolveMentionUserId(part) === currentUserId
+                }
               />
             );
           }
@@ -118,6 +129,9 @@ export function MessageBodyWithMentions({
               part={part}
               userId={resolveMentionUserId(part)}
               channelId={channelId}
+              isSelf={
+                !!currentUserId && resolveMentionUserId(part) === currentUserId
+              }
             />
           );
         }

@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmojiPickerPopover } from "@/components/chat/emoji/EmojiPickerPopover";
+import { ReactionTooltip } from "@/components/chat/ReactionTooltip";
 import {
   MessageCircleIcon,
   SmilePlusIcon,
@@ -30,6 +31,7 @@ import {
   PinIcon,
   PencilIcon,
   Trash2Icon,
+  ChevronRightIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatRequestError } from "@/lib/api/client";
@@ -335,22 +337,28 @@ export function ChatMessageRow({
           {!isEditing && reactions.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {reactions.map((r) => (
-                <Badge
+                <ReactionTooltip
                   key={r.emoji}
-                  variant="outline"
-                  className="h-6 cursor-pointer gap-1 px-2"
-                  onClick={() => void onToggleReaction(message.id, r.emoji)}
-                >
-                  <span className="text-base leading-none">{r.emoji}</span>
-                  <span>{r.count}</span>
-                </Badge>
+                  emoji={r.emoji}
+                  users={r.users}
+                  trigger={
+                    <Badge
+                      variant="outline"
+                      className="h-6 cursor-pointer gap-1 px-2"
+                      onClick={() => void onToggleReaction(message.id, r.emoji)}
+                    >
+                      <span className="text-base leading-none">{r.emoji}</span>
+                      <span>{r.count}</span>
+                    </Badge>
+                  }
+                />
               ))}
             </div>
           )}
           {!isEditing && repliesLabel && (
             <button
               type="button"
-              className="group/thread mt-2.5 flex items-center gap-2 rounded-md py-1 pl-3 pr-2 hover:bg-muted"
+              className="group/thread mt-2.5 flex w-full items-center gap-2 rounded-md py-1 pl-3 pr-2 hover:bg-primary/15"
               onClick={() => setActiveThread(threadOpen ? null : message.id)}
             >
               <Avatar className="size-5 shrink-0">
@@ -372,17 +380,21 @@ export function ChatMessageRow({
               </Avatar>
               <span
                 className={cn(
-                  "text-xs font-semibold text-primary",
+                  "text-xs font-semibold text-foreground",
                   threadOpen && "underline"
                 )}
               >
                 {repliesLabel}
               </span>
               {message.lastReplyAt ? (
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-muted-foreground group-hover/thread:hidden">
                   {formatThreadReplyTime(new Date(message.lastReplyAt))}
                 </span>
               ) : null}
+              <span className="hidden text-xs text-muted-foreground group-hover/thread:inline">
+                View thread
+              </span>
+              <ChevronRightIcon className="ml-auto hidden size-3.5 shrink-0 text-muted-foreground group-hover/thread:block" />
             </button>
           )}
           {!isEditing && isPinned ? (

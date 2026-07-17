@@ -153,7 +153,10 @@ async def list_workspace_members(session: AsyncSession, workspace_id: str) -> li
                 WorkspaceMember.workspace_id == workspace_id,
                 WorkspaceMember.status == MemberStatus.ACTIVE,
             )
-            .options(selectinload(WorkspaceMember.user))
+            .options(
+                selectinload(WorkspaceMember.user),
+                selectinload(WorkspaceMember.manager),
+            )
             .order_by(WorkspaceMember.joined_at.asc())
         )
     ).all()
@@ -190,6 +193,8 @@ async def list_workspace_members(session: AsyncSession, workspace_id: str) -> li
             "presence": get_presence(workspace_id, m.user.id),
             "teams": teams_by_user.get(m.user.id, []),
             "invitedBy": invited_by_email.get(m.user.email),
+            "managerId": m.manager_id,
+            "managerName": m.manager.full_name if m.manager else None,
         }
         for m in rows
     ]
@@ -293,6 +298,54 @@ async def update_member_permissions(
         "userId": target_user_id,
         "canSeeTimeEstimate": target.can_see_time_estimate,
         "canTrackTime": target.can_track_time,
+    }
+
+
+async def update_member_manager(
+    session: AsyncSession,
+    workspace_id: str,
+    actor_id: str,
+    actor_role: WorkspaceRole,
+    target_user_id: str,
+    manager_id: str | None,
+) -> dict:
+    if actor_id != target_user_id:
+        _assert_can_manage_people(actor_role)
+
+    target = await session.scalar(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.user_id == target_user_id,
+            WorkspaceMember.status == MemberStatus.ACTIVE,
+        )
+    )
+    if not target:
+        raise AppError(404, "NOT_FOUND", "Member not found")
+
+    manager_name: str | None = None
+    if manager_id is not None:
+        if manager_id == target_user_id:
+            raise AppError(400, "VALIDATION_ERROR", "A member cannot be their own manager")
+        manager_membership = await session.scalar(
+            select(WorkspaceMember)
+            .where(
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.user_id == manager_id,
+                WorkspaceMember.status == MemberStatus.ACTIVE,
+            )
+            .options(selectinload(WorkspaceMember.user))
+        )
+        if not manager_membership:
+            raise AppError(404, "NOT_FOUND", "Manager not found in this workspace")
+        manager_name = manager_membership.user.full_name
+
+    target.manager_id = manager_id
+    await session.commit()
+    return {
+        "ok": True,
+        "userId": target_user_id,
+        "managerId": manager_id,
+        "managerName": manager_name,
     }
 
 

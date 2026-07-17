@@ -66,7 +66,7 @@ from app.socket.presence import get_presence
 
 _MESSAGE_LIST_LOAD = (
     selectinload(ChatMessage.author),
-    selectinload(ChatMessage.reactions),
+    selectinload(ChatMessage.reactions).selectinload(MessageReaction.user),
     selectinload(ChatMessage.attachments),
 )
 
@@ -1683,12 +1683,18 @@ async def get_dm_message_thread(
 async def _reaction_counts(session: AsyncSession, message_id: str) -> list[dict]:
     rows = (
         await session.execute(
-            select(MessageReaction.emoji, func.count())
+            select(MessageReaction.emoji, MessageReaction.user_id, User.full_name)
+            .join(User, User.id == MessageReaction.user_id)
             .where(MessageReaction.message_id == message_id)
-            .group_by(MessageReaction.emoji)
         )
     ).all()
-    return [{"emoji": row[0], "count": int(row[1])} for row in rows]
+    grouped: dict[str, list[dict]] = {}
+    for emoji, user_id, full_name in rows:
+        grouped.setdefault(emoji, []).append({"id": user_id, "fullName": full_name})
+    return [
+        {"emoji": emoji, "count": len(users), "users": users}
+        for emoji, users in grouped.items()
+    ]
 
 
 async def _assert_message_access(
