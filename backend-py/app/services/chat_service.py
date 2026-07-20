@@ -32,6 +32,7 @@ from app.services.notification_service import (
     create_channel_broadcast_notifications,
     create_channel_deleted_notifications,
     create_channel_follow_notifications,
+    create_dm_broadcast_notifications,
     create_mention_notifications,
     create_thread_reply_notifications,
     emit_channel_access_notifications,
@@ -1619,6 +1620,14 @@ async def send_dm_message(
         body=message.body,
         channel=None,
     )
+    dm_notifications = await create_dm_broadcast_notifications(
+        session,
+        workspace_id=workspace_id,
+        author_user_id=user_id,
+        conversation_id=conversation_id,
+        recipient_ids=[p.user_id for p in participant.conversation.participants],
+        body=message.body,
+    )
     await session.commit()
 
     loaded = await session.scalar(
@@ -1627,8 +1636,9 @@ async def send_dm_message(
         .options(*_MESSAGE_SEND_LOAD)
     )
     payload = map_message(loaded, user_id, thread_count=0)
-    if mention_notifications:
-        await emit_home_notifications(session, workspace_id, mention_notifications)
+    all_notifications = mention_notifications + dm_notifications
+    if all_notifications:
+        await emit_home_notifications(session, workspace_id, all_notifications)
     audience_user_ids = [p.user_id for p in participant.conversation.participants]
     asyncio.create_task(
         broadcast_chat_message(

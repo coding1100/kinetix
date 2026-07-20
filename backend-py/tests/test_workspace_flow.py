@@ -7,6 +7,8 @@ import time
 import pytest
 from httpx import AsyncClient
 
+from tests.task_test_helpers import _shared_demo_workspace_id
+
 OWNER = ("owner@demo.com", "password123")
 MEMBER = ("alex@demo.com", "password123")
 
@@ -228,6 +230,46 @@ async def test_workspace_invite_rejects_duplicate_and_existing_member(
     )
     assert already_member.status_code == 409, already_member.text
     assert already_member.json()["error"]["code"] == "ALREADY_MEMBER"
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_dm_plain_message_notifies_recipient(api_client: AsyncClient):
+    owner_token = await _login(api_client, *OWNER)
+    member_token = await _login(api_client, *MEMBER)
+    owner_headers = _auth(owner_token)
+    member_headers = _auth(member_token)
+
+    workspace_id = await _shared_demo_workspace_id(api_client)
+
+    member_me = await api_client.get("/api/v1/auth/me", headers=member_headers)
+    assert member_me.status_code == 200
+    member_user_id = member_me.json()["id"]
+
+    dm = await api_client.post(
+        f"/api/v1/workspaces/{workspace_id}/chat/dms",
+        headers=owner_headers,
+        json={"userIds": [member_user_id]},
+    )
+    assert dm.status_code == 201, dm.text
+    conversation_id = dm.json()["id"]
+
+    marker = f"plain dm ping {int(time.time())}"
+    sent = await api_client.post(
+        f"/api/v1/workspaces/{workspace_id}/chat/dms/{conversation_id}/messages",
+        headers=owner_headers,
+        json={"body": marker},
+    )
+    assert sent.status_code == 201, sent.text
+
+    notifs = await api_client.get(
+        f"/api/v1/workspaces/{workspace_id}/home/notifications",
+        headers=member_headers,
+    )
+    assert notifs.status_code == 200, notifs.text
+    items = notifs.json()["data"]
+    assert any(
+        marker in (item.get("preview") or "") for item in items
+    ), items[:3]
 
 
 @pytest.mark.asyncio(loop_scope="session")

@@ -64,6 +64,7 @@ import {
   mergeSidebarDms,
 } from "@/lib/chat/sidebar-lists-loader";
 import { isSidebarCacheForSession, useChatStore } from "@/stores/chat-store";
+import { useSidebarUnread } from "@/lib/chat/sidebar-display-unread";
 import { UserAvatarWithPresence } from "@/components/shared/AvatarWithPresence";
 import {
   avatarColorClassForKey,
@@ -373,14 +374,25 @@ function ChannelRow({
   name,
   isPrivate,
   listChannel,
+  unread,
   active,
 }: {
   id: string;
   name: string;
   isPrivate?: boolean;
   listChannel?: boolean;
+  unread: number;
   active: boolean;
 }) {
+  const unreadBadgeHold = useChatStore((s) => s.unreadBadgeHold);
+  const displayUnread = useSidebarUnread(
+    "channel",
+    id,
+    unread,
+    active,
+    unreadBadgeHold
+  );
+
   return (
     <Link
       href={`/home/c/${id}`}
@@ -399,6 +411,11 @@ function ChannelRow({
       )}
       <span className="min-w-0 flex-1 truncate">{name}</span>
       {isPrivate ? <LockIcon className="size-3 shrink-0 text-muted-foreground" /> : null}
+      {displayUnread > 0 && (
+        <Badge className="size-5 min-w-5 shrink-0 justify-center rounded-full px-1 text-[10px]">
+          {displayUnread}
+        </Badge>
+      )}
     </Link>
   );
 }
@@ -412,6 +429,7 @@ function DmRow({
   currentUserId,
   presenceFallback,
   isGroup,
+  unread,
   active,
 }: {
   id: string;
@@ -422,8 +440,17 @@ function DmRow({
   currentUserId?: string | null;
   presenceFallback?: PresenceStatus;
   isGroup?: boolean;
+  unread: number;
   active: boolean;
 }) {
+  const unreadBadgeHold = useChatStore((s) => s.unreadBadgeHold);
+  const displayUnread = useSidebarUnread(
+    "dm",
+    id,
+    unread,
+    active,
+    unreadBadgeHold
+  );
   const presence = useUserPresence(otherUserId, presenceFallback ?? "offline");
   const groupParticipants = isGroup
     ? otherGroupParticipants(participants, currentUserId)
@@ -459,6 +486,11 @@ function DmRow({
         />
       )}
       <span className="min-w-0 flex-1 truncate">{displayName}</span>
+      {displayUnread > 0 && (
+        <Badge className="size-5 min-w-5 shrink-0 justify-center rounded-full px-1 text-[10px]">
+          {displayUnread}
+        </Badge>
+      )}
     </Link>
   );
 }
@@ -803,6 +835,7 @@ export function HomeSidebar() {
                   name={c.name}
                   isPrivate={c.isPrivate}
                   listChannel={c.isListPrimary}
+                  unread={c.unread}
                   active={pathname === `/home/c/${c.id}`}
                 />
               ))}
@@ -840,6 +873,7 @@ export function HomeSidebar() {
                   currentUserId={currentUserId}
                   presenceFallback={d.presence}
                   isGroup={d.isGroup}
+                  unread={d.unread}
                   active={pathname === `/home/dm/${d.id}`}
                 />
               ))}

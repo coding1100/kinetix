@@ -76,7 +76,7 @@ class ChatChannelMember(Base):
         "pinnedAt", DateTime(timezone=True), nullable=True
     )
     notification_level: Mapped[str] = mapped_column(
-        "notificationLevel", String, default="MENTIONS"
+        "notificationLevel", String, default="ALL"
     )
     last_read_at: Mapped[datetime | None] = mapped_column(
         "lastReadAt", DateTime(timezone=True), nullable=True

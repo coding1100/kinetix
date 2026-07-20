@@ -30,7 +30,7 @@ def body_has_channel_mention(body: str) -> bool:
 
 
 def _notification_level(member: ChatChannelMember) -> str:
-    level = getattr(member, "notification_level", None) or "MENTIONS"
+    level = getattr(member, "notification_level", None) or "ALL"
     return str(level).upper()
 
 
@@ -408,6 +408,48 @@ async def create_channel_broadcast_notifications(
         )
         session.add(item)
         created.append((member.user_id, item))
+
+    await session.flush()
+    return created
+
+
+async def create_dm_broadcast_notifications(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    author_user_id: str,
+    conversation_id: str,
+    recipient_ids: list[str],
+    body: str,
+) -> list[tuple[str, InboxItem]]:
+    targets = [rid for rid in dict.fromkeys(recipient_ids) if rid != author_user_id]
+    if not targets:
+        return []
+
+    users = await _load_users(session, [author_user_id, *targets])
+    actor_name = (
+        users.get(author_user_id).full_name if users.get(author_user_id) else "Someone"
+    )
+    snippet = _message_snippet(body)
+    href = f"/chat/dm/{conversation_id}"
+
+    created: list[tuple[str, InboxItem]] = []
+    for recipient_id in targets:
+        item = InboxItem(
+            workspace_id=workspace_id,
+            user_id=recipient_id,
+            type=InboxItemType.CHAT,
+            title=f"New message from {actor_name}",
+            preview=f"{actor_name}: {snippet}",
+            source=actor_name,
+            unread=True,
+            bucket=InboxBucket.ALL,
+            time_group=InboxTimeGroup.TODAY,
+            href=href,
+            activity_kind="dm_message",
+        )
+        session.add(item)
+        created.append((recipient_id, item))
 
     await session.flush()
     return created
