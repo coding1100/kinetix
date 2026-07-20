@@ -4,7 +4,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
+from app.db.models.enums import WorkspaceRole
 from app.db.models.home import Space, Task, TaskList, TaskTimeEntry
+from app.services.workspace_permissions import get_member_time_flags
 
 
 async def _assert_task_in_workspace(
@@ -73,22 +75,27 @@ async def _task_payload(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     task_id: str,
 ) -> dict:
     # Reuse canonical task mapping to keep TaskDrawer state stable
     # (comments/activity, subtasks, attachments, and time state).
     from app.services.home_service import get_task
 
-    return await get_task(session, workspace_id, user_id, task_id)
+    return await get_task(session, workspace_id, user_id, role, task_id)
 
 
 async def start_task_timer(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     task_id: str,
 ) -> dict:
     task = await _assert_task_in_workspace(session, workspace_id, task_id)
+    _, can_track_time = await get_member_time_flags(session, workspace_id, user_id)
+    if not can_track_time:
+        raise AppError(403, "FORBIDDEN", "Time tracking is disabled for your account")
 
     existing = await session.scalar(
         select(TaskTimeEntry).where(
@@ -104,7 +111,7 @@ async def start_task_timer(
                 "Stop the active timer on another task first",
             )
         await session.commit()
-        return await _task_payload(session, workspace_id, user_id, task_id)
+        return await _task_payload(session, workspace_id, user_id, role, task_id)
 
     entry = TaskTimeEntry(
         task_id=task_id,
@@ -137,16 +144,20 @@ async def start_task_timer(
     if notifications:
         await session.commit()
         await emit_home_notifications(session, workspace_id, notifications)
-    return await _task_payload(session, workspace_id, user_id, task_id)
+    return await _task_payload(session, workspace_id, user_id, role, task_id)
 
 
 async def stop_task_timer(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     task_id: str,
 ) -> dict:
     task = await _assert_task_in_workspace(session, workspace_id, task_id)
+    _, can_track_time = await get_member_time_flags(session, workspace_id, user_id)
+    if not can_track_time:
+        raise AppError(403, "FORBIDDEN", "Time tracking is disabled for your account")
     running = await session.scalar(
         select(TaskTimeEntry).where(
             TaskTimeEntry.task_id == task_id,
@@ -181,4 +192,4 @@ async def stop_task_timer(
     if notifications:
         await session.commit()
         await emit_home_notifications(session, workspace_id, notifications)
-    return await _task_payload(session, workspace_id, user_id, task_id)
+    return await _task_payload(session, workspace_id, user_id, role, task_id)

@@ -53,7 +53,7 @@ import {
 } from "@/lib/socket/chat-typing";
 
 function ToolbarDivider() {
-  return <span className="mx-0.5 h-4 w-px shrink-0 bg-border" aria-hidden />;
+  return <span className="mx-0.5 h-3.5 w-px shrink-0 bg-border" aria-hidden />;
 }
 
 type MessageComposerProps = {
@@ -221,12 +221,12 @@ export function MessageComposer({
             type="button"
             variant="ghost"
             size="icon-sm"
-            className="size-7 text-muted-foreground hover:text-foreground"
+            className="size-6 text-muted-foreground hover:text-foreground"
             aria-label={label}
             disabled={disabled}
             onClick={onClick ?? (() => toast(`${label} — coming soon`))}
           >
-            <Icon className="size-4" strokeWidth={1.5} />
+            <Icon className="size-3.5" strokeWidth={1.5} />
           </Button>
         }
       />
@@ -315,7 +315,7 @@ export function MessageComposer({
             onPasteFiles={fileInputEnabled ? uploadFiles : undefined}
           />
 
-          <div className="flex items-center justify-between gap-2 px-2 pb-2">
+          <div className="flex items-center justify-between gap-1.5 px-1.5 pb-1.5">
             <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
               <div
                 className={cn(
@@ -328,12 +328,12 @@ export function MessageComposer({
                   type="button"
                   variant="outline"
                   size="icon-sm"
-                  className="size-7 shrink-0 rounded-full border-border bg-muted/40 text-muted-foreground hover:bg-muted"
+                  className="size-6 shrink-0 rounded-full border-border bg-muted/40 text-muted-foreground hover:bg-muted"
                   aria-label="Attach file"
                   disabled={uploading}
                   onClick={pickFile}
                 >
-                  <PlusIcon className="size-3.5" strokeWidth={1.5} />
+                  <PlusIcon className="size-3" strokeWidth={1.5} />
                 </Button>
 
                 <ToolbarDivider />
@@ -341,7 +341,7 @@ export function MessageComposer({
                 <Select value={mode} onValueChange={(v) => v && setMode(v)}>
                   <SelectTrigger
                     size="sm"
-                    className="h-7 shrink-0 gap-1 border-0 bg-transparent px-1.5 text-xs font-medium shadow-none focus-visible:ring-0"
+                    className="h-6 shrink-0 gap-1 border-0 bg-transparent px-1.5 text-xs font-medium shadow-none focus-visible:ring-0"
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -365,10 +365,10 @@ export function MessageComposer({
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    className="size-7 text-muted-foreground hover:text-foreground"
+                    className="size-6 text-muted-foreground hover:text-foreground"
                     aria-label="Mention"
                   >
-                    <AtSignIcon className="size-4" strokeWidth={1.5} />
+                    <AtSignIcon className="size-3.5" strokeWidth={1.5} />
                   </Button>
                 }
               />
@@ -379,10 +379,10 @@ export function MessageComposer({
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    className="size-7 text-muted-foreground hover:text-foreground"
+                    className="size-6 text-muted-foreground hover:text-foreground"
                     aria-label="Emoji"
                   >
-                    <SmileIcon className="size-4" strokeWidth={1.5} />
+                    <SmileIcon className="size-3.5" strokeWidth={1.5} />
                   </Button>
                 }
               />
@@ -425,7 +425,7 @@ export function MessageComposer({
                 variant="ghost"
                 size="icon-sm"
                 className={cn(
-                  "size-7",
+                  "size-6",
                   canSend
                     ? "text-primary hover:text-primary"
                     : "text-muted-foreground"
@@ -435,7 +435,7 @@ export function MessageComposer({
                 aria-label="Send"
                 onClick={() => void handleSend()}
               >
-                <SendIcon className="size-4" strokeWidth={1.5} />
+                <SendIcon className="size-3.5" strokeWidth={1.5} />
               </Button>
 
               <ToolbarDivider />
@@ -447,10 +447,10 @@ export function MessageComposer({
                       type="button"
                       variant="ghost"
                       size="icon-sm"
-                      className="size-7 text-muted-foreground"
+                      className="size-6 text-muted-foreground"
                       aria-label="Send options"
                     >
-                      <ChevronDownIcon className="size-4" strokeWidth={1.5} />
+                      <ChevronDownIcon className="size-3.5" strokeWidth={1.5} />
                     </Button>
                   }
                 />

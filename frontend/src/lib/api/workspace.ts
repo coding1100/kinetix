@@ -20,6 +20,9 @@ export interface WorkspaceMemberRow {
   joinedAt: string | null;
   presence?: import("@/stores/profile-store").PresenceStatus;
   teams?: { id: string; name: string; color: string; icon: string }[];
+  invitedBy?: string | null;
+  managerId?: string | null;
+  managerName?: string | null;
 }
 
 export interface WorkspaceInviteRow {
@@ -120,6 +123,24 @@ export function updateWorkspaceMemberRole(
   );
 }
 
+export function updateMemberManager(
+  token: string,
+  workspaceId: string,
+  userId: string,
+  managerId: string | null
+) {
+  return apiFetch<{
+    ok: boolean;
+    userId: string;
+    managerId: string | null;
+    managerName: string | null;
+  }>(wsPath(workspaceId, `/members/${userId}/manager`), {
+    method: "PATCH",
+    token,
+    body: JSON.stringify({ managerId }),
+  });
+}
+
 export function removeWorkspaceMember(
   token: string,
   workspaceId: string,
@@ -129,6 +150,18 @@ export function removeWorkspaceMember(
     wsPath(workspaceId, `/members/${userId}`),
     { method: "DELETE", token }
   );
+}
+
+export function updateWorkspace(
+  token: string,
+  workspaceId: string,
+  name: string
+) {
+  return apiFetch<CreatedWorkspace>(wsPath(workspaceId, ""), {
+    method: "PATCH",
+    token,
+    body: JSON.stringify({ name }),
+  });
 }
 
 export function deleteWorkspace(

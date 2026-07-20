@@ -35,6 +35,7 @@ export function RichComposerField({
   onInput,
   onPasteFiles,
   leadingContent,
+  peopleOnlyMentions = false,
 }: {
   segments: ComposerSegment[];
   draftPlain: string;
@@ -52,6 +53,7 @@ export function RichComposerField({
   onInput: () => void;
   onPasteFiles?: (files: File[]) => void;
   leadingContent?: React.ReactNode;
+  peopleOnlyMentions?: boolean;
 }) {
   const fieldRef = useRef<HTMLDivElement>(null);
   const {
@@ -144,6 +146,7 @@ export function RichComposerField({
           query={mentionQuery ?? ""}
           onSelect={onSelectMention}
           onDismiss={onDismissMentionAutocomplete}
+          peopleOnly={peopleOnlyMentions}
         />
 
         <div

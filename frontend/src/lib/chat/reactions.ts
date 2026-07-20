@@ -1,4 +1,9 @@
-export type ReactionCount = { emoji: string; count: number };
+export type ReactionUser = { id: string; fullName: string };
+export type ReactionCount = {
+  emoji: string;
+  count: number;
+  users?: ReactionUser[];
+};
 
 /** Immediate UI toggle; reconciled when the API/socket response arrives. */
 export function optimisticToggleReaction(

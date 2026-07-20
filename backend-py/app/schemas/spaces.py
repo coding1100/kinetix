@@ -1,16 +1,31 @@
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.db.models.enums import PermissionLevel
+
 
 class CreateSpaceBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     name: str = Field(min_length=1, max_length=120)
     color: str | None = Field(default=None, max_length=32)
     description: str | None = Field(default=None, max_length=500)
+    is_private: bool = Field(default=False, alias="isPrivate")
 
 
 class UpdateSpaceBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     name: str | None = Field(default=None, min_length=1, max_length=120)
     color: str | None = Field(default=None, max_length=32)
     description: str | None = Field(default=None, max_length=500)
+    is_private: bool | None = Field(default=None, alias="isPrivate")
+
+
+class AddSpaceMemberBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    user_id: str = Field(alias="userId")
+    permission_level: PermissionLevel = Field(alias="permissionLevel")
 
 
 class CreateFolderBody(BaseModel):

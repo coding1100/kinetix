@@ -20,6 +20,8 @@ import {
   CircleAlertIcon,
   PenLineIcon,
   UserMinusIcon,
+  PinIcon,
+  Trash2Icon,
 } from "lucide-react";
 import {
   getChannelById,
@@ -42,6 +44,7 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { useChannelMembers } from "@/hooks/use-channel-members";
 import { useChannelFiles } from "@/hooks/use-channel-files";
+import { useChannelPin } from "@/hooks/use-channel-pin";
 import {
   mergeChannelMembersIntoCache,
   patchCachedChannelMembers,
@@ -52,7 +55,7 @@ import {
   useChatStore,
   type ChannelDetailsView,
 } from "@/stores/chat-store";
-import { cn, formatRelativeTime } from "@/lib/utils";
+import { appPath, cn, formatRelativeTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -97,7 +100,15 @@ function FollowerAvatar({ name, userId }: { name: string; userId: string }) {
   );
 }
 
-export function ChannelDetailsPanel({ channelId }: { channelId: string }) {
+export function ChannelDetailsPanel({
+  channelId,
+  canDeleteChannel,
+  onRequestDeleteChannel,
+}: {
+  channelId: string;
+  canDeleteChannel?: boolean;
+  onRequestDeleteChannel?: () => void;
+}) {
   const view = useChatStore((s) => s.channelDetailsView);
   const setChannelDetailsView = useChatStore((s) => s.setChannelDetailsView);
 
@@ -126,7 +137,13 @@ export function ChannelDetailsPanel({ channelId }: { channelId: string }) {
           {view === "followers" && <FollowersView channelId={channelId} />}
           {view === "search" && <SearchView channelId={channelId} />}
           {view === "replies" && <RepliesView channelId={channelId} />}
-          {view === "settings" && <SettingsView channelId={channelId} />}
+          {view === "settings" && (
+            <SettingsView
+              channelId={channelId}
+              canDeleteChannel={canDeleteChannel}
+              onRequestDeleteChannel={onRequestDeleteChannel}
+            />
+          )}
         </div>
       </ScrollArea>
     </PanelCardShell>
@@ -755,7 +772,16 @@ function RepliesView({ channelId }: { channelId: string }) {
   );
 }
 
-function SettingsView({ channelId }: { channelId: string }) {
+function SettingsView({
+  channelId,
+  canDeleteChannel,
+  onRequestDeleteChannel,
+}: {
+  channelId: string;
+  canDeleteChannel?: boolean;
+  onRequestDeleteChannel?: () => void;
+}) {
+  const { pinned, togglePin } = useChannelPin(channelId);
   const openModal = useUiStore((s) => s.openModal);
   const setChannelDetailsView = useChatStore((s) => s.setChannelDetailsView);
   const cachedChannel = useChatStore((s) =>
@@ -959,7 +985,16 @@ function SettingsView({ channelId }: { channelId: string }) {
           icon={<LinkIcon className="size-4" />}
           label="Copy link"
           shortcut="C"
-          onClick={() => toast.success("Link copied")}
+          onClick={() => {
+            void navigator.clipboard
+              .writeText(
+                `${window.location.origin}${appPath(`/chat/c/${channelId}`)}`
+              )
+              .then(
+                () => toast.success("Link copied"),
+                () => toast.error("Could not copy link")
+              );
+          }}
         />
         <OptionRow
           icon={
@@ -1033,10 +1068,25 @@ function SettingsView({ channelId }: { channelId: string }) {
           }
         />
         <OptionRow
+          icon={
+            <PinIcon className={cn("size-4", pinned && "fill-current")} />
+          }
+          label={pinned ? "Unpin channel" : "Pin channel"}
+          onClick={() => void togglePin()}
+        />
+        <OptionRow
           icon={<Share2Icon className="size-4" />}
           label="Sharing & Permissions"
           onClick={() => openModal("channel-share", channelId)}
         />
+        {canDeleteChannel ? (
+          <OptionRow
+            icon={<Trash2Icon className="size-4" />}
+            label="Delete Channel"
+            destructive
+            onClick={() => onRequestDeleteChannel?.()}
+          />
+        ) : null}
       </section>
     </div>
   );
@@ -1049,6 +1099,7 @@ function OptionRow({
   shortcut,
   trailing,
   description,
+  destructive,
 }: {
   icon: ReactNode;
   label: string;
@@ -1056,14 +1107,20 @@ function OptionRow({
   shortcut?: string;
   trailing?: ReactNode;
   description?: string;
+  destructive?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-start gap-2 border-t border-border px-3 py-2 text-left hover:bg-muted/40"
+      className={cn(
+        "flex w-full items-start gap-2 border-t border-border px-3 py-2 text-left hover:bg-muted/40",
+        destructive && "text-destructive hover:text-destructive"
+      )}
     >
-      <span className="mt-0.5 text-muted-foreground">{icon}</span>
+      <span className={cn("mt-0.5", destructive ? "text-destructive" : "text-muted-foreground")}>
+        {icon}
+      </span>
       <span className="min-w-0 flex-1">
         <span className="block text-sm">{label}</span>
         {description ? (

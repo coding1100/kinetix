@@ -273,6 +273,7 @@ export function SpacesSidebar() {
                               type: "edit-space",
                               spaceId: space.id,
                               initialName: space.name,
+                              initialIsPrivate: space.isPrivate,
                             })
                           }
                         >

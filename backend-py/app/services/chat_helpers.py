@@ -1,7 +1,18 @@
+from dataclasses import dataclass
+from datetime import datetime
+
 from sqlalchemy import inspect as sa_inspect
 
 from app.db.models.chat import ChatMessage, DirectConversation
 from app.services.attachment_service import map_attachment
+
+
+@dataclass
+class ThreadSummary:
+    count: int
+    last_reply_author_id: str
+    last_reply_author_name: str
+    last_reply_at: datetime
 
 
 def _default_thread_count(msg: ChatMessage) -> int:
@@ -11,13 +22,35 @@ def _default_thread_count(msg: ChatMessage) -> int:
 
 
 def _reaction_list(msg: ChatMessage) -> list[dict]:
-    reaction_map: dict[str, int] = {}
+    reaction_map: dict[str, list[dict]] = {}
     for r in msg.reactions:
-        reaction_map[r.emoji] = reaction_map.get(r.emoji, 0) + 1
+        reaction_map.setdefault(r.emoji, []).append(
+            {"id": r.user_id, "fullName": r.user.full_name}
+        )
     return [
-        {"emoji": emoji, "count": count}
-        for emoji, count in reaction_map.items()
+        {"emoji": emoji, "count": len(users), "users": users}
+        for emoji, users in reaction_map.items()
     ]
+
+
+def _thread_fields(
+    msg: ChatMessage,
+    *,
+    thread_count: int | None,
+    thread_summary: ThreadSummary | None,
+) -> dict:
+    if thread_summary is not None:
+        return {
+            "threadCount": thread_summary.count,
+            "lastReplyAuthorId": thread_summary.last_reply_author_id,
+            "lastReplyAuthorName": thread_summary.last_reply_author_name,
+            "lastReplyAt": thread_summary.last_reply_at.isoformat(),
+        }
+    return {
+        "threadCount": (
+            thread_count if thread_count is not None else _default_thread_count(msg)
+        )
+    }
 
 
 def map_message(
@@ -25,6 +58,7 @@ def map_message(
     current_user_id: str,
     *,
     thread_count: int | None = None,
+    thread_summary: ThreadSummary | None = None,
     read_by_user_ids: list[str] | None = None,
 ) -> dict:
     payload = {
@@ -35,9 +69,7 @@ def map_message(
         "createdAt": msg.created_at.isoformat(),
         "isSelf": msg.author_id == current_user_id,
         "reactions": _reaction_list(msg),
-        "threadCount": (
-            thread_count if thread_count is not None else _default_thread_count(msg)
-        ),
+        **_thread_fields(msg, thread_count=thread_count, thread_summary=thread_summary),
         "attachments": [map_attachment(a) for a in (msg.attachments or [])],
     }
     if msg.pinned_at:
@@ -52,8 +84,14 @@ def map_search_message(
     current_user_id: str,
     *,
     thread_count: int | None = None,
+    thread_summary: ThreadSummary | None = None,
 ) -> dict:
-    payload = map_message(msg, current_user_id, thread_count=thread_count)
+    payload = map_message(
+        msg,
+        current_user_id,
+        thread_count=thread_count,
+        thread_summary=thread_summary,
+    )
     if msg.parent_id:
         payload["parentId"] = msg.parent_id
         payload["inThread"] = True
@@ -64,6 +102,7 @@ def map_message_broadcast(
     msg: ChatMessage,
     *,
     thread_count: int | None = None,
+    thread_summary: ThreadSummary | None = None,
 ) -> dict:
     """Neutral wire shape for Socket.IO — each client derives isSelf locally."""
     payload = {
@@ -73,9 +112,7 @@ def map_message_broadcast(
         "body": msg.body,
         "createdAt": msg.created_at.isoformat(),
         "reactions": _reaction_list(msg),
-        "threadCount": (
-            thread_count if thread_count is not None else _default_thread_count(msg)
-        ),
+        **_thread_fields(msg, thread_count=thread_count, thread_summary=thread_summary),
         "attachments": [map_attachment(a) for a in (msg.attachments or [])],
     }
     if msg.pinned_at:

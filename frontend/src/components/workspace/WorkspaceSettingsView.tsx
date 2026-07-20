@@ -23,6 +23,7 @@ import {
   deleteWorkspace,
   fetchWorkspacePeople,
   transferWorkspaceOwnership,
+  updateWorkspace,
   type WorkspaceMemberRow,
 } from "@/lib/api/workspace";
 import { resetSessionScopedState } from "@/lib/auth/reset-session-scoped-state";
@@ -41,8 +42,18 @@ export function WorkspaceSettingsView() {
   const [deleting, setDeleting] = useState(false);
   const [transferTargetId, setTransferTargetId] = useState("");
   const [transferring, setTransferring] = useState(false);
+  const [nameDraft, setNameDraft] = useState(workspace?.name ?? "");
+  const [renaming, setRenaming] = useState(false);
 
   const isOwner = workspace?.role === "OWNER";
+  const canRename =
+    workspace?.role === "OWNER" ||
+    workspace?.role === "SUPER_ADMIN" ||
+    workspace?.role === "ADMIN";
+
+  useEffect(() => {
+    setNameDraft(workspace?.name ?? "");
+  }, [workspace?.name]);
 
   const transferCandidates = useMemo(
     () =>
@@ -126,6 +137,24 @@ export function WorkspaceSettingsView() {
     }
   };
 
+  const handleRename = async () => {
+    if (!workspace || !canRename) return;
+    const trimmed = nameDraft.trim();
+    if (!trimmed || trimmed === workspace.name) return;
+    setRenaming(true);
+    try {
+      await updateWorkspace(accessToken, workspaceId, trimmed);
+      await refreshSession(workspaceId);
+      toast.success("Workspace renamed");
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : "Could not rename workspace"
+      );
+    } finally {
+      setRenaming(false);
+    }
+  };
+
   const handleTransfer = async () => {
     if (!workspace || !isOwner || !transferTargetId) return;
     setTransferring(true);
@@ -182,7 +211,30 @@ export function WorkspaceSettingsView() {
           <section className="space-y-2 rounded-xl border border-border bg-card p-4">
             <h2 className="text-sm font-semibold">General</h2>
             <p className="text-sm text-muted-foreground">Workspace name</p>
-            <p className="text-base font-medium">{workspace.name}</p>
+            {canRename ? (
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  disabled={renaming}
+                  maxLength={120}
+                />
+                <Button
+                  variant="outline"
+                  disabled={
+                    renaming ||
+                    !nameDraft.trim() ||
+                    nameDraft.trim() === workspace.name
+                  }
+                  loading={renaming}
+                  onClick={() => void handleRename()}
+                >
+                  Save
+                </Button>
+              </div>
+            ) : (
+              <p className="text-base font-medium">{workspace.name}</p>
+            )}
             <p className="text-xs capitalize text-muted-foreground">
               Your role: {workspace.role.toLowerCase().replace("_", " ")}
             </p>
@@ -217,7 +269,11 @@ export function WorkspaceSettingsView() {
                     </SelectTrigger>
                     <SelectContent>
                       {transferCandidates.map((member) => (
-                        <SelectItem key={member.id} value={member.id}>
+                        <SelectItem
+                          key={member.id}
+                          value={member.id}
+                          label={`${member.fullName} (${member.email})`}
+                        >
                           {member.fullName} ({member.email})
                         </SelectItem>
                       ))}

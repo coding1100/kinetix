@@ -17,6 +17,41 @@ class CreateSubtaskBody(BaseModel):
     name: str = Field(min_length=1, max_length=500)
 
 
+class CreateTaskDependencyBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    related_task_id: str = Field(min_length=1, alias="relatedTaskId")
+    type: Literal["blocking", "blocked_by", "linked"]
+
+
+class CreateChecklistBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(min_length=1, max_length=255)
+
+
+class UpdateChecklistBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+
+
+class CreateChecklistItemBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    text: str = Field(min_length=1, max_length=500)
+    assignee_id: str | None = Field(default=None, alias="assigneeId")
+    is_checked: bool = Field(default=False, alias="isChecked")
+
+
+class UpdateChecklistItemBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    text: str | None = Field(default=None, min_length=1, max_length=500)
+    is_checked: bool | None = Field(default=None, alias="isChecked")
+    assignee_id: str | None = Field(default=None, alias="assigneeId")
+
+
 class PresignTaskAttachmentBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -37,6 +72,7 @@ class UpdateTaskBody(BaseModel):
         default=None, alias="timeEstimateMinutes", ge=0, le=60 * 24 * 365
     )
     assignee_ids: list[str] | None = Field(default=None, alias="assigneeIds")
+    follower_ids: list[str] | None = Field(default=None, alias="followerIds")
     priority: Literal["urgent", "high", "normal", "low"] | None = None
     list_id: str | None = Field(default=None, alias="listId")
     status_id: str | None = Field(default=None, alias="statusId")

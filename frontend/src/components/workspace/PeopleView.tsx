@@ -68,6 +68,7 @@ import {
   MemberTeamBadges,
   TeamFilterLabel,
 } from "@/components/teams/MemberTeamBadges";
+import { subscribeWorkspaceMembersRefresh } from "@/lib/workspace/realtime";
 
 function canManagePeople(role: string) {
   return role === "OWNER" || role === "SUPER_ADMIN" || role === "ADMIN";
@@ -219,6 +220,8 @@ export function PeopleView() {
   useEffect(() => {
     void load();
   }, [load, reloadKey, teamsRefreshKey]);
+
+  useEffect(() => subscribeWorkspaceMembersRefresh(reload), [reload]);
 
   useEffect(() => {
     if (showInvitePanel) setInviteOpen(true);
@@ -448,8 +451,8 @@ export function PeopleView() {
         {loading ? (
           <p className="text-sm text-muted-foreground">Loading people…</p>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-border">
-            <table className="w-full text-left text-sm">
+          <div className="overflow-x-auto rounded-xl border border-border">
+            <table className="w-full min-w-[900px] text-left text-sm">
               <thead className="border-b border-border bg-muted/40 text-xs text-muted-foreground">
                 <tr>
                   <th className="px-4 py-2.5 font-medium">Name</th>
@@ -517,17 +520,19 @@ export function PeopleView() {
                     <td className="px-4 py-3 text-muted-foreground">
                       {formatJoined(m.joinedAt)}
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">—</td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {m.invitedBy ?? "—"}
+                    </td>
                     <td className="px-4 py-3">
                       <MemberPresenceStatus member={m} />
                     </td>
                     {manage ? (
                       <td className="px-4 py-3 text-right">
                         {canEditMemberRole(actorRole, manage, m, currentUserId) ? (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              render={
-                                <Tooltip>
+                          <Tooltip>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger
+                                render={
                                   <TooltipTrigger
                                     render={
                                       <Button
@@ -539,20 +544,20 @@ export function PeopleView() {
                                       </Button>
                                     }
                                   />
-                                  <TooltipContent side="bottom">Actions</TooltipContent>
-                                </Tooltip>
-                              }
-                            />
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                variant="destructive"
-                                disabled={removingMemberId === m.id}
-                                onClick={() => setMemberToRemove(m)}
-                              >
-                                Remove from workspace
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                                }
+                              />
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  variant="destructive"
+                                  disabled={removingMemberId === m.id}
+                                  onClick={() => setMemberToRemove(m)}
+                                >
+                                  Remove from workspace
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                            <TooltipContent side="bottom">Actions</TooltipContent>
+                          </Tooltip>
                         ) : null}
                       </td>
                     ) : null}
@@ -563,7 +568,7 @@ export function PeopleView() {
                     key={inv.id}
                     className="border-b border-border last:border-0 hover:bg-muted/30"
                   >
-                    <td className="px-4 py-3 text-muted-foreground">—</td>
+                    <td className="px-4 py-3 font-medium">{inv.email}</td>
                     <td className="px-4 py-3">{inv.email}</td>
                     <td className="px-4 py-3 capitalize">
                       {ROLE_LABELS[inv.role] ?? inv.role}
@@ -584,44 +589,49 @@ export function PeopleView() {
                     </td>
                     {manage ? (
                       <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 gap-1"
-                            onClick={() => copyLink(inv.inviteUrl)}
-                          >
-                            <CopyIcon className="size-3.5" />
-                            Copy link
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 gap-1"
-                            loading={inviteActionId === `resend:${inv.id}`}
-                            loadingText="Resending…"
-                            onClick={() => void handleResend(inv)}
-                          >
-                            <RefreshCwIcon className="size-3.5" />
-                            Resend
-                          </Button>
-                          <Tooltip>
-                            <TooltipTrigger
+                        <Tooltip>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger
                               render={
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  loading={inviteActionId === `cancel:${inv.id}`}
-                                  onClick={() => void handleCancel(inv.id)}
-                                  aria-label="Cancel invite"
-                                >
-                                  <XIcon className="size-4" />
-                                </Button>
+                                <TooltipTrigger
+                                  render={
+                                    <Button
+                                      variant="ghost"
+                                      size="icon-sm"
+                                      aria-label="Invite actions"
+                                    >
+                                      <MoreHorizontalIcon className="size-4" />
+                                    </Button>
+                                  }
+                                />
                               }
                             />
-                            <TooltipContent side="bottom">Cancel invite</TooltipContent>
-                          </Tooltip>
-                        </div>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => void copyLink(inv.inviteUrl)}
+                              >
+                                <CopyIcon className="size-3.5" />
+                                Copy link
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                disabled={inviteActionId === `resend:${inv.id}`}
+                                onClick={() => void handleResend(inv)}
+                              >
+                                <RefreshCwIcon className="size-3.5" />
+                                Resend
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                variant="destructive"
+                                disabled={inviteActionId === `cancel:${inv.id}`}
+                                onClick={() => void handleCancel(inv.id)}
+                              >
+                                <XIcon className="size-3.5" />
+                                Cancel invite
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                          <TooltipContent side="bottom">Actions</TooltipContent>
+                        </Tooltip>
                       </td>
                     ) : null}
                   </tr>

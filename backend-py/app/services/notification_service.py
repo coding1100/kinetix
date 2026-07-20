@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.db.models.chat import ChatChannel, ChatChannelMember, ChatMessage
 from app.db.models.enums import InboxBucket, InboxItemType, InboxTimeGroup, MemberStatus
-from app.db.models.home import InboxItem, TaskAssignee, TaskFollower
+from app.db.models.home import InboxItem, Task
 from app.db.models.user import User
 from app.db.models.workspace import WorkspaceMember
 from app.services.home_helpers import map_inbox_type
@@ -30,7 +30,7 @@ def body_has_channel_mention(body: str) -> bool:
 
 
 def _notification_level(member: ChatChannelMember) -> str:
-    level = getattr(member, "notification_level", None) or "MENTIONS"
+    level = getattr(member, "notification_level", None) or "ALL"
     return str(level).upper()
 
 
@@ -223,6 +223,39 @@ async def create_channel_access_notifications(
     return created
 
 
+async def create_invite_accepted_notification(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    actor_user_id: str,
+    recipient_id: str,
+    workspace_name: str,
+) -> list[tuple[str, InboxItem]]:
+    if recipient_id == actor_user_id:
+        return []
+
+    users = await _load_users(session, [actor_user_id])
+    actor = users.get(actor_user_id)
+    actor_name = actor.full_name if actor else "Someone"
+
+    item = InboxItem(
+        workspace_id=workspace_id,
+        user_id=recipient_id,
+        type=InboxItemType.REMINDER,
+        title="Invite accepted",
+        preview=f"{actor_name} accepted your invite to {workspace_name}",
+        source=workspace_name,
+        unread=True,
+        bucket=InboxBucket.ALL,
+        time_group=InboxTimeGroup.TODAY,
+        href="/people",
+        activity_kind="invite_accepted",
+    )
+    session.add(item)
+    await session.flush()
+    return [(recipient_id, item)]
+
+
 async def _resolve_mentioned_user_ids(
     session: AsyncSession,
     workspace_id: str,
@@ -380,6 +413,48 @@ async def create_channel_broadcast_notifications(
     return created
 
 
+async def create_dm_broadcast_notifications(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    author_user_id: str,
+    conversation_id: str,
+    recipient_ids: list[str],
+    body: str,
+) -> list[tuple[str, InboxItem]]:
+    targets = [rid for rid in dict.fromkeys(recipient_ids) if rid != author_user_id]
+    if not targets:
+        return []
+
+    users = await _load_users(session, [author_user_id, *targets])
+    actor_name = (
+        users.get(author_user_id).full_name if users.get(author_user_id) else "Someone"
+    )
+    snippet = _message_snippet(body)
+    href = f"/chat/dm/{conversation_id}"
+
+    created: list[tuple[str, InboxItem]] = []
+    for recipient_id in targets:
+        item = InboxItem(
+            workspace_id=workspace_id,
+            user_id=recipient_id,
+            type=InboxItemType.CHAT,
+            title=f"New message from {actor_name}",
+            preview=f"{actor_name}: {snippet}",
+            source=actor_name,
+            unread=True,
+            bucket=InboxBucket.ALL,
+            time_group=InboxTimeGroup.TODAY,
+            href=href,
+            activity_kind="dm_message",
+        )
+        session.add(item)
+        created.append((recipient_id, item))
+
+    await session.flush()
+    return created
+
+
 async def create_thread_reply_notifications(
     session: AsyncSession,
     *,
@@ -396,15 +471,22 @@ async def create_thread_reply_notifications(
 
     replies = (
         await session.scalars(
-            select(ChatMessage.author_id).where(
-                ChatMessage.parent_id == parent.id,
-                ChatMessage.author_id != author_user_id,
-            )
+            select(ChatMessage).where(ChatMessage.parent_id == parent.id)
         )
     ).all()
-    for author_id in replies:
-        if author_id != author_user_id:
-            users_to_notify.add(author_id)
+    for reply in replies:
+        if reply.author_id != author_user_id:
+            users_to_notify.add(reply.author_id)
+
+    # Anyone @mentioned anywhere in the thread (parent or earlier replies)
+    # also hears about new activity, even if they never replied themselves.
+    thread_bodies = [parent.body, *[r.body for r in replies]]
+    for text in thread_bodies:
+        labels = parse_person_mention_labels(text)
+        mentioned = await _resolve_mentioned_user_ids(
+            session, workspace_id, labels, exclude_user_id=author_user_id
+        )
+        users_to_notify.update(mentioned)
 
     if not users_to_notify:
         return []
@@ -840,16 +922,13 @@ async def task_notification_recipients(
     task_id: str,
     exclude_user_id: str | None = None,
 ) -> list[str]:
-    assignees = (
-        await session.scalars(
-            select(TaskAssignee.user_id).where(TaskAssignee.task_id == task_id)
+    row = (
+        await session.execute(
+            select(Task.assignee_ids, Task.follower_ids).where(Task.id == task_id)
         )
-    ).all()
-    followers = (
-        await session.scalars(
-            select(TaskFollower.user_id).where(TaskFollower.task_id == task_id)
-        )
-    ).all()
+    ).first()
+    assignees = row[0] if row else []
+    followers = row[1] if row else []
     recipient_ids: list[str] = []
     seen: set[str] = set()
     for user_id in [*assignees, *followers]:
@@ -887,6 +966,8 @@ async def create_task_activity_notifications(
     created: list[tuple[str, InboxItem]] = []
 
     for recipient_id in dict.fromkeys(recipient_ids):
+        if recipient_id == actor_user_id:
+            continue
         item = InboxItem(
             workspace_id=workspace_id,
             user_id=recipient_id,

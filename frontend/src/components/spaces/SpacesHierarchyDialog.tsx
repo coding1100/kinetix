@@ -10,6 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   createSpace,
   createFolder,
@@ -27,7 +28,12 @@ export type HierarchyDialogMode =
   | { type: "space" }
   | { type: "folder"; spaceId: string }
   | { type: "list"; spaceId: string; folderId?: string }
-  | { type: "edit-space"; spaceId: string; initialName: string }
+  | {
+      type: "edit-space";
+      spaceId: string;
+      initialName: string;
+      initialIsPrivate?: boolean;
+    }
   | { type: "edit-folder"; folderId: string; initialName: string }
   | { type: "edit-list"; listId: string; initialName: string };
 
@@ -45,15 +51,22 @@ export function SpacesHierarchyDialog({
   const bumpRefresh = useSpacesStore((s) => s.bumpRefresh);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
+  const [isPrivate, setIsPrivate] = useState(false);
 
   const isEdit = mode?.type.startsWith("edit-") ?? false;
+  const showPrivateToggle = mode?.type === "space" || mode?.type === "edit-space";
 
   useEffect(() => {
     if (!open || !mode) return;
-    if (mode.type === "edit-space") setName(mode.initialName);
-    else if (mode.type === "edit-folder") setName(mode.initialName);
+    if (mode.type === "edit-space") {
+      setName(mode.initialName);
+      setIsPrivate(mode.initialIsPrivate ?? false);
+    } else if (mode.type === "edit-folder") setName(mode.initialName);
     else if (mode.type === "edit-list") setName(mode.initialName);
-    else setName("");
+    else {
+      setName("");
+      setIsPrivate(false);
+    }
   }, [open, mode]);
 
   const title =
@@ -78,7 +91,10 @@ export function SpacesHierarchyDialog({
     setSaving(true);
     try {
       if (mode.type === "space") {
-        await createSpace(accessToken, workspaceId, { name: trimmed });
+        await createSpace(accessToken, workspaceId, {
+          name: trimmed,
+          isPrivate,
+        });
         toast.success("Space created");
       } else if (mode.type === "folder") {
         await createFolder(accessToken, workspaceId, mode.spaceId, {
@@ -95,8 +111,9 @@ export function SpacesHierarchyDialog({
       } else if (mode.type === "edit-space") {
         await patchSpace(accessToken, workspaceId, mode.spaceId, {
           name: trimmed,
+          isPrivate,
         });
-        toast.success("Space renamed");
+        toast.success("Space updated");
       } else if (mode.type === "edit-folder") {
         await patchFolder(accessToken, workspaceId, mode.folderId, {
           name: trimmed,
@@ -141,6 +158,21 @@ export function SpacesHierarchyDialog({
               autoFocus
             />
           </div>
+          {showPrivateToggle ? (
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <Label htmlFor="hierarchy-private">Make private</Label>
+                <p className="text-xs text-muted-foreground">
+                  Only people you explicitly add can access a private space.
+                </p>
+              </div>
+              <Switch
+                id="hierarchy-private"
+                checked={isPrivate}
+                onCheckedChange={setIsPrivate}
+              />
+            </div>
+          ) : null}
           <Button
             type="submit"
             className="w-full"

@@ -21,6 +21,12 @@ class TeamRole(str, enum.Enum):
     MEMBER = "MEMBER"
 
 
+class PermissionLevel(str, enum.Enum):
+    VIEW = "VIEW"
+    COMMENT = "COMMENT"
+    EDIT = "EDIT"
+
+
 class TaskStatus(str, enum.Enum):
     OPEN = "OPEN"
     TODO = "TODO"

@@ -82,7 +82,8 @@ export function useTaskCommentAttachments(taskId: string | null) {
           accessToken,
           workspaceId,
           taskId,
-          file
+          file,
+          true
         );
         setPending((prev) => [
           ...prev,

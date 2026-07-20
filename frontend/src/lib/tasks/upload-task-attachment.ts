@@ -7,7 +7,8 @@ export async function uploadTaskAttachment(
   token: string,
   workspaceId: string,
   taskId: string,
-  file: File
+  file: File,
+  forComment = false
 ): Promise<string> {
   const presign = await presignTaskAttachment(token, workspaceId, taskId, {
     fileName: file.name,
@@ -21,7 +22,8 @@ export async function uploadTaskAttachment(
     taskId,
     presign.attachmentId,
     file,
-    file.name
+    file.name,
+    forComment
   );
 
   return presign.attachmentId;

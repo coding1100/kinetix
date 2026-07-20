@@ -1,5 +1,13 @@
 import { apiFetch } from "./client";
-import type { ListStatus, Task, TaskActivityEvent } from "@/lib/types/task";
+import type {
+  ListStatus,
+  Task,
+  TaskActivityEvent,
+  TaskChecklist,
+  TaskChecklistItem,
+  TaskDependency,
+  TaskDependencyType,
+} from "@/lib/types/task";
 import type { SpaceDto } from "./home";
 
 function wsPath(workspaceId: string, path: string) {
@@ -13,6 +21,7 @@ export interface ListMetaDto {
   name: string;
   space: { id: string; name: string; color: string };
   statuses?: ListStatus[];
+  channelId: string | null;
 }
 
 export function fetchSpacesTree(token: string, workspaceId: string) {
@@ -60,6 +69,7 @@ export type UpdateTaskInput = {
   startDate?: string;
   timeEstimateMinutes?: number | null;
   assigneeIds?: string[];
+  followerIds?: string[];
   priority?: Task["priority"] | null;
   listId?: string;
 };
@@ -88,10 +98,130 @@ export function deleteTask(
   });
 }
 
+export function addTaskDependency(
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  input: { relatedTaskId: string; type: TaskDependencyType }
+) {
+  return apiFetch<TaskDependency>(
+    wsPath(workspaceId, `/tasks/${taskId}/dependencies`),
+    {
+      method: "POST",
+      token,
+      body: JSON.stringify(input),
+    }
+  );
+}
+
+export function addChecklist(
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  input: { name: string }
+) {
+  return apiFetch<TaskChecklist>(
+    wsPath(workspaceId, `/tasks/${taskId}/checklists`),
+    {
+      method: "POST",
+      token,
+      body: JSON.stringify(input),
+    }
+  );
+}
+
+export function updateChecklist(
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  checklistId: string,
+  input: { name?: string }
+) {
+  return apiFetch<TaskChecklist>(
+    wsPath(workspaceId, `/tasks/${taskId}/checklists/${checklistId}`),
+    {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(input),
+    }
+  );
+}
+
+export function deleteChecklist(
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  checklistId: string
+) {
+  return apiFetch<{ ok: boolean }>(
+    wsPath(workspaceId, `/tasks/${taskId}/checklists/${checklistId}`),
+    {
+      method: "DELETE",
+      token,
+    }
+  );
+}
+
+export function addChecklistItem(
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  checklistId: string,
+  input: { text: string; assigneeId?: string | null; isChecked?: boolean }
+) {
+  return apiFetch<TaskChecklistItem>(
+    wsPath(workspaceId, `/tasks/${taskId}/checklists/${checklistId}/items`),
+    {
+      method: "POST",
+      token,
+      body: JSON.stringify(input),
+    }
+  );
+}
+
+export function updateChecklistItem(
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  checklistId: string,
+  itemId: string,
+  input: { text?: string; isChecked?: boolean; assigneeId?: string | null }
+) {
+  return apiFetch<TaskChecklistItem>(
+    wsPath(workspaceId, `/tasks/${taskId}/checklists/${checklistId}/items/${itemId}`),
+    {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(input),
+    }
+  );
+}
+
+export function deleteChecklistItem(
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  checklistId: string,
+  itemId: string
+) {
+  return apiFetch<{ ok: boolean }>(
+    wsPath(workspaceId, `/tasks/${taskId}/checklists/${checklistId}/items/${itemId}`),
+    {
+      method: "DELETE",
+      token,
+    }
+  );
+}
+
 export function createSpace(
   token: string,
   workspaceId: string,
-  input: { name: string; color?: string; description?: string }
+  input: {
+    name: string;
+    color?: string;
+    description?: string;
+    isPrivate?: boolean;
+  }
 ) {
   return apiFetch<SpaceDto>(wsPath(workspaceId, "/spaces"), {
     method: "POST",
@@ -128,7 +258,12 @@ export function patchSpace(
   token: string,
   workspaceId: string,
   spaceId: string,
-  input: { name?: string; color?: string; description?: string }
+  input: {
+    name?: string;
+    color?: string;
+    description?: string;
+    isPrivate?: boolean;
+  }
 ) {
   return apiFetch<SpaceDto>(wsPath(workspaceId, `/spaces/${spaceId}`), {
     method: "PATCH",
@@ -400,14 +535,16 @@ export function uploadTaskAttachmentContent(
   taskId: string,
   attachmentId: string,
   file: Blob,
-  fileName: string
+  fileName: string,
+  forComment = false
 ) {
   const form = new FormData();
   form.append("file", file, fileName);
+  const query = forComment ? "?for_comment=true" : "";
   return apiFetch<{ ok: boolean; attachmentId: string; status: string }>(
     wsPath(
       workspaceId,
-      `/tasks/${taskId}/attachments/${attachmentId}/upload`
+      `/tasks/${taskId}/attachments/${attachmentId}/upload${query}`
     ),
     { method: "POST", token, body: form }
   );
