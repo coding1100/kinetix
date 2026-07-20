@@ -63,8 +63,8 @@ export function SpacesListToolbar({
 
   return (
     <div className={cn("shrink-0 border-b border-border bg-background", className)}>
-      <div className="flex items-center justify-between gap-2 px-3 py-1">
-        <div className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-2 px-3 py-1">
+        <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
           <span
             className="size-1.5 shrink-0 rounded-sm"
             style={{ backgroundColor: spaceColor }}
@@ -81,21 +81,10 @@ export function SpacesListToolbar({
             <span className="truncate">{spaceName}</span>
           )}
           <span>/</span>
-          <span className="truncate text-[11px] font-medium text-foreground">
+          <span className="truncate text-sm font-medium text-foreground">
             {listName}
           </span>
         </div>
-        {canShare ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-6 shrink-0 gap-1 px-2 text-[11px]"
-            onClick={() => setShareOpen(true)}
-          >
-            <Share2Icon className="size-3" />
-            Share
-          </Button>
-        ) : null}
       </div>
       {shareOpen ? (
         <ShareModal
@@ -107,34 +96,47 @@ export function SpacesListToolbar({
         />
       ) : null}
 
-      <UnderlineTabBar
-        className="px-3"
-        size="xs"
-        tabs={[
-          {
-            id: "channel",
-            label: "Channel",
-            icon: <HashIcon className="size-3" />,
-          },
-          {
-            id: "list",
-            label: "List",
-            icon: <ListIcon className="size-3" />,
-          },
-          {
-            id: "board",
-            label: "Board",
-            icon: <LayoutGridIcon className="size-3" />,
-          },
-          {
-            id: "calendar",
-            label: "Calendar",
-            icon: <CalendarIcon className="size-3" />,
-          },
-        ]}
-        active={view}
-        onChange={onViewChange}
-      />
+      <div className="flex items-center justify-between border-b border-border px-3">
+        <UnderlineTabBar
+          className="border-b-0 px-0"
+          size="default"
+          tabs={[
+            {
+              id: "channel",
+              label: "Channel",
+              icon: <HashIcon className="size-3" />,
+            },
+            {
+              id: "list",
+              label: "List",
+              icon: <ListIcon className="size-3" />,
+            },
+            {
+              id: "board",
+              label: "Board",
+              icon: <LayoutGridIcon className="size-3" />,
+            },
+            {
+              id: "calendar",
+              label: "Calendar",
+              icon: <CalendarIcon className="size-3" />,
+            },
+          ]}
+          active={view}
+          onChange={onViewChange}
+        />
+        {canShare ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 shrink-0 gap-1.5 border-neutral-200 bg-white px-3 text-xs text-black hover:bg-neutral-100 hover:text-black dark:bg-white dark:text-black dark:hover:bg-neutral-100 dark:hover:text-black"
+            onClick={() => setShareOpen(true)}
+          >
+            <Share2Icon className="size-3.5 text-black" />
+            Share
+          </Button>
+        ) : null}
+      </div>
 
       {view === "channel" ? null : (
       <div className="flex flex-wrap items-center justify-between gap-1 px-3 py-1">
