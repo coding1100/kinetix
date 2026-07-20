@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
@@ -10,13 +11,21 @@ import {
   PanelLeftCloseIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  HashIcon,
+  LockIcon,
+  MessagesSquareIcon,
+  ListChecksIcon,
+  FolderIcon,
 } from "lucide-react";
 import {
   useHomeSidebarStore,
+  toSidebarConfig,
   MY_TASKS_LINKS,
   type SidebarItem,
 } from "@/stores/home-sidebar-store";
 import { useUiStore } from "@/stores/ui-store";
+import { useSpacesStore } from "@/stores/spaces-store";
+import { useAuthStore, selectActiveWorkspace } from "@/stores/auth-store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +42,23 @@ import { toast } from "sonner";
 import { useShellStore } from "@/stores/shell-store";
 import { SidebarNavIcon } from "@/components/icons/SidebarNavIcon";
 import { useNotificationsUnread } from "@/hooks/use-notifications-unread";
+import { useHomeQuery } from "@/hooks/use-home-query";
+import { useWorkspaceApi } from "@/hooks/use-workspace-api";
+import {
+  fetchHomeSidebarConfig,
+  updateHomeSidebarConfig,
+} from "@/lib/api/home";
+import { fetchSpacesTree } from "@/lib/api/spaces";
+import { loadSidebarLists } from "@/lib/chat/sidebar-lists-loader";
+import { UserAvatarWithPresence } from "@/components/shared/AvatarWithPresence";
+import {
+  avatarColorClassForKey,
+  avatarInitialFromName,
+} from "@/lib/user-display";
+import {
+  SpacesHierarchyDialog,
+  type HierarchyDialogMode,
+} from "@/components/spaces/SpacesHierarchyDialog";
 
 const navItemClass =
   "flex w-full min-w-0 items-center gap-2 rounded-md px-2.5 text-left text-sm font-medium text-sidebar-foreground transition-colors duration-150 hover:bg-sidebar-accent/80";
@@ -40,9 +66,65 @@ const navItemClass =
 const navItemActiveClass =
   "bg-sidebar-accent font-medium text-sidebar-accent-foreground";
 
+// Guests / limited members don't get a Spaces tree or create affordances in
+// real ClickUp - they only see whatever's been individually shared with them.
+function isRestrictedRole(role: string | undefined) {
+  return role === "GUEST" || role === "LIMITED_MEMBER";
+}
+
 function formatUnreadCount(count: number) {
   if (count > 99) return "99+";
   return String(count);
+}
+
+function SectionLabel({
+  label,
+  collapsed,
+  onToggleCollapsed,
+  onAdd,
+  addLabel,
+}: {
+  label: string;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  onAdd?: () => void;
+  addLabel?: string;
+}) {
+  return (
+    <div className="mb-0.5 flex items-center justify-between px-1">
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-0.5 text-left text-[11px] font-semibold tracking-wide text-muted-foreground uppercase transition-colors hover:bg-sidebar-accent/60"
+        onClick={onToggleCollapsed}
+        aria-expanded={!collapsed}
+      >
+        {collapsed ? (
+          <ChevronRightIcon className="size-3 shrink-0" />
+        ) : (
+          <ChevronDownIcon className="size-3 shrink-0" />
+        )}
+        {label}
+      </button>
+      {onAdd ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="size-5 shrink-0 text-muted-foreground"
+                aria-label={addLabel}
+                onClick={onAdd}
+              >
+                <PlusIcon className="size-3.5" />
+              </Button>
+            }
+          />
+          <TooltipContent side="bottom">{addLabel}</TooltipContent>
+        </Tooltip>
+      ) : null}
+    </div>
+  );
 }
 
 function HomeNavItem({
@@ -129,23 +211,298 @@ function MyTasksSubNav({ pathname }: { pathname: string }) {
   );
 }
 
+function SpaceListLink({
+  listId,
+  name,
+  taskCount,
+  active,
+}: {
+  listId: string;
+  name: string;
+  taskCount?: number;
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={`/home/l/${listId}`}
+      className={cn(
+        "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-sidebar-accent/80",
+        active
+          ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+          : "text-sidebar-foreground"
+      )}
+    >
+      <ListChecksIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1 truncate">{name}</span>
+      {typeof taskCount === "number" ? (
+        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+          {taskCount}
+        </span>
+      ) : null}
+    </Link>
+  );
+}
+
+function SpaceRow({
+  space,
+  expanded,
+  onToggleExpanded,
+  onAddList,
+  pathname,
+}: {
+  space: {
+    id: string;
+    name: string;
+    color: string;
+    description?: string;
+    folders?: { id: string; name: string; lists: { id: string; name: string; taskCount: number }[] }[];
+    standaloneLists?: { id: string; name: string; taskCount: number }[];
+  };
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  onAddList: () => void;
+  pathname: string;
+}) {
+  const hasChildren =
+    (space.folders?.length ?? 0) > 0 || (space.standaloneLists?.length ?? 0) > 0;
+
+  return (
+    <div>
+      <div className="group/space flex items-center gap-1 rounded-md pr-1 transition-colors hover:bg-sidebar-accent/80">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm text-sidebar-foreground"
+          onClick={onToggleExpanded}
+          aria-expanded={expanded}
+        >
+          <span className="relative grid size-5 shrink-0 place-items-center">
+            <span
+              className={cn(
+                "absolute inset-0 grid place-items-center rounded text-[10px] font-bold text-white transition-opacity",
+                "group-hover/space:opacity-0"
+              )}
+              style={{ backgroundColor: space.color }}
+              aria-hidden
+            >
+              {space.name.slice(0, 1).toUpperCase()}
+            </span>
+            <span className="absolute inset-0 grid place-items-center rounded text-muted-foreground opacity-0 transition-opacity group-hover/space:opacity-100">
+              {expanded ? (
+                <ChevronDownIcon className="size-3.5" />
+              ) : (
+                <ChevronRightIcon className="size-3.5" />
+              )}
+            </span>
+          </span>
+          <span className="min-w-0 flex-1 truncate">{space.name}</span>
+          {space.description ? (
+            <span className="shrink-0 truncate text-xs text-muted-foreground">
+              {space.description}
+            </span>
+          ) : null}
+        </button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="size-5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/space:opacity-100"
+                aria-label="New list"
+                onClick={onAddList}
+              >
+                <PlusIcon className="size-3.5" />
+              </Button>
+            }
+          />
+          <TooltipContent side="bottom">New list</TooltipContent>
+        </Tooltip>
+      </div>
+      {expanded && hasChildren ? (
+        <div className="ml-3 space-y-0.5 border-l border-sidebar-border/60 py-0.5 pl-2">
+          {space.folders?.map((folder) => (
+            <div key={folder.id}>
+              <div className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-muted-foreground">
+                <FolderIcon className="size-3.5 shrink-0" />
+                <span className="truncate">{folder.name}</span>
+              </div>
+              <div className="space-y-0.5 pl-1">
+                {folder.lists.map((list) => (
+                  <SpaceListLink
+                    key={list.id}
+                    listId={list.id}
+                    name={list.name}
+                    taskCount={list.taskCount}
+                    active={pathname === `/home/l/${list.id}`}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+          {space.standaloneLists?.map((list) => (
+            <SpaceListLink
+              key={list.id}
+              listId={list.id}
+              name={list.name}
+              taskCount={list.taskCount}
+              active={pathname === `/home/l/${list.id}`}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ChannelRow({
+  id,
+  name,
+  isPrivate,
+  active,
+}: {
+  id: string;
+  name: string;
+  isPrivate?: boolean;
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={`/home/c/${id}`}
+      className={cn(
+        "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/80",
+        active && "bg-sidebar-accent font-medium"
+      )}
+    >
+      <HashIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1 truncate">{name}</span>
+      {isPrivate ? <LockIcon className="size-3 shrink-0 text-muted-foreground" /> : null}
+    </Link>
+  );
+}
+
+function DmRow({
+  id,
+  name,
+  avatarUrl,
+  otherUserId,
+  active,
+}: {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  otherUserId?: string;
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={`/home/dm/${id}`}
+      className={cn(
+        "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/80",
+        active && "bg-sidebar-accent font-medium"
+      )}
+    >
+      <UserAvatarWithPresence
+        name={name}
+        avatarUrl={avatarUrl}
+        presence="offline"
+        showPresence={false}
+        avatarClassName="size-5"
+        fallbackClassName={cn(
+          "text-[9px] font-semibold",
+          avatarColorClassForKey(otherUserId, name)
+        )}
+        fallback={avatarInitialFromName(name)}
+      />
+      <span className="min-w-0 flex-1 truncate">{name}</span>
+    </Link>
+  );
+}
+
 export function HomeSidebar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const inboxTab = pathname === "/home/inbox" ? searchParams.get("tab") : null;
-  const { items, filter, setFilter, myTasksExpanded, setMyTasksExpanded } =
-    useHomeSidebarStore();
-  const visibleItems = items.filter((i) => i.pinned);
-  const mainItems = visibleItems.filter((i) => i.id !== "favorites");
-  const favoritesItem = visibleItems.find((i) => i.id === "favorites");
+  const {
+    items,
+    filter,
+    setFilter,
+    myTasksExpanded,
+    setMyTasksExpanded,
+    collapsedSections,
+    toggleSectionCollapsed,
+    hydrateFromServer,
+  } = useHomeSidebarStore();
+  const mainItems = items.filter((i) => i.pinned);
+  const hiddenItems = items.filter((i) => !i.pinned);
   const openModal = useUiStore((s) => s.openModal);
   const openModalDeferred = useUiStore((s) => s.openModalDeferred);
   const { secondaryPanelOpen, setSecondaryPanelOpen } = useShellStore();
   const { unreadCount } = useNotificationsUnread();
+  const { accessToken, workspaceId } = useWorkspaceApi();
+  const role = useAuthStore(selectActiveWorkspace)?.role;
+  const restricted = isRestrictedRole(role);
   const onMyTasksRoute = pathname.startsWith("/home/my-tasks");
   const showMyTasksChildren = myTasksExpanded || onMyTasksRoute;
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [spacesDialogMode, setSpacesDialogMode] = useState<HierarchyDialogMode | null>(null);
+  const [spacesDialogOpen, setSpacesDialogOpen] = useState(false);
+  const [expandedSpaces, setExpandedSpaces] = useState<Record<string, boolean>>({});
+  const spacesRefreshKey = useSpacesStore((s) => s.refreshKey);
+
+  // Server config (pinned ids + order) is the source of truth; local storage
+  // is just the instant-paint cache shown before this resolves.
+  const sidebarConfigQuery = useHomeQuery(
+    (token, ws) => fetchHomeSidebarConfig(token, ws),
+    [workspaceId]
+  );
+  const lastServerConfigRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (sidebarConfigQuery.data === null) return;
+    hydrateFromServer(sidebarConfigQuery.data.config);
+    const resolved = useHomeSidebarStore.getState();
+    lastServerConfigRef.current = JSON.stringify(
+      toSidebarConfig(resolved.items, resolved.collapsedSections)
+    );
+  }, [sidebarConfigQuery.data, hydrateFromServer]);
+
+  useEffect(() => {
+    if (lastServerConfigRef.current === null) return;
+    if (!accessToken || !workspaceId) return;
+    const next = toSidebarConfig(items, collapsedSections);
+    const nextStr = JSON.stringify(next);
+    if (nextStr === lastServerConfigRef.current) return;
+    lastServerConfigRef.current = nextStr;
+    void updateHomeSidebarConfig(accessToken, workspaceId, next);
+  }, [items, collapsedSections, accessToken, workspaceId]);
+
+  const spacesQuery = useHomeQuery(
+    (token, ws) => fetchSpacesTree(token, ws).then((r) => r.data),
+    [spacesRefreshKey]
+  );
+
+  const chatListsQuery = useHomeQuery(
+    (token, ws) => loadSidebarLists(token, ws, {}),
+    []
+  );
 
   if (!secondaryPanelOpen) return null;
+
+  // Home's preview lists are recency-sorted (most recently active first) -
+  // distinct from SpacesSidebar's alphabetical/personal-first order, which
+  // is intentionally left untouched.
+  const sortedSpaces = [...(spacesQuery.data ?? [])].sort(
+    (a, b) =>
+      new Date(b.lastActivityAt ?? 0).getTime() -
+      new Date(a.lastActivityAt ?? 0).getTime()
+  );
+
+  const channels = [...(chatListsQuery.data?.channels ?? [])].sort(
+    (a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime()
+  );
+  const dms = [...(chatListsQuery.data?.dms ?? [])].sort(
+    (a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime()
+  );
 
   return (
     <aside className="flex min-h-0 w-[260px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
@@ -285,17 +642,176 @@ export function HomeSidebar() {
               </div>
             );
           })}
+
+          {hiddenItems.length > 0 ? (
+            <div>
+              <button
+                type="button"
+                className={cn(navItemClass, "h-8 text-muted-foreground")}
+                onClick={() => setMoreOpen((v) => !v)}
+              >
+                {moreOpen ? (
+                  <ChevronDownIcon className="size-3.5 shrink-0" />
+                ) : (
+                  <ChevronRightIcon className="size-3.5 shrink-0" />
+                )}
+                <span>More</span>
+              </button>
+              {moreOpen
+                ? hiddenItems.map((item) => (
+                    <HomeNavItem
+                      key={item.id}
+                      item={item}
+                      active={pathname === item.href}
+                    />
+                  ))
+                : null}
+            </div>
+          ) : null}
         </nav>
-      </ScrollArea>
-      {favoritesItem ? (
-        <div className="shrink-0 px-2 pb-2">
-          <HomeNavItem
-            item={favoritesItem}
-            active={pathname === favoritesItem.href}
+
+        <Separator className="my-2" />
+
+        {/* Spaces (Owner/Admin/Member) or Shared with Me (Guest/Limited Member) */}
+        <div className="mb-3">
+          <SectionLabel
+            label={restricted ? "Shared with Me" : "Spaces"}
+            collapsed={collapsedSections.includes("spaces")}
+            onToggleCollapsed={() => toggleSectionCollapsed("spaces")}
+            onAdd={
+              restricted
+                ? undefined
+                : () => {
+                    setSpacesDialogMode({ type: "space" });
+                    setSpacesDialogOpen(true);
+                  }
+            }
+            addLabel="New space"
           />
+          {!collapsedSections.includes("spaces") ? (
+            <div className="space-y-0.5">
+              {sortedSpaces.map((space) => (
+                <SpaceRow
+                  key={space.id}
+                  space={space}
+                  expanded={Boolean(expandedSpaces[space.id])}
+                  onToggleExpanded={() =>
+                    setExpandedSpaces((s) => ({ ...s, [space.id]: !s[space.id] }))
+                  }
+                  onAddList={() => {
+                    setSpacesDialogMode({ type: "list", spaceId: space.id });
+                    setSpacesDialogOpen(true);
+                  }}
+                  pathname={pathname}
+                />
+              ))}
+              {!restricted ? (
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent/80"
+                  onClick={() => {
+                    setSpacesDialogMode({ type: "space" });
+                    setSpacesDialogOpen(true);
+                  }}
+                >
+                  <PlusIcon className="size-3.5 shrink-0" />
+                  New Space
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
-      ) : null}
-      <Separator />
+
+        {/* Channels */}
+        <div className="mb-3">
+          <SectionLabel
+            label="Channels"
+            collapsed={collapsedSections.includes("channels")}
+            onToggleCollapsed={() => toggleSectionCollapsed("channels")}
+            onAdd={
+              restricted ? undefined : () => openModalDeferred("new-channel")
+            }
+            addLabel="Add channel"
+          />
+          {!collapsedSections.includes("channels") ? (
+            <div className="space-y-0.5">
+              {channels.map((c) => (
+                <ChannelRow
+                  key={c.id}
+                  id={c.id}
+                  name={c.name}
+                  isPrivate={c.isPrivate}
+                  active={pathname === `/home/c/${c.id}`}
+                />
+              ))}
+              {!restricted ? (
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent/80"
+                  onClick={() => openModalDeferred("new-channel")}
+                >
+                  <PlusIcon className="size-3.5 shrink-0" />
+                  Add Channel
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
+        {/* Direct Messages */}
+        <div className="mb-3">
+          <SectionLabel
+            label="Direct Messages"
+            collapsed={collapsedSections.includes("direct-messages")}
+            onToggleCollapsed={() => toggleSectionCollapsed("direct-messages")}
+          />
+          {!collapsedSections.includes("direct-messages") ? (
+            <div className="space-y-0.5">
+              {dms.map((d) => (
+                <DmRow
+                  key={d.id}
+                  id={d.id}
+                  name={d.name}
+                  avatarUrl={d.avatarUrl}
+                  otherUserId={d.otherUserId}
+                  active={pathname === `/home/dm/${d.id}`}
+                />
+              ))}
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent/80"
+                onClick={() => openModalDeferred("new-dm")}
+              >
+                <PlusIcon className="size-3.5 shrink-0" />
+                New message
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        {channels.length === 0 && dms.length === 0 && !chatListsQuery.loading ? (
+          <p className="flex items-center gap-1.5 px-2 pb-2 text-xs text-muted-foreground">
+            <MessagesSquareIcon className="size-3.5" />
+            No chat activity yet.
+          </p>
+        ) : null}
+      </ScrollArea>
+
+      <div className="shrink-0 border-t border-sidebar-border p-2">
+        <Button
+          variant="ghost"
+          className="h-8 w-full justify-center gap-1.5 rounded-md bg-sidebar-accent/60 text-xs text-muted-foreground"
+          onClick={() => openModal("customize-home")}
+        >
+          Customize Sidebar
+        </Button>
+      </div>
+
+      <SpacesHierarchyDialog
+        open={spacesDialogOpen}
+        onOpenChange={setSpacesDialogOpen}
+        mode={spacesDialogMode}
+      />
     </aside>
   );
 }

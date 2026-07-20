@@ -40,6 +40,7 @@ export interface SpaceDto {
     lists: { id: string; name: string; taskCount: number }[];
   }[];
   standaloneLists?: { id: string; name: string; taskCount: number }[];
+  lastActivityAt?: string;
 }
 
 export interface PostDto {
@@ -215,6 +216,35 @@ export function createReminder(
   return apiFetch<{ id: string; title: string; due: string }>(
     wsPath(workspaceId, "/home/reminders"),
     { method: "POST", token, body: JSON.stringify(input) }
+  );
+}
+
+// Diff-only shape: which item ids are pinned + their order, plus which
+// sidebar sections (Spaces/Channels/Direct Messages) are collapsed. New nav
+// items/sections added later just fall back to their code-defined default
+// until the user touches them, so this never needs a migration when we ship
+// new items.
+export interface HomeSidebarConfig {
+  pinnedIds: string[];
+  order: string[];
+  collapsedSections: string[];
+}
+
+export function fetchHomeSidebarConfig(token: string, workspaceId: string) {
+  return apiFetch<{ config: HomeSidebarConfig | null }>(
+    wsPath(workspaceId, "/home/sidebar"),
+    { token }
+  );
+}
+
+export function updateHomeSidebarConfig(
+  token: string,
+  workspaceId: string,
+  config: HomeSidebarConfig
+) {
+  return apiFetch<{ config: HomeSidebarConfig }>(
+    wsPath(workspaceId, "/home/sidebar"),
+    { method: "PATCH", token, body: JSON.stringify({ config }) }
   );
 }
 

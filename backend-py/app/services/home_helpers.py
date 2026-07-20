@@ -252,6 +252,7 @@ def map_space_row(
     list_count: int,
     folder_payload: list,
     standalone_payload: list,
+    last_activity_at=None,
 ) -> dict:
     return {
         "id": space.id,
@@ -264,4 +265,5 @@ def map_space_row(
         "isPrivate": bool(getattr(space, "is_private", False)),
         "folders": folder_payload,
         "standaloneLists": standalone_payload,
+        "lastActivityAt": (last_activity_at or space.created_at).isoformat(),
     }

@@ -9,7 +9,7 @@ import { fetchChannel } from "@/lib/api/chat";
 import { fetchListMeta, fetchListTasks } from "@/lib/api/spaces";
 import { useHomeQuery } from "@/hooks/use-home-query";
 
-export default function ChannelPage({
+export default function HomeChannelPage({
   params,
 }: {
   params: Promise<{ channelId: string }>;
@@ -60,7 +60,7 @@ export default function ChannelPage({
           loading={tasksQuery.loading}
           error={tasksQuery.error}
           onTasksChange={onTasksChange}
-          basePath={`/chat/c/${channelId}`}
+          basePath={`/home/c/${channelId}`}
           defaultView="channel"
         />
       </Suspense>

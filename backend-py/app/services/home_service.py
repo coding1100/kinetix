@@ -208,7 +208,19 @@ async def _list_count_for_space(session: AsyncSession, space_id: str) -> int:
     return int(count or 0)
 
 
-def _build_space_payload(space, member_count: int, list_count: int) -> dict:
+async def _last_activity_for_space(session: AsyncSession, space):
+    last_task_update = await session.scalar(
+        select(func.max(Task.updated_at))
+        .select_from(Task)
+        .join(TaskList, Task.list_id == TaskList.id)
+        .where(TaskList.space_id == space.id)
+    )
+    return last_task_update or space.created_at
+
+
+async def _build_space_payload(
+    session: AsyncSession, space, member_count: int, list_count: int
+) -> dict:
     folders = []
     for folder in space.folders:
         folders.append(
@@ -226,7 +238,10 @@ def _build_space_payload(space, member_count: int, list_count: int) -> dict:
         for lst in space.lists
         if lst.folder_id is None
     ]
-    return map_space_row(space, member_count, list_count, folders, standalone)
+    last_activity_at = await _last_activity_for_space(session, space)
+    return map_space_row(
+        space, member_count, list_count, folders, standalone, last_activity_at
+    )
 
 
 async def list_inbox(
@@ -470,7 +485,7 @@ async def list_spaces(
         if visible is not None and space.id not in visible:
             continue
         list_count = await _list_count_for_space(session, space.id)
-        data.append(_build_space_payload(space, member_count, list_count))
+        data.append(await _build_space_payload(session, space, member_count, list_count))
     return {"data": data}
 
 
@@ -491,7 +506,7 @@ async def get_space(
     )
     member_count = await _active_member_count(session, workspace_id)
     list_count = await _list_count_for_space(session, space.id)
-    return _build_space_payload(space, member_count, list_count)
+    return await _build_space_payload(session, space, member_count, list_count)
 
 
 def _task_filters(

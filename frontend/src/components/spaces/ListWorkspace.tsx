@@ -26,6 +26,10 @@ type ListWorkspaceProps = {
    * route for a list's primary channel (see /chat/c/[channelId]/page.tsx),
    * where it must stay on that URL instead of jumping to /spaces/l/. */
   basePath?: string;
+  /** Tab shown when the URL has no `?view=` param - "list" from a Spaces/
+   * list URL, "channel" when opened via a channel link (the channel's
+   * conversation should be what a channel click lands on, not its board). */
+  defaultView?: ViewMode;
 };
 
 export function ListWorkspace({
@@ -36,6 +40,7 @@ export function ListWorkspace({
   error,
   onTasksChange,
   basePath,
+  defaultView = "list",
 }: ListWorkspaceProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -43,21 +48,24 @@ export function ListWorkspace({
   const [statusFilter, setStatusFilter] = useState("all");
   const viewParam = searchParams.get("view");
   const view: ViewMode =
-    viewParam === "board" || viewParam === "calendar" || viewParam === "channel"
+    viewParam === "board" ||
+    viewParam === "calendar" ||
+    viewParam === "channel" ||
+    viewParam === "list"
       ? viewParam
-      : "list";
+      : defaultView;
   const selectedTaskId = searchParams.get("task");
   const path = basePath ?? `/spaces/l/${listId}`;
 
   const setView = useCallback(
     (mode: ViewMode) => {
       const params = new URLSearchParams(searchParams.toString());
-      if (mode === "list") params.delete("view");
+      if (mode === defaultView) params.delete("view");
       else params.set("view", mode);
       const q = params.toString();
       router.replace(`${path}${q ? `?${q}` : ""}`);
     },
-    [router, path, searchParams]
+    [router, path, searchParams, defaultView]
   );
 
   const openTask = useCallback(

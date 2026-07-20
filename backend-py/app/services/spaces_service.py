@@ -141,7 +141,7 @@ async def create_space(
         select(Space).where(Space.id == space.id).options(*_SPACE_LOAD)
     )
     member_count = await _active_member_count(session, workspace_id)
-    return _build_space_payload(refreshed, member_count, 0)
+    return await _build_space_payload(session, refreshed, member_count, 0)
 
 
 async def update_space(
@@ -171,7 +171,7 @@ async def update_space(
     )
     member_count = await _active_member_count(session, workspace_id)
     list_count = await _list_count_for_space(session, space_id)
-    return _build_space_payload(refreshed, member_count, list_count)
+    return await _build_space_payload(session, refreshed, member_count, list_count)
 
 
 async def delete_space(
