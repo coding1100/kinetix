@@ -12,11 +12,20 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   HashIcon,
+  ListIcon,
   LockIcon,
   MessagesSquareIcon,
   ListChecksIcon,
   FolderIcon,
 } from "lucide-react";
+import type { DmParticipant } from "@/lib/types/chat";
+import {
+  otherGroupParticipants,
+  resolveGroupDmTitle,
+} from "@/lib/chat/group-dm-display";
+import { GroupDmAvatarStack } from "@/components/chat/GroupDmAvatarStack";
+import { useUserPresence } from "@/stores/presence-store";
+import { type PresenceStatus } from "@/stores/profile-store";
 import {
   useHomeSidebarStore,
   toSidebarConfig,
@@ -358,11 +367,13 @@ function ChannelRow({
   id,
   name,
   isPrivate,
+  listChannel,
   active,
 }: {
   id: string;
   name: string;
   isPrivate?: boolean;
+  listChannel?: boolean;
   active: boolean;
 }) {
   return (
@@ -373,7 +384,14 @@ function ChannelRow({
         active && "bg-sidebar-accent font-medium"
       )}
     >
-      <HashIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      {listChannel ? (
+        <span className="flex shrink-0 items-center gap-0.5">
+          <HashIcon className="size-3.5 text-muted-foreground" />
+          <ListIcon className="size-3.5 text-muted-foreground" />
+        </span>
+      ) : (
+        <HashIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      )}
       <span className="min-w-0 flex-1 truncate">{name}</span>
       {isPrivate ? <LockIcon className="size-3 shrink-0 text-muted-foreground" /> : null}
     </Link>
@@ -385,14 +403,30 @@ function DmRow({
   name,
   avatarUrl,
   otherUserId,
+  participants,
+  currentUserId,
+  presenceFallback,
+  isGroup,
   active,
 }: {
   id: string;
   name: string;
   avatarUrl?: string;
   otherUserId?: string;
+  participants?: DmParticipant[];
+  currentUserId?: string | null;
+  presenceFallback?: PresenceStatus;
+  isGroup?: boolean;
   active: boolean;
 }) {
+  const presence = useUserPresence(otherUserId, presenceFallback ?? "offline");
+  const groupParticipants = isGroup
+    ? otherGroupParticipants(participants, currentUserId)
+    : [];
+  const displayName = isGroup
+    ? resolveGroupDmTitle({ name, isGroup: true, participants }, currentUserId)
+    : name;
+
   return (
     <Link
       href={`/home/dm/${id}`}
@@ -401,19 +435,25 @@ function DmRow({
         active && "bg-sidebar-accent font-medium"
       )}
     >
-      <UserAvatarWithPresence
-        name={name}
-        avatarUrl={avatarUrl}
-        presence="offline"
-        showPresence={false}
-        avatarClassName="size-5"
-        fallbackClassName={cn(
-          "text-[9px] font-semibold",
-          avatarColorClassForKey(otherUserId, name)
-        )}
-        fallback={avatarInitialFromName(name)}
-      />
-      <span className="min-w-0 flex-1 truncate">{name}</span>
+      {isGroup && groupParticipants.length > 0 ? (
+        <GroupDmAvatarStack participants={groupParticipants} />
+      ) : (
+        <UserAvatarWithPresence
+          name={displayName}
+          avatarUrl={avatarUrl}
+          presence={presence}
+          showPresence={!isGroup}
+          avatarClassName="size-6"
+          dotSize="sm"
+          borderClass="border-white"
+          fallbackClassName={cn(
+            "text-[10px] font-semibold",
+            avatarColorClassForKey(otherUserId, displayName)
+          )}
+          fallback={avatarInitialFromName(displayName)}
+        />
+      )}
+      <span className="min-w-0 flex-1 truncate">{displayName}</span>
     </Link>
   );
 }
@@ -422,6 +462,7 @@ export function HomeSidebar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const inboxTab = pathname === "/home/inbox" ? searchParams.get("tab") : null;
+  const currentUserId = useAuthStore((s) => s.user?.id);
   const {
     items,
     filter,
@@ -741,6 +782,7 @@ export function HomeSidebar() {
                   id={c.id}
                   name={c.name}
                   isPrivate={c.isPrivate}
+                  listChannel={c.isListPrimary}
                   active={pathname === `/home/c/${c.id}`}
                 />
               ))}
@@ -774,6 +816,10 @@ export function HomeSidebar() {
                   name={d.name}
                   avatarUrl={d.avatarUrl}
                   otherUserId={d.otherUserId}
+                  participants={d.participants}
+                  currentUserId={currentUserId}
+                  presenceFallback={d.presence}
+                  isGroup={d.isGroup}
                   active={pathname === `/home/dm/${d.id}`}
                 />
               ))}
