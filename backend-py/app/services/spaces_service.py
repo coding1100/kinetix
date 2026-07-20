@@ -64,7 +64,7 @@ from app.services.folder_list_permissions import (
     require_list_permission,
     resolve_share_target,
 )
-from app.services.workspace_permissions import is_workspace_admin
+from app.services.workspace_permissions import is_privileged, is_workspace_admin
 from app.socket.emit import broadcast_channel_renamed
 
 
@@ -232,8 +232,11 @@ async def create_space(
     )
     session.add(space)
     await session.flush()
-    if body.is_private:
-        # Creator always keeps explicit EDIT on their own private Space.
+    if body.is_private and not is_privileged(role):
+        # Creator always keeps explicit EDIT on their own private Space -
+        # unless they're OWNER/SUPER_ADMIN, who already bypass privacy
+        # entirely (resolve_space_permission's is_privileged check) and
+        # would otherwise get a pointless, removable-looking member row.
         session.add(
             SpaceMember(
                 space_id=space.id,
