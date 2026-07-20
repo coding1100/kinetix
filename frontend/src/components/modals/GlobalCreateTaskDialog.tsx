@@ -23,8 +23,7 @@ export function GlobalCreateTaskDialog() {
         if (!next) closeModal();
       }}
       defaultListId={defaultListId}
-      onCreated={(task) => {
-        closeModal();
+      onCreated={(task, options) => {
         if (workspaceId) {
           ingestTaskEvent({
             workspaceId,
@@ -34,7 +33,7 @@ export function GlobalCreateTaskDialog() {
             task,
           });
         }
-        if (task.listId) {
+        if (options?.open && task.listId) {
           router.push(`/spaces/l/${task.listId}?task=${task.id}`);
         }
       }}

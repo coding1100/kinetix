@@ -9,6 +9,7 @@ import type {
   ChatChannelJoinedPayload,
   ChatChannelMemberPayload,
   ChatChannelRemovedPayload,
+  ChatChannelRenamedPayload,
   ChatMessageDeletePayload,
   ChatMessageEditPayload,
   ChatReactionPayload,
@@ -19,14 +20,19 @@ import type {
   PresenceSyncPayload,
   PresenceUpdatePayload,
   TaskRealtimePayload,
+  WorkspaceMemberRolePayload,
 } from "@/lib/types/realtime";
 import { ingestTaskEvent } from "@/lib/tasks/realtime";
 import { registerChatTypingSocket } from "@/lib/socket/chat-typing";
 import { applyHomeNotification } from "@/lib/notifications/realtime";
+import { clearLiveNotifications } from "@/lib/notifications/live-cache";
+import { bumpWorkspaceMembersRefresh } from "@/lib/workspace/realtime";
+import { getMe } from "@/lib/api/auth";
 import {
   applyChannelJoinedToSidebar,
   applyChannelMemberUpdate,
   applyChannelRemovedFromSidebar,
+  applyChannelRenamedToSidebar,
   applyRealtimeMessageToSidebar,
 } from "@/lib/chat/sidebar-realtime";
 import { useAuthStore } from "@/stores/auth-store";
@@ -40,6 +46,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
   const userId = useAuthStore((s) => s.user?.id);
   const workspaceId = useAuthStore((s) => s.activeWorkspaceId);
   const hydrated = useAuthStore((s) => s.hydrated);
+  const updateSession = useAuthStore((s) => s.updateSession);
   const presence = useProfileStore((s) => s.presence);
   const ingestRealtimeEvent = useChatStore((s) => s.ingestRealtimeEvent);
   const ingestMessageEditEvent = useChatStore((s) => s.ingestMessageEditEvent);
@@ -63,6 +70,8 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     setPresenceWorkspace(workspaceId);
     joinedWorkspaceRef.current = null;
+    // Drop live notifications cached for the previous workspace.
+    clearLiveNotifications();
   }, [workspaceId, setPresenceWorkspace]);
 
   useEffect(() => {
@@ -112,9 +121,34 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     socket.on("chat:channel:member", (payload: ChatChannelMemberPayload) => {
       applyChannelMemberUpdate(payload, userId, accessToken);
     });
-    socket.on("home:notification", (payload: HomeNotificationPayload) => {
-      applyHomeNotification(payload, userId);
+    socket.on("chat:channel:renamed", (payload: ChatChannelRenamedPayload) => {
+      applyChannelRenamedToSidebar(payload);
     });
+    socket.on("home:notification", (payload: HomeNotificationPayload) => {
+      applyHomeNotification(payload, userId, workspaceId);
+    });
+    socket.on(
+      "workspace:member:role",
+      (payload: WorkspaceMemberRolePayload) => {
+        if (payload.workspaceId !== workspaceId) return;
+        bumpWorkspaceMembersRefresh();
+        if (payload.userId !== userId) return;
+        void getMe(accessToken).then((me) => {
+          updateSession({
+            accessToken,
+            user: {
+              id: me.id,
+              email: me.email,
+              fullName: me.fullName,
+              avatarUrl: me.avatarUrl,
+            },
+            workspaces: me.workspaces,
+            activeWorkspaceId: workspaceId,
+          });
+          toast.info("Your role in this workspace was updated");
+        });
+      }
+    );
     socket.on("chat:message:edit", (payload: ChatMessageEditPayload) => {
       ingestMessageEditEvent(payload);
     });
@@ -150,7 +184,9 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       socket.off("chat:channel:joined");
       socket.off("chat:channel:removed");
       socket.off("chat:channel:member");
+      socket.off("chat:channel:renamed");
       socket.off("home:notification");
+      socket.off("workspace:member:role");
       socket.off("chat:message:edit");
       socket.off("chat:message:delete");
       socket.off("chat:reaction");
@@ -177,6 +213,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     syncPresence,
     upsertPresence,
     router,
+    updateSession,
   ]);
 
   useEffect(() => {

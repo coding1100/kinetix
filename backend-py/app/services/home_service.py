@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, func, or_, select, update
@@ -5,13 +6,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.errors import AppError
+from app.db.models.chat import ChatChannel
 from app.db.models.enums import (
     InboxBucket,
     InboxItemType,
     MemberStatus,
+    PermissionLevel,
     StatusGroup,
     TaskPriority,
     TaskStatus,
+    WorkspaceRole,
 )
 from app.db.models.home import (
     AssignedComment,
@@ -24,14 +28,16 @@ from app.db.models.home import (
     Post,
     Space,
     Task,
-    TaskAssignee,
     TaskAttachment,
+    TaskChecklist,
+    TaskChecklistItem,
     TaskComment,
-    TaskFollower,
+    TaskDependency,
     TaskList,
     UserHomeSidebar,
     UserTaskLineup,
 )
+from app.db.models.user import User
 from app.services.list_status_service import (
     default_status_for_list,
     ensure_list_statuses,
@@ -39,16 +45,27 @@ from app.services.list_status_service import (
     list_statuses_for_list,
 )
 from app.services.personal_space_service import ensure_personal_space
+from app.services.space_permissions import (
+    get_space_or_403,
+    require_space_permission,
+    visible_space_ids,
+)
+from app.services.workspace_permissions import get_member_time_flags
 from app.db.models.workspace import WorkspaceMember
 from app.schemas.home import (
     AddLineupBody,
     CreateFavoriteBody,
     CreatePostBody,
     CreateReminderBody,
+    CreateChecklistBody,
+    CreateChecklistItemBody,
     CreateSubtaskBody,
     CreateTaskBody,
+    CreateTaskDependencyBody,
     RecordRecentBody,
     ReorderLineupBody,
+    UpdateChecklistBody,
+    UpdateChecklistItemBody,
     UpdateInboxItemBody,
     UpdateTaskBody,
 )
@@ -62,8 +79,11 @@ from app.services.notification_service import (
 from app.socket.emit import broadcast_task_event
 from app.services.home_helpers import (
     STATUS_COLORS,
+    STATUS_LABELS,
     end_of_today,
     format_due_date,
+    map_checklist,
+    map_checklist_item,
     map_inbox_type,
     map_list_entry,
     map_space_row,
@@ -76,11 +96,88 @@ from app.services.home_helpers import (
 _TASK_LOAD = (
     selectinload(Task.task_list).selectinload(TaskList.space),
     selectinload(Task.list_status),
-    selectinload(Task.assignees).selectinload(TaskAssignee.user),
     selectinload(Task.comments).selectinload(TaskComment.user),
     selectinload(Task.comments).selectinload(TaskComment.attachments),
     selectinload(Task.subtasks),
+    selectinload(Task.checklists).selectinload(TaskChecklist.items).selectinload(
+        TaskChecklistItem.assignee
+    ),
 )
+
+
+async def _assignee_name_map(
+    session: AsyncSession, tasks: Task | list[Task]
+) -> dict[str, str]:
+    """Batch-resolve first names for every assignee across one or many tasks.
+
+    Task.assignee_ids is a plain array column (no join table), so unlike a
+    relationship there's nothing for selectinload to batch automatically -
+    callers must resolve names themselves. Passing the whole task list here
+    keeps it to one query per request instead of one per task.
+    """
+    task_list = tasks if isinstance(tasks, list) else [tasks]
+    ids = {uid for t in task_list for uid in (t.assignee_ids or [])}
+    if not ids:
+        return {}
+    rows = (
+        await session.execute(select(User.id, User.full_name).where(User.id.in_(ids)))
+    ).all()
+    return {row[0]: row[1] for row in rows}
+
+
+async def _user_name_map(session: AsyncSession, ids: set[str]) -> dict[str, str]:
+    """Batch-resolve full names for an arbitrary set of user ids (e.g. an
+    assignee/follower diff spanning both added and removed ids, which
+    _assignee_name_map can't cover since it only reads a task's *current*
+    assignee_ids)."""
+    if not ids:
+        return {}
+    rows = (
+        await session.execute(select(User.id, User.full_name).where(User.id.in_(ids)))
+    ).all()
+    return {row[0]: row[1] for row in rows}
+
+
+async def _resolve_user_name(session: AsyncSession, user_id: str) -> str:
+    user = await session.get(User, user_id)
+    return user.full_name if user else "Someone"
+
+
+def _status_label(status: TaskStatus, list_status: "ListStatus | None") -> str:
+    if list_status is not None:
+        return list_status.name
+    return STATUS_LABELS.get(status, status.value.lower())
+
+
+def _priority_label(priority: TaskPriority | None) -> str:
+    return priority.value.title() if priority else "None"
+
+
+def _record_task_activity(
+    task: Task,
+    *,
+    actor_name: str,
+    activity_kind: str,
+    preview: str,
+    title: str | None = None,
+) -> None:
+    """Append a view-only, append-only entry to Task.activity (JSONB).
+
+    Reassigns the list (rather than task.activity.append(...)) so SQLAlchemy
+    detects the change without needing flag_modified.
+    """
+    entry = {
+        "id": str(uuid.uuid4()),
+        "type": "activity",
+        "title": title or preview,
+        "preview": preview,
+        "source": task.name,
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "activityKind": activity_kind,
+        "actorName": actor_name,
+    }
+    task.activity = [*(task.activity or []), entry]
+
 
 _SPACE_LOAD = (
     selectinload(Space.folders)
@@ -111,7 +208,19 @@ async def _list_count_for_space(session: AsyncSession, space_id: str) -> int:
     return int(count or 0)
 
 
-def _build_space_payload(space, member_count: int, list_count: int) -> dict:
+async def _last_activity_for_space(session: AsyncSession, space):
+    last_task_update = await session.scalar(
+        select(func.max(Task.updated_at))
+        .select_from(Task)
+        .join(TaskList, Task.list_id == TaskList.id)
+        .where(TaskList.space_id == space.id)
+    )
+    return last_task_update or space.created_at
+
+
+async def _build_space_payload(
+    session: AsyncSession, space, member_count: int, list_count: int
+) -> dict:
     folders = []
     for folder in space.folders:
         folders.append(
@@ -129,7 +238,10 @@ def _build_space_payload(space, member_count: int, list_count: int) -> dict:
         for lst in space.lists
         if lst.folder_id is None
     ]
-    return map_space_row(space, member_count, list_count, folders, standalone)
+    last_activity_at = await _last_activity_for_space(session, space)
+    return map_space_row(
+        space, member_count, list_count, folders, standalone, last_activity_at
+    )
 
 
 async def list_inbox(
@@ -353,9 +465,12 @@ async def list_drafts_sent(
     }
 
 
-async def list_spaces(session: AsyncSession, workspace_id: str) -> dict:
+async def list_spaces(
+    session: AsyncSession, workspace_id: str, user_id: str, role: WorkspaceRole
+) -> dict:
     await ensure_personal_space(session, workspace_id)
     await session.commit()
+    visible = await visible_space_ids(session, workspace_id, user_id, role)
     spaces = (
         await session.scalars(
             select(Space)
@@ -367,24 +482,31 @@ async def list_spaces(session: AsyncSession, workspace_id: str) -> dict:
     member_count = await _active_member_count(session, workspace_id)
     data = []
     for space in spaces:
+        if visible is not None and space.id not in visible:
+            continue
         list_count = await _list_count_for_space(session, space.id)
-        data.append(_build_space_payload(space, member_count, list_count))
+        data.append(await _build_space_payload(session, space, member_count, list_count))
     return {"data": data}
 
 
 async def get_space(
-    session: AsyncSession, workspace_id: str, space_id: str
+    session: AsyncSession,
+    workspace_id: str,
+    space_id: str,
+    user_id: str,
+    role: WorkspaceRole,
 ) -> dict:
+    space = await get_space_or_403(
+        session, workspace_id, space_id, user_id, role, PermissionLevel.VIEW
+    )
     space = await session.scalar(
         select(Space)
         .where(Space.id == space_id, Space.workspace_id == workspace_id)
         .options(*_SPACE_LOAD)
     )
-    if not space:
-        raise AppError(404, "NOT_FOUND", "Space not found")
     member_count = await _active_member_count(session, workspace_id)
     list_count = await _list_count_for_space(session, space.id)
-    return _build_space_payload(space, member_count, list_count)
+    return await _build_space_payload(session, space, member_count, list_count)
 
 
 def _task_filters(
@@ -395,7 +517,7 @@ def _task_filters(
         term = f"%{search.strip()}%"
         base.append(Task.name.ilike(term))
     if filter_name == "assigned":
-        base.append(Task.assignees.any(TaskAssignee.user_id == user_id))
+        base.append(Task.assignee_ids.any(user_id))
     elif filter_name == "personal":
         base.append(
             or_(Space.is_personal.is_(True), Space.name == "Personal")
@@ -418,7 +540,11 @@ def _task_filters(
 
 
 async def get_list(
-    session: AsyncSession, workspace_id: str, list_id: str
+    session: AsyncSession,
+    workspace_id: str,
+    list_id: str,
+    user_id: str,
+    role: WorkspaceRole,
 ) -> dict:
     task_list = await session.scalar(
         select(TaskList)
@@ -429,7 +555,14 @@ async def get_list(
     if not task_list:
         raise AppError(404, "NOT_FOUND", "List not found")
     space = task_list.space
+    await require_space_permission(session, space, user_id, role, PermissionLevel.VIEW)
     statuses = await list_statuses_for_list(session, task_list.id)
+    channel_id = await session.scalar(
+        select(ChatChannel.id).where(
+            ChatChannel.list_id == task_list.id,
+            ChatChannel.is_list_primary.is_(True),
+        )
+    )
     await session.commit()
     return {
         "id": task_list.id,
@@ -440,6 +573,7 @@ async def get_list(
             "color": space.color,
         },
         "statuses": statuses,
+        "channelId": channel_id,
     }
 
 
@@ -447,15 +581,20 @@ async def list_tasks_for_list(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     list_id: str,
 ) -> dict:
     task_list = await session.scalar(
         select(TaskList)
         .join(Space)
         .where(TaskList.id == list_id, Space.workspace_id == workspace_id)
+        .options(selectinload(TaskList.space))
     )
     if not task_list:
         raise AppError(404, "NOT_FOUND", "List not found")
+    await require_space_permission(
+        session, task_list.space, user_id, role, PermissionLevel.VIEW
+    )
     tasks = (
         await session.scalars(
             select(Task)
@@ -464,13 +603,15 @@ async def list_tasks_for_list(
             .order_by(Task.updated_at.desc())
         )
     ).all()
-    return {"data": [map_task(t, user_id) for t in tasks]}
+    names = await _assignee_name_map(session, list(tasks))
+    return {"data": [map_task(t, user_id, names) for t in tasks]}
 
 
 async def create_task(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     list_id: str,
     body: CreateTaskBody,
 ) -> dict:
@@ -478,9 +619,13 @@ async def create_task(
         select(TaskList)
         .join(Space)
         .where(TaskList.id == list_id, Space.workspace_id == workspace_id)
+        .options(selectinload(TaskList.space))
     )
     if not task_list:
         raise AppError(404, "NOT_FOUND", "List not found")
+    await require_space_permission(
+        session, task_list.space, user_id, role, PermissionLevel.EDIT
+    )
     await ensure_list_statuses(session, list_id)
     default_status = await default_status_for_list(session, list_id)
     now = datetime.now(timezone.utc)
@@ -492,26 +637,19 @@ async def create_task(
         status_id=default_status.id if default_status else None,
         status_color=default_status.color if default_status else "#87909e",
     )
+    actor_name = await _resolve_user_name(session, user_id)
+    _record_task_activity(
+        task,
+        actor_name=actor_name,
+        activity_kind="task_created",
+        preview=f"{actor_name} created this task",
+    )
     session.add(task)
     await session.commit()
     refreshed = await session.scalar(
         select(Task).where(Task.id == task.id).options(*_TASK_LOAD)
     )
     mapped = map_task(refreshed, user_id)
-    created_notifications = await create_task_activity_notifications(
-        session,
-        workspace_id=workspace_id,
-        actor_user_id=user_id,
-        task_name=task.name,
-        task_id=task.id,
-        recipient_ids=[user_id],
-        title=f"Task created: {task.name}",
-        preview_template="{actor} created {task}",
-        activity_kind="task_created",
-    )
-    if created_notifications:
-        await session.commit()
-        await emit_home_notifications(session, workspace_id, created_notifications)
     await broadcast_task_event(
         workspace_id=workspace_id,
         action="created",
@@ -526,6 +664,7 @@ async def create_subtask(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     parent_task_id: str,
     body: CreateSubtaskBody,
 ) -> dict:
@@ -534,9 +673,13 @@ async def create_subtask(
         .join(Task.task_list)
         .join(TaskList.space)
         .where(Task.id == parent_task_id, Space.workspace_id == workspace_id)
+        .options(selectinload(Task.task_list).selectinload(TaskList.space))
     )
     if not parent:
         raise AppError(404, "NOT_FOUND", "Task not found")
+    await require_space_permission(
+        session, parent.task_list.space, user_id, role, PermissionLevel.EDIT
+    )
     if parent.parent_task_id:
         raise AppError(400, "VALIDATION_ERROR", "Nested subtasks are not supported")
 
@@ -550,6 +693,19 @@ async def create_subtask(
         updated_at=now,
         status_id=default_status.id if default_status else None,
         status_color=default_status.color if default_status else "#87909e",
+    )
+    actor_name = await _resolve_user_name(session, user_id)
+    _record_task_activity(
+        task,
+        actor_name=actor_name,
+        activity_kind="task_created",
+        preview=f"{actor_name} created this task",
+    )
+    _record_task_activity(
+        parent,
+        actor_name=actor_name,
+        activity_kind="task_subtask_created",
+        preview=f"{actor_name} added subtask \"{task.name}\"",
     )
     session.add(task)
     await session.commit()
@@ -585,33 +741,438 @@ async def create_subtask(
     return mapped
 
 
+async def add_task_dependency(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    task_id: str,
+    body: CreateTaskDependencyBody,
+) -> dict:
+    task = await _get_editable_task(session, workspace_id, user_id, role, task_id)
+
+    if body.related_task_id == task_id:
+        raise AppError(400, "VALIDATION_ERROR", "A task cannot depend on itself")
+
+    related = await session.scalar(
+        select(Task)
+        .join(Task.task_list)
+        .join(TaskList.space)
+        .where(Task.id == body.related_task_id, Space.workspace_id == workspace_id)
+        .options(
+            selectinload(Task.task_list).selectinload(TaskList.space),
+            selectinload(Task.list_status),
+        )
+    )
+    if not related:
+        raise AppError(404, "NOT_FOUND", "Related task not found")
+    await require_space_permission(
+        session, related.task_list.space, user_id, role, PermissionLevel.VIEW
+    )
+
+    dependency = TaskDependency(
+        task_id=task_id, related_task_id=body.related_task_id, dependency_type=body.type
+    )
+    session.add(dependency)
+    actor_name = await _resolve_user_name(session, user_id)
+    relation_label = {
+        "blocking": f"is now blocking \"{related.name}\"",
+        "blocked_by": f"is now waiting on \"{related.name}\"",
+        "linked": f"is now linked to \"{related.name}\"",
+    }[body.type]
+    _record_task_activity(
+        task,
+        actor_name=actor_name,
+        activity_kind="task_dependency_added",
+        preview=f"{actor_name} added a dependency: this task {relation_label}",
+    )
+    await session.commit()
+
+    recipients = await task_notification_recipients(
+        session, task_id=task_id, exclude_user_id=user_id
+    )
+    safe_related_name = related.name.replace("{", "{{").replace("}", "}}")
+    dependency_notifications = await create_task_activity_notifications(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=user_id,
+        task_name=task.name,
+        task_id=task_id,
+        recipient_ids=recipients,
+        title=f"Dependency added: {task.name}",
+        preview_template=(
+            "{actor} added a dependency on {task} (\"" + safe_related_name + "\")"
+        ),
+        activity_kind="task_dependency_added",
+        item_type=InboxItemType.COMMENT,
+    )
+    if dependency_notifications:
+        await session.commit()
+        await emit_home_notifications(session, workspace_id, dependency_notifications)
+    return {
+        "id": dependency.id,
+        "type": body.type,
+        "task": map_subtask_summary(related, user_id),
+    }
+
+
+async def add_checklist(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    task_id: str,
+    body: CreateChecklistBody,
+) -> dict:
+    task = await session.scalar(
+        select(Task)
+        .join(Task.task_list)
+        .join(TaskList.space)
+        .where(Task.id == task_id, Space.workspace_id == workspace_id)
+        .options(selectinload(Task.task_list).selectinload(TaskList.space))
+    )
+    if not task:
+        raise AppError(404, "NOT_FOUND", "Task not found")
+    await require_space_permission(
+        session, task.task_list.space, user_id, role, PermissionLevel.EDIT
+    )
+
+    max_position = await session.scalar(
+        select(func.max(TaskChecklist.position)).where(TaskChecklist.task_id == task_id)
+    )
+    next_position = (max_position or -1) + 1
+
+    checklist = TaskChecklist(
+        task_id=task_id, name=body.name.strip(), position=next_position
+    )
+    session.add(checklist)
+    actor_name = await _resolve_user_name(session, user_id)
+    _record_task_activity(
+        task,
+        actor_name=actor_name,
+        activity_kind="task_checklist_created",
+        preview=f"{actor_name} added checklist \"{checklist.name}\"",
+    )
+    await session.commit()
+    await session.refresh(checklist, attribute_names=["items"])
+
+    recipients = await task_notification_recipients(
+        session, task_id=task_id, exclude_user_id=user_id
+    )
+    safe_checklist_name = checklist.name.replace("{", "{{").replace("}", "}}")
+    checklist_notifications = await create_task_activity_notifications(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=user_id,
+        task_name=task.name,
+        task_id=task_id,
+        recipient_ids=recipients,
+        title=f"Checklist added: {task.name}",
+        preview_template=f'{{actor}} added checklist "{safe_checklist_name}" to {{task}}',
+        activity_kind="task_checklist_created",
+        item_type=InboxItemType.COMMENT,
+    )
+    if checklist_notifications:
+        await session.commit()
+        await emit_home_notifications(session, workspace_id, checklist_notifications)
+    return map_checklist(checklist)
+
+
+async def update_checklist(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    task_id: str,
+    checklist_id: str,
+    body: UpdateChecklistBody,
+) -> dict:
+    task = await session.scalar(
+        select(Task)
+        .join(Task.task_list)
+        .join(TaskList.space)
+        .where(Task.id == task_id, Space.workspace_id == workspace_id)
+        .options(selectinload(Task.task_list).selectinload(TaskList.space))
+    )
+    if not task:
+        raise AppError(404, "NOT_FOUND", "Task not found")
+    await require_space_permission(
+        session, task.task_list.space, user_id, role, PermissionLevel.EDIT
+    )
+
+    checklist = await session.scalar(
+        select(TaskChecklist).where(
+            TaskChecklist.id == checklist_id, TaskChecklist.task_id == task_id
+        )
+    )
+    if not checklist:
+        raise AppError(404, "NOT_FOUND", "Checklist not found")
+
+    if body.name is not None and body.name.strip() != checklist.name:
+        old_name = checklist.name
+        checklist.name = body.name.strip()
+        actor_name = await _resolve_user_name(session, user_id)
+        _record_task_activity(
+            task,
+            actor_name=actor_name,
+            activity_kind="task_checklist_renamed",
+            preview=f"{actor_name} renamed checklist \"{old_name}\" to \"{checklist.name}\"",
+        )
+
+    await session.commit()
+    await session.refresh(checklist, attribute_names=["items"])
+    return map_checklist(checklist)
+
+
+async def delete_checklist(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    task_id: str,
+    checklist_id: str,
+) -> dict:
+    task = await session.scalar(
+        select(Task)
+        .join(Task.task_list)
+        .join(TaskList.space)
+        .where(Task.id == task_id, Space.workspace_id == workspace_id)
+        .options(selectinload(Task.task_list).selectinload(TaskList.space))
+    )
+    if not task:
+        raise AppError(404, "NOT_FOUND", "Task not found")
+    await require_space_permission(
+        session, task.task_list.space, user_id, role, PermissionLevel.EDIT
+    )
+
+    checklist = await session.scalar(
+        select(TaskChecklist).where(
+            TaskChecklist.id == checklist_id, TaskChecklist.task_id == task_id
+        )
+    )
+    if not checklist:
+        raise AppError(404, "NOT_FOUND", "Checklist not found")
+    actor_name = await _resolve_user_name(session, user_id)
+    _record_task_activity(
+        task,
+        actor_name=actor_name,
+        activity_kind="task_checklist_deleted",
+        preview=f"{actor_name} deleted checklist \"{checklist.name}\"",
+    )
+    await session.delete(checklist)
+    await session.commit()
+    return {"ok": True}
+
+
+async def _get_editable_task(
+    session: AsyncSession, workspace_id: str, user_id: str, role: WorkspaceRole, task_id: str
+) -> Task:
+    task = await session.scalar(
+        select(Task)
+        .join(Task.task_list)
+        .join(TaskList.space)
+        .where(Task.id == task_id, Space.workspace_id == workspace_id)
+        .options(selectinload(Task.task_list).selectinload(TaskList.space))
+    )
+    if not task:
+        raise AppError(404, "NOT_FOUND", "Task not found")
+    await require_space_permission(
+        session, task.task_list.space, user_id, role, PermissionLevel.EDIT
+    )
+    return task
+
+
+async def _validate_checklist_assignee(
+    session: AsyncSession, workspace_id: str, assignee_id: str | None
+) -> None:
+    if not assignee_id:
+        return
+    members = await workspace_service.list_workspace_members(session, workspace_id)
+    if assignee_id not in {m["id"] for m in members}:
+        raise AppError(400, "VALIDATION_ERROR", "Invalid assignee")
+
+
+async def add_checklist_item(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    task_id: str,
+    checklist_id: str,
+    body: CreateChecklistItemBody,
+) -> dict:
+    task = await _get_editable_task(session, workspace_id, user_id, role, task_id)
+    checklist = await session.scalar(
+        select(TaskChecklist).where(
+            TaskChecklist.id == checklist_id, TaskChecklist.task_id == task_id
+        )
+    )
+    if not checklist:
+        raise AppError(404, "NOT_FOUND", "Checklist not found")
+    await _validate_checklist_assignee(session, workspace_id, body.assignee_id)
+
+    item = TaskChecklistItem(
+        checklist_id=checklist_id,
+        text=body.text.strip(),
+        assignee_id=body.assignee_id,
+        is_checked=body.is_checked,
+    )
+    session.add(item)
+    actor_name = await _resolve_user_name(session, user_id)
+    _record_task_activity(
+        task,
+        actor_name=actor_name,
+        activity_kind="task_checklist_item_added",
+        preview=f"{actor_name} added \"{item.text}\" to checklist \"{checklist.name}\"",
+    )
+    await session.commit()
+    refreshed = await session.scalar(
+        select(TaskChecklistItem)
+        .where(TaskChecklistItem.id == item.id)
+        .options(selectinload(TaskChecklistItem.assignee))
+    )
+    return map_checklist_item(refreshed)
+
+
+async def update_checklist_item(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    task_id: str,
+    checklist_id: str,
+    item_id: str,
+    body: UpdateChecklistItemBody,
+) -> dict:
+    task = await _get_editable_task(session, workspace_id, user_id, role, task_id)
+    checklist = await session.scalar(
+        select(TaskChecklist).where(
+            TaskChecklist.id == checklist_id, TaskChecklist.task_id == task_id
+        )
+    )
+    if not checklist:
+        raise AppError(404, "NOT_FOUND", "Checklist not found")
+
+    item = await session.scalar(
+        select(TaskChecklistItem).where(
+            TaskChecklistItem.id == item_id, TaskChecklistItem.checklist_id == checklist_id
+        )
+    )
+    if not item:
+        raise AppError(404, "NOT_FOUND", "Checklist item not found")
+
+    actor_name = await _resolve_user_name(session, user_id)
+    if "text" in body.model_fields_set and body.text is not None:
+        new_text = body.text.strip()
+        if new_text != item.text:
+            _record_task_activity(
+                task,
+                actor_name=actor_name,
+                activity_kind="task_checklist_item_renamed",
+                preview=f"{actor_name} renamed checklist item \"{item.text}\" to \"{new_text}\"",
+            )
+            item.text = new_text
+    if "is_checked" in body.model_fields_set and body.is_checked is not None:
+        if body.is_checked != item.is_checked:
+            item.is_checked = body.is_checked
+            _record_task_activity(
+                task,
+                actor_name=actor_name,
+                activity_kind=(
+                    "task_checklist_item_checked"
+                    if body.is_checked
+                    else "task_checklist_item_unchecked"
+                ),
+                preview=(
+                    f"{actor_name} checked \"{item.text}\""
+                    if body.is_checked
+                    else f"{actor_name} unchecked \"{item.text}\""
+                ),
+            )
+    if "assignee_id" in body.model_fields_set:
+        await _validate_checklist_assignee(session, workspace_id, body.assignee_id)
+        item.assignee_id = body.assignee_id
+
+    await session.commit()
+    refreshed = await session.scalar(
+        select(TaskChecklistItem)
+        .where(TaskChecklistItem.id == item.id)
+        .options(selectinload(TaskChecklistItem.assignee))
+    )
+    return map_checklist_item(refreshed)
+
+
+async def delete_checklist_item(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    task_id: str,
+    checklist_id: str,
+    item_id: str,
+) -> dict:
+    task = await _get_editable_task(session, workspace_id, user_id, role, task_id)
+    checklist = await session.scalar(
+        select(TaskChecklist).where(
+            TaskChecklist.id == checklist_id, TaskChecklist.task_id == task_id
+        )
+    )
+    if not checklist:
+        raise AppError(404, "NOT_FOUND", "Checklist not found")
+
+    item = await session.scalar(
+        select(TaskChecklistItem).where(
+            TaskChecklistItem.id == item_id, TaskChecklistItem.checklist_id == checklist_id
+        )
+    )
+    if not item:
+        raise AppError(404, "NOT_FOUND", "Checklist item not found")
+    actor_name = await _resolve_user_name(session, user_id)
+    _record_task_activity(
+        task,
+        actor_name=actor_name,
+        activity_kind="task_checklist_item_deleted",
+        preview=f"{actor_name} deleted \"{item.text}\" from checklist \"{checklist.name}\"",
+    )
+    await session.delete(item)
+    await session.commit()
+    return {"ok": True}
+
+
 async def list_tasks(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     filter_name: str | None,
     search: str | None = None,
 ) -> dict:
     if filter_name == "personal":
         await ensure_personal_space(session, workspace_id)
         await session.commit()
+    visible = await visible_space_ids(session, workspace_id, user_id, role)
+    filters = _task_filters(workspace_id, user_id, filter_name, search)
+    if visible is not None:
+        filters.append(Space.id.in_(visible))
     tasks = (
         await session.scalars(
             select(Task)
             .join(Task.task_list)
             .join(TaskList.space)
-            .where(*_task_filters(workspace_id, user_id, filter_name, search))
+            .where(*filters)
             .options(*_TASK_LOAD)
             .order_by(Task.updated_at.desc())
         )
     ).all()
-    return {"data": [map_task(t, user_id) for t in tasks]}
+    names = await _assignee_name_map(session, list(tasks))
+    return {"data": [map_task(t, user_id, names) for t in tasks]}
 
 
 async def get_task(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     task_id: str,
 ) -> dict:
     task = await session.scalar(
@@ -623,7 +1184,11 @@ async def get_task(
     )
     if not task:
         raise AppError(404, "NOT_FOUND", "Task not found")
-    payload = map_task(task, user_id)
+    await require_space_permission(
+        session, task.task_list.space, user_id, role, PermissionLevel.VIEW
+    )
+    names = await _assignee_name_map(session, task)
+    payload = map_task(task, user_id, names)
     payload["inLineup"] = await is_task_in_lineup(
         session, workspace_id, user_id, task_id
     )
@@ -666,37 +1231,30 @@ async def update_task(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     task_id: str,
     body: UpdateTaskBody,
 ) -> dict:
-    task = await session.scalar(
-        select(Task)
-        .join(Task.task_list)
-        .join(TaskList.space)
-        .where(Task.id == task_id, Space.workspace_id == workspace_id)
-    )
-    if not task:
-        raise AppError(404, "NOT_FOUND", "Task not found")
+    task = await _get_editable_task(session, workspace_id, user_id, role, task_id)
     original_name = task.name
     original_description = task.description
     original_status_id = task.status_id
     original_status = task.status
+    original_status_row = (
+        await session.scalar(select(ListStatus).where(ListStatus.id == original_status_id))
+        if original_status_id
+        else None
+    )
+    original_status_label = _status_label(original_status, original_status_row)
     original_priority = task.priority
     original_due_date = task.due_date
     original_start_date = task.start_date
     original_list_id = task.list_id
+    original_list_name = task.task_list.name
 
-    old_assignee_ids: set[str] = set()
-    if body.assignee_ids is not None:
-        old_assignee_ids = set(
-            (
-                await session.scalars(
-                    select(TaskAssignee.user_id).where(
-                        TaskAssignee.task_id == task_id
-                    )
-                )
-            ).all()
-        )
+    old_assignee_ids: set[str] = set(task.assignee_ids) if body.assignee_ids is not None else set()
+    old_follower_ids: set[str] = set(task.follower_ids)
+    auto_followed_via_assignment: set[str] = set()
 
     if body.name is not None:
         task.name = body.name.strip()
@@ -745,6 +1303,11 @@ async def update_task(
             )
 
     if "time_estimate_minutes" in body.model_fields_set:
+        can_see_estimate, _ = await get_member_time_flags(session, workspace_id, user_id)
+        if not can_see_estimate:
+            raise AppError(
+                403, "FORBIDDEN", "Time estimates are disabled for your account"
+            )
         task.time_estimate_minutes = body.time_estimate_minutes
     if body.assignee_ids is not None:
         members = await workspace_service.list_workspace_members(
@@ -754,17 +1317,35 @@ async def update_task(
         for uid in body.assignee_ids:
             if uid not in allowed:
                 raise AppError(400, "VALIDATION_ERROR", "Invalid assignee")
-        await session.execute(
-            delete(TaskAssignee).where(TaskAssignee.task_id == task_id)
+        task.assignee_ids = list(dict.fromkeys(body.assignee_ids))
+
+    if body.follower_ids is not None:
+        members = await workspace_service.list_workspace_members(
+            session, workspace_id
         )
-        for uid in body.assignee_ids:
-            session.add(TaskAssignee(task_id=task_id, user_id=uid))
+        allowed = {m["id"] for m in members}
+        for uid in body.follower_ids:
+            if uid not in allowed:
+                raise AppError(400, "VALIDATION_ERROR", "Invalid follower")
+        task.follower_ids = list(dict.fromkeys(body.follower_ids))
+
+    if body.assignee_ids is not None:
+        # Assigning someone auto-follows them, same as real ClickUp - keeps
+        # this after the follower_ids block so it wins even when both
+        # fields are patched in the same request. Tracked separately so the
+        # activity log below only records "assigned", not a second
+        # "added follower" entry for the same action.
+        newly_followed = [uid for uid in task.assignee_ids if uid not in task.follower_ids]
+        if newly_followed:
+            task.follower_ids = [*task.follower_ids, *newly_followed]
+            auto_followed_via_assignment.update(newly_followed)
 
     if "priority" in body.model_fields_set:
         task.priority = (
             TaskPriority(body.priority.upper()) if body.priority else None
         )
 
+    moved_to_list_name: str | None = None
     if body.list_id is not None:
         target_list = await session.scalar(
             select(TaskList)
@@ -777,6 +1358,12 @@ async def update_task(
         if not target_list:
             raise AppError(400, "VALIDATION_ERROR", "Invalid list")
         task.list_id = target_list.id
+        moved_to_list_name = target_list.name
+        # task.task_list was eager-loaded above for the permission check;
+        # SQLAlchemy won't refresh an already-populated relationship on the
+        # later re-select, so map_task's `task.task_list.id` would keep
+        # pointing at the old list unless we expire it here.
+        session.expire(task, ["task_list"])
 
     task.updated_at = datetime.now(timezone.utc)
 
@@ -814,11 +1401,164 @@ async def update_task(
         .where(Task.id == task_id)
         .options(*_TASK_LOAD)
     )
-    mapped = map_task(refreshed, user_id)
+    names = await _assignee_name_map(session, refreshed)
+    mapped = map_task(refreshed, user_id, names)
+
+    actor_name = await _resolve_user_name(session, user_id)
+    logged_activity = False
+    if task.status_id != original_status_id or task.status != original_status:
+        new_status_label = _status_label(refreshed.status, refreshed.list_status)
+        _record_task_activity(
+            refreshed,
+            actor_name=actor_name,
+            activity_kind="task_status_changed",
+            preview=f"{actor_name} changed status from {original_status_label} to {new_status_label}",
+        )
+        logged_activity = True
+    if task.name != original_name:
+        _record_task_activity(
+            refreshed,
+            actor_name=actor_name,
+            activity_kind="task_renamed",
+            preview=f'{actor_name} renamed "{original_name}" to "{task.name}"',
+        )
+        logged_activity = True
+    if task.description != original_description:
+        _record_task_activity(
+            refreshed,
+            actor_name=actor_name,
+            activity_kind="task_description_changed",
+            preview=f"{actor_name} updated the description",
+        )
+        logged_activity = True
+    if task.priority != original_priority:
+        old_priority_label = _priority_label(original_priority)
+        new_priority_label = _priority_label(task.priority)
+        if original_priority is None:
+            preview = f"{actor_name} set priority to {new_priority_label}"
+        elif task.priority is None:
+            preview = f"{actor_name} removed priority (was {old_priority_label})"
+        else:
+            preview = f"{actor_name} changed priority from {old_priority_label} to {new_priority_label}"
+        _record_task_activity(
+            refreshed,
+            actor_name=actor_name,
+            activity_kind="task_priority_changed",
+            preview=preview,
+        )
+        logged_activity = True
+    if task.due_date != original_due_date:
+        old_due_label = format_due_date(original_due_date) or "no due date"
+        new_due_label = format_due_date(task.due_date) or "no due date"
+        if original_due_date is None:
+            preview = f"{actor_name} set due date to {new_due_label}"
+        elif task.due_date is None:
+            preview = f"{actor_name} removed the due date"
+        else:
+            preview = f"{actor_name} changed due date from {old_due_label} to {new_due_label}"
+        _record_task_activity(
+            refreshed,
+            actor_name=actor_name,
+            activity_kind="task_due_date_changed",
+            preview=preview,
+        )
+        logged_activity = True
+    if task.start_date != original_start_date:
+        old_start_label = format_due_date(original_start_date) or "no start date"
+        new_start_label = format_due_date(task.start_date) or "no start date"
+        if original_start_date is None:
+            preview = f"{actor_name} set start date to {new_start_label}"
+        elif task.start_date is None:
+            preview = f"{actor_name} removed the start date"
+        else:
+            preview = f"{actor_name} changed start date from {old_start_label} to {new_start_label}"
+        _record_task_activity(
+            refreshed,
+            actor_name=actor_name,
+            activity_kind="task_start_date_changed",
+            preview=preview,
+        )
+        logged_activity = True
+    if task.list_id != original_list_id and moved_to_list_name:
+        _record_task_activity(
+            refreshed,
+            actor_name=actor_name,
+            activity_kind="task_list_changed",
+            preview=f'{actor_name} moved this task from "{original_list_name}" to "{moved_to_list_name}"',
+        )
+        logged_activity = True
+    if body.assignee_ids is not None:
+        new_assignee_ids = set(refreshed.assignee_ids)
+        added_assignees = new_assignee_ids - old_assignee_ids
+        removed_assignees = old_assignee_ids - new_assignee_ids
+        assignee_names = await _user_name_map(
+            session, added_assignees | removed_assignees
+        )
+        for uid in added_assignees:
+            _record_task_activity(
+                refreshed,
+                actor_name=actor_name,
+                activity_kind="task_assignee_added",
+                preview=f"{actor_name} added assignee {assignee_names.get(uid, 'Someone')}",
+            )
+            logged_activity = True
+        for uid in removed_assignees:
+            _record_task_activity(
+                refreshed,
+                actor_name=actor_name,
+                activity_kind="task_assignee_removed",
+                preview=f"{actor_name} removed assignee {assignee_names.get(uid, 'Someone')}",
+            )
+            logged_activity = True
+    new_follower_ids = set(refreshed.follower_ids)
+    added_followers = new_follower_ids - old_follower_ids - auto_followed_via_assignment
+    removed_followers = old_follower_ids - new_follower_ids
+    if added_followers or removed_followers:
+        follower_names = await _user_name_map(
+            session, added_followers | removed_followers
+        )
+        for uid in added_followers:
+            _record_task_activity(
+                refreshed,
+                actor_name=actor_name,
+                activity_kind="task_followed",
+                preview=f"{actor_name} added follower: {follower_names.get(uid, 'Someone')}",
+            )
+            logged_activity = True
+        for uid in removed_followers:
+            _record_task_activity(
+                refreshed,
+                actor_name=actor_name,
+                activity_kind="task_unfollowed",
+                preview=f"{actor_name} removed follower: {follower_names.get(uid, 'Someone')}",
+            )
+            logged_activity = True
+    if logged_activity:
+        await session.commit()
+
     if assignment_notifications:
         await emit_home_notifications(
             session, workspace_id, assignment_notifications
         )
+    if added_followers:
+        # Auto-follows from assignment already got the "assigned" notification
+        # above; only notify people explicitly added as a watcher, same as
+        # real ClickUp does ("X added you as a watcher").
+        follow_notifications = await create_task_activity_notifications(
+            session,
+            workspace_id=workspace_id,
+            actor_user_id=user_id,
+            task_name=task.name,
+            task_id=task_id,
+            recipient_ids=list(added_followers),
+            title=f"Added as watcher: {task.name}",
+            preview_template="{actor} added you as a watcher on {task}",
+            activity_kind="task_followed",
+            item_type=InboxItemType.CHAT,
+        )
+        if follow_notifications:
+            await session.commit()
+            await emit_home_notifications(session, workspace_id, follow_notifications)
     if change_labels:
         recipients = await task_notification_recipients(
             session, task_id=task_id, exclude_user_id=user_id
@@ -884,6 +1624,7 @@ async def delete_task(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     task_id: str,
 ) -> dict:
     task = await session.scalar(
@@ -891,9 +1632,13 @@ async def delete_task(
         .join(Task.task_list)
         .join(TaskList.space)
         .where(Task.id == task_id, Space.workspace_id == workspace_id)
+        .options(selectinload(Task.task_list).selectinload(TaskList.space))
     )
     if not task:
         raise AppError(404, "NOT_FOUND", "Task not found")
+    await require_space_permission(
+        session, task.task_list.space, user_id, role, PermissionLevel.EDIT
+    )
     task_name = task.name
     task_id = task.id
     list_id = task.list_id
@@ -1249,7 +1994,8 @@ async def list_lineup(
             .order_by(UserTaskLineup.sort_order.asc())
         )
     ).all()
-    return {"data": [map_task(t, user_id) for t in rows]}
+    names = await _assignee_name_map(session, list(rows))
+    return {"data": [map_task(t, user_id, names) for t in rows]}
 
 
 async def add_to_lineup(
@@ -1348,13 +2094,8 @@ async def is_task_in_lineup(
 async def is_task_followed_by(
     session: AsyncSession, task_id: str, user_id: str
 ) -> bool:
-    row = await session.scalar(
-        select(TaskFollower.user_id).where(
-            TaskFollower.task_id == task_id,
-            TaskFollower.user_id == user_id,
-        )
-    )
-    return row is not None
+    ids = await session.scalar(select(Task.follower_ids).where(Task.id == task_id))
+    return user_id in (ids or [])
 
 
 async def follow_task(
@@ -1363,17 +2104,10 @@ async def follow_task(
     user_id: str,
     task_id: str,
 ) -> dict:
-    await _get_workspace_task(session, workspace_id, task_id)
-    existing = await session.scalar(
-        select(TaskFollower).where(
-            TaskFollower.task_id == task_id,
-            TaskFollower.user_id == user_id,
-        )
-    )
-    if not existing:
-        session.add(TaskFollower(task_id=task_id, user_id=user_id))
-        await session.commit()
     task = await _get_workspace_task(session, workspace_id, task_id)
+    if user_id not in task.follower_ids:
+        task.follower_ids = [*task.follower_ids, user_id]
+        await session.commit()
     recipients = await task_notification_recipients(
         session, task_id=task_id, exclude_user_id=user_id
     )
@@ -1401,21 +2135,10 @@ async def unfollow_task(
     user_id: str,
     task_id: str,
 ) -> dict:
-    row = await session.scalar(
-        select(TaskFollower)
-        .join(Task)
-        .join(TaskList)
-        .join(Space)
-        .where(
-            TaskFollower.task_id == task_id,
-            TaskFollower.user_id == user_id,
-            Space.workspace_id == workspace_id,
-        )
-    )
-    if row:
-        await session.delete(row)
-        await session.commit()
     task = await _get_workspace_task(session, workspace_id, task_id)
+    if user_id in task.follower_ids:
+        task.follower_ids = [uid for uid in task.follower_ids if uid != user_id]
+        await session.commit()
     recipients = await task_notification_recipients(
         session, task_id=task_id, exclude_user_id=user_id
     )
@@ -1444,35 +2167,27 @@ async def list_task_activity(
     task_id: str,
     limit: int = 50,
 ) -> dict:
-    await _get_workspace_task(session, workspace_id, task_id)
+    # Task.activity is a shared, append-only JSONB log (every viewer sees the
+    # same full history, including their own actions) - unlike InboxItem,
+    # which is a per-user notification inbox and never records the actor's
+    # own actions. See scripts/migrate_task_activity_log.sql.
+    task = await _get_workspace_task(session, workspace_id, task_id)
     href = f"/home/tasks/{task_id}"
-    rows = (
-        await session.scalars(
-            select(InboxItem)
-            .where(
-                InboxItem.workspace_id == workspace_id,
-                InboxItem.user_id == user_id,
-                InboxItem.href == href,
-            )
-            .order_by(InboxItem.created_at.desc())
-            .limit(limit)
-        )
-    ).all()
+    entries = list(task.activity or [])
+    entries.sort(key=lambda e: e.get("createdAt") or "", reverse=True)
     return {
         "data": [
             {
-                "id": row.id,
-                "type": map_inbox_type(row.type),
-                "title": row.title,
-                "preview": row.preview,
-                "source": row.source,
-                "href": row.href,
-                "createdAt": row.created_at.isoformat(),
-                "activityKind": row.activity_kind,
+                "id": entry.get("id"),
+                "type": entry.get("type", "activity"),
+                "title": entry.get("title"),
+                "preview": entry.get("preview"),
+                "source": entry.get("source"),
+                "href": href,
+                "createdAt": entry.get("createdAt"),
+                "activityKind": entry.get("activityKind"),
             }
-            for row in rows
-            if row.activity_kind
-            not in {"task_comment", "task_comment_reply", "task_mention"}
+            for entry in entries[:limit]
         ]
     }
 

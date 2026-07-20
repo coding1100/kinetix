@@ -37,17 +37,17 @@ export function TaskDatesField({
           <button
             type="button"
             className={cn(
-              "inline-flex items-center gap-2 rounded-md border border-dashed border-border px-2.5 py-1 text-sm hover:bg-muted/50",
+              "inline-flex items-center gap-1.5 text-xs",
               !hasAny && "text-muted-foreground"
             )}
           >
-            <span className="inline-flex items-center gap-1.5">
-              <CalendarIcon className="size-3.5" />
+            <span className="inline-flex items-center gap-1">
+              <CalendarIcon className="size-3" />
               <span className={cn(!startDateIso && "text-muted-foreground")}>{startLabel}</span>
             </span>
-            <ArrowRightIcon className="size-3.5 text-muted-foreground" />
-            <span className="inline-flex items-center gap-1.5">
-              <CalendarIcon className="size-3.5" />
+            <ArrowRightIcon className="size-3 text-muted-foreground" />
+            <span className="inline-flex items-center gap-1">
+              <CalendarIcon className="size-3" />
               <span className={cn(!dueDateIso && "text-muted-foreground")}>{dueLabel}</span>
             </span>
           </button>

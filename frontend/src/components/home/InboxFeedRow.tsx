@@ -1,66 +1,172 @@
 "use client";
 
+import type { ReactNode } from "react";
 import {
   AtSign,
   Bell,
   Check,
   CheckCircle2,
+  Clock,
   Hash,
+  ListChecks,
   MessageSquare,
   MessageSquareReply,
   Send,
+  Share2,
   Smile,
+  UserMinus,
+  UserPlus,
 } from "lucide-react";
 import type { InboxItemDto } from "@/lib/api/home";
-import { cn, formatShortDateTimeUtc } from "@/lib/utils";
+import { cn, formatNotificationDate } from "@/lib/utils";
 
 type InboxItemType = InboxItemDto["type"];
 
-function itemIcon(type: InboxItemType) {
+function renderItemIcon(type: InboxItemType, className: string) {
   switch (type) {
     case "mention":
-      return AtSign;
+      return <AtSign className={className} strokeWidth={2} />;
     case "assignment":
-      return CheckCircle2;
+      return <CheckCircle2 className={className} strokeWidth={2} />;
     case "chat":
-      return MessageSquare;
+      return <MessageSquare className={className} strokeWidth={2} />;
     case "comment":
-      return Hash;
+      return <Hash className={className} strokeWidth={2} />;
     case "reminder":
-      return Bell;
+      return <Bell className={className} strokeWidth={2} />;
     case "sent":
-      return Send;
+      return <Send className={className} strokeWidth={2} />;
     case "reply":
-      return MessageSquareReply;
+      return <MessageSquareReply className={className} strokeWidth={2} />;
     case "reaction":
-      return Smile;
+      return <Smile className={className} strokeWidth={2} />;
     default:
-      return MessageSquare;
+      return <ListChecks className={className} strokeWidth={2} />;
   }
 }
 
+// Bare colored glyph tone (ClickUp renders inbox row icons as colored glyphs,
+// not filled avatar chips).
 function itemIconTone(type: InboxItemType) {
   switch (type) {
     case "mention":
-      return "bg-violet-500/10 text-violet-700";
+      return "text-violet-400";
     case "assignment":
-      return "bg-emerald-500/10 text-emerald-700";
+      return "text-emerald-400";
     case "chat":
     case "sent":
     case "reply":
-      return "bg-sky-500/10 text-sky-700";
+      return "text-sky-400";
     case "comment":
-      return "bg-amber-500/10 text-amber-700";
+      return "text-amber-400";
     case "reaction":
-      return "bg-pink-500/10 text-pink-700";
+      return "text-pink-400";
     case "reminder":
     case "scheduled":
-      return "bg-orange-500/10 text-orange-700";
+      return "text-orange-400";
     case "draft":
-      return "bg-slate-500/10 text-slate-700";
+      return "text-slate-400";
     default:
-      return "bg-sky-500/10 text-sky-700";
+      return "text-orange-400";
   }
+}
+
+// Backend builds every preview as "{actorOrYou} <verb phrase> ..." or
+// "{actor}: {snippet}" (see notification_service.py). Parse it so the verb
+// phrase reads bold and any #channel / list name reads in the accent color,
+// matching ClickUp's inbox typography — without needing a new DB column.
+const VERB_PHRASES = [
+  "added you to",
+  "removed you from",
+  "mentioned you in",
+  "mentioned you",
+  "assigned you to",
+  "accepted your invite to",
+  "started following you in",
+  "unfollowed you in",
+  "shared this task",
+  "shared this list",
+  "shared this",
+  "deleted",
+];
+
+function parsePreview(preview: string): {
+  actor: string;
+  verb: string | null;
+  rest: string;
+} {
+  const lower = preview.toLowerCase();
+  let best = -1;
+  let bestLen = 0;
+  for (const phrase of VERB_PHRASES) {
+    const idx = lower.indexOf(phrase);
+    if (idx > 0 && preview[idx - 1] === " " && idx <= 44 && (best === -1 || idx < best)) {
+      best = idx;
+      bestLen = phrase.length;
+    }
+  }
+  if (best === -1) {
+    const colon = preview.indexOf(": ");
+    if (colon > 0 && colon <= 44) {
+      return { actor: preview.slice(0, colon), verb: null, rest: preview.slice(colon + 1) };
+    }
+    return { actor: "", verb: null, rest: preview };
+  }
+  return {
+    actor: preview.slice(0, best - 1),
+    verb: preview.slice(best, best + bestLen),
+    rest: preview.slice(best + bestLen),
+  };
+}
+
+// Accent-color the first #channel / list name in the trailing text.
+function renderRest(rest: string): ReactNode {
+  const hashIdx = rest.indexOf("#");
+  if (hashIdx === -1) return rest;
+  const before = rest.slice(0, hashIdx);
+  const after = rest.slice(hashIdx);
+  const colon = after.indexOf(":");
+  const name = colon > -1 ? after.slice(0, colon) : after;
+  const tail = colon > -1 ? after.slice(colon) : "";
+  return (
+    <>
+      {before}
+      <span className="font-medium text-primary">{name}</span>
+      {tail}
+    </>
+  );
+}
+
+function renderPreview(preview: string): ReactNode {
+  const { actor, verb, rest } = parsePreview(preview);
+  if (verb === null) {
+    return (
+      <>
+        {actor ? <span className="font-semibold text-foreground">{actor}</span> : null}
+        {actor ? " " : ""}
+        {renderRest(rest.replace(/^:\s*/, ""))}
+      </>
+    );
+  }
+  return (
+    <>
+      {actor ? <span className="text-foreground">{actor} </span> : null}
+      <span className="font-semibold text-foreground">{verb}</span>
+      {renderRest(rest)}
+    </>
+  );
+}
+
+function renderConnectorIcon(item: InboxItemDto, className: string) {
+  const p = item.preview.toLowerCase();
+  if (p.includes("shared")) return <Share2 className={className} strokeWidth={2} />;
+  if (p.includes("added")) return <UserPlus className={className} strokeWidth={2} />;
+  if (p.includes("removed") || p.includes("unfollowed"))
+    return <UserMinus className={className} strokeWidth={2} />;
+  if (p.includes("mentioned")) return <AtSign className={className} strokeWidth={2} />;
+  if (item.source.startsWith("#") || item.type === "chat")
+    return <Hash className={className} strokeWidth={2} />;
+  return <MessageSquare className={className} strokeWidth={2} />;
 }
 
 export function InboxFeedRow({
@@ -72,76 +178,79 @@ export function InboxFeedRow({
   onOpen: (item: InboxItemDto) => void;
   onClear: (event: React.MouseEvent, item: InboxItemDto) => void;
 }) {
-  const Icon = itemIcon(item.type);
+  const heading = item.source || item.title;
 
   return (
     <div
       className={cn(
-        "group flex w-full items-start gap-4 px-6 py-3.5 transition-colors",
+        "group grid w-full grid-cols-[minmax(0,1.1fr)_minmax(0,1.6fr)_150px] items-center gap-4 px-4 py-2.5 transition-colors",
         "hover:bg-muted/50",
-        item.unread && "bg-primary/[0.03]"
+        item.unread ? "bg-muted/20" : "bg-transparent"
       )}
     >
+      {/* Column A: type glyph + item (task / channel / list) name */}
       <button
         type="button"
         onClick={() => void onOpen(item)}
-        className="flex min-w-0 flex-1 items-start gap-3 text-left"
+        className="flex min-w-0 items-center gap-2.5 text-left"
       >
-        <div
+        <span className={cn("shrink-0", itemIconTone(item.type))}>
+          {renderItemIcon(item.type, "size-4")}
+        </span>
+        <span
           className={cn(
-            "mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg",
-            itemIconTone(item.type)
+            "truncate text-sm",
+            item.unread ? "font-medium text-foreground" : "text-foreground/85"
           )}
         >
-          <Icon className="size-4" strokeWidth={2} />
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start gap-2">
-            <span className="mt-1.5 flex w-2 shrink-0 justify-center">
-              {item.unread ? (
-                <span className="size-2 rounded-full bg-primary" aria-hidden />
-              ) : (
-                <span className="size-2 rounded-full bg-transparent" aria-hidden />
-              )}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p
-                className={cn(
-                  "truncate text-sm",
-                  item.unread ? "font-semibold text-foreground" : "font-medium text-foreground/90"
-                )}
-              >
-                {item.title}
-              </p>
-              <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
-                {item.preview}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground/80">{item.source}</p>
-            </div>
-          </div>
-        </div>
+          {heading}
+        </span>
       </button>
 
-      <div className="flex shrink-0 items-center gap-2">
+      {/* Column B: action glyph + actor/verb sentence */}
+      <button
+        type="button"
+        onClick={() => void onOpen(item)}
+        className="flex min-w-0 items-center gap-2 text-left"
+      >
+        {renderConnectorIcon(item, "size-3.5 shrink-0 text-muted-foreground/70")}
+        <span className="truncate text-sm text-muted-foreground">
+          {renderPreview(item.preview)}
+        </span>
+      </button>
+
+      {/* Column C: fixed width so hover actions overlay the date without reflow */}
+      <div className="relative flex h-7 items-center justify-end">
         <time
           dateTime={item.createdAt}
-          className="text-xs whitespace-nowrap text-muted-foreground"
+          className="text-xs whitespace-nowrap text-muted-foreground transition-opacity group-hover:opacity-0"
         >
-          {formatShortDateTimeUtc(item.createdAt)}
+          {formatNotificationDate(item.createdAt)}
         </time>
-        <button
-          type="button"
-          className={cn(
-            "grid size-7 place-items-center rounded-md text-muted-foreground transition-colors",
-            "opacity-0 group-hover:opacity-100 hover:bg-muted hover:text-foreground",
-            !item.unread && "pointer-events-none opacity-0"
-          )}
-          aria-label="Mark as read"
-          onClick={(e) => void onClear(e, item)}
-        >
-          <Check className="size-4" />
-        </button>
+        <div className="absolute inset-y-0 right-0 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+          <button
+            type="button"
+            className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="Snooze"
+            title="Snooze"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Clock className="size-4" />
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "flex h-7 items-center gap-1 rounded-md bg-primary px-2.5 text-xs font-medium whitespace-nowrap text-primary-foreground transition-colors hover:bg-primary/90",
+              !item.unread && "bg-muted text-muted-foreground hover:bg-muted"
+            )}
+            aria-label="Clear notification"
+            onClick={(e) => void onClear(e, item)}
+            disabled={!item.unread}
+          >
+            <Check className="size-3.5" />
+            Clear
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -149,7 +258,7 @@ export function InboxFeedRow({
 
 export function InboxFeedDateHeader({ label }: { label: string }) {
   return (
-    <h2 className="sticky top-0 z-[1] bg-background/95 px-6 py-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase backdrop-blur-sm">
+    <h2 className="px-4 pt-4 pb-1.5 text-[13px] font-medium text-muted-foreground">
       {label}
     </h2>
   );

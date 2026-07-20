@@ -159,6 +159,28 @@ async def broadcast_channel_removed(
     )
 
 
+async def broadcast_channel_renamed(
+    *,
+    workspace_id: str,
+    channel_id: str,
+    name: str,
+) -> None:
+    # Deliberately just {channelId, name} rather than a full channel payload -
+    # reusing broadcast_channel_joined's shape would clobber each recipient's
+    # own starred/isFollowing state (that payload uses a generic template
+    # member). This propagates a List <-> Channel two-way name sync live.
+    sio = get_sio()
+    await sio.emit(
+        "chat:channel:renamed",
+        {
+            "workspaceId": workspace_id,
+            "channelId": channel_id,
+            "name": name,
+        },
+        room=f"ws:{workspace_id}",
+    )
+
+
 async def broadcast_chat_typing(
     *,
     workspace_id: str,
@@ -224,6 +246,24 @@ async def broadcast_chat_reaction(
         },
         workspace_id=workspace_id,
         user_ids=user_ids,
+    )
+
+
+async def broadcast_workspace_member_role_updated(
+    *,
+    workspace_id: str,
+    user_id: str,
+    role: str,
+) -> None:
+    sio = get_sio()
+    await sio.emit(
+        "workspace:member:role",
+        {
+            "workspaceId": workspace_id,
+            "userId": user_id,
+            "role": role,
+        },
+        room=f"ws:{workspace_id}",
     )
 
 

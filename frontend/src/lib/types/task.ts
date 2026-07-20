@@ -27,6 +27,22 @@ export interface TaskSubtask {
   statusColor: string;
 }
 
+export interface TaskChecklistItem {
+  id: string;
+  text: string;
+  isChecked: boolean;
+  assigneeId?: string | null;
+  assigneeName?: string | null;
+}
+
+export interface TaskChecklist {
+  id: string;
+  name: string;
+  itemCount: number;
+  checkedCount: number;
+  items: TaskChecklistItem[];
+}
+
 export interface TaskAttachment {
   id: string;
   fileName: string;
@@ -54,6 +70,7 @@ export interface Task {
   statusId?: string | null;
   statusColor: string;
   assigneeIds?: string[];
+  followerIds?: string[];
   dueDate?: string;
   dueDateIso?: string | null;
   startDate?: string | null;
@@ -75,8 +92,17 @@ export interface Task {
   comments?: TaskComment[];
   subtasks?: TaskSubtask[];
   attachments?: TaskAttachment[];
+  checklists?: TaskChecklist[];
   inLineup?: boolean;
   isFollowing?: boolean;
+}
+
+export type TaskDependencyType = "blocking" | "blocked_by" | "linked";
+
+export interface TaskDependency {
+  id: string;
+  type: TaskDependencyType;
+  task: TaskSubtask;
 }
 
 export interface TaskActivityEvent {

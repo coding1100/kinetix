@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   XIcon,
   UserSquare2Icon,
-  ChevronDownIcon,
   ListTodoIcon,
+  ChevronDownIcon,
+  SearchIcon,
+  ListChecksIcon,
 } from "lucide-react";
 import type {
   ConversationType,
@@ -24,14 +26,10 @@ import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { ApiError } from "@/lib/api/client";
 import { useChatStore } from "@/stores/chat-store";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { PanelCardShell } from "@/components/shared/PanelCardShell";
 import { Separator } from "@/components/ui/separator";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { ThreadMessageRow } from "./thread/ThreadMessageRow";
 import { ThreadReplyComposer } from "./thread/ThreadReplyComposer";
@@ -48,7 +46,7 @@ import type { ChatMessage, SendMessagePayload } from "@/lib/types/chat";
 import { buildMessageRuns } from "@/lib/chat/message-groups";
 import { useAuthStore } from "@/stores/auth-store";
 import { createTaskFromThreadMessage } from "@/lib/spaces/create-task-from-thread";
-import { LinkTaskDialog } from "@/components/spaces/LinkTaskDialog";
+import { fetchSpacesTree, flattenListsFromSpaces } from "@/lib/api/spaces";
 
 function getThreadTitle(
   parent: ChatMessage,
@@ -99,7 +97,36 @@ export function ThreadPanel({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creatingTask, setCreatingTask] = useState(false);
-  const [linkTaskOpen, setLinkTaskOpen] = useState(false);
+  const [createTaskOpen, setCreateTaskOpen] = useState(false);
+  const [taskLists, setTaskLists] = useState<{ id: string; label: string }[]>([]);
+  const [taskListsLoading, setTaskListsLoading] = useState(false);
+  const [taskListSearch, setTaskListSearch] = useState("");
+
+  useEffect(() => {
+    if (!createTaskOpen || !ready || taskLists.length > 0) return;
+    let cancelled = false;
+    setTaskListsLoading(true);
+    fetchSpacesTree(accessToken, workspaceId)
+      .then((res) => {
+        if (cancelled) return;
+        setTaskLists(flattenListsFromSpaces(res.data));
+      })
+      .catch(() => {
+        if (!cancelled) toast.error("Could not load lists");
+      })
+      .finally(() => {
+        if (!cancelled) setTaskListsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [createTaskOpen, ready, accessToken, workspaceId, taskLists.length]);
+
+  const filteredTaskLists = useMemo(() => {
+    const q = taskListSearch.trim().toLowerCase();
+    if (!q) return taskLists;
+    return taskLists.filter((list) => list.label.toLowerCase().includes(q));
+  }, [taskLists, taskListSearch]);
 
   const loadThread = async () => {
     if (!ready) return;
@@ -429,17 +456,19 @@ export function ThreadPanel({
   const replyLabel =
     replies.length === 1 ? "1 Reply" : `${replies.length} Replies`;
 
-  async function handleCreateTaskFromThread() {
+  async function handleCreateTaskFromThread(listId: string) {
     if (!ready) return;
+    setCreateTaskOpen(false);
     setCreatingTask(true);
     try {
-      const { task, listId } = await createTaskFromThreadMessage(
+      const { task, listId: createdListId } = await createTaskFromThreadMessage(
         accessToken,
         workspaceId,
-        parent.body
+        parent.body,
+        listId
       );
       toast.success("Task created");
-      router.push(`/spaces/l/${listId}?task=${task.id}`);
+      router.push(`/spaces/l/${createdListId}?task=${task.id}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not create task");
     } finally {
@@ -474,8 +503,14 @@ export function ThreadPanel({
             <UserSquare2Icon className="size-3.5" strokeWidth={1.5} />
             Assign to
           </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger
+          <Popover
+            open={createTaskOpen}
+            onOpenChange={(next) => {
+              setCreateTaskOpen(next);
+              if (!next) setTaskListSearch("");
+            }}
+          >
+            <PopoverTrigger
               render={
                 <Button
                   variant="outline"
@@ -492,18 +527,59 @@ export function ThreadPanel({
                 </Button>
               }
             />
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem
-                disabled={creatingTask}
-                onClick={() => void handleCreateTaskFromThread()}
-              >
-                New task from thread
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setLinkTaskOpen(true)}>
-                Link existing task
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            <PopoverContent align="start" className="w-80 p-0">
+              <div className="border-b border-border px-4 py-3">
+                <p className="text-sm font-semibold text-foreground">
+                  Create Task
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Select a List to create a Task
+                </p>
+              </div>
+              <div className="p-2">
+                <div className="relative mb-2">
+                  <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={taskListSearch}
+                    onChange={(e) => setTaskListSearch(e.target.value)}
+                    placeholder="Search Lists…"
+                    className="h-9 pl-8"
+                    autoFocus
+                  />
+                </div>
+                <p className="px-1 pb-1 text-xs font-semibold text-muted-foreground">
+                  Suggested
+                </p>
+                <ul className="max-h-64 space-y-0.5 overflow-y-auto">
+                  {taskListsLoading ? (
+                    <li className="px-2 py-4 text-center text-xs text-muted-foreground">
+                      Loading lists…
+                    </li>
+                  ) : filteredTaskLists.length === 0 ? (
+                    <li className="px-2 py-4 text-center text-xs text-muted-foreground">
+                      No result found
+                    </li>
+                  ) : (
+                    filteredTaskLists.map((list) => (
+                      <li key={list.id}>
+                        <button
+                          type="button"
+                          disabled={creatingTask}
+                          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted disabled:pointer-events-none disabled:opacity-60"
+                          onClick={() => void handleCreateTaskFromThread(list.id)}
+                        >
+                          <ListChecksIcon className="size-4 shrink-0 text-muted-foreground" />
+                          <span className="min-w-0 flex-1 truncate">
+                            {list.label}
+                          </span>
+                        </button>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </header>
 
@@ -521,11 +597,15 @@ export function ThreadPanel({
           />
 
           {replies.length > 0 && (
-            <div className="relative my-5 flex items-center gap-2">
-              <div className="h-px flex-1 bg-border" />
-              <span className="shrink-0 text-xs font-medium text-[#e8384f]">
+            <div className="my-5 flex items-center gap-2">
+              <span className="shrink-0 text-xs font-medium text-muted-foreground">
                 {replyLabel}
-                {hasNew && " · New"}
+                {hasNew && (
+                  <>
+                    {" "}
+                    · <span className="text-[#e8384f]">New</span>
+                  </>
+                )}
               </span>
               <div className="h-px flex-1 bg-border" />
             </div>
@@ -560,16 +640,6 @@ export function ThreadPanel({
         conversationType={type}
         conversationId={conversationId}
         onSend={handleReply}
-      />
-      <LinkTaskDialog
-        open={linkTaskOpen}
-        onOpenChange={setLinkTaskOpen}
-        messagePreview={parent.body}
-        chatHref={
-          type === "channel"
-            ? `/chat/c/${conversationId}?thread=${messageId}`
-            : `/chat/dm/${conversationId}?thread=${messageId}`
-        }
       />
     </PanelCardShell>
   );

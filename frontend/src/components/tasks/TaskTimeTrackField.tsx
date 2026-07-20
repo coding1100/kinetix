@@ -47,11 +47,11 @@ export function TaskTimeTrackField({
     <div className="flex flex-wrap items-center gap-2">
       <span
         className={cn(
-          "inline-flex items-center gap-1.5 text-sm",
+          "inline-flex items-center gap-1 text-xs",
           displaySeconds > 0 ? "text-foreground" : "text-muted-foreground"
         )}
       >
-        <TimerIcon className="size-3.5" />
+        <TimerIcon className="size-3" />
         {formatTrackedSeconds(displaySeconds)}
       </span>
       {active ? (
@@ -59,11 +59,11 @@ export function TaskTimeTrackField({
           type="button"
           variant="outline"
           size="sm"
-          className="h-8 gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/5"
+          className="h-6 gap-1 px-2 text-xs border-destructive/30 text-destructive hover:bg-destructive/5"
           disabled={busy}
           onClick={() => void onStop()}
         >
-          <SquareIcon className="size-3.5 fill-current" />
+          <SquareIcon className="size-3 fill-current" />
           Stop
         </Button>
       ) : (
@@ -71,11 +71,11 @@ export function TaskTimeTrackField({
           type="button"
           variant="outline"
           size="sm"
-          className="h-8 gap-1.5"
+          className="h-6 gap-1 px-2 text-xs"
           disabled={busy}
           onClick={() => void onStart()}
         >
-          <PlayIcon className="size-3.5 fill-current" />
+          <PlayIcon className="size-3 fill-current" />
           Start
         </Button>
       )}

@@ -30,6 +30,7 @@ import {
   workspaceInitials,
 } from "@/stores/auth-store";
 import { cn } from "@/lib/utils";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 
 export function TopBar() {
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
@@ -67,7 +68,7 @@ export function TopBar() {
             }
           />
           <DropdownMenuContent align="start" className="w-auto p-0">
-            <WorkspaceSwitcherPopup />
+            <WorkspaceSwitcherPopup onClose={() => setWorkspaceMenuOpen(false)} />
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -140,7 +141,7 @@ export function TopBar() {
           <TooltipContent side="bottom">AI</TooltipContent>
         </Tooltip>
         
-        <NotificationsMenu />
+        {FEATURE_FLAGS.topBarNotifications ? <NotificationsMenu /> : null}
         <Separator orientation="vertical" className="mx-1 h-5" />
         <ProfileMenu />
       </div>

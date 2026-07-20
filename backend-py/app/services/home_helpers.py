@@ -5,16 +5,28 @@ from app.db.models.home import Task
 from app.services.task_attachment_service import map_task_attachment
 
 
+def _as_aware_utc(dt: datetime) -> datetime:
+    """asyncpg sometimes returns a naive datetime for a DateTime(timezone=True)
+    column (same driver/schema quirk fixed for chat threads in
+    chat_service._as_aware_utc) - without this, isoformat() omits the UTC
+    offset and the frontend's `new Date(...)` misparses it as local time."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def _map_task_comment(comment) -> dict:
     updated = getattr(comment, "updated_at", None)
+    created_at = _as_aware_utc(comment.created_at) if comment.created_at else None
+    updated_at = _as_aware_utc(updated) if updated else None
     return {
         "id": comment.id,
         "authorId": comment.user_id,
         "author": comment.user.full_name,
         "body": comment.body,
-        "at": comment_relative_time(comment.created_at),
-        "createdAt": comment.created_at.isoformat() if comment.created_at else None,
-        "updatedAt": updated.isoformat() if updated else None,
+        "at": comment_relative_time(created_at),
+        "createdAt": created_at.isoformat() if created_at else None,
+        "updatedAt": updated_at.isoformat() if updated_at else None,
         "isEdited": bool(updated),
         "parentCommentId": comment.parent_comment_id,
         "attachments": [
@@ -127,11 +139,41 @@ def map_inbox_type(item_type: InboxItemType) -> str:
     return item_type.value.lower()
 
 
-def map_task(task: Task, current_user_id: str) -> dict:
+def map_checklist_item(item) -> dict:
+    return {
+        "id": item.id,
+        "text": item.text,
+        "isChecked": item.is_checked,
+        "assigneeId": item.assignee_id,
+        "assigneeName": item.assignee.full_name if item.assignee else None,
+    }
+
+
+def map_checklist(checklist) -> dict:
+    items = sorted(
+        getattr(checklist, "items", None) or [],
+        key=lambda i: i.created_at,
+    )
+    checked_count = sum(1 for i in items if i.is_checked)
+    return {
+        "id": checklist.id,
+        "name": checklist.name,
+        "itemCount": len(items),
+        "checkedCount": checked_count,
+        "items": [map_checklist_item(i) for i in items],
+    }
+
+
+def map_task(
+    task: Task, current_user_id: str, assignee_names: dict[str, str] | None = None
+) -> dict:
     assignee_labels = []
-    for a in task.assignees:
-        name = a.user.full_name.split(" ")[0] if a.user.full_name else "User"
-        assignee_labels.append("You" if a.user_id == current_user_id else name)
+    for uid in task.assignee_ids:
+        if uid == current_user_id:
+            assignee_labels.append("You")
+            continue
+        full_name = (assignee_names or {}).get(uid)
+        assignee_labels.append(full_name.split(" ")[0] if full_name else "User")
 
     comments = sorted(task.comments, key=lambda c: c.created_at)
     if task.list_status:
@@ -149,7 +191,8 @@ def map_task(task: Task, current_user_id: str) -> dict:
         "statusKey": status_key,
         "statusId": task.status_id,
         "statusColor": status_color,
-        "assigneeIds": [a.user_id for a in task.assignees],
+        "assigneeIds": list(task.assignee_ids),
+        "followerIds": list(task.follower_ids),
         "dueDate": format_due_date(task.due_date),
         "dueDateIso": task.due_date.isoformat() if task.due_date else None,
         "startDate": format_due_date(task.start_date),
@@ -167,6 +210,13 @@ def map_task(task: Task, current_user_id: str) -> dict:
         "commentCount": len(comments),
         "subtaskCount": len(getattr(task, "subtasks", None) or []),
         "comments": _map_task_comments_threaded(comments),
+        "checklists": [
+            map_checklist(c)
+            for c in sorted(
+                getattr(task, "checklists", None) or [],
+                key=lambda c: c.position,
+            )
+        ],
     }
 
 
@@ -202,6 +252,7 @@ def map_space_row(
     list_count: int,
     folder_payload: list,
     standalone_payload: list,
+    last_activity_at=None,
 ) -> dict:
     return {
         "id": space.id,
@@ -211,6 +262,8 @@ def map_space_row(
         "listCount": list_count,
         "description": space.description,
         "isPersonal": bool(getattr(space, "is_personal", False)),
+        "isPrivate": bool(getattr(space, "is_private", False)),
         "folders": folder_payload,
         "standaloneLists": standalone_payload,
+        "lastActivityAt": (last_activity_at or space.created_at).isoformat(),
     }

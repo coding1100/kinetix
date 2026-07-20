@@ -66,7 +66,7 @@ def can_assign_role(actor_role: WorkspaceRole, new_role: WorkspaceRole) -> bool:
         return True
     if actor_role == WorkspaceRole.SUPER_ADMIN:
         return new_role not in (WorkspaceRole.OWNER, WorkspaceRole.SUPER_ADMIN)
-    if actor_role == WorkspaceRole.ADMIN:
+    if actor_role in (WorkspaceRole.ADMIN, WorkspaceRole.MEMBER):
         return new_role in (
             WorkspaceRole.MEMBER,
             WorkspaceRole.GUEST,
@@ -102,3 +102,23 @@ async def has_privileged_workspace_access(
 ) -> bool:
     role = await get_active_workspace_role(session, workspace_id, user_id)
     return is_privileged(role)
+
+
+async def get_member_time_flags(
+    session: AsyncSession, workspace_id: str, user_id: str
+) -> tuple[bool, bool]:
+    """(can_see_time_estimate, can_track_time) for the member. Defaults to
+    (True, True) if no active membership row is found."""
+    row = await session.execute(
+        select(
+            WorkspaceMember.can_see_time_estimate, WorkspaceMember.can_track_time
+        ).where(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.user_id == user_id,
+            WorkspaceMember.status == MemberStatus.ACTIVE,
+        )
+    )
+    result = row.first()
+    if not result:
+        return True, True
+    return bool(result[0]), bool(result[1])

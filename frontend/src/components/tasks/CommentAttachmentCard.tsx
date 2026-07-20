@@ -111,40 +111,25 @@ export function CommentAttachmentCard({
   if (isImage && attachment.downloadUrl) {
     return (
       <>
-        <div
-          className={cn(
-            "group relative w-full max-w-[280px] cursor-pointer overflow-hidden rounded-xl border border-border bg-muted/20 transition-shadow hover:shadow-md",
-            className
-          )}
-          onClick={() => setLightboxOpen(true)}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => e.key === "Enter" && setLightboxOpen(true)}
-          aria-label={`Preview ${attachment.fileName}`}
-        >
-          {/* Image thumbnail */}
-          <div className="relative overflow-hidden bg-muted" style={{ aspectRatio: "16/9" }}>
+        <div className={cn("w-full max-w-[280px]", className)}>
+          <div
+            className="group/image relative cursor-pointer overflow-hidden rounded-xl border border-border bg-muted"
+            style={{ aspectRatio: "16/9" }}
+            onClick={() => setLightboxOpen(true)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === "Enter" && setLightboxOpen(true)}
+            aria-label={`Preview ${attachment.fileName}`}
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={attachment.downloadUrl}
               alt={attachment.fileName}
-              className="size-full object-cover transition-transform duration-200 group-hover:scale-105"
+              className="size-full object-cover transition-transform duration-200 group-hover/image:scale-105"
             />
             {/* Hover overlay */}
-            <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/20">
-              <ZoomInIcon className="size-6 text-white opacity-0 drop-shadow transition-opacity group-hover:opacity-100" />
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="flex items-center justify-between gap-2 px-3 py-2">
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium text-foreground">
-                {attachment.fileName}
-              </p>
-              {sizeLabel ? (
-                <p className="text-xs text-muted-foreground">{sizeLabel}</p>
-              ) : null}
+            <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover/image:bg-black/20">
+              <ZoomInIcon className="size-6 text-white opacity-0 drop-shadow transition-opacity group-hover/image:opacity-100" />
             </div>
             <a
               href={attachment.downloadUrl}
@@ -152,12 +137,15 @@ export function CommentAttachmentCard({
               target="_blank"
               rel="noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              className="absolute top-1.5 right-1.5 rounded-md bg-black/50 p-1.5 text-white opacity-0 transition-opacity hover:bg-black/70 group-hover/image:opacity-100"
               aria-label={`Download ${attachment.fileName}`}
             >
               <DownloadIcon className="size-3.5" />
             </a>
           </div>
+          <p className="mt-1 truncate text-[11px] text-muted-foreground">
+            {attachment.fileName}
+          </p>
         </div>
 
         <ImageLightbox

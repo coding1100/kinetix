@@ -17,10 +17,12 @@ import {
   InfoIcon,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { AvatarWithPresence, PresenceDot } from "@/components/shared/AvatarWithPresence";
+import { PresenceDot } from "@/components/shared/AvatarWithPresence";
 import { useUserPresence } from "@/stores/presence-store";
 import { presenceLabel } from "@/stores/profile-store";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PanelCardShell } from "@/components/shared/PanelCardShell";
@@ -28,9 +30,13 @@ import { UnderlineTabBar } from "@/components/shared/Tabs";
 import { useChatStore, type PersonProfileTab } from "@/stores/chat-store";
 import { usePersonProfileMember } from "@/hooks/use-person-profile-member";
 import { useOpenDirectMessage } from "@/hooks/use-open-direct-message";
+import { useOpenPersonProfile } from "@/hooks/use-open-person-profile";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
+import { useHomeQuery } from "@/hooks/use-home-query";
+import { useAuthStore } from "@/stores/auth-store";
 import { findDmByUserId } from "@/lib/chat/sidebar-dm";
 import { fetchAssignedComments, fetchTasks } from "@/lib/api/home";
+import { fetchWorkspacePeople, updateMemberManager } from "@/lib/api/workspace";
 import { mockPersonActivity } from "@/lib/mocks/person-profile";
 import {
   avatarColorClassForKey,
@@ -40,6 +46,7 @@ import { ROLE_LABELS } from "@/components/workspace/WorkspaceInviteForm";
 import { cn } from "@/lib/utils";
 import type { Task } from "@/lib/types/task";
 import { PageLoader } from "@/components/ui/page-loader";
+import { toast } from "sonner";
 
 function formatLocalTime() {
   return new Date().toLocaleTimeString(undefined, {
@@ -48,30 +55,27 @@ function formatLocalTime() {
   });
 }
 
-function InfoRow({
+function IconRow({
   icon,
-  label,
-  value,
+  children,
   muted,
+  className,
 }: {
   icon: ReactNode;
-  label: string;
-  value: string;
+  children: ReactNode;
   muted?: boolean;
+  className?: string;
 }) {
   return (
-    <div className="flex items-start gap-3 py-2">
-      <span className="mt-0.5 text-muted-foreground">{icon}</span>
-      <div className="min-w-0 flex-1">
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p
-          className={cn(
-            "truncate text-sm",
-            muted ? "text-muted-foreground" : "text-foreground"
-          )}
-        >
-          {value}
-        </p>
+    <div className={cn("flex items-center gap-3 py-2", className)}>
+      <span className="text-muted-foreground">{icon}</span>
+      <div
+        className={cn(
+          "min-w-0 flex-1 truncate text-sm",
+          muted ? "text-muted-foreground" : "text-foreground"
+        )}
+      >
+        {children}
       </div>
     </div>
   );
@@ -136,19 +140,73 @@ export function PersonProfilePanel({
   const setPersonProfileTab = useChatStore((s) => s.setPersonProfileTab);
   const { member, loading } = usePersonProfileMember(userId, channelId);
   const { openDirectMessage, openingUserId } = useOpenDirectMessage();
+  const { openProfile } = useOpenPersonProfile();
   const memberPresence = useUserPresence(userId, "offline");
+  const currentUserId = useAuthStore((s) => s.user?.id);
+  const workspaceRole = useAuthStore(
+    (s) => s.workspaces.find((w) => w.id === workspaceId)?.role
+  );
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [comments, setComments] = useState<
     { id: string; task: string; comment: string; author: string; due: string }[]
   >([]);
   const [tabLoading, setTabLoading] = useState(false);
+  const [managerRefreshKey, setManagerRefreshKey] = useState(0);
+  const [managerPickerOpen, setManagerPickerOpen] = useState(false);
+  const [managerSearch, setManagerSearch] = useState("");
+  const [savingManager, setSavingManager] = useState(false);
 
   const displayName = member?.fullName ?? "Member";
   const activity = useMemo(
     () => mockPersonActivity(displayName),
     [displayName]
   );
+
+  const canEditManager =
+    currentUserId === userId ||
+    workspaceRole === "OWNER" ||
+    workspaceRole === "SUPER_ADMIN" ||
+    workspaceRole === "ADMIN";
+
+  const peopleQuery = useHomeQuery(
+    (token, ws) => fetchWorkspacePeople(token, ws).then((r) => r.data),
+    [managerRefreshKey]
+  );
+  const people = useMemo(() => peopleQuery.data ?? [], [peopleQuery.data]);
+  const profileRow = people.find((p) => p.id === userId);
+  const managerId = profileRow?.managerId ?? null;
+  const managerName = profileRow?.managerName ?? null;
+  const managerCandidates = useMemo(() => {
+    const q = managerSearch.trim().toLowerCase();
+    return people
+      .filter((p) => p.id !== userId)
+      .filter((p) => !q || p.fullName.toLowerCase().includes(q));
+  }, [people, userId, managerSearch]);
+
+  const [personSwitcherOpen, setPersonSwitcherOpen] = useState(false);
+  const [personSwitcherSearch, setPersonSwitcherSearch] = useState("");
+  const personSwitcherCandidates = useMemo(() => {
+    const q = personSwitcherSearch.trim().toLowerCase();
+    return people
+      .filter((p) => p.id !== userId)
+      .filter((p) => !q || p.fullName.toLowerCase().includes(q));
+  }, [people, userId, personSwitcherSearch]);
+
+  async function handleSetManager(nextManagerId: string | null) {
+    if (!ready) return;
+    setSavingManager(true);
+    try {
+      await updateMemberManager(accessToken, workspaceId, userId, nextManagerId);
+      setManagerPickerOpen(false);
+      setManagerSearch("");
+      setManagerRefreshKey((k) => k + 1);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not update manager");
+    } finally {
+      setSavingManager(false);
+    }
+  }
 
   useEffect(() => {
     const existing = findDmByUserId(workspaceId, userId);
@@ -252,61 +310,116 @@ export function PersonProfilePanel({
             </div>
           ) : (
             <>
-              <div className="flex flex-col items-center text-center">
-                <AvatarWithPresence
-                  presence={memberPresence}
-                  dotSize="md"
-                  borderClass="border-card"
-                >
-                  <Avatar className="size-20 rounded-xl">
-                    {member?.avatarUrl ? (
-                      <AvatarImage src={member.avatarUrl} alt={displayName} />
-                    ) : null}
-                    <AvatarFallback
-                      className={cn(
-                        "rounded-xl text-2xl font-semibold",
-                        avatarColorClassForKey(userId, displayName)
-                      )}
-                    >
-                      {avatarInitialFromName(displayName)}
-                    </AvatarFallback>
-                  </Avatar>
-                </AvatarWithPresence>
+              <div className="flex items-start gap-3">
+                <Avatar className="size-16 shrink-0 rounded-xl">
+                  {member?.avatarUrl ? (
+                    <AvatarImage src={member.avatarUrl} alt={displayName} />
+                  ) : null}
+                  <AvatarFallback
+                    className={cn(
+                      "rounded-xl text-xl font-semibold",
+                      avatarColorClassForKey(userId, displayName)
+                    )}
+                  >
+                    {avatarInitialFromName(displayName)}
+                  </AvatarFallback>
+                </Avatar>
 
-                <button
-                  type="button"
-                  className="mt-3 inline-flex items-center gap-1 text-lg font-semibold hover:text-primary"
-                >
-                  {displayName}
-                  <ChevronDownIcon className="size-4 text-muted-foreground" />
-                </button>
+                <div className="min-w-0 flex-1 pt-1">
+                  <Popover
+                    open={personSwitcherOpen}
+                    onOpenChange={(next) => {
+                      setPersonSwitcherOpen(next);
+                      if (!next) setPersonSwitcherSearch("");
+                    }}
+                  >
+                    <PopoverTrigger
+                      render={
+                        <button
+                          type="button"
+                          className="inline-flex min-w-0 items-center gap-1 text-lg font-semibold hover:text-primary"
+                        >
+                          <span className="truncate">{displayName}</span>
+                          <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
+                        </button>
+                      }
+                    />
+                    <PopoverContent align="start" className="w-72 p-2">
+                      <div className="relative mb-2">
+                        <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          value={personSwitcherSearch}
+                          onChange={(e) => setPersonSwitcherSearch(e.target.value)}
+                          placeholder="Search people…"
+                          className="h-8 pl-8"
+                          autoFocus
+                        />
+                      </div>
+                      <ul className="max-h-56 space-y-0.5 overflow-y-auto">
+                        {personSwitcherCandidates.length === 0 ? (
+                          <li className="px-2 py-3 text-center text-xs text-muted-foreground">
+                            No people found
+                          </li>
+                        ) : (
+                          personSwitcherCandidates.map((p) => (
+                            <li key={p.id}>
+                              <button
+                                type="button"
+                                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+                                onClick={() => {
+                                  setPersonSwitcherOpen(false);
+                                  setPersonSwitcherSearch("");
+                                  openProfile(p.id);
+                                }}
+                              >
+                                <Avatar className="size-6">
+                                  <AvatarFallback
+                                    className={cn(
+                                      "text-[10px] font-semibold",
+                                      avatarColorClassForKey(p.id, p.fullName)
+                                    )}
+                                  >
+                                    {avatarInitialFromName(p.fullName)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <span className="min-w-0 flex-1 truncate">
+                                  {p.fullName}
+                                </span>
+                              </button>
+                            </li>
+                          ))
+                        )}
+                      </ul>
+                    </PopoverContent>
+                  </Popover>
 
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Add description...
-                </p>
-
-                <div className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
-                  <PresenceDot presence={memberPresence} size="sm" inline />
-                  <span>{presenceLabel(memberPresence)}</span>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                    <span>Add description...</span>
+                    <span className="h-3.5 w-px bg-border" />
+                    <span className="inline-flex items-center gap-1.5">
+                      <PresenceDot presence={memberPresence} size="sm" inline />
+                      {presenceLabel(memberPresence)}
+                    </span>
+                  </div>
                 </div>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="mt-3 size-10 rounded-lg border-border shadow-sm"
-                  onClick={() => void openDirectMessage(userId)}
-                  disabled={messaging}
-                  aria-label={`Message ${displayName}`}
-                  title={`Message ${displayName}`}
-                >
-                  {messaging ? (
-                    <span className="loader-breathe size-4 rounded-full bg-primary" />
-                  ) : (
-                    <MessageCircleIcon className="size-5" strokeWidth={1.75} />
-                  )}
-                </Button>
               </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="mt-3 size-9 rounded-lg border-border shadow-sm"
+                onClick={() => void openDirectMessage(userId)}
+                disabled={messaging}
+                aria-label={`Message ${displayName}`}
+                title={`Message ${displayName}`}
+              >
+                {messaging ? (
+                  <span className="loader-breathe size-4 rounded-full bg-primary" />
+                ) : (
+                  <MessageCircleIcon className="size-4" strokeWidth={1.75} />
+                )}
+              </Button>
 
               <UnderlineTabBar
                 className="mt-5"
@@ -318,32 +431,138 @@ export function PersonProfilePanel({
 
               {tab === "activity" && (
                 <div className="mt-4 space-y-1">
-                  <InfoRow
-                    icon={<PalmtreeIcon className="size-4" />}
-                    label="Add time off"
-                    value="Add time off"
-                  />
-                  <InfoRow
-                    icon={<MailIcon className="size-4" />}
-                    label="Email"
-                    value={member?.email ?? "—"}
-                  />
-                  <InfoRow
-                    icon={<ClockIcon className="size-4" />}
-                    label="Local time"
-                    value={`${formatLocalTime()} local time`}
-                  />
-                  <InfoRow
-                    icon={<UserLockIcon className="size-4" />}
-                    label="Manager"
-                    value="No manager assigned"
-                    muted
-                  />
-                  <InfoRow
-                    icon={<UsersIcon className="size-4" />}
-                    label="Team"
-                    value={teamLabel}
-                  />
+                  <IconRow icon={<PalmtreeIcon className="size-4" />} muted>
+                    Add time off
+                  </IconRow>
+                  <IconRow icon={<MailIcon className="size-4" />}>
+                    {member?.email ?? "—"}
+                  </IconRow>
+                  <IconRow icon={<ClockIcon className="size-4" />}>
+                    {formatLocalTime()} local time
+                  </IconRow>
+                  <IconRow icon={<UserLockIcon className="size-4" />}>
+                    {managerId ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        {canEditManager ? (
+                          <button
+                            type="button"
+                            className="shrink-0 rounded-full"
+                            onClick={() => void handleSetManager(null)}
+                            disabled={savingManager}
+                            aria-label={`Remove manager ${managerName ?? ""}`}
+                            title="Remove manager"
+                          >
+                            <Avatar className="size-5">
+                              <AvatarFallback
+                                className={cn(
+                                  "text-[9px] font-semibold",
+                                  avatarColorClassForKey(
+                                    managerId,
+                                    managerName ?? ""
+                                  )
+                                )}
+                              >
+                                {avatarInitialFromName(managerName ?? "")}
+                              </AvatarFallback>
+                            </Avatar>
+                          </button>
+                        ) : (
+                          <Avatar className="size-5 shrink-0">
+                            <AvatarFallback
+                              className={cn(
+                                "text-[9px] font-semibold",
+                                avatarColorClassForKey(
+                                  managerId,
+                                  managerName ?? ""
+                                )
+                              )}
+                            >
+                              {avatarInitialFromName(managerName ?? "")}
+                            </AvatarFallback>
+                          </Avatar>
+                        )}
+                        <button
+                          type="button"
+                          className="truncate hover:text-primary hover:underline"
+                          onClick={() => openProfile(managerId)}
+                        >
+                          Reports to {managerName ?? "member"}
+                        </button>
+                      </span>
+                    ) : canEditManager ? (
+                      <Popover
+                        open={managerPickerOpen}
+                        onOpenChange={(next) => {
+                          setManagerPickerOpen(next);
+                          if (!next) setManagerSearch("");
+                        }}
+                      >
+                        <PopoverTrigger
+                          render={
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+                            >
+                              Select manager
+                              <ChevronDownIcon className="size-3.5" />
+                            </button>
+                          }
+                        />
+                        <PopoverContent align="start" className="w-72 p-2">
+                          <div className="relative mb-2">
+                            <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                              value={managerSearch}
+                              onChange={(e) => setManagerSearch(e.target.value)}
+                              placeholder="Search or enter email…"
+                              className="h-8 pl-8"
+                              autoFocus
+                            />
+                          </div>
+                          <ul className="max-h-56 space-y-0.5 overflow-y-auto">
+                            {managerCandidates.length === 0 ? (
+                              <li className="px-2 py-3 text-center text-xs text-muted-foreground">
+                                No people found
+                              </li>
+                            ) : (
+                              managerCandidates.map((p) => (
+                                <li key={p.id}>
+                                  <button
+                                    type="button"
+                                    disabled={savingManager}
+                                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted disabled:pointer-events-none disabled:opacity-60"
+                                    onClick={() => void handleSetManager(p.id)}
+                                  >
+                                    <Avatar className="size-6">
+                                      <AvatarFallback
+                                        className={cn(
+                                          "text-[10px] font-semibold",
+                                          avatarColorClassForKey(
+                                            p.id,
+                                            p.fullName
+                                          )
+                                        )}
+                                      >
+                                        {avatarInitialFromName(p.fullName)}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <span className="min-w-0 flex-1 truncate">
+                                      {p.id === currentUserId ? "Me" : p.fullName}
+                                    </span>
+                                  </button>
+                                </li>
+                              ))
+                            )}
+                          </ul>
+                        </PopoverContent>
+                      </Popover>
+                    ) : (
+                      "No manager assigned"
+                    )}
+                  </IconRow>
+                  <IconRow icon={<UsersIcon className="size-4" />}>
+                    {teamLabel}
+                  </IconRow>
 
                   <Separator className="my-4" />
 

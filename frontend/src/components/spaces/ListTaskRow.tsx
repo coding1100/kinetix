@@ -14,6 +14,7 @@ import {
   avatarInitialFromName,
 } from "@/lib/user-display";
 import { cn } from "@/lib/utils";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 
 function priorityFlagClass(priority?: TaskPriority) {
   switch (priority) {
@@ -62,7 +63,7 @@ export function ListTaskRow({
             {commentCount}
           </span>
         ) : null}
-        {subtaskCount > 0 ? (
+        {FEATURE_FLAGS.subtasks && subtaskCount > 0 ? (
           <span className="flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground">
             <ListTreeIcon className="size-3" />
             {subtaskCount}

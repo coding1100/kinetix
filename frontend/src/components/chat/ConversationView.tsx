@@ -9,15 +9,6 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
-import {
-  MoreHorizontalIcon,
-  PinIcon,
-  BellIcon,
-  SearchIcon,
-  StarIcon,
-  LinkIcon,
-  MailIcon,
-} from "lucide-react";
 import type {
   Channel,
   ChatMessage,
@@ -58,7 +49,6 @@ import type { ChatSearchHit } from "@/lib/types/chat";
 import { ChannelDetailsRail } from "./channel/ChannelDetailsRail";
 import { ChannelDetailsPanel } from "./channel/ChannelDetailsPanel";
 import { useChatStore } from "@/stores/chat-store";
-import { useUiStore } from "@/stores/ui-store";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -66,13 +56,6 @@ import {
   avatarInitialFromName,
 } from "@/lib/user-display";
 import { cn } from "@/lib/utils";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
@@ -100,7 +83,6 @@ import { fetchWorkspaceMembers } from "@/lib/api/chat";
 import { useAuthStore } from "@/stores/auth-store";
 import { ChannelNameLabel } from "@/components/chat/ChannelNameLabel";
 import { useChannelFavorite } from "@/hooks/use-channel-favorite";
-import { useChannelPin } from "@/hooks/use-channel-pin";
 import {
   invalidateChannelMembers,
   prefetchChannelMembers,
@@ -123,9 +105,11 @@ const MESSAGE_PAGE_SIZE = 50;
 export function ConversationView({
   type,
   id,
+  hideHeaderTitle,
 }: {
   type: ConversationType;
   id: string;
+  hideHeaderTitle?: boolean;
 }) {
   const router = useRouter();
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
@@ -142,11 +126,7 @@ export function ConversationView({
   );
   const channelDetailsView = useChatStore((s) => s.channelDetailsView);
   const personProfileUserId = useChatStore((s) => s.personProfileUserId);
-  const toggleChannelDetailsView = useChatStore(
-    (s) => s.toggleChannelDetailsView
-  );
   const setChannelDetailsView = useChatStore((s) => s.setChannelDetailsView);
-  const openModal = useUiStore((s) => s.openModal);
   const realtimeEvent = useChatStore((s) => s.realtimeEvent);
   const clearRealtimeEvent = useChatStore((s) => s.clearRealtimeEvent);
   const messageEditEvent = useChatStore((s) => s.messageEditEvent);
@@ -428,6 +408,15 @@ export function ConversationView({
       }
       if (err instanceof DOMException && err.name === "AbortError") return;
 
+      if (err instanceof ApiError && err.status === 404 && type === "channel") {
+        // Stale sidebar entry pointing at a since-deleted channel — drop it
+        // instead of leaving a permanent dead link.
+        removeChannelFromSidebar(conversationId);
+        toast.info("This channel no longer exists");
+        router.replace("/chat");
+        return;
+      }
+
       const cached = getConversationCache(workspaceId, type, conversationId);
       if (!cached?.messages.length) {
         setError(
@@ -445,6 +434,7 @@ export function ConversationView({
     type,
     id,
     resolveCachedMeta,
+    router,
   ]);
 
   const loadOlderMessages = useCallback(async () => {
@@ -630,6 +620,33 @@ export function ConversationView({
     setConversationUnread,
     markConversationRead,
   ]);
+
+  useEffect(() => {
+    if (!realtimeEvent || realtimeEvent.workspaceId !== workspaceId) return;
+    if (realtimeEvent.kind !== type || realtimeEvent.conversationId !== id) {
+      return;
+    }
+    if (!realtimeEvent.parentId || !currentUserId) return;
+    const parentId = realtimeEvent.parentId;
+    if (realtimeEvent.message.authorId === currentUserId) return;
+
+    setMessages((prev) => {
+      if (!prev.some((m) => m.id === parentId)) return prev;
+      const next = prev.map((m) =>
+        m.id === parentId
+          ? {
+              ...m,
+              threadCount: (m.threadCount ?? 0) + 1,
+              lastReplyAuthorId: realtimeEvent.message.authorId,
+              lastReplyAuthorName: realtimeEvent.message.authorName,
+              lastReplyAt: realtimeEvent.message.createdAt,
+            }
+          : m
+      );
+      setConversationCache(workspaceId, type, id, { messages: next });
+      return next;
+    });
+  }, [realtimeEvent, workspaceId, type, id, currentUserId]);
 
   const applyReactions = useCallback(
     (messageId: string, reactions: { emoji: string; count: number }[]) => {
@@ -977,14 +994,7 @@ export function ConversationView({
         : (dmMeta?.name ?? cachedDmName ?? "Direct message");
   const channelStarred =
     overrideChannelStarred ?? cachedChannelStarred ?? channel?.starred ?? false;
-  const { starred, toggleFavorite } = useChannelFavorite(
-    id,
-    channelStarred
-  );
-  const { pinned: channelPinned, togglePin } = useChannelPin(
-    id,
-    Boolean(cachedSidebarChannel?.pinnedAt ?? channel?.pinnedAt)
-  );
+  const { starred } = useChannelFavorite(id, channelStarred);
   const recipientLabel = type === "channel" ? `#${title}` : title;
   const otherUserId = dmMeta?.otherUserId;
 
@@ -1026,10 +1036,6 @@ export function ConversationView({
     } finally {
       sendingRef.current = false;
     }
-  };
-
-  const openChannelPanel = (view: Parameters<typeof toggleChannelDetailsView>[0]) => {
-    toggleChannelDetailsView(view);
   };
 
   const handleDmSearchSelect = (hit: ChatSearchHit) => {
@@ -1074,10 +1080,13 @@ export function ConversationView({
     }
   };
 
+  const showHeader = !(type === "channel" && hideHeaderTitle);
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-card">
+      {showHeader ? (
       <header className="flex h-14 shrink-0 items-center justify-between px-4">
-        <div className="flex min-w-0 items-center gap-2.5">
+        <div className="flex min-w-0 items-center gap-2">
           {type === "channel" ? (
             <div className="min-w-0">
               <h2 className="truncate text-base font-semibold leading-tight">
@@ -1105,7 +1114,7 @@ export function ConversationView({
                   size="md"
                 />
               ) : (
-                <Avatar className="size-8 shrink-0">
+                <Avatar className="size-9 shrink-0">
                   <AvatarFallback
                     className={cn(
                       "text-sm font-semibold",
@@ -1129,127 +1138,8 @@ export function ConversationView({
             </>
           )}
         </div>
-        {type === "channel" ? (
-        <div className="flex items-center gap-0.5">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={channelPinned ? "Unpin channel" : "Pin channel"}
-                  onClick={() => void togglePin()}
-                  className={cn(channelPinned && "text-primary")}
-                >
-                  <PinIcon
-                    className={cn("size-4", channelPinned && "fill-current")}
-                    strokeWidth={1.75}
-                  />
-                </Button>
-              }
-            />
-            <TooltipContent side="bottom">
-              {channelPinned ? "Unpin channel" : "Pin channel"}
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Notifications"
-                  onClick={() => openChannelPanel("settings")}
-                >
-                  <BellIcon className="size-4" strokeWidth={1.75} />
-                </Button>
-              }
-            />
-            <TooltipContent side="bottom">Notifications</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Search"
-                  onClick={() => openChannelPanel("search")}
-                >
-                  <SearchIcon className="size-4" strokeWidth={1.75} />
-                </Button>
-              }
-            />
-            <TooltipContent side="bottom">Search</TooltipContent>
-          </Tooltip>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button variant="ghost" size="icon-sm" aria-label="More options">
-                        <MoreHorizontalIcon className="size-4" strokeWidth={1.75} />
-                      </Button>
-                    }
-                  />
-                  <TooltipContent side="bottom">More options</TooltipContent>
-                </Tooltip>
-              }
-            />
-            <DropdownMenuContent align="end" className="w-52">
-              <>
-                  <DropdownMenuItem
-                    onClick={() => void markConversationUnread()}
-                  >
-                    Mark as unread
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => openModal("rename-channel", id)}
-                  >
-                    Rename
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => toast.success("Link copied")}>
-                    <LinkIcon className="size-4" />
-                    Copy link
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => void toggleFavorite()}>
-                    <StarIcon
-                      className={cn(
-                        "size-4",
-                        starred && "fill-amber-400 text-amber-400"
-                      )}
-                    />
-                    {starred ? "Remove from favorites" : "Favorite"}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => toast("Email to channel — Phase 3")}>
-                    <MailIcon className="size-4" />
-                    Email to Channel
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openChannelPanel("settings")}>
-                    <BellIcon className="size-4" />
-                    Notification settings
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openChannelPanel("followers")}>
-                    Follow / Unfollow
-                  </DropdownMenuItem>
-                  {canDeleteChannel ? (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onClick={() => setDeleteChannelOpen(true)}
-                      >
-                        Delete Channel
-                      </DropdownMenuItem>
-                    </>
-                  ) : null}
-                </>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-        ) : null}
       </header>
+      ) : null}
       <Separator />
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -1303,10 +1193,17 @@ export function ConversationView({
             channelLabel={type === "channel" ? title : undefined}
             onReplySent={() => {
               if (!activeThreadMessageId) return;
+              const replierName = useAuthStore.getState().user?.fullName;
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === activeThreadMessageId
-                    ? { ...m, threadCount: (m.threadCount ?? 0) + 1 }
+                    ? {
+                        ...m,
+                        threadCount: (m.threadCount ?? 0) + 1,
+                        lastReplyAuthorId: currentUserId ?? m.lastReplyAuthorId,
+                        lastReplyAuthorName: replierName ?? m.lastReplyAuthorName,
+                        lastReplyAt: new Date().toISOString(),
+                      }
                     : m
                 )
               );
@@ -1316,7 +1213,11 @@ export function ConversationView({
           />
         )}
         {type === "channel" && channelDetailsView && (
-          <ChannelDetailsPanel channelId={id} />
+          <ChannelDetailsPanel
+            channelId={id}
+            canDeleteChannel={canDeleteChannel}
+            onRequestDeleteChannel={() => setDeleteChannelOpen(true)}
+          />
         )}
         {personProfileUserId && (
           <PersonProfilePanel

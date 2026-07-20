@@ -151,6 +151,7 @@ export function TaskCommentComposer({
             onKeyDown={handleKeyDown}
             onInput={syncFromEditor}
             onPasteFiles={fileInputEnabled ? uploadFiles : undefined}
+            peopleOnlyMentions
           />
         </div>
 
@@ -182,6 +183,7 @@ export function TaskCommentComposer({
               onOpenChange={setPickerOpen}
               members={workspaceMembers}
               onSelectMention={insertMention}
+              peopleOnly
               trigger={
                 <Button
                   type="button"

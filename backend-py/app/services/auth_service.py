@@ -177,6 +177,12 @@ async def get_me(session: AsyncSession, user_id: str) -> dict:
     if not user:
         raise AppError(404, "NOT_FOUND", "User not found")
 
+    # Relationship order is undefined; sort so workspaces[0] is stable
+    # (oldest membership first, matching list_workspaces).
+    active = sorted(
+        (m for m in user.memberships if m.status == MemberStatus.ACTIVE),
+        key=lambda m: (m.joined_at is None, m.joined_at),
+    )
     workspaces = [
         {
             "id": str(m.workspace.id),
@@ -184,8 +190,7 @@ async def get_me(session: AsyncSession, user_id: str) -> dict:
             "slug": m.workspace.slug,
             "role": m.role.value,
         }
-        for m in user.memberships
-        if m.status == MemberStatus.ACTIVE
+        for m in active
     ]
 
     return {
