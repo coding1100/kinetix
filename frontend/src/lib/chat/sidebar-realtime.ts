@@ -115,12 +115,15 @@ export function applyRealtimeMessageToSidebar(
   accessToken: string | undefined
 ) {
   if (event.parentId) return;
-  if (!currentUserId || event.message.authorId === currentUserId) return;
+  if (!currentUserId) return;
 
   const { workspaceId, kind, conversationId, message } = event;
+  const isOwnMessage = message.authorId === currentUserId;
   const lastMessage = stripMessageHtml(message.body);
   const lastAt = message.createdAt;
-  const bumpUnread = !isActiveConversation(event);
+  // Own messages still bump the conversation to the top of the sidebar,
+  // just never as unread for the sender.
+  const bumpUnread = !isOwnMessage && !isActiveConversation(event);
   const cache = useChatStore.getState().sidebarListsCache;
 
   if (kind === "dm") {

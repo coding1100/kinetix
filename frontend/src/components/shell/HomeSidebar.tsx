@@ -58,7 +58,12 @@ import {
   updateHomeSidebarConfig,
 } from "@/lib/api/home";
 import { fetchSpacesTree } from "@/lib/api/spaces";
-import { loadSidebarLists } from "@/lib/chat/sidebar-lists-loader";
+import {
+  loadSidebarLists,
+  mergeSidebarChannels,
+  mergeSidebarDms,
+} from "@/lib/chat/sidebar-lists-loader";
+import { isSidebarCacheForSession, useChatStore } from "@/stores/chat-store";
 import { UserAvatarWithPresence } from "@/components/shared/AvatarWithPresence";
 import {
   avatarColorClassForKey,
@@ -463,6 +468,12 @@ export function HomeSidebar() {
   const searchParams = useSearchParams();
   const inboxTab = pathname === "/home/inbox" ? searchParams.get("tab") : null;
   const currentUserId = useAuthStore((s) => s.user?.id);
+  // Subscribed reactively (not just fetched once) so a live chat:message
+  // socket event - which patches sidebarListsCache - re-sorts Home's
+  // channel/DM lists immediately, matching ChatSidebar's behavior instead
+  // of only re-sorting on the next full page load.
+  const sidebarListsCache = useChatStore((s) => s.sidebarListsCache);
+  const sidebarRefreshKey = useChatStore((s) => s.sidebarRefreshKey);
   const {
     items,
     filter,
@@ -522,9 +533,15 @@ export function HomeSidebar() {
     [spacesRefreshKey]
   );
 
+  const cacheValid = isSidebarCacheForSession(
+    sidebarListsCache,
+    currentUserId,
+    workspaceId
+  );
+
   const chatListsQuery = useHomeQuery(
-    (token, ws) => loadSidebarLists(token, ws, {}),
-    []
+    (token, ws) => loadSidebarLists(token, ws, { force: sidebarRefreshKey > 0 }),
+    [sidebarRefreshKey]
   );
 
   if (!secondaryPanelOpen) return null;
@@ -538,11 +555,14 @@ export function HomeSidebar() {
       new Date(a.lastActivityAt ?? 0).getTime()
   );
 
-  const channels = [...(chatListsQuery.data?.channels ?? [])].sort(
-    (a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime()
+  // Merge functions already sort desc by lastAt (last message time).
+  const channels = mergeSidebarChannels(
+    chatListsQuery.data?.channels,
+    cacheValid ? sidebarListsCache?.channels : undefined
   );
-  const dms = [...(chatListsQuery.data?.dms ?? [])].sort(
-    (a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime()
+  const dms = mergeSidebarDms(
+    chatListsQuery.data?.dms,
+    cacheValid ? sidebarListsCache?.dms : undefined
   );
 
   return (
