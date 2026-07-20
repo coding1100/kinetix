@@ -34,13 +34,35 @@ export interface SpaceDto {
   description?: string;
   isPersonal?: boolean;
   isPrivate?: boolean;
+  canShare?: boolean;
   folders?: {
     id: string;
     name: string;
-    lists: { id: string; name: string; taskCount: number }[];
+    lists: { id: string; name: string; taskCount: number; canShare?: boolean }[];
+    canShare?: boolean;
   }[];
-  standaloneLists?: { id: string; name: string; taskCount: number }[];
+  standaloneLists?: {
+    id: string;
+    name: string;
+    taskCount: number;
+    canShare?: boolean;
+  }[];
   lastActivityAt?: string;
+}
+
+export interface SharedWithMeEntryDto {
+  type: "folder" | "list";
+  id: string;
+  name: string;
+  spaceId: string;
+  spaceName: string;
+}
+
+export function fetchSharedWithMe(token: string, workspaceId: string) {
+  return apiFetch<{ data: SharedWithMeEntryDto[] }>(
+    wsPath(workspaceId, "/home/shared-with-me"),
+    { token }
+  );
 }
 
 export interface PostDto {

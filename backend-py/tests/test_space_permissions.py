@@ -171,3 +171,63 @@ async def test_private_space_override_grants_guest_access(api_client: AsyncClien
         assert folder.status_code == 201, folder.text
     finally:
         await _set_role(api_client, owner_headers, ws_id, member_user_id, "MEMBER")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_list_only_share_masks_private_space_name(api_client: AsyncClient):
+    owner_token = await login(api_client, *OWNER)
+    owner_headers = auth_headers(owner_token)
+    member_token = await login(api_client, *MEMBER)
+    member_headers = auth_headers(member_token)
+    ws_id = await workspace_id(api_client, owner_token)
+    member_user_id = await user_id(api_client, member_token)
+
+    suffix = int(time.time() * 1000)
+    space_name = f"Private List-Share Space {suffix}"
+    space = await api_client.post(
+        f"/api/v1/workspaces/{ws_id}/spaces",
+        headers=owner_headers,
+        json={"name": space_name, "isPrivate": True},
+    )
+    assert space.status_code == 201, space.text
+    space_id = space.json()["id"]
+
+    lst = await api_client.post(
+        f"/api/v1/workspaces/{ws_id}/spaces/{space_id}/lists",
+        headers=owner_headers,
+        json={"name": "Only list shared"},
+    )
+    assert lst.status_code == 201, lst.text
+    list_id = lst.json()["id"]
+
+    await _set_role(api_client, owner_headers, ws_id, member_user_id, "GUEST")
+    try:
+        blocked = await api_client.get(
+            f"/api/v1/workspaces/{ws_id}/lists/{list_id}", headers=member_headers
+        )
+        assert blocked.status_code == 403, blocked.text
+
+        share = await api_client.post(
+            f"/api/v1/workspaces/{ws_id}/lists/{list_id}/members",
+            headers=owner_headers,
+            json={"userId": member_user_id, "permissionLevel": "EDIT"},
+        )
+        assert share.status_code == 201, share.text
+
+        guest_view = await api_client.get(
+            f"/api/v1/workspaces/{ws_id}/lists/{list_id}", headers=member_headers
+        )
+        assert guest_view.status_code == 200, guest_view.text
+        guest_space = guest_view.json()["space"]
+        assert guest_space["name"] == "Shared with me"
+        assert guest_space["accessible"] is False
+
+        owner_view = await api_client.get(
+            f"/api/v1/workspaces/{ws_id}/lists/{list_id}", headers=owner_headers
+        )
+        assert owner_view.status_code == 200, owner_view.text
+        owner_space = owner_view.json()["space"]
+        assert owner_space["name"] == space_name
+        assert owner_space["accessible"] is True
+    finally:
+        await _set_role(api_client, owner_headers, ws_id, member_user_id, "MEMBER")

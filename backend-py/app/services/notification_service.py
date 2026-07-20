@@ -413,6 +413,48 @@ async def create_channel_broadcast_notifications(
     return created
 
 
+_SHARE_RESOURCE_LABELS = {"space": "Space", "folder": "Folder", "list": "List"}
+
+
+async def create_resource_share_notification(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    recipient_id: str,
+    actor_user_id: str,
+    resource_type: str,
+    resource_name: str,
+    href: str,
+) -> list[tuple[str, InboxItem]]:
+    """Notify one recipient they were granted access to a Space/Folder/List.
+    Only call this for an immediate (ACTIVE, real user) grant - a
+    pending/email-only share has no user to notify yet."""
+    if recipient_id == actor_user_id:
+        return []
+
+    users = await _load_users(session, [actor_user_id])
+    actor_name = (
+        users.get(actor_user_id).full_name if users.get(actor_user_id) else "Someone"
+    )
+    label = _SHARE_RESOURCE_LABELS[resource_type]
+    item = InboxItem(
+        workspace_id=workspace_id,
+        user_id=recipient_id,
+        type=InboxItemType.CHAT,
+        title=f"{label} shared with you",
+        preview=f'{actor_name} shared the {label.lower()} "{resource_name}" with you',
+        source=resource_name,
+        unread=True,
+        bucket=InboxBucket.ALL,
+        time_group=InboxTimeGroup.TODAY,
+        href=href,
+        activity_kind=f"{resource_type}_share",
+    )
+    session.add(item)
+    await session.flush()
+    return [(recipient_id, item)]
+
+
 async def create_dm_broadcast_notifications(
     session: AsyncSession,
     *,

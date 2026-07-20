@@ -91,16 +91,19 @@ export function ListWorkspace({
   return (
     <>
       <SpacesListToolbar
+        listId={listId}
         listName={meta.name}
         spaceName={meta.space.name}
         spaceColor={meta.space.color}
         spaceId={meta.space.id}
+        spaceAccessible={meta.space.accessible !== false}
         view={view}
         onViewChange={setView}
         statuses={meta.statuses}
         statusFilter={statusFilter}
         onStatusFilterChange={setStatusFilter}
         onCreateTask={openCreateTask}
+        canShare={meta.canShare}
       />
 
       {view === "channel" ? (

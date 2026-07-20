@@ -20,10 +20,12 @@ from app.db.models.enums import (
 from app.db.models.home import (
     AssignedComment,
     Folder,
+    FolderMember,
     HomeFavorite,
     HomeRecent,
     HomeReminder,
     InboxItem,
+    ListMember,
     ListStatus,
     Post,
     Space,
@@ -47,8 +49,15 @@ from app.services.list_status_service import (
 from app.services.personal_space_service import ensure_personal_space
 from app.services.space_permissions import (
     get_space_or_403,
-    require_space_permission,
+    level_at_least,
+    resolve_space_permission,
     visible_space_ids,
+)
+from app.services.folder_list_permissions import (
+    require_folder_permission,
+    require_list_permission,
+    resolve_folder_permission,
+    resolve_list_permission,
 )
 from app.services.workspace_permissions import get_member_time_flags
 from app.db.models.workspace import WorkspaceMember
@@ -219,28 +228,58 @@ async def _last_activity_for_space(session: AsyncSession, space):
 
 
 async def _build_space_payload(
-    session: AsyncSession, space, member_count: int, list_count: int
+    session: AsyncSession,
+    space,
+    member_count: int,
+    list_count: int,
+    user_id: str,
+    role: WorkspaceRole,
 ) -> dict:
+    space_level = await resolve_space_permission(session, space, user_id, role)
+    space_can_share = level_at_least(space_level, PermissionLevel.EDIT)
+
     folders = []
     for folder in space.folders:
+        folder.space = space
+        folder_level = await resolve_folder_permission(session, folder, user_id, role)
+        folder_can_share = level_at_least(folder_level, PermissionLevel.EDIT)
+        lists = []
+        for lst in folder.lists:
+            lst.space = space
+            lst_level = await resolve_list_permission(session, lst, user_id, role)
+            lists.append(
+                map_list_entry(
+                    lst, len(lst.tasks), level_at_least(lst_level, PermissionLevel.EDIT)
+                )
+            )
         folders.append(
             {
                 "id": folder.id,
                 "name": folder.name,
-                "lists": [
-                    map_list_entry(lst, len(lst.tasks))
-                    for lst in folder.lists
-                ],
+                "lists": lists,
+                "canShare": folder_can_share,
             }
         )
-    standalone = [
-        map_list_entry(lst, len(lst.tasks))
-        for lst in space.lists
-        if lst.folder_id is None
-    ]
+    standalone = []
+    for lst in space.lists:
+        if lst.folder_id is not None:
+            continue
+        lst.space = space
+        lst_level = await resolve_list_permission(session, lst, user_id, role)
+        standalone.append(
+            map_list_entry(
+                lst, len(lst.tasks), level_at_least(lst_level, PermissionLevel.EDIT)
+            )
+        )
     last_activity_at = await _last_activity_for_space(session, space)
     return map_space_row(
-        space, member_count, list_count, folders, standalone, last_activity_at
+        space,
+        member_count,
+        list_count,
+        folders,
+        standalone,
+        last_activity_at,
+        space_can_share,
     )
 
 
@@ -485,7 +524,79 @@ async def list_spaces(
         if visible is not None and space.id not in visible:
             continue
         list_count = await _list_count_for_space(session, space.id)
-        data.append(await _build_space_payload(session, space, member_count, list_count))
+        data.append(
+            await _build_space_payload(
+                session, space, member_count, list_count, user_id, role
+            )
+        )
+    return {"data": data}
+
+
+async def list_shared_with_me(
+    session: AsyncSession, workspace_id: str, user_id: str, role: WorkspaceRole
+) -> dict:
+    """Folders/Lists the user has an explicit grant on but can't already see
+    via their Space access — i.e. content shared with them individually.
+    Privileged roles see every Space anyway, so this is always empty for them.
+    """
+    visible = await visible_space_ids(session, workspace_id, user_id, role)
+    if visible is None:
+        return {"data": []}
+
+    folder_rows = (
+        await session.scalars(
+            select(FolderMember)
+            .join(Folder, Folder.id == FolderMember.folder_id)
+            .join(Space, Space.id == Folder.space_id)
+            .where(
+                Space.workspace_id == workspace_id,
+                FolderMember.user_id == user_id,
+                FolderMember.status == MemberStatus.ACTIVE,
+            )
+            .options(selectinload(FolderMember.folder).selectinload(Folder.space))
+        )
+    ).all()
+    list_rows = (
+        await session.scalars(
+            select(ListMember)
+            .join(TaskList, TaskList.id == ListMember.list_id)
+            .join(Space, Space.id == TaskList.space_id)
+            .where(
+                Space.workspace_id == workspace_id,
+                ListMember.user_id == user_id,
+                ListMember.status == MemberStatus.ACTIVE,
+            )
+            .options(selectinload(ListMember.task_list).selectinload(TaskList.space))
+        )
+    ).all()
+
+    data = []
+    for row in folder_rows:
+        folder = row.folder
+        if folder.space_id in visible:
+            continue
+        data.append(
+            {
+                "type": "folder",
+                "id": folder.id,
+                "name": folder.name,
+                "spaceId": folder.space_id,
+                "spaceName": folder.space.name,
+            }
+        )
+    for row in list_rows:
+        task_list = row.task_list
+        if task_list.space_id in visible:
+            continue
+        data.append(
+            {
+                "type": "list",
+                "id": task_list.id,
+                "name": task_list.name,
+                "spaceId": task_list.space_id,
+                "spaceName": task_list.space.name,
+            }
+        )
     return {"data": data}
 
 
@@ -506,7 +617,9 @@ async def get_space(
     )
     member_count = await _active_member_count(session, workspace_id)
     list_count = await _list_count_for_space(session, space.id)
-    return await _build_space_payload(session, space, member_count, list_count)
+    return await _build_space_payload(
+        session, space, member_count, list_count, user_id, role
+    )
 
 
 def _task_filters(
@@ -555,7 +668,9 @@ async def get_list(
     if not task_list:
         raise AppError(404, "NOT_FOUND", "List not found")
     space = task_list.space
-    await require_space_permission(session, space, user_id, role, PermissionLevel.VIEW)
+    level = await resolve_list_permission(session, task_list, user_id, role)
+    if not level_at_least(level, PermissionLevel.VIEW):
+        raise AppError(403, "FORBIDDEN", "You don't have access to this List")
     statuses = await list_statuses_for_list(session, task_list.id)
     channel_id = await session.scalar(
         select(ChatChannel.id).where(
@@ -564,16 +679,23 @@ async def get_list(
         )
     )
     await session.commit()
+    # The user can see this List via an explicit List/Folder-level share
+    # without having access to its parent Space at all - don't leak the
+    # private Space's real name to them in that case.
+    space_level = await resolve_space_permission(session, space, user_id, role)
+    has_space_access = level_at_least(space_level, PermissionLevel.VIEW)
     return {
         "id": task_list.id,
         "name": task_list.name,
         "space": {
             "id": space.id,
-            "name": space.name,
+            "name": space.name if has_space_access else "Shared with me",
             "color": space.color,
+            "accessible": has_space_access,
         },
         "statuses": statuses,
         "channelId": channel_id,
+        "canShare": level_at_least(level, PermissionLevel.EDIT),
     }
 
 
@@ -592,8 +714,8 @@ async def list_tasks_for_list(
     )
     if not task_list:
         raise AppError(404, "NOT_FOUND", "List not found")
-    await require_space_permission(
-        session, task_list.space, user_id, role, PermissionLevel.VIEW
+    await require_list_permission(
+        session, task_list, user_id, role, PermissionLevel.VIEW
     )
     tasks = (
         await session.scalars(
@@ -623,8 +745,8 @@ async def create_task(
     )
     if not task_list:
         raise AppError(404, "NOT_FOUND", "List not found")
-    await require_space_permission(
-        session, task_list.space, user_id, role, PermissionLevel.EDIT
+    await require_list_permission(
+        session, task_list, user_id, role, PermissionLevel.EDIT
     )
     await ensure_list_statuses(session, list_id)
     default_status = await default_status_for_list(session, list_id)
@@ -677,8 +799,8 @@ async def create_subtask(
     )
     if not parent:
         raise AppError(404, "NOT_FOUND", "Task not found")
-    await require_space_permission(
-        session, parent.task_list.space, user_id, role, PermissionLevel.EDIT
+    await require_list_permission(
+        session, parent.task_list, user_id, role, PermissionLevel.EDIT
     )
     if parent.parent_task_id:
         raise AppError(400, "VALIDATION_ERROR", "Nested subtasks are not supported")
@@ -766,8 +888,8 @@ async def add_task_dependency(
     )
     if not related:
         raise AppError(404, "NOT_FOUND", "Related task not found")
-    await require_space_permission(
-        session, related.task_list.space, user_id, role, PermissionLevel.VIEW
+    await require_list_permission(
+        session, related.task_list, user_id, role, PermissionLevel.VIEW
     )
 
     dependency = TaskDependency(
@@ -833,8 +955,8 @@ async def add_checklist(
     )
     if not task:
         raise AppError(404, "NOT_FOUND", "Task not found")
-    await require_space_permission(
-        session, task.task_list.space, user_id, role, PermissionLevel.EDIT
+    await require_list_permission(
+        session, task.task_list, user_id, role, PermissionLevel.EDIT
     )
 
     max_position = await session.scalar(
@@ -896,8 +1018,8 @@ async def update_checklist(
     )
     if not task:
         raise AppError(404, "NOT_FOUND", "Task not found")
-    await require_space_permission(
-        session, task.task_list.space, user_id, role, PermissionLevel.EDIT
+    await require_list_permission(
+        session, task.task_list, user_id, role, PermissionLevel.EDIT
     )
 
     checklist = await session.scalar(
@@ -941,8 +1063,8 @@ async def delete_checklist(
     )
     if not task:
         raise AppError(404, "NOT_FOUND", "Task not found")
-    await require_space_permission(
-        session, task.task_list.space, user_id, role, PermissionLevel.EDIT
+    await require_list_permission(
+        session, task.task_list, user_id, role, PermissionLevel.EDIT
     )
 
     checklist = await session.scalar(
@@ -976,8 +1098,8 @@ async def _get_editable_task(
     )
     if not task:
         raise AppError(404, "NOT_FOUND", "Task not found")
-    await require_space_permission(
-        session, task.task_list.space, user_id, role, PermissionLevel.EDIT
+    await require_list_permission(
+        session, task.task_list, user_id, role, PermissionLevel.EDIT
     )
     return task
 
@@ -1184,8 +1306,8 @@ async def get_task(
     )
     if not task:
         raise AppError(404, "NOT_FOUND", "Task not found")
-    await require_space_permission(
-        session, task.task_list.space, user_id, role, PermissionLevel.VIEW
+    await require_list_permission(
+        session, task.task_list, user_id, role, PermissionLevel.VIEW
     )
     names = await _assignee_name_map(session, task)
     payload = map_task(task, user_id, names)
@@ -1636,8 +1758,8 @@ async def delete_task(
     )
     if not task:
         raise AppError(404, "NOT_FOUND", "Task not found")
-    await require_space_permission(
-        session, task.task_list.space, user_id, role, PermissionLevel.EDIT
+    await require_list_permission(
+        session, task.task_list, user_id, role, PermissionLevel.EDIT
     )
     task_name = task.name
     task_id = task.id

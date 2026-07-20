@@ -45,7 +45,7 @@ from app.services.chat_helpers import (
     map_message_broadcast,
     map_search_message,
 )
-from app.services.space_permissions import user_ids_with_space_access
+from app.services.folder_list_permissions import user_ids_with_list_access
 from app.services.workspace_permissions import (
     get_active_workspace_role,
     has_privileged_workspace_access,
@@ -873,9 +873,9 @@ async def create_list_channel(
 ) -> ChatChannel:
     """Auto-create a List's mandatory 1:1 primary channel. Unlike the manual
     `create_channel` path (blanket workspace membership), members here mirror
-    whoever can see the list's Space, via `user_ids_with_space_access` - kept
-    in sync afterwards by `sync_list_channel_members_for_space` whenever
-    Space/Workspace membership changes.
+    whoever can see the list, via `user_ids_with_list_access` - kept in sync
+    afterwards by `sync_list_channel_members_for_space` whenever Space/
+    Folder/List/Workspace membership changes.
     """
     name = task_list.name.strip()
     if await session.scalar(
@@ -893,7 +893,8 @@ async def create_list_channel(
             candidate = f"{name}-{task_list.id[:6]}"
         name = candidate
 
-    member_ids = await user_ids_with_space_access(session, workspace_id, space)
+    task_list.space = space
+    member_ids = await user_ids_with_list_access(session, workspace_id, task_list)
     member_ids.add(user_id)
 
     channel = ChatChannel(
@@ -936,9 +937,9 @@ async def sync_list_channel_members_for_space(
     removes users who lost access; leaves existing members' starred/following
     state untouched.
     """
-    channels = (
-        await session.scalars(
-            select(ChatChannel)
+    rows = (
+        await session.execute(
+            select(ChatChannel, TaskList)
             .join(TaskList, TaskList.id == ChatChannel.list_id)
             .where(
                 ChatChannel.is_list_primary.is_(True),
@@ -946,12 +947,12 @@ async def sync_list_channel_members_for_space(
             )
         )
     ).all()
-    if not channels:
+    if not rows:
         return
 
-    target_ids = await user_ids_with_space_access(session, workspace_id, space)
-
-    for channel in channels:
+    for channel, task_list in rows:
+        task_list.space = space
+        target_ids = await user_ids_with_list_access(session, workspace_id, task_list)
         current_ids = set(
             (
                 await session.scalars(

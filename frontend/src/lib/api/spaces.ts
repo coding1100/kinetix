@@ -19,9 +19,10 @@ export type { ListStatus };
 export interface ListMetaDto {
   id: string;
   name: string;
-  space: { id: string; name: string; color: string };
+  space: { id: string; name: string; color: string; accessible?: boolean };
   statuses?: ListStatus[];
   channelId: string | null;
+  canShare?: boolean;
 }
 
 export function fetchSpacesTree(token: string, workspaceId: string) {
@@ -547,6 +548,69 @@ export function uploadTaskAttachmentContent(
       `/tasks/${taskId}/attachments/${attachmentId}/upload${query}`
     ),
     { method: "POST", token, body: form }
+  );
+}
+
+export type ShareResourceType = "space" | "folder" | "list";
+
+export interface ShareMemberDto {
+  userId: string | null;
+  name: string | null;
+  email: string | null;
+  permissionLevel: "VIEW" | "COMMENT" | "EDIT";
+  status: "ACTIVE" | "INVITED" | "SUSPENDED";
+}
+
+function shareResourcePath(resourceType: ShareResourceType, resourceId: string) {
+  const segment =
+    resourceType === "space"
+      ? "spaces"
+      : resourceType === "folder"
+        ? "folders"
+        : "lists";
+  return `/${segment}/${resourceId}/members`;
+}
+
+export function fetchShareMembers(
+  token: string,
+  workspaceId: string,
+  resourceType: ShareResourceType,
+  resourceId: string
+) {
+  return apiFetch<{ data: ShareMemberDto[]; isPrivate?: boolean }>(
+    wsPath(workspaceId, shareResourcePath(resourceType, resourceId)),
+    { token }
+  );
+}
+
+export function addShareMember(
+  token: string,
+  workspaceId: string,
+  resourceType: ShareResourceType,
+  resourceId: string,
+  input:
+    | { userId: string; permissionLevel: "VIEW" | "COMMENT" | "EDIT" }
+    | { email: string; permissionLevel: "VIEW" | "COMMENT" | "EDIT" }
+) {
+  return apiFetch<{ data: ShareMemberDto[]; isPrivate?: boolean }>(
+    wsPath(workspaceId, shareResourcePath(resourceType, resourceId)),
+    { method: "POST", token, body: JSON.stringify(input) }
+  );
+}
+
+export function removeShareMember(
+  token: string,
+  workspaceId: string,
+  resourceType: ShareResourceType,
+  resourceId: string,
+  target: string
+) {
+  return apiFetch<{ ok: boolean }>(
+    wsPath(
+      workspaceId,
+      `${shareResourcePath(resourceType, resourceId)}/${encodeURIComponent(target)}`
+    ),
+    { method: "DELETE", token }
   );
 }
 

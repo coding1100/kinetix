@@ -10,6 +10,8 @@ from app.db.models.chat import ChatChannel
 from app.db.models.enums import PermissionLevel, WorkspaceRole
 from app.db.models.home import (
     Folder,
+    FolderMember,
+    ListMember,
     Space,
     SpaceMember,
     Task,
@@ -20,11 +22,11 @@ from app.db.models.home import (
 from app.db.models.workspace import WorkspaceMember
 from app.db.models.enums import MemberStatus
 from app.schemas.spaces import (
-    AddSpaceMemberBody,
     CreateFolderBody,
     CreateListBody,
     CreateSpaceBody,
     CreateTaskCommentBody,
+    ShareMemberBody,
     UpdateFolderBody,
     UpdateListBody,
     UpdateSpaceBody,
@@ -45,6 +47,7 @@ from app.services.chat_service import (
 from app.services.home_helpers import map_list_entry, map_task
 from app.services.list_status_service import ensure_list_statuses
 from app.services.notification_service import (
+    create_resource_share_notification,
     create_task_comment_mention_notifications,
     create_task_comment_notifications,
     create_task_comment_reply_notifications,
@@ -56,7 +59,22 @@ from app.services.space_permissions import (
     level_at_least,
     require_space_permission,
 )
+from app.services.folder_list_permissions import (
+    require_folder_permission,
+    require_list_permission,
+    resolve_share_target,
+)
 from app.socket.emit import broadcast_channel_renamed
+
+
+def _member_row_payload(row: SpaceMember | FolderMember | ListMember) -> dict:
+    return {
+        "userId": row.user_id,
+        "name": row.user.full_name if row.user else None,
+        "email": row.user.email if row.user else row.email,
+        "permissionLevel": row.permission_level.value,
+        "status": row.status.value,
+    }
 
 
 def _require_can_create_space(role: WorkspaceRole) -> None:
@@ -141,7 +159,9 @@ async def create_space(
         select(Space).where(Space.id == space.id).options(*_SPACE_LOAD)
     )
     member_count = await _active_member_count(session, workspace_id)
-    return await _build_space_payload(session, refreshed, member_count, 0)
+    return await _build_space_payload(
+        session, refreshed, member_count, 0, user_id, role
+    )
 
 
 async def update_space(
@@ -171,7 +191,9 @@ async def update_space(
     )
     member_count = await _active_member_count(session, workspace_id)
     list_count = await _list_count_for_space(session, space_id)
-    return await _build_space_payload(session, refreshed, member_count, list_count)
+    return await _build_space_payload(
+        session, refreshed, member_count, list_count, user_id, role
+    )
 
 
 async def delete_space(
@@ -210,15 +232,7 @@ async def list_space_members(
     ).all()
     return {
         "isPrivate": space.is_private,
-        "data": [
-            {
-                "userId": row.user_id,
-                "name": row.user.full_name,
-                "email": row.user.email,
-                "permissionLevel": row.permission_level.value,
-            }
-            for row in rows
-        ],
+        "data": [_member_row_payload(row) for row in rows],
     }
 
 
@@ -228,38 +242,51 @@ async def add_space_member(
     space_id: str,
     user_id: str,
     role: WorkspaceRole,
-    body: AddSpaceMemberBody,
+    body: ShareMemberBody,
 ) -> dict:
     space = await get_space_or_403(
         session, workspace_id, space_id, user_id, role, PermissionLevel.EDIT
     )
-    target_active = await session.scalar(
-        select(WorkspaceMember.user_id).where(
-            WorkspaceMember.workspace_id == workspace_id,
-            WorkspaceMember.user_id == body.user_id,
-            WorkspaceMember.status == MemberStatus.ACTIVE,
-        )
+    target_user_id, target_email, status = await resolve_share_target(
+        session, workspace_id, body.user_id, body.email
     )
-    if not target_active:
-        raise AppError(400, "VALIDATION_ERROR", "User is not an active workspace member")
 
     existing = await session.scalar(
         select(SpaceMember).where(
-            SpaceMember.space_id == space.id, SpaceMember.user_id == body.user_id
+            SpaceMember.space_id == space.id,
+            SpaceMember.user_id == target_user_id
+            if target_user_id
+            else SpaceMember.email == target_email,
         )
     )
     if existing:
         existing.permission_level = body.permission_level
+        existing.status = status
     else:
         session.add(
             SpaceMember(
                 space_id=space.id,
-                user_id=body.user_id,
+                user_id=target_user_id,
+                email=target_email,
+                status=status,
                 permission_level=body.permission_level,
             )
         )
     await session.commit()
     await sync_list_channel_members_for_space(session, workspace_id, space)
+    if target_user_id and status == MemberStatus.ACTIVE:
+        notifications = await create_resource_share_notification(
+            session,
+            workspace_id=workspace_id,
+            recipient_id=target_user_id,
+            actor_user_id=user_id,
+            resource_type="space",
+            resource_name=space.name,
+            href=f"/home/spaces/{space.id}",
+        )
+        await session.commit()
+        if notifications:
+            await emit_home_notifications(session, workspace_id, notifications)
     return await list_space_members(session, workspace_id, space_id, user_id, role)
 
 
@@ -267,7 +294,7 @@ async def remove_space_member(
     session: AsyncSession,
     workspace_id: str,
     space_id: str,
-    target_user_id: str,
+    target: str,
     user_id: str,
     role: WorkspaceRole,
 ) -> dict:
@@ -276,7 +303,9 @@ async def remove_space_member(
     )
     await session.execute(
         delete(SpaceMember).where(
-            SpaceMember.space_id == space.id, SpaceMember.user_id == target_user_id
+            SpaceMember.space_id == space.id,
+            (SpaceMember.user_id == target)
+            | ((SpaceMember.user_id.is_(None)) & (SpaceMember.email == target)),
         )
     )
     await session.commit()
@@ -305,7 +334,7 @@ async def create_folder(
     )
     session.add(folder)
     await session.commit()
-    return {"id": folder.id, "name": folder.name, "lists": []}
+    return {"id": folder.id, "name": folder.name, "lists": [], "canShare": True}
 
 
 async def update_folder(
@@ -317,13 +346,13 @@ async def update_folder(
     body: UpdateFolderBody,
 ) -> dict:
     folder = await _folder_with_space(session, workspace_id, folder_id)
-    await require_space_permission(
-        session, folder.space, user_id, role, PermissionLevel.EDIT
+    await require_folder_permission(
+        session, folder, user_id, role, PermissionLevel.EDIT
     )
     if body.name is not None:
         folder.name = body.name.strip()
     await session.commit()
-    return {"id": folder.id, "name": folder.name}
+    return {"id": folder.id, "name": folder.name, "canShare": True}
 
 
 async def delete_folder(
@@ -334,11 +363,111 @@ async def delete_folder(
     role: WorkspaceRole,
 ) -> dict:
     folder = await _folder_with_space(session, workspace_id, folder_id)
-    await require_space_permission(
-        session, folder.space, user_id, role, PermissionLevel.EDIT
+    await require_folder_permission(
+        session, folder, user_id, role, PermissionLevel.EDIT
     )
     await session.delete(folder)
     await session.commit()
+    return {"ok": True}
+
+
+async def list_folder_members(
+    session: AsyncSession,
+    workspace_id: str,
+    folder_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+) -> dict:
+    folder = await _folder_with_space(session, workspace_id, folder_id)
+    await require_folder_permission(
+        session, folder, user_id, role, PermissionLevel.VIEW
+    )
+    rows = (
+        await session.scalars(
+            select(FolderMember)
+            .where(FolderMember.folder_id == folder.id)
+            .options(selectinload(FolderMember.user))
+        )
+    ).all()
+    return {"data": [_member_row_payload(row) for row in rows]}
+
+
+async def add_folder_member(
+    session: AsyncSession,
+    workspace_id: str,
+    folder_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    body: ShareMemberBody,
+) -> dict:
+    folder = await _folder_with_space(session, workspace_id, folder_id)
+    await require_folder_permission(
+        session, folder, user_id, role, PermissionLevel.EDIT
+    )
+    target_user_id, target_email, status = await resolve_share_target(
+        session, workspace_id, body.user_id, body.email
+    )
+
+    existing = await session.scalar(
+        select(FolderMember).where(
+            FolderMember.folder_id == folder.id,
+            FolderMember.user_id == target_user_id
+            if target_user_id
+            else FolderMember.email == target_email,
+        )
+    )
+    if existing:
+        existing.permission_level = body.permission_level
+        existing.status = status
+    else:
+        session.add(
+            FolderMember(
+                folder_id=folder.id,
+                user_id=target_user_id,
+                email=target_email,
+                status=status,
+                permission_level=body.permission_level,
+            )
+        )
+    await session.commit()
+    await sync_list_channel_members_for_space(session, workspace_id, folder.space)
+    if target_user_id and status == MemberStatus.ACTIVE:
+        notifications = await create_resource_share_notification(
+            session,
+            workspace_id=workspace_id,
+            recipient_id=target_user_id,
+            actor_user_id=user_id,
+            resource_type="folder",
+            resource_name=folder.name,
+            href="/home",
+        )
+        await session.commit()
+        if notifications:
+            await emit_home_notifications(session, workspace_id, notifications)
+    return await list_folder_members(session, workspace_id, folder_id, user_id, role)
+
+
+async def remove_folder_member(
+    session: AsyncSession,
+    workspace_id: str,
+    folder_id: str,
+    target: str,
+    user_id: str,
+    role: WorkspaceRole,
+) -> dict:
+    folder = await _folder_with_space(session, workspace_id, folder_id)
+    await require_folder_permission(
+        session, folder, user_id, role, PermissionLevel.EDIT
+    )
+    await session.execute(
+        delete(FolderMember).where(
+            FolderMember.folder_id == folder.id,
+            (FolderMember.user_id == target)
+            | ((FolderMember.user_id.is_(None)) & (FolderMember.email == target)),
+        )
+    )
+    await session.commit()
+    await sync_list_channel_members_for_space(session, workspace_id, folder.space)
     return {"ok": True}
 
 
@@ -351,17 +480,24 @@ async def create_list(
     body: CreateListBody,
 ) -> dict:
     space = await get_space_or_403(
-        session, workspace_id, space_id, user_id, role, PermissionLevel.EDIT
+        session, workspace_id, space_id, user_id, role, PermissionLevel.VIEW
     )
     folder_id = body.folder_id
     if folder_id:
         folder = await session.scalar(
-            select(Folder).where(
-                Folder.id == folder_id, Folder.space_id == space_id
-            )
+            select(Folder)
+            .where(Folder.id == folder_id, Folder.space_id == space_id)
+            .options(selectinload(Folder.space))
         )
         if not folder:
             raise AppError(404, "NOT_FOUND", "Folder not found")
+        await require_folder_permission(
+            session, folder, user_id, role, PermissionLevel.EDIT
+        )
+    else:
+        await require_space_permission(
+            session, space, user_id, role, PermissionLevel.EDIT
+        )
     max_order = await session.scalar(
         select(func.max(TaskList.sort_order)).where(TaskList.space_id == space_id)
     )
@@ -378,7 +514,7 @@ async def create_list(
     # Every list is mandatory 1:1 with its own chat channel - see
     # chat_service.create_list_channel.
     await create_list_channel(session, workspace_id, task_list, space, user_id)
-    return map_list_entry(task_list, 0)
+    return map_list_entry(task_list, 0, can_share=True)
 
 
 async def update_list(
@@ -390,8 +526,8 @@ async def update_list(
     body: UpdateListBody,
 ) -> dict:
     task_list = await _list_with_space(session, workspace_id, list_id)
-    await require_space_permission(
-        session, task_list.space, user_id, role, PermissionLevel.EDIT
+    await require_list_permission(
+        session, task_list, user_id, role, PermissionLevel.EDIT
     )
     renamed = False
     if body.name is not None:
@@ -431,7 +567,7 @@ async def update_list(
     count = await session.scalar(
         select(func.count()).select_from(Task).where(Task.list_id == list_id)
     )
-    return map_list_entry(task_list, int(count or 0))
+    return map_list_entry(task_list, int(count or 0), can_share=True)
 
 
 async def delete_list(
@@ -442,13 +578,113 @@ async def delete_list(
     role: WorkspaceRole,
 ) -> dict:
     task_list = await _list_with_space(session, workspace_id, list_id)
-    await require_space_permission(
-        session, task_list.space, user_id, role, PermissionLevel.EDIT
+    await require_list_permission(
+        session, task_list, user_id, role, PermissionLevel.EDIT
     )
     if task_list.space.is_personal and task_list.name == "Personal List":
         raise AppError(400, "VALIDATION_ERROR", "Cannot delete the Personal list")
     await session.delete(task_list)
     await session.commit()
+    return {"ok": True}
+
+
+async def list_list_members(
+    session: AsyncSession,
+    workspace_id: str,
+    list_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+) -> dict:
+    task_list = await _list_with_space(session, workspace_id, list_id)
+    await require_list_permission(
+        session, task_list, user_id, role, PermissionLevel.VIEW
+    )
+    rows = (
+        await session.scalars(
+            select(ListMember)
+            .where(ListMember.list_id == task_list.id)
+            .options(selectinload(ListMember.user))
+        )
+    ).all()
+    return {"data": [_member_row_payload(row) for row in rows]}
+
+
+async def add_list_member(
+    session: AsyncSession,
+    workspace_id: str,
+    list_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    body: ShareMemberBody,
+) -> dict:
+    task_list = await _list_with_space(session, workspace_id, list_id)
+    await require_list_permission(
+        session, task_list, user_id, role, PermissionLevel.EDIT
+    )
+    target_user_id, target_email, status = await resolve_share_target(
+        session, workspace_id, body.user_id, body.email
+    )
+
+    existing = await session.scalar(
+        select(ListMember).where(
+            ListMember.list_id == task_list.id,
+            ListMember.user_id == target_user_id
+            if target_user_id
+            else ListMember.email == target_email,
+        )
+    )
+    if existing:
+        existing.permission_level = body.permission_level
+        existing.status = status
+    else:
+        session.add(
+            ListMember(
+                list_id=task_list.id,
+                user_id=target_user_id,
+                email=target_email,
+                status=status,
+                permission_level=body.permission_level,
+            )
+        )
+    await session.commit()
+    await sync_list_channel_members_for_space(session, workspace_id, task_list.space)
+    if target_user_id and status == MemberStatus.ACTIVE:
+        notifications = await create_resource_share_notification(
+            session,
+            workspace_id=workspace_id,
+            recipient_id=target_user_id,
+            actor_user_id=user_id,
+            resource_type="list",
+            resource_name=task_list.name,
+            href=f"/home/l/{task_list.id}",
+        )
+        await session.commit()
+        if notifications:
+            await emit_home_notifications(session, workspace_id, notifications)
+    return await list_list_members(session, workspace_id, list_id, user_id, role)
+
+
+async def remove_list_member(
+    session: AsyncSession,
+    workspace_id: str,
+    list_id: str,
+    target: str,
+    user_id: str,
+    role: WorkspaceRole,
+) -> dict:
+    task_list = await _list_with_space(session, workspace_id, list_id)
+    await require_list_permission(
+        session, task_list, user_id, role, PermissionLevel.EDIT
+    )
+    await session.execute(
+        delete(ListMember).where(
+            ListMember.list_id == task_list.id,
+            (ListMember.user_id == target)
+            | ((ListMember.user_id.is_(None)) & (ListMember.email == target)),
+        )
+    )
+    await session.commit()
+    await sync_list_channel_members_for_space(session, workspace_id, task_list.space)
     return {"ok": True}
 
 
@@ -483,8 +719,8 @@ async def add_task_comment(
         raise AppError(400, "VALIDATION_ERROR", "Comment body or attachment is required")
 
     task = await _task_with_space(session, workspace_id, task_id)
-    await require_space_permission(
-        session, task.task_list.space, user_id, role, PermissionLevel.COMMENT
+    await require_list_permission(
+        session, task.task_list, user_id, role, PermissionLevel.COMMENT
     )
 
     parent_author_id: str | None = None

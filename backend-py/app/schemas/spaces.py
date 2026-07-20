@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.db.models.enums import PermissionLevel
 
@@ -21,11 +21,26 @@ class UpdateSpaceBody(BaseModel):
     is_private: bool | None = Field(default=None, alias="isPrivate")
 
 
-class AddSpaceMemberBody(BaseModel):
+class ShareMemberBody(BaseModel):
+    """Shared "add a member" body for Space/Folder/List share grants.
+
+    Exactly one of user_id/email must be set: user_id shares with an
+    existing active workspace member directly; email shares with someone
+    who only has a pending workspace Invite so far — see
+    folder_list_permissions.resolve_share_target.
+    """
+
     model_config = ConfigDict(populate_by_name=True)
 
-    user_id: str = Field(alias="userId")
+    user_id: str | None = Field(default=None, alias="userId")
+    email: EmailStr | None = Field(default=None)
     permission_level: PermissionLevel = Field(alias="permissionLevel")
+
+    @model_validator(mode="after")
+    def _exactly_one_target(self) -> "ShareMemberBody":
+        if bool(self.user_id) == bool(self.email):
+            raise ValueError("Provide exactly one of userId or email")
+        return self
 
 
 class CreateFolderBody(BaseModel):

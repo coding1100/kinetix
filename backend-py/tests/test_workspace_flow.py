@@ -7,7 +7,7 @@ import time
 import pytest
 from httpx import AsyncClient
 
-from tests.task_test_helpers import _shared_demo_workspace_id
+from tests.task_test_helpers import _shared_demo_workspace_id, create_space_list
 
 OWNER = ("owner@demo.com", "password123")
 MEMBER = ("alex@demo.com", "password123")
@@ -269,6 +269,42 @@ async def test_dm_plain_message_notifies_recipient(api_client: AsyncClient):
     items = notifs.json()["data"]
     assert any(
         marker in (item.get("preview") or "") for item in items
+    ), items[:3]
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_list_share_notifies_recipient(api_client: AsyncClient):
+    owner_token = await _login(api_client, *OWNER)
+    member_token = await _login(api_client, *MEMBER)
+    owner_headers = _auth(owner_token)
+    member_headers = _auth(member_token)
+
+    workspace_id = await _shared_demo_workspace_id(api_client)
+
+    member_me = await api_client.get("/api/v1/auth/me", headers=member_headers)
+    assert member_me.status_code == 200
+    member_user_id = member_me.json()["id"]
+
+    list_name = f"Share notif list {int(time.time())}"
+    _space_id, list_id = await create_space_list(
+        api_client, owner_token, workspace_id, list_name=list_name
+    )
+
+    share = await api_client.post(
+        f"/api/v1/workspaces/{workspace_id}/lists/{list_id}/members",
+        headers=owner_headers,
+        json={"userId": member_user_id, "permissionLevel": "EDIT"},
+    )
+    assert share.status_code == 201, share.text
+
+    notifs = await api_client.get(
+        f"/api/v1/workspaces/{workspace_id}/home/notifications",
+        headers=member_headers,
+    )
+    assert notifs.status_code == 200, notifs.text
+    items = notifs.json()["data"]
+    assert any(
+        list_name in (item.get("preview") or "") for item in items
     ), items[:3]
 
 

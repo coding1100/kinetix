@@ -16,6 +16,7 @@ import {
   PencilIcon,
   PlusIcon,
   SearchIcon,
+  Share2Icon,
   Trash2Icon,
   UsersIcon,
 } from "lucide-react";
@@ -24,7 +25,10 @@ import {
   deleteList,
   deleteSpace,
   fetchSpacesTree,
+  type ShareResourceType,
 } from "@/lib/api/spaces";
+import { fetchSharedWithMe } from "@/lib/api/home";
+import { ShareModal } from "@/components/shared/ShareModal";
 import { useHomeQuery } from "@/hooks/use-home-query";
 import { HomeDataState } from "@/components/home/HomeDataState";
 import { useShellStore } from "@/stores/shell-store";
@@ -62,6 +66,12 @@ type DeleteTarget =
   | { kind: "folder"; id: string; name: string }
   | { kind: "list"; id: string; name: string; isPersonal?: boolean };
 
+type ShareTarget = {
+  type: ShareResourceType;
+  id: string;
+  name: string;
+};
+
 export function SpacesSidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -78,6 +88,11 @@ export function SpacesSidebar() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [shareTarget, setShareTarget] = useState<ShareTarget | null>(null);
+  const { data: sharedWithMe } = useHomeQuery(
+    (token, ws) => fetchSharedWithMe(token, ws).then((r) => r.data),
+    [refreshKey]
+  );
 
   const defaultExpanded = useMemo(() => {
     const ids: Record<string, boolean> = {};
@@ -197,6 +212,38 @@ export function SpacesSidebar() {
               Shared with me
             </Link>
           </nav>
+          {sharedWithMe && sharedWithMe.length > 0 ? (
+            <div className="mb-3 space-y-0.5 px-1">
+              <div className="px-1.5 py-1 text-xs font-semibold text-muted-foreground">
+                Shared with you
+              </div>
+              {sharedWithMe.map((entry) =>
+                entry.type === "list" ? (
+                  <Link
+                    key={`${entry.type}-${entry.id}`}
+                    href={listHref(entry.id)}
+                    className={cn(
+                      "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-sidebar-accent",
+                      isListActive(pathname, entry.id)
+                        ? "bg-primary/10 font-medium text-primary"
+                        : "text-muted-foreground"
+                    )}
+                  >
+                    <LayoutListIcon className="size-3.5 shrink-0 opacity-70" />
+                    <span className="truncate">{entry.name}</span>
+                  </Link>
+                ) : (
+                  <div
+                    key={`${entry.type}-${entry.id}`}
+                    className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground"
+                  >
+                    <FolderIcon className="size-3.5 shrink-0 opacity-70" />
+                    <span className="truncate">{entry.name}</span>
+                  </div>
+                )
+              )}
+            </div>
+          ) : null}
           <HomeDataState
             loading={loading}
             error={error}
@@ -280,6 +327,20 @@ export function SpacesSidebar() {
                           <PencilIcon className="size-4" />
                           Rename
                         </DropdownMenuItem>
+                        {space.canShare ? (
+                          <DropdownMenuItem
+                            onClick={() =>
+                              setShareTarget({
+                                type: "space",
+                                id: space.id,
+                                name: space.name,
+                              })
+                            }
+                          >
+                            <Share2Icon className="size-4" />
+                            Share
+                          </DropdownMenuItem>
+                        ) : null}
                         {!space.isPersonal ? (
                           <DropdownMenuItem
                             variant="destructive"
@@ -353,6 +414,20 @@ export function SpacesSidebar() {
                                   <PencilIcon className="size-4" />
                                   Rename
                                 </DropdownMenuItem>
+                                {folder.canShare ? (
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      setShareTarget({
+                                        type: "folder",
+                                        id: folder.id,
+                                        name: folder.name,
+                                      })
+                                    }
+                                  >
+                                    <Share2Icon className="size-4" />
+                                    Share
+                                  </DropdownMenuItem>
+                                ) : null}
                                 <DropdownMenuItem
                                   variant="destructive"
                                   onClick={() =>
@@ -379,6 +454,7 @@ export function SpacesSidebar() {
                                 name={list.name}
                                 taskCount={list.taskCount}
                                 active={isListActive(pathname, list.id)}
+                                canShare={list.canShare}
                                 onRename={() =>
                                   openDialog({
                                     type: "edit-list",
@@ -389,6 +465,13 @@ export function SpacesSidebar() {
                                 onDelete={() =>
                                   setDeleteTarget({
                                     kind: "list",
+                                    id: list.id,
+                                    name: list.name,
+                                  })
+                                }
+                                onShare={() =>
+                                  setShareTarget({
+                                    type: "list",
                                     id: list.id,
                                     name: list.name,
                                   })
@@ -408,6 +491,7 @@ export function SpacesSidebar() {
                               name={list.name}
                               taskCount={list.taskCount}
                               active={isListActive(pathname, list.id)}
+                              canShare={list.canShare}
                               isPersonal={
                                 space.isPersonal && list.name === "Personal List"
                               }
@@ -426,6 +510,13 @@ export function SpacesSidebar() {
                                   isPersonal:
                                     space.isPersonal &&
                                     list.name === "Personal List",
+                                })
+                              }
+                              onShare={() =>
+                                setShareTarget({
+                                  type: "list",
+                                  id: list.id,
+                                  name: list.name,
                                 })
                               }
                             />
@@ -478,6 +569,17 @@ export function SpacesSidebar() {
         loading={deleting}
         onConfirm={() => void handleDelete()}
       />
+      {shareTarget ? (
+        <ShareModal
+          open={shareTarget !== null}
+          onOpenChange={(open) => {
+            if (!open) setShareTarget(null);
+          }}
+          resourceType={shareTarget.type}
+          resourceId={shareTarget.id}
+          resourceName={shareTarget.name}
+        />
+      ) : null}
     </>
   );
 }
@@ -488,16 +590,20 @@ function ListNavItem({
   taskCount,
   active,
   isPersonal,
+  canShare,
   onRename,
   onDelete,
+  onShare,
 }: {
   listId: string;
   name: string;
   taskCount?: number;
   active: boolean;
   isPersonal?: boolean;
+  canShare?: boolean;
   onRename: () => void;
   onDelete: () => void;
+  onShare: () => void;
 }) {
   return (
     <li className="group flex items-center gap-0.5">
@@ -542,6 +648,12 @@ function ListNavItem({
               <PencilIcon className="size-4" />
               Rename
             </DropdownMenuItem>
+            {canShare ? (
+              <DropdownMenuItem onClick={onShare}>
+                <Share2Icon className="size-4" />
+                Share
+              </DropdownMenuItem>
+            ) : null}
             {!isPersonal ? (
               <DropdownMenuItem variant="destructive" onClick={onDelete}>
                 <Trash2Icon className="size-4" />

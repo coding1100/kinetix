@@ -17,6 +17,8 @@ import {
   MessagesSquareIcon,
   ListChecksIcon,
   FolderIcon,
+  MoreHorizontalIcon,
+  Share2Icon,
 } from "lucide-react";
 import type { DmParticipant } from "@/lib/types/chat";
 import {
@@ -57,7 +59,9 @@ import {
   fetchHomeSidebarConfig,
   updateHomeSidebarConfig,
 } from "@/lib/api/home";
-import { fetchSpacesTree } from "@/lib/api/spaces";
+import { fetchSpacesTree, type ShareResourceType } from "@/lib/api/spaces";
+import { fetchSharedWithMe } from "@/lib/api/home";
+import { ShareModal } from "@/components/shared/ShareModal";
 import {
   loadSidebarLists,
   mergeSidebarChannels,
@@ -231,30 +235,58 @@ function SpaceListLink({
   name,
   taskCount,
   active,
+  canShare,
+  onShare,
 }: {
   listId: string;
   name: string;
   taskCount?: number;
   active: boolean;
+  canShare?: boolean;
+  onShare?: () => void;
 }) {
   return (
-    <Link
-      href={`/home/l/${listId}`}
-      className={cn(
-        "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-sidebar-accent/80",
-        active
-          ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-          : "text-sidebar-foreground"
-      )}
-    >
-      <ListChecksIcon className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate">{name}</span>
-      {typeof taskCount === "number" ? (
-        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-          {taskCount}
-        </span>
+    <div className="group/list flex items-center gap-0.5">
+      <Link
+        href={`/home/l/${listId}`}
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-sidebar-accent/80",
+          active
+            ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+            : "text-sidebar-foreground"
+        )}
+      >
+        <ListChecksIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate">{name}</span>
+        {typeof taskCount === "number" ? (
+          <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+            {taskCount}
+          </span>
+        ) : null}
+      </Link>
+      {canShare ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="size-5 shrink-0 text-muted-foreground opacity-0 group-hover/list:opacity-100 data-[popup-open]:opacity-100"
+                aria-label={`Actions for ${name}`}
+              >
+                <MoreHorizontalIcon className="size-3.5" />
+              </Button>
+            }
+          />
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onShare}>
+              <Share2Icon className="size-4" />
+              Share
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       ) : null}
-    </Link>
+    </div>
   );
 }
 
@@ -263,6 +295,7 @@ function SpaceRow({
   expanded,
   onToggleExpanded,
   onAddList,
+  onShare,
   pathname,
 }: {
   space: {
@@ -270,12 +303,24 @@ function SpaceRow({
     name: string;
     color: string;
     description?: string;
-    folders?: { id: string; name: string; lists: { id: string; name: string; taskCount: number }[] }[];
-    standaloneLists?: { id: string; name: string; taskCount: number }[];
+    canShare?: boolean;
+    folders?: {
+      id: string;
+      name: string;
+      canShare?: boolean;
+      lists: { id: string; name: string; taskCount: number; canShare?: boolean }[];
+    }[];
+    standaloneLists?: {
+      id: string;
+      name: string;
+      taskCount: number;
+      canShare?: boolean;
+    }[];
   };
   expanded: boolean;
   onToggleExpanded: () => void;
   onAddList: () => void;
+  onShare: (target: { type: ShareResourceType; id: string; name: string }) => void;
   pathname: string;
 }) {
   const hasChildren =
@@ -316,6 +361,32 @@ function SpaceRow({
             </span>
           ) : null}
         </button>
+        {space.canShare ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="size-5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/space:opacity-100 data-[popup-open]:opacity-100"
+                  aria-label={`Actions for ${space.name}`}
+                >
+                  <MoreHorizontalIcon className="size-3.5" />
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() =>
+                  onShare({ type: "space", id: space.id, name: space.name })
+                }
+              >
+                <Share2Icon className="size-4" />
+                Share
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
         <Tooltip>
           <TooltipTrigger
             render={
@@ -336,10 +407,40 @@ function SpaceRow({
       {expanded && hasChildren ? (
         <div className="ml-3 space-y-0.5 border-l border-sidebar-border/60 py-0.5 pl-2">
           {space.folders?.map((folder) => (
-            <div key={folder.id}>
+            <div key={folder.id} className="group/folder">
               <div className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-muted-foreground">
                 <FolderIcon className="size-3.5 shrink-0" />
-                <span className="truncate">{folder.name}</span>
+                <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+                {folder.canShare ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          className="size-5 shrink-0 opacity-0 group-hover/folder:opacity-100 data-[popup-open]:opacity-100"
+                          aria-label={`Actions for ${folder.name}`}
+                        >
+                          <MoreHorizontalIcon className="size-3.5" />
+                        </Button>
+                      }
+                    />
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={() =>
+                          onShare({
+                            type: "folder",
+                            id: folder.id,
+                            name: folder.name,
+                          })
+                        }
+                      >
+                        <Share2Icon className="size-4" />
+                        Share
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
               </div>
               <div className="space-y-0.5 pl-1">
                 {folder.lists.map((list) => (
@@ -349,6 +450,10 @@ function SpaceRow({
                     name={list.name}
                     taskCount={list.taskCount}
                     active={pathname === `/home/l/${list.id}`}
+                    canShare={list.canShare}
+                    onShare={() =>
+                      onShare({ type: "list", id: list.id, name: list.name })
+                    }
                   />
                 ))}
               </div>
@@ -361,6 +466,10 @@ function SpaceRow({
               name={list.name}
               taskCount={list.taskCount}
               active={pathname === `/home/l/${list.id}`}
+              canShare={list.canShare}
+              onShare={() =>
+                onShare({ type: "list", id: list.id, name: list.name })
+              }
             />
           ))}
         </div>
@@ -532,6 +641,11 @@ export function HomeSidebar() {
   const [spacesDialogOpen, setSpacesDialogOpen] = useState(false);
   const [expandedSpaces, setExpandedSpaces] = useState<Record<string, boolean>>({});
   const spacesRefreshKey = useSpacesStore((s) => s.refreshKey);
+  const [shareTarget, setShareTarget] = useState<{
+    type: ShareResourceType;
+    id: string;
+    name: string;
+  } | null>(null);
 
   // Server config (pinned ids + order) is the source of truth; local storage
   // is just the instant-paint cache shown before this resolves.
@@ -562,6 +676,10 @@ export function HomeSidebar() {
 
   const spacesQuery = useHomeQuery(
     (token, ws) => fetchSpacesTree(token, ws).then((r) => r.data),
+    [spacesRefreshKey]
+  );
+  const sharedWithMeQuery = useHomeQuery(
+    (token, ws) => fetchSharedWithMe(token, ws).then((r) => r.data),
     [spacesRefreshKey]
   );
 
@@ -795,9 +913,28 @@ export function HomeSidebar() {
                     setSpacesDialogMode({ type: "list", spaceId: space.id });
                     setSpacesDialogOpen(true);
                   }}
+                  onShare={setShareTarget}
                   pathname={pathname}
                 />
               ))}
+              {sharedWithMeQuery.data?.map((entry) =>
+                entry.type === "list" ? (
+                  <SpaceListLink
+                    key={`${entry.type}-${entry.id}`}
+                    listId={entry.id}
+                    name={entry.name}
+                    active={pathname === `/home/l/${entry.id}`}
+                  />
+                ) : (
+                  <div
+                    key={`${entry.type}-${entry.id}`}
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground"
+                  >
+                    <FolderIcon className="size-3.5 shrink-0" />
+                    <span className="truncate">{entry.name}</span>
+                  </div>
+                )
+              )}
               {!restricted ? (
                 <button
                   type="button"
@@ -912,6 +1049,17 @@ export function HomeSidebar() {
         onOpenChange={setSpacesDialogOpen}
         mode={spacesDialogMode}
       />
+      {shareTarget ? (
+        <ShareModal
+          open={shareTarget !== null}
+          onOpenChange={(open) => {
+            if (!open) setShareTarget(null);
+          }}
+          resourceType={shareTarget.type}
+          resourceId={shareTarget.id}
+          resourceName={shareTarget.name}
+        />
+      ) : null}
     </aside>
   );
 }
