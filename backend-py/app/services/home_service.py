@@ -59,7 +59,7 @@ from app.services.folder_list_permissions import (
     resolve_folder_permission,
     resolve_list_permission,
 )
-from app.services.workspace_permissions import get_member_time_flags
+from app.services.workspace_permissions import get_member_time_flags, is_workspace_admin
 from app.db.models.workspace import WorkspaceMember
 from app.schemas.home import (
     AddLineupBody,
@@ -235,29 +235,33 @@ async def _build_space_payload(
     user_id: str,
     role: WorkspaceRole,
 ) -> dict:
-    space_level = await resolve_space_permission(session, space, user_id, role)
-    space_can_share = level_at_least(space_level, PermissionLevel.EDIT)
+    # Managing sharing (canShare) is a workspace-admin capability, not tied
+    # to content EDIT access - see spaces_service.py's add/remove member
+    # gates. Folder/List VIEW-level filtering below is still needed though:
+    # a private Folder/List the user has no grant on must not appear in the
+    # tree at all, independent of who can manage its sharing.
+    can_manage = is_workspace_admin(role)
 
     folders = []
     for folder in space.folders:
         folder.space = space
         folder_level = await resolve_folder_permission(session, folder, user_id, role)
-        folder_can_share = level_at_least(folder_level, PermissionLevel.EDIT)
+        if not level_at_least(folder_level, PermissionLevel.VIEW):
+            continue
         lists = []
         for lst in folder.lists:
             lst.space = space
             lst_level = await resolve_list_permission(session, lst, user_id, role)
-            lists.append(
-                map_list_entry(
-                    lst, len(lst.tasks), level_at_least(lst_level, PermissionLevel.EDIT)
-                )
-            )
+            if not level_at_least(lst_level, PermissionLevel.VIEW):
+                continue
+            lists.append(map_list_entry(lst, len(lst.tasks), can_manage))
         folders.append(
             {
                 "id": folder.id,
                 "name": folder.name,
                 "lists": lists,
-                "canShare": folder_can_share,
+                "canShare": can_manage,
+                "isPrivate": folder.is_private,
             }
         )
     standalone = []
@@ -266,11 +270,9 @@ async def _build_space_payload(
             continue
         lst.space = space
         lst_level = await resolve_list_permission(session, lst, user_id, role)
-        standalone.append(
-            map_list_entry(
-                lst, len(lst.tasks), level_at_least(lst_level, PermissionLevel.EDIT)
-            )
-        )
+        if not level_at_least(lst_level, PermissionLevel.VIEW):
+            continue
+        standalone.append(map_list_entry(lst, len(lst.tasks), can_manage))
     last_activity_at = await _last_activity_for_space(session, space)
     return map_space_row(
         space,
@@ -279,7 +281,7 @@ async def _build_space_payload(
         folders,
         standalone,
         last_activity_at,
-        space_can_share,
+        can_manage,
     )
 
 
@@ -695,7 +697,8 @@ async def get_list(
         },
         "statuses": statuses,
         "channelId": channel_id,
-        "canShare": level_at_least(level, PermissionLevel.EDIT),
+        "canShare": is_workspace_admin(role),
+        "isPrivate": task_list.is_private,
     }
 
 

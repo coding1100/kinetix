@@ -244,6 +244,7 @@ def map_list_entry(list_row, task_count: int, can_share: bool = False) -> dict:
         "name": list_row.name,
         "taskCount": task_count,
         "canShare": can_share,
+        "isPrivate": bool(getattr(list_row, "is_private", False)),
     }
 
 

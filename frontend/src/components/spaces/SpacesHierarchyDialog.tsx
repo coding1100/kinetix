@@ -23,17 +23,13 @@ import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { useSpacesStore } from "@/stores/spaces-store";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { selectActiveWorkspace, useAuthStore } from "@/stores/auth-store";
 
 export type HierarchyDialogMode =
   | { type: "space" }
   | { type: "folder"; spaceId: string }
   | { type: "list"; spaceId: string; folderId?: string }
-  | {
-      type: "edit-space";
-      spaceId: string;
-      initialName: string;
-      initialIsPrivate?: boolean;
-    }
+  | { type: "edit-space"; spaceId: string; initialName: string }
   | { type: "edit-folder"; folderId: string; initialName: string }
   | { type: "edit-list"; listId: string; initialName: string };
 
@@ -49,21 +45,29 @@ export function SpacesHierarchyDialog({
   const router = useRouter();
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const bumpRefresh = useSpacesStore((s) => s.bumpRefresh);
+  const workspace = useAuthStore(selectActiveWorkspace);
+  const isWorkspaceAdmin =
+    workspace?.role === "OWNER" ||
+    workspace?.role === "SUPER_ADMIN" ||
+    workspace?.role === "ADMIN";
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
   const [isPrivate, setIsPrivate] = useState(false);
 
   const isEdit = mode?.type.startsWith("edit-") ?? false;
-  const showPrivateToggle = mode?.type === "space" || mode?.type === "edit-space";
+  // Only shown at creation time - once a Space/Folder/List exists, its
+  // privacy is toggled from the Share modal instead (ShareModal.tsx),
+  // alongside who it's shared with. Only workspace admins can toggle it
+  // either way (spaces_service.py's _require_can_manage_access).
+  const showPrivateToggle =
+    isWorkspaceAdmin &&
+    (mode?.type === "space" || mode?.type === "folder" || mode?.type === "list");
 
   useEffect(() => {
     if (!open || !mode) return;
-    if (mode.type === "edit-space") {
+    if (mode.type === "edit-space" || mode.type === "edit-folder" || mode.type === "edit-list") {
       setName(mode.initialName);
-      setIsPrivate(mode.initialIsPrivate ?? false);
-    } else if (mode.type === "edit-folder") setName(mode.initialName);
-    else if (mode.type === "edit-list") setName(mode.initialName);
-    else {
+    } else {
       setName("");
       setIsPrivate(false);
     }
@@ -99,19 +103,20 @@ export function SpacesHierarchyDialog({
       } else if (mode.type === "folder") {
         await createFolder(accessToken, workspaceId, mode.spaceId, {
           name: trimmed,
+          isPrivate,
         });
         toast.success("Folder created");
       } else if (mode.type === "list") {
         const list = await createList(accessToken, workspaceId, mode.spaceId, {
           name: trimmed,
           folderId: mode.folderId,
+          isPrivate,
         });
         toast.success("List created");
         router.push(`/spaces/l/${list.id}`);
       } else if (mode.type === "edit-space") {
         await patchSpace(accessToken, workspaceId, mode.spaceId, {
           name: trimmed,
-          isPrivate,
         });
         toast.success("Space updated");
       } else if (mode.type === "edit-folder") {

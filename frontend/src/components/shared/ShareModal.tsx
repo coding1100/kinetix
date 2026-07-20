@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -13,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -20,13 +21,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { XIcon } from "lucide-react";
+import { CircleHelpIcon, XIcon } from "lucide-react";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { useHomeQuery } from "@/hooks/use-home-query";
 import { fetchWorkspaceMembers } from "@/lib/api/chat";
 import {
   addShareMember,
   fetchShareMembers,
+  patchResourcePrivacy,
   removeShareMember,
   type ShareMemberDto,
   type ShareResourceType,
@@ -38,6 +40,7 @@ import {
 } from "@/lib/user-display";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useSpacesStore } from "@/stores/spaces-store";
 
 type PermissionLevel = "VIEW" | "COMMENT" | "EDIT";
 
@@ -45,6 +48,11 @@ const PERMISSION_LABELS: Record<PermissionLevel, string> = {
   VIEW: "Can view",
   COMMENT: "Can comment",
   EDIT: "Can edit",
+};
+
+const ROLE_LABELS: Record<string, string> = {
+  OWNER: "Owner",
+  SUPER_ADMIN: "Super Admin",
 };
 
 type Props = {
@@ -68,6 +76,9 @@ export function ShareModal({
   const [query, setQuery] = useState("");
   const [permission, setPermission] = useState<PermissionLevel>("EDIT");
   const [submitting, setSubmitting] = useState(false);
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [togglingPrivate, setTogglingPrivate] = useState(false);
+  const bumpSpacesRefresh = useSpacesStore((s) => s.bumpRefresh);
 
   const workspaceMembersQuery = useHomeQuery(
     (token, ws) => fetchWorkspaceMembers(token, ws).then((r) => r.data),
@@ -80,7 +91,10 @@ export function ShareModal({
     setLoading(true);
     fetchShareMembers(accessToken, workspaceId, resourceType, resourceId)
       .then((res) => {
-        if (!cancelled) setMembers(res.data);
+        if (!cancelled) {
+          setMembers(res.data);
+          setIsPrivate(res.isPrivate ?? false);
+        }
       })
       .catch((err) => {
         if (!cancelled) toast.error(formatRequestError(err));
@@ -155,6 +169,29 @@ export function ShareModal({
     }
   }
 
+  async function handleTogglePrivate(next: boolean) {
+    if (!ready) return;
+    setTogglingPrivate(true);
+    const previous = isPrivate;
+    setIsPrivate(next);
+    try {
+      await patchResourcePrivacy(
+        accessToken,
+        workspaceId,
+        resourceType,
+        resourceId,
+        next
+      );
+      bumpSpacesRefresh();
+      toast.success(next ? "Made private" : "Made public");
+    } catch (err) {
+      setIsPrivate(previous);
+      toast.error(formatRequestError(err));
+    } finally {
+      setTogglingPrivate(false);
+    }
+  }
+
   async function handleRemove(target: string) {
     if (!ready || !target) return;
     try {
@@ -178,16 +215,53 @@ export function ShareModal({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Share &quot;{resourceName}&quot;</DialogTitle>
-          <DialogDescription>
-            Add people by name or email. Someone who hasn&apos;t accepted
-            their workspace invite yet can still be added — they get access
-            the moment they join.
-          </DialogDescription>
         </DialogHeader>
+
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+          <div>
+            <Label htmlFor="share-modal-private">Make private</Label>
+            <p className="text-xs text-muted-foreground">
+              Only people you explicitly add below can access a private{" "}
+              {resourceType}.
+            </p>
+          </div>
+          <Switch
+            id="share-modal-private"
+            checked={isPrivate}
+            disabled={togglingPrivate}
+            onCheckedChange={(v) => void handleTogglePrivate(v)}
+          />
+        </div>
 
         <div className="flex items-end gap-2">
           <div className="min-w-0 flex-1 space-y-2">
-            <Label htmlFor="share-query">Add people</Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="share-query">Add people</Label>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      className="size-4 text-muted-foreground hover:text-foreground"
+                      aria-label="About adding people"
+                    >
+                      <CircleHelpIcon className="size-3.5" />
+                    </Button>
+                  }
+                />
+                <TooltipContent
+                  side="top"
+                  className="max-w-64 border border-border bg-popover text-popover-foreground"
+                  arrowClassName="bg-popover fill-popover"
+                >
+                  Add people by name or email. Someone who hasn&apos;t
+                  accepted their workspace invite yet can still be added —
+                  they get access the moment they join.
+                </TooltipContent>
+              </Tooltip>
+            </div>
             <Input
               id="share-query"
               placeholder="Name or email"
@@ -219,39 +293,51 @@ export function ShareModal({
         </div>
 
         <div className="space-y-1">
-          <Label>
-            {query.trim()
-              ? "Matching people"
-              : "Workspace members without access"}
-          </Label>
+          <Label>{query.trim() ? "Matching people" : "People"}</Label>
           <ul className="max-h-40 space-y-0.5 overflow-y-auto rounded-lg border border-border p-1">
             {candidates.map((m) => (
-              <li key={m.id}>
-                <button
-                  type="button"
-                  disabled={submitting}
-                  className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left hover:bg-muted/50 disabled:opacity-50"
-                  onClick={() =>
-                    void addMember({ userId: m.id, permissionLevel: permission })
+              <li
+                key={m.id}
+                className="flex items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-muted/50"
+              >
+                <Avatar className="size-7">
+                  <AvatarFallback
+                    className={cn(
+                      "text-xs font-semibold",
+                      avatarColorClassForKey(m.id, m.fullName)
+                    )}
+                  >
+                    {avatarInitialFromName(m.fullName)}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm">{m.fullName}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {m.email}
+                  </span>
+                </span>
+                <Select
+                  onValueChange={(v) =>
+                    v &&
+                    void addMember({
+                      userId: m.id,
+                      permissionLevel: v as PermissionLevel,
+                    })
                   }
                 >
-                  <Avatar className="size-7">
-                    <AvatarFallback
-                      className={cn(
-                        "text-xs font-semibold",
-                        avatarColorClassForKey(m.id, m.fullName)
-                      )}
-                    >
-                      {avatarInitialFromName(m.fullName)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm">{m.fullName}</span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {m.email}
-                    </span>
-                  </span>
-                </button>
+                  <SelectTrigger
+                    size="sm"
+                    className="w-28 justify-start"
+                    disabled={submitting}
+                  >
+                    <SelectValue placeholder="Add as…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="VIEW">Can view</SelectItem>
+                    <SelectItem value="COMMENT">Can comment</SelectItem>
+                    <SelectItem value="EDIT">Can edit</SelectItem>
+                  </SelectContent>
+                </Select>
               </li>
             ))}
             {candidates.length === 0 && isEmailInput ? (
@@ -320,19 +406,24 @@ export function ShareModal({
                     {m.name ?? m.email}
                   </span>
                   <span className="block truncate text-xs text-muted-foreground">
-                    {m.status === "INVITED"
-                      ? "Invited · not joined yet"
-                      : PERMISSION_LABELS[m.permissionLevel]}
+                    {m.implicit
+                      ? (m.role ? ROLE_LABELS[m.role] ?? m.role : "Admin") +
+                        " · full access"
+                      : m.status === "INVITED"
+                        ? "Invited · not joined yet"
+                        : PERMISSION_LABELS[m.permissionLevel]}
                   </span>
                 </span>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Remove ${m.name ?? m.email}`}
-                  onClick={() => void handleRemove(m.userId ?? m.email ?? "")}
-                >
-                  <XIcon className="size-3.5" />
-                </Button>
+                {m.implicit ? null : (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Remove ${m.name ?? m.email}`}
+                    onClick={() => void handleRemove(m.userId ?? m.email ?? "")}
+                  >
+                    <XIcon className="size-3.5" />
+                  </Button>
+                )}
               </li>
             ))}
           </ul>

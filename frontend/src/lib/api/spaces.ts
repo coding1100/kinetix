@@ -23,6 +23,7 @@ export interface ListMetaDto {
   statuses?: ListStatus[];
   channelId: string | null;
   canShare?: boolean;
+  isPrivate?: boolean;
 }
 
 export function fetchSpacesTree(token: string, workspaceId: string) {
@@ -235,9 +236,9 @@ export function createFolder(
   token: string,
   workspaceId: string,
   spaceId: string,
-  input: { name: string }
+  input: { name: string; isPrivate?: boolean }
 ) {
-  return apiFetch<{ id: string; name: string }>(
+  return apiFetch<{ id: string; name: string; isPrivate?: boolean }>(
     wsPath(workspaceId, `/spaces/${spaceId}/folders`),
     { method: "POST", token, body: JSON.stringify(input) }
   );
@@ -247,9 +248,9 @@ export function createList(
   token: string,
   workspaceId: string,
   spaceId: string,
-  input: { name: string; folderId?: string }
+  input: { name: string; folderId?: string; isPrivate?: boolean }
 ) {
-  return apiFetch<{ id: string; name: string }>(
+  return apiFetch<{ id: string; name: string; isPrivate?: boolean }>(
     wsPath(workspaceId, `/spaces/${spaceId}/lists`),
     { method: "POST", token, body: JSON.stringify(input) }
   );
@@ -288,9 +289,9 @@ export function patchFolder(
   token: string,
   workspaceId: string,
   folderId: string,
-  input: { name: string }
+  input: { name?: string; isPrivate?: boolean }
 ) {
-  return apiFetch<{ id: string; name: string }>(
+  return apiFetch<{ id: string; name: string; isPrivate?: boolean }>(
     wsPath(workspaceId, `/folders/${folderId}`),
     { method: "PATCH", token, body: JSON.stringify(input) }
   );
@@ -311,12 +312,28 @@ export function patchList(
   token: string,
   workspaceId: string,
   listId: string,
-  input: { name: string }
+  input: { name?: string; isPrivate?: boolean }
 ) {
-  return apiFetch<{ id: string; name: string }>(
+  return apiFetch<{ id: string; name: string; isPrivate?: boolean }>(
     wsPath(workspaceId, `/lists/${listId}`),
     { method: "PATCH", token, body: JSON.stringify(input) }
   );
+}
+
+export function patchResourcePrivacy(
+  token: string,
+  workspaceId: string,
+  resourceType: ShareResourceType,
+  resourceId: string,
+  isPrivate: boolean
+) {
+  if (resourceType === "space") {
+    return patchSpace(token, workspaceId, resourceId, { isPrivate });
+  }
+  if (resourceType === "folder") {
+    return patchFolder(token, workspaceId, resourceId, { isPrivate });
+  }
+  return patchList(token, workspaceId, resourceId, { isPrivate });
 }
 
 export function deleteList(
@@ -559,6 +576,8 @@ export interface ShareMemberDto {
   email: string | null;
   permissionLevel: "VIEW" | "COMMENT" | "EDIT";
   status: "ACTIVE" | "INVITED" | "SUSPENDED";
+  implicit?: boolean;
+  role?: string;
 }
 
 function shareResourcePath(resourceType: ShareResourceType, resourceId: string) {

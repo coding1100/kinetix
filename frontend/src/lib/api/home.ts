@@ -38,14 +38,22 @@ export interface SpaceDto {
   folders?: {
     id: string;
     name: string;
-    lists: { id: string; name: string; taskCount: number; canShare?: boolean }[];
+    lists: {
+      id: string;
+      name: string;
+      taskCount: number;
+      canShare?: boolean;
+      isPrivate?: boolean;
+    }[];
     canShare?: boolean;
+    isPrivate?: boolean;
   }[];
   standaloneLists?: {
     id: string;
     name: string;
     taskCount: number;
     canShare?: boolean;
+    isPrivate?: boolean;
   }[];
   lastActivityAt?: string;
 }

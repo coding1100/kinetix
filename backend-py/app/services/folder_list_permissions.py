@@ -1,12 +1,13 @@
 """Folder/List-level content permissions.
 
 Extends space_permissions.py one/two levels down: a Folder or List can carry
-its own explicit member override (FolderMember/ListMember), scoped tighter
-than — or in addition to — whatever the parent Space grants. Resolution
-always falls through to the parent when there's no override, so a Folder or
-List's effective permission is never *less* than what the Space already
-allows; overrides exist to grant *more* (e.g. share a single List with
-someone who has no Space access at all).
+its own explicit member override (FolderMember/ListMember) and its own
+`is_private` flag, same shape as Space. Resolution order at each level is
+identical to resolve_space_permission: an explicit override always wins;
+otherwise, if the resource itself is private, no ambient access; otherwise
+inherit whatever the parent level grants. A List inside a Folder chains
+through resolve_folder_permission (not straight to Space), so a private
+Folder's privacy is inherited by its Lists too.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.errors import AppError
 from app.db.models.enums import MemberStatus, PermissionLevel, WorkspaceRole
@@ -135,12 +137,11 @@ async def resolve_folder_permission(
         return PermissionLevel.EDIT
 
     override = await _folder_member_override(session, folder.id, user_id)
-    space_level = await resolve_space_permission(session, folder.space, user_id, role)
-    if override is None:
-        return space_level
-    if space_level is None:
+    if override is not None:
         return override
-    return override if level_at_least(override, space_level) else space_level
+    if folder.is_private:
+        return None
+    return await resolve_space_permission(session, folder.space, user_id, role)
 
 
 async def resolve_list_permission(
@@ -151,37 +152,27 @@ async def resolve_list_permission(
 ) -> PermissionLevel | None:
     """The effective permission level `user_id` (with `role`) has on `task_list`.
 
-    Falls through List override -> Folder override (if the list is inside
-    one) -> Space default, taking the highest applicable level at each step
-    (an override only ever widens access, never narrows it below what the
-    parent already grants).
+    An explicit ListMember override always wins. Otherwise, if the List
+    itself is private, no ambient access. Otherwise inherit from its parent
+    Folder (recursing into resolve_folder_permission, so a private parent
+    Folder's restriction applies too) or, if it has no Folder, straight from
+    its Space.
     """
     if is_privileged(role):
         return PermissionLevel.EDIT
 
-    parent_level: PermissionLevel | None
-    if task_list.folder_id:
-        parent_level = await _folder_member_override(
-            session, task_list.folder_id, user_id
-        )
-        space_level = await resolve_space_permission(
-            session, task_list.space, user_id, role
-        )
-        if parent_level is None or (
-            space_level is not None and level_at_least(space_level, parent_level)
-        ):
-            parent_level = space_level
-    else:
-        parent_level = await resolve_space_permission(
-            session, task_list.space, user_id, role
-        )
-
     override = await _list_member_override(session, task_list.id, user_id)
-    if override is None:
-        return parent_level
-    if parent_level is None:
+    if override is not None:
         return override
-    return override if level_at_least(override, parent_level) else parent_level
+    if task_list.is_private:
+        return None
+
+    if task_list.folder_id:
+        folder = await session.get(
+            Folder, task_list.folder_id, options=[selectinload(Folder.space)]
+        )
+        return await resolve_folder_permission(session, folder, user_id, role)
+    return await resolve_space_permission(session, task_list.space, user_id, role)
 
 
 async def require_folder_permission(

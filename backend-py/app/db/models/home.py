@@ -124,6 +124,9 @@ class Folder(Base):
     )
     name: Mapped[str] = mapped_column(String)
     sort_order: Mapped[int] = mapped_column("sortOrder", Integer, default=0)
+    is_private: Mapped[bool] = mapped_column(
+        "isPrivate", Boolean, default=False, server_default="false"
+    )
     space: Mapped["Space"] = relationship(back_populates="folders")
     lists: Mapped[list["TaskList"]] = relationship(
         back_populates="folder", passive_deletes=True
@@ -190,6 +193,9 @@ class TaskList(Base):
     )
     name: Mapped[str] = mapped_column(String)
     sort_order: Mapped[int] = mapped_column("sortOrder", Integer, default=0)
+    is_private: Mapped[bool] = mapped_column(
+        "isPrivate", Boolean, default=False, server_default="false"
+    )
     space: Mapped["Space"] = relationship(back_populates="lists")
     folder: Mapped["Folder | None"] = relationship(back_populates="lists")
     tasks: Mapped[list["Task"]] = relationship(

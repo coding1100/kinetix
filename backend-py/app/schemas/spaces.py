@@ -44,11 +44,17 @@ class ShareMemberBody(BaseModel):
 
 
 class CreateFolderBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     name: str = Field(min_length=1, max_length=120)
+    is_private: bool = Field(default=False, alias="isPrivate")
 
 
 class UpdateFolderBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     name: str | None = Field(default=None, min_length=1, max_length=120)
+    is_private: bool | None = Field(default=None, alias="isPrivate")
 
 
 class CreateListBody(BaseModel):
@@ -56,10 +62,14 @@ class CreateListBody(BaseModel):
 
     name: str = Field(min_length=1, max_length=120)
     folder_id: str | None = Field(default=None, alias="folderId")
+    is_private: bool = Field(default=False, alias="isPrivate")
 
 
 class UpdateListBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     name: str | None = Field(default=None, min_length=1, max_length=120)
+    is_private: bool | None = Field(default=None, alias="isPrivate")
 
 
 class CreateTaskCommentBody(BaseModel):

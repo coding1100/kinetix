@@ -235,6 +235,7 @@ function SpaceListLink({
   name,
   taskCount,
   active,
+  isPrivate,
   canShare,
   onShare,
 }: {
@@ -242,6 +243,7 @@ function SpaceListLink({
   name: string;
   taskCount?: number;
   active: boolean;
+  isPrivate?: boolean;
   canShare?: boolean;
   onShare?: () => void;
 }) {
@@ -258,6 +260,7 @@ function SpaceListLink({
       >
         <ListChecksIcon className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate">{name}</span>
+        {isPrivate ? <LockIcon className="size-3 shrink-0 text-muted-foreground" /> : null}
         {typeof taskCount === "number" ? (
           <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
             {taskCount}
@@ -304,17 +307,26 @@ function SpaceRow({
     color: string;
     description?: string;
     canShare?: boolean;
+    isPrivate?: boolean;
     folders?: {
       id: string;
       name: string;
       canShare?: boolean;
-      lists: { id: string; name: string; taskCount: number; canShare?: boolean }[];
+      isPrivate?: boolean;
+      lists: {
+        id: string;
+        name: string;
+        taskCount: number;
+        canShare?: boolean;
+        isPrivate?: boolean;
+      }[];
     }[];
     standaloneLists?: {
       id: string;
       name: string;
       taskCount: number;
       canShare?: boolean;
+      isPrivate?: boolean;
     }[];
   };
   expanded: boolean;
@@ -355,6 +367,9 @@ function SpaceRow({
             </span>
           </span>
           <span className="min-w-0 flex-1 truncate">{space.name}</span>
+          {space.isPrivate ? (
+            <LockIcon className="size-3 shrink-0 text-muted-foreground" />
+          ) : null}
           {space.description ? (
             <span className="shrink-0 truncate text-xs text-muted-foreground">
               {space.description}
@@ -411,6 +426,9 @@ function SpaceRow({
               <div className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-muted-foreground">
                 <FolderIcon className="size-3.5 shrink-0" />
                 <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+                {folder.isPrivate ? (
+                  <LockIcon className="size-3 shrink-0" />
+                ) : null}
                 {folder.canShare ? (
                   <DropdownMenu>
                     <DropdownMenuTrigger
@@ -450,6 +468,7 @@ function SpaceRow({
                     name={list.name}
                     taskCount={list.taskCount}
                     active={pathname === `/home/l/${list.id}`}
+                    isPrivate={list.isPrivate}
                     canShare={list.canShare}
                     onShare={() =>
                       onShare({ type: "list", id: list.id, name: list.name })
@@ -466,6 +485,7 @@ function SpaceRow({
               name={list.name}
               taskCount={list.taskCount}
               active={pathname === `/home/l/${list.id}`}
+              isPrivate={list.isPrivate}
               canShare={list.canShare}
               onShare={() =>
                 onShare({ type: "list", id: list.id, name: list.name })

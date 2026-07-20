@@ -64,6 +64,7 @@ from app.services.folder_list_permissions import (
     require_list_permission,
     resolve_share_target,
 )
+from app.services.workspace_permissions import is_workspace_admin
 from app.socket.emit import broadcast_channel_renamed
 
 
@@ -74,7 +75,46 @@ def _member_row_payload(row: SpaceMember | FolderMember | ListMember) -> dict:
         "email": row.user.email if row.user else row.email,
         "permissionLevel": row.permission_level.value,
         "status": row.status.value,
+        "implicit": False,
     }
+
+
+async def _implicit_privileged_members(
+    session: AsyncSession, workspace_id: str, explicit_user_ids: set[str]
+) -> list[dict]:
+    """OWNER/SUPER_ADMIN always get full EDIT on every Space/Folder/List
+    (resolve_space_permission's is_privileged bypass), with no SpaceMember/
+    FolderMember/ListMember row backing it. Surface them in "who has
+    access" instead of letting them show up as inviteable candidates that
+    already secretly have access."""
+    rows = (
+        await session.scalars(
+            select(WorkspaceMember)
+            .where(
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.role.in_(
+                    [WorkspaceRole.OWNER, WorkspaceRole.SUPER_ADMIN]
+                ),
+                WorkspaceMember.status == MemberStatus.ACTIVE,
+                WorkspaceMember.user_id.notin_(explicit_user_ids)
+                if explicit_user_ids
+                else True,
+            )
+            .options(selectinload(WorkspaceMember.user))
+        )
+    ).all()
+    return [
+        {
+            "userId": row.user_id,
+            "name": row.user.full_name if row.user else None,
+            "email": row.user.email if row.user else None,
+            "permissionLevel": PermissionLevel.EDIT.value,
+            "status": MemberStatus.ACTIVE.value,
+            "implicit": True,
+            "role": row.role.value,
+        }
+        for row in rows
+    ]
 
 
 def _require_can_create_space(role: WorkspaceRole) -> None:
@@ -83,6 +123,53 @@ def _require_can_create_space(role: WorkspaceRole) -> None:
         WorkspaceRole.SUPER_ADMIN,
     ):
         raise AppError(403, "FORBIDDEN", "You don't have permission to create a Space")
+
+
+async def _get_space(session: AsyncSession, workspace_id: str, space_id: str) -> Space:
+    space = await session.scalar(
+        select(Space).where(Space.id == space_id, Space.workspace_id == workspace_id)
+    )
+    if not space:
+        raise AppError(404, "NOT_FOUND", "Space not found")
+    return space
+
+
+async def _target_workspace_role(
+    session: AsyncSession, workspace_id: str, target_user_id: str | None
+) -> WorkspaceRole | None:
+    if not target_user_id:
+        return None
+    return await session.scalar(
+        select(WorkspaceMember.role).where(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.user_id == target_user_id,
+        )
+    )
+
+
+def _reject_if_privileged_target(target_role: WorkspaceRole | None) -> None:
+    """OWNER/SUPER_ADMIN always have full EDIT on every Space/Folder/List
+    (resolve_space_permission's is_privileged bypass) and can't be narrowed
+    or revoked via an explicit member row - block both sharing an explicit
+    grant with them (pointless) and removing one (would look like it takes
+    access away, but can't - stay explicit instead of silently no-op'ing)."""
+    if target_role in (WorkspaceRole.OWNER, WorkspaceRole.SUPER_ADMIN):
+        raise AppError(
+            400,
+            "VALIDATION_ERROR",
+            "Owner and Super Admin always have full access and can't be shared or removed explicitly",
+        )
+
+
+def _require_can_manage_access(role: WorkspaceRole) -> None:
+    """Only workspace admins can manage sharing (add/remove members) or
+    toggle privacy on a Space/Folder/List - not just anyone with EDIT
+    access to that resource. Matches can_manage_people/can_manage_teams'
+    style (workspace_permissions.py)."""
+    if not is_workspace_admin(role):
+        raise AppError(
+            403, "FORBIDDEN", "Only workspace admins can manage sharing"
+        )
 
 
 async def _folder_with_space(
@@ -181,7 +268,8 @@ async def update_space(
         space.color = body.color
     if body.description is not None:
         space.description = body.description or None
-    if body.is_private is not None:
+    if body.is_private is not None and body.is_private != space.is_private:
+        _require_can_manage_access(role)
         space.is_private = body.is_private
     await session.commit()
     refreshed = await session.scalar(
@@ -230,10 +318,10 @@ async def list_space_members(
             .options(selectinload(SpaceMember.user))
         )
     ).all()
-    return {
-        "isPrivate": space.is_private,
-        "data": [_member_row_payload(row) for row in rows],
-    }
+    data = [_member_row_payload(row) for row in rows]
+    explicit_ids = {row.user_id for row in rows if row.user_id}
+    data.extend(await _implicit_privileged_members(session, workspace_id, explicit_ids))
+    return {"isPrivate": space.is_private, "data": data}
 
 
 async def add_space_member(
@@ -244,12 +332,20 @@ async def add_space_member(
     role: WorkspaceRole,
     body: ShareMemberBody,
 ) -> dict:
-    space = await get_space_or_403(
-        session, workspace_id, space_id, user_id, role, PermissionLevel.EDIT
-    )
+    space = await _get_space(session, workspace_id, space_id)
+    _require_can_manage_access(role)
     target_user_id, target_email, status = await resolve_share_target(
         session, workspace_id, body.user_id, body.email
     )
+
+    target_role = await _target_workspace_role(session, workspace_id, target_user_id)
+    _reject_if_privileged_target(target_role)
+    if target_role == WorkspaceRole.GUEST:
+        raise AppError(
+            400,
+            "VALIDATION_ERROR",
+            "Guests can't be given access to a whole Space - share a Folder or List with them instead",
+        )
 
     existing = await session.scalar(
         select(SpaceMember).where(
@@ -298,8 +394,10 @@ async def remove_space_member(
     user_id: str,
     role: WorkspaceRole,
 ) -> dict:
-    space = await get_space_or_403(
-        session, workspace_id, space_id, user_id, role, PermissionLevel.EDIT
+    space = await _get_space(session, workspace_id, space_id)
+    _require_can_manage_access(role)
+    _reject_if_privileged_target(
+        await _target_workspace_role(session, workspace_id, target)
     )
     await session.execute(
         delete(SpaceMember).where(
@@ -331,10 +429,17 @@ async def create_folder(
         space_id=space.id,
         name=body.name.strip(),
         sort_order=int(max_order or 0) + 1,
+        is_private=bool(body.is_private),
     )
     session.add(folder)
     await session.commit()
-    return {"id": folder.id, "name": folder.name, "lists": [], "canShare": True}
+    return {
+        "id": folder.id,
+        "name": folder.name,
+        "lists": [],
+        "canShare": is_workspace_admin(role),
+        "isPrivate": folder.is_private,
+    }
 
 
 async def update_folder(
@@ -351,8 +456,16 @@ async def update_folder(
     )
     if body.name is not None:
         folder.name = body.name.strip()
+    if body.is_private is not None and body.is_private != folder.is_private:
+        _require_can_manage_access(role)
+        folder.is_private = body.is_private
     await session.commit()
-    return {"id": folder.id, "name": folder.name, "canShare": True}
+    return {
+        "id": folder.id,
+        "name": folder.name,
+        "canShare": is_workspace_admin(role),
+        "isPrivate": folder.is_private,
+    }
 
 
 async def delete_folder(
@@ -389,7 +502,10 @@ async def list_folder_members(
             .options(selectinload(FolderMember.user))
         )
     ).all()
-    return {"data": [_member_row_payload(row) for row in rows]}
+    data = [_member_row_payload(row) for row in rows]
+    explicit_ids = {row.user_id for row in rows if row.user_id}
+    data.extend(await _implicit_privileged_members(session, workspace_id, explicit_ids))
+    return {"isPrivate": folder.is_private, "data": data}
 
 
 async def add_folder_member(
@@ -401,11 +517,12 @@ async def add_folder_member(
     body: ShareMemberBody,
 ) -> dict:
     folder = await _folder_with_space(session, workspace_id, folder_id)
-    await require_folder_permission(
-        session, folder, user_id, role, PermissionLevel.EDIT
-    )
+    _require_can_manage_access(role)
     target_user_id, target_email, status = await resolve_share_target(
         session, workspace_id, body.user_id, body.email
+    )
+    _reject_if_privileged_target(
+        await _target_workspace_role(session, workspace_id, target_user_id)
     )
 
     existing = await session.scalar(
@@ -456,8 +573,9 @@ async def remove_folder_member(
     role: WorkspaceRole,
 ) -> dict:
     folder = await _folder_with_space(session, workspace_id, folder_id)
-    await require_folder_permission(
-        session, folder, user_id, role, PermissionLevel.EDIT
+    _require_can_manage_access(role)
+    _reject_if_privileged_target(
+        await _target_workspace_role(session, workspace_id, target)
     )
     await session.execute(
         delete(FolderMember).where(
@@ -506,6 +624,7 @@ async def create_list(
         folder_id=folder_id,
         name=body.name.strip(),
         sort_order=int(max_order or 0) + 1,
+        is_private=bool(body.is_private),
     )
     session.add(task_list)
     await session.flush()
@@ -514,7 +633,7 @@ async def create_list(
     # Every list is mandatory 1:1 with its own chat channel - see
     # chat_service.create_list_channel.
     await create_list_channel(session, workspace_id, task_list, space, user_id)
-    return map_list_entry(task_list, 0, can_share=True)
+    return map_list_entry(task_list, 0, can_share=is_workspace_admin(role))
 
 
 async def update_list(
@@ -533,6 +652,9 @@ async def update_list(
     if body.name is not None:
         task_list.name = body.name.strip()
         renamed = True
+    if body.is_private is not None and body.is_private != task_list.is_private:
+        _require_can_manage_access(role)
+        task_list.is_private = body.is_private
     await session.commit()
 
     if renamed:
@@ -567,7 +689,7 @@ async def update_list(
     count = await session.scalar(
         select(func.count()).select_from(Task).where(Task.list_id == list_id)
     )
-    return map_list_entry(task_list, int(count or 0), can_share=True)
+    return map_list_entry(task_list, int(count or 0), can_share=is_workspace_admin(role))
 
 
 async def delete_list(
@@ -606,7 +728,10 @@ async def list_list_members(
             .options(selectinload(ListMember.user))
         )
     ).all()
-    return {"data": [_member_row_payload(row) for row in rows]}
+    data = [_member_row_payload(row) for row in rows]
+    explicit_ids = {row.user_id for row in rows if row.user_id}
+    data.extend(await _implicit_privileged_members(session, workspace_id, explicit_ids))
+    return {"isPrivate": task_list.is_private, "data": data}
 
 
 async def add_list_member(
@@ -618,11 +743,12 @@ async def add_list_member(
     body: ShareMemberBody,
 ) -> dict:
     task_list = await _list_with_space(session, workspace_id, list_id)
-    await require_list_permission(
-        session, task_list, user_id, role, PermissionLevel.EDIT
-    )
+    _require_can_manage_access(role)
     target_user_id, target_email, status = await resolve_share_target(
         session, workspace_id, body.user_id, body.email
+    )
+    _reject_if_privileged_target(
+        await _target_workspace_role(session, workspace_id, target_user_id)
     )
 
     existing = await session.scalar(
@@ -673,8 +799,9 @@ async def remove_list_member(
     role: WorkspaceRole,
 ) -> dict:
     task_list = await _list_with_space(session, workspace_id, list_id)
-    await require_list_permission(
-        session, task_list, user_id, role, PermissionLevel.EDIT
+    _require_can_manage_access(role)
+    _reject_if_privileged_target(
+        await _target_workspace_role(session, workspace_id, target)
     )
     await session.execute(
         delete(ListMember).where(

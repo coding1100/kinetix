@@ -11,6 +11,7 @@ import {
   LayoutListIcon,
   ListChecksIcon,
   ListPlusIcon,
+  LockIcon,
   MoreHorizontalIcon,
   PanelLeftCloseIcon,
   PencilIcon,
@@ -277,6 +278,9 @@ export function SpacesSidebar() {
                         {space.name.slice(0, 1).toUpperCase()}
                       </span>
                       <span className="truncate">{space.name}</span>
+                      {space.isPrivate ? (
+                        <LockIcon className="size-3 shrink-0 opacity-70" />
+                      ) : null}
                     </button>
                     <Tooltip>
                       <DropdownMenu>
@@ -320,7 +324,6 @@ export function SpacesSidebar() {
                               type: "edit-space",
                               spaceId: space.id,
                               initialName: space.name,
-                              initialIsPrivate: space.isPrivate,
                             })
                           }
                         >
@@ -369,6 +372,9 @@ export function SpacesSidebar() {
                             <div className="flex min-w-0 flex-1 items-center gap-1.5 text-xs font-medium text-muted-foreground">
                               <FolderIcon className="size-3.5 shrink-0" />
                               <span className="truncate">{folder.name}</span>
+                              {folder.isPrivate ? (
+                                <LockIcon className="size-3 shrink-0" />
+                              ) : null}
                             </div>
                             <Tooltip>
                               <DropdownMenu>
@@ -454,6 +460,7 @@ export function SpacesSidebar() {
                                 name={list.name}
                                 taskCount={list.taskCount}
                                 active={isListActive(pathname, list.id)}
+                                isPrivate={list.isPrivate}
                                 canShare={list.canShare}
                                 onRename={() =>
                                   openDialog({
@@ -491,6 +498,7 @@ export function SpacesSidebar() {
                               name={list.name}
                               taskCount={list.taskCount}
                               active={isListActive(pathname, list.id)}
+                              isPrivate={list.isPrivate}
                               canShare={list.canShare}
                               isPersonal={
                                 space.isPersonal && list.name === "Personal List"
@@ -590,6 +598,7 @@ function ListNavItem({
   taskCount,
   active,
   isPersonal,
+  isPrivate,
   canShare,
   onRename,
   onDelete,
@@ -600,6 +609,7 @@ function ListNavItem({
   taskCount?: number;
   active: boolean;
   isPersonal?: boolean;
+  isPrivate?: boolean;
   canShare?: boolean;
   onRename: () => void;
   onDelete: () => void;
@@ -619,6 +629,7 @@ function ListNavItem({
       >
         <LayoutListIcon className="size-3.5 shrink-0 opacity-70" />
         <span className="truncate">{name}</span>
+        {isPrivate ? <LockIcon className="size-3 shrink-0 opacity-70" /> : null}
         {typeof taskCount === "number" ? (
           <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
             {taskCount}
