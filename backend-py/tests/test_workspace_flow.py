@@ -181,6 +181,56 @@ async def test_workspace_invite_list_cancel_and_accept_signup(api_client: AsyncC
 
 
 @pytest.mark.asyncio(loop_scope="session")
+async def test_workspace_invite_rejects_duplicate_and_existing_member(
+    api_client: AsyncClient,
+):
+    token = await _login(api_client, *OWNER)
+    headers = _auth(token)
+
+    created = await api_client.post(
+        "/api/v1/workspaces",
+        headers=headers,
+        json={"name": f"Dup Invite WS {int(time.time())}"},
+    )
+    assert created.status_code == 201
+    workspace_id = created.json()["id"]
+
+    pending_email = f"dup-invite-{int(time.time())}@example.com"
+    first = await api_client.post(
+        f"/api/v1/workspaces/{workspace_id}/invites",
+        headers=headers,
+        json={"email": pending_email, "role": "MEMBER"},
+    )
+    assert first.status_code == 201, first.text
+
+    duplicate = await api_client.post(
+        f"/api/v1/workspaces/{workspace_id}/invites",
+        headers=headers,
+        json={"email": pending_email, "role": "MEMBER"},
+    )
+    assert duplicate.status_code == 409, duplicate.text
+    assert duplicate.json()["error"]["code"] == "ALREADY_INVITED"
+
+    # Case-insensitive: same email, different casing, still rejected.
+    duplicate_case = await api_client.post(
+        f"/api/v1/workspaces/{workspace_id}/invites",
+        headers=headers,
+        json={"email": pending_email.upper(), "role": "MEMBER"},
+    )
+    assert duplicate_case.status_code == 409
+    assert duplicate_case.json()["error"]["code"] == "ALREADY_INVITED"
+
+    # OWNER is already an active member of their own workspace.
+    already_member = await api_client.post(
+        f"/api/v1/workspaces/{workspace_id}/invites",
+        headers=headers,
+        json={"email": OWNER[0], "role": "MEMBER"},
+    )
+    assert already_member.status_code == 409, already_member.text
+    assert already_member.json()["error"]["code"] == "ALREADY_MEMBER"
+
+
+@pytest.mark.asyncio(loop_scope="session")
 async def test_workspace_member_role_and_remove(api_client: AsyncClient):
     test_email = f"ws-role-{int(time.time())}@example.com"
     owner_token = await _login(api_client, *OWNER)

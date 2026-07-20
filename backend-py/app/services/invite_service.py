@@ -69,10 +69,6 @@ async def create_invite(
         if active:
             raise AppError(409, "ALREADY_MEMBER", "User is already in this workspace")
 
-    settings = get_settings()
-    now = _utc_now()
-    expires_at = now + timedelta(days=settings.invite_token_expires_days)
-
     pending = await session.scalar(
         select(Invite).where(
             Invite.workspace_id == workspace_id,
@@ -81,22 +77,23 @@ async def create_invite(
         )
     )
     if pending:
-        pending.role = body.role
-        pending.token = generate_token()
-        pending.expires_at = expires_at
-        pending.invited_by_id = invited_by_id
-        invite = pending
-    else:
-        token = generate_token()
-        invite = Invite(
-            workspace_id=workspace_id,
-            email=email,
-            role=body.role,
-            token=token,
-            expires_at=expires_at,
-            invited_by_id=invited_by_id,
+        raise AppError(
+            409, "ALREADY_INVITED", "This person has already been invited"
         )
-        session.add(invite)
+
+    settings = get_settings()
+    now = _utc_now()
+    expires_at = now + timedelta(days=settings.invite_token_expires_days)
+    token = generate_token()
+    invite = Invite(
+        workspace_id=workspace_id,
+        email=email,
+        role=body.role,
+        token=token,
+        expires_at=expires_at,
+        invited_by_id=invited_by_id,
+    )
+    session.add(invite)
 
     await session.flush()
     workspace = await session.get(Workspace, workspace_id)
