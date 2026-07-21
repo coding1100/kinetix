@@ -35,6 +35,7 @@ export interface SpaceDto {
   isPersonal?: boolean;
   isPrivate?: boolean;
   canShare?: boolean;
+  canManageStructure?: boolean;
   folders?: {
     id: string;
     name: string;
@@ -43,9 +44,11 @@ export interface SpaceDto {
       name: string;
       taskCount: number;
       canShare?: boolean;
+      canManageStructure?: boolean;
       isPrivate?: boolean;
     }[];
     canShare?: boolean;
+    canManageStructure?: boolean;
     isPrivate?: boolean;
   }[];
   standaloneLists?: {
@@ -53,6 +56,7 @@ export interface SpaceDto {
     name: string;
     taskCount: number;
     canShare?: boolean;
+    canManageStructure?: boolean;
     isPrivate?: boolean;
   }[];
   lastActivityAt?: string;

@@ -131,6 +131,23 @@ def _require_can_create_space(role: WorkspaceRole) -> None:
         raise AppError(403, "FORBIDDEN", "You don't have permission to create a Space")
 
 
+def _require_can_edit_structure(role: WorkspaceRole) -> None:
+    """Rename/Delete/create-child-Folder-or-List are structural,
+    workspace-shape-changing actions (Delete especially - cascades and
+    destroys everything nested), not just editing content within a
+    resource. Real content EDIT access (checked separately, per-resource,
+    at each call site) isn't enough on its own - a Guest or Limited
+    Member must never get these even with an explicit EDIT override,
+    mirroring _require_can_create_space's existing Guest/Limited Member
+    exclusion for creating a Space in the first place."""
+    if role in (WorkspaceRole.GUEST, WorkspaceRole.LIMITED_MEMBER):
+        raise AppError(
+            403,
+            "FORBIDDEN",
+            "Guests and Limited Members can't create, rename, or delete Spaces/Folders/Lists",
+        )
+
+
 async def _get_space(session: AsyncSession, workspace_id: str, space_id: str) -> Space:
     space = await session.scalar(
         select(Space).where(Space.id == space_id, Space.workspace_id == workspace_id)
@@ -271,6 +288,8 @@ async def update_space(
     space = await get_space_or_403(
         session, workspace_id, space_id, user_id, role, PermissionLevel.EDIT
     )
+    if body.name is not None or body.color is not None or body.description is not None:
+        _require_can_edit_structure(role)
     if body.name is not None:
         space.name = body.name.strip()
     if body.color is not None:
@@ -313,6 +332,7 @@ async def delete_space(
     space = await get_space_or_403(
         session, workspace_id, space_id, user_id, role, PermissionLevel.EDIT
     )
+    _require_can_edit_structure(role)
     if space.is_personal:
         raise AppError(400, "VALIDATION_ERROR", "Cannot delete the Personal space")
     await session.delete(space)
@@ -465,6 +485,7 @@ async def create_folder(
     space = await get_space_or_403(
         session, workspace_id, space_id, user_id, role, PermissionLevel.EDIT
     )
+    _require_can_edit_structure(role)
     max_order = await session.scalar(
         select(func.max(Folder.sort_order)).where(Folder.space_id == space_id)
     )
@@ -481,6 +502,8 @@ async def create_folder(
         "name": folder.name,
         "lists": [],
         "canShare": is_workspace_admin(role),
+        "canManageStructure": role
+        not in (WorkspaceRole.GUEST, WorkspaceRole.LIMITED_MEMBER),
         "isPrivate": folder.is_private,
     }
 
@@ -498,6 +521,7 @@ async def update_folder(
         session, folder, user_id, role, PermissionLevel.EDIT
     )
     if body.name is not None:
+        _require_can_edit_structure(role)
         folder.name = body.name.strip()
     privacy_changed = (
         body.is_private is not None and body.is_private != folder.is_private
@@ -512,6 +536,8 @@ async def update_folder(
         "id": folder.id,
         "name": folder.name,
         "canShare": is_workspace_admin(role),
+        "canManageStructure": role
+        not in (WorkspaceRole.GUEST, WorkspaceRole.LIMITED_MEMBER),
         "isPrivate": folder.is_private,
     }
 
@@ -527,6 +553,7 @@ async def delete_folder(
     await require_folder_permission(
         session, folder, user_id, role, PermissionLevel.EDIT
     )
+    _require_can_edit_structure(role)
     await session.delete(folder)
     await session.commit()
     return {"ok": True}
@@ -672,6 +699,7 @@ async def create_list(
     space = await get_space_or_403(
         session, workspace_id, space_id, user_id, role, PermissionLevel.VIEW
     )
+    _require_can_edit_structure(role)
     folder_id = body.folder_id
     if folder_id:
         folder = await session.scalar(
@@ -705,7 +733,13 @@ async def create_list(
     # Every list is mandatory 1:1 with its own chat channel - see
     # chat_service.create_list_channel.
     await create_list_channel(session, workspace_id, task_list, space, user_id)
-    return map_list_entry(task_list, 0, can_share=is_workspace_admin(role))
+    return map_list_entry(
+        task_list,
+        0,
+        can_share=is_workspace_admin(role),
+        can_manage_structure=role
+        not in (WorkspaceRole.GUEST, WorkspaceRole.LIMITED_MEMBER),
+    )
 
 
 async def update_list(
@@ -722,6 +756,7 @@ async def update_list(
     )
     renamed = False
     if body.name is not None:
+        _require_can_edit_structure(role)
         task_list.name = body.name.strip()
         renamed = True
     privacy_changed = (
@@ -780,7 +815,13 @@ async def update_list(
     count = await session.scalar(
         select(func.count()).select_from(Task).where(Task.list_id == list_id)
     )
-    return map_list_entry(task_list, int(count or 0), can_share=is_workspace_admin(role))
+    return map_list_entry(
+        task_list,
+        int(count or 0),
+        can_share=is_workspace_admin(role),
+        can_manage_structure=role
+        not in (WorkspaceRole.GUEST, WorkspaceRole.LIMITED_MEMBER),
+    )
 
 
 async def delete_list(
@@ -794,6 +835,7 @@ async def delete_list(
     await require_list_permission(
         session, task_list, user_id, role, PermissionLevel.EDIT
     )
+    _require_can_edit_structure(role)
     if task_list.space.is_personal and task_list.name == "Personal List":
         raise AppError(400, "VALIDATION_ERROR", "Cannot delete the Personal list")
     await session.delete(task_list)

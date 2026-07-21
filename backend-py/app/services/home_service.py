@@ -227,6 +227,18 @@ async def _last_activity_for_space(session: AsyncSession, space):
     return last_task_update or space.created_at
 
 
+def _can_manage_structure(level: PermissionLevel | None, role: WorkspaceRole) -> bool:
+    """Rename/Delete/create-child are structural actions - real content
+    EDIT isn't enough on its own, Guests/Limited Members are excluded
+    even with an explicit EDIT override (mirrors spaces_service.py's
+    _require_can_edit_structure, which is what actually enforces this;
+    this just tells the frontend when to show the menu items at all)."""
+    return level_at_least(level, PermissionLevel.EDIT) and role not in (
+        WorkspaceRole.GUEST,
+        WorkspaceRole.LIMITED_MEMBER,
+    )
+
+
 async def _build_space_payload(
     session: AsyncSession,
     space,
@@ -241,6 +253,7 @@ async def _build_space_payload(
     # a private Folder/List the user has no grant on must not appear in the
     # tree at all, independent of who can manage its sharing.
     can_manage = is_workspace_admin(role)
+    space_level = await resolve_space_permission(session, space, user_id, role)
 
     folders = []
     standalone = []
@@ -254,7 +267,14 @@ async def _build_space_payload(
             lst_level = await resolve_list_permission(session, lst, user_id, role)
             if not level_at_least(lst_level, PermissionLevel.VIEW):
                 continue
-            lists.append(map_list_entry(lst, len(lst.tasks), can_manage))
+            lists.append(
+                map_list_entry(
+                    lst,
+                    len(lst.tasks),
+                    can_manage,
+                    _can_manage_structure(lst_level, role),
+                )
+            )
         if not folder_visible:
             # No access to the Folder itself - don't expose its existence
             # or name. A directly-shared List inside it (resolve_list_
@@ -269,6 +289,7 @@ async def _build_space_payload(
                 "name": folder.name,
                 "lists": lists,
                 "canShare": can_manage,
+                "canManageStructure": _can_manage_structure(folder_level, role),
                 "isPrivate": folder.is_private,
             }
         )
@@ -279,7 +300,14 @@ async def _build_space_payload(
         lst_level = await resolve_list_permission(session, lst, user_id, role)
         if not level_at_least(lst_level, PermissionLevel.VIEW):
             continue
-        standalone.append(map_list_entry(lst, len(lst.tasks), can_manage))
+        standalone.append(
+            map_list_entry(
+                lst,
+                len(lst.tasks),
+                can_manage,
+                _can_manage_structure(lst_level, role),
+            )
+        )
     last_activity_at = await _last_activity_for_space(session, space)
     return map_space_row(
         space,
@@ -289,6 +317,7 @@ async def _build_space_payload(
         standalone,
         last_activity_at,
         can_manage,
+        _can_manage_structure(space_level, role),
     )
 
 

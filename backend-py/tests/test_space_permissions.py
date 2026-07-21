@@ -137,7 +137,14 @@ async def test_private_space_override_grants_limited_member_access(
     is now rejected (see add_space_member's guest check,
     spaces_service.py). The override mechanism itself is still exercised
     here, just with LIMITED_MEMBER, a role ClickUp does allow to be granted
-    Space access this way."""
+    Space access this way.
+
+    Content access (viewing) works via the override, but structural
+    actions (create Folder/List, rename, delete) are a separate, higher
+    bar - see _require_can_edit_structure and
+    test_guest_and_limited_member_cannot_manage_structure_even_with_edit
+    below - a Limited Member is excluded from those even with an
+    explicit EDIT override."""
     owner_token = await login(api_client, *OWNER)
     owner_headers = auth_headers(owner_token)
     member_token = await login(api_client, *MEMBER)
@@ -172,13 +179,7 @@ async def test_private_space_override_grants_limited_member_access(
             f"/api/v1/workspaces/{ws_id}/spaces/{space_id}", headers=member_headers
         )
         assert allowed.status_code == 200, allowed.text
-
-        folder = await api_client.post(
-            f"/api/v1/workspaces/{ws_id}/spaces/{space_id}/folders",
-            headers=member_headers,
-            json={"name": "Now allowed"},
-        )
-        assert folder.status_code == 201, folder.text
+        assert allowed.json()["canManageStructure"] is False, allowed.json()
     finally:
         await _set_role(api_client, owner_headers, ws_id, member_user_id, "MEMBER")
 
@@ -845,3 +846,256 @@ async def test_list_shared_directly_shows_in_tree_despite_private_unshared_folde
         assert len(standalone_ids) == 1
     finally:
         await _set_role(api_client, owner_headers, ws_id, member_user_id, "MEMBER")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_limited_member_cannot_manage_structure_even_with_edit(
+    api_client: AsyncClient,
+):
+    """Rename/Delete/create-child-Folder-or-List are structural,
+    workspace-shape-changing actions - real content EDIT access on the
+    resource isn't enough on its own, a Limited Member must be blocked
+    even with an explicit EDIT override on the Space/Folder/List itself
+    (_require_can_edit_structure, spaces_service.py). A plain MEMBER with
+    the same EDIT access is not restricted - see
+    test_member_can_manage_structure_with_edit below."""
+    owner_token = await login(api_client, *OWNER)
+    owner_headers = auth_headers(owner_token)
+    member_token = await login(api_client, *MEMBER)
+    member_headers = auth_headers(member_token)
+    ws_id = await workspace_id(api_client, owner_token)
+    member_user_id = await user_id(api_client, member_token)
+
+    suffix = int(time.time() * 1000)
+    space = await api_client.post(
+        f"/api/v1/workspaces/{ws_id}/spaces",
+        headers=owner_headers,
+        json={"name": f"Structure Gate Space {suffix}"},
+    )
+    assert space.status_code == 201, space.text
+    space_id = space.json()["id"]
+
+    folder = await api_client.post(
+        f"/api/v1/workspaces/{ws_id}/spaces/{space_id}/folders",
+        headers=owner_headers,
+        json={"name": "Structure Gate Folder"},
+    )
+    assert folder.status_code == 201, folder.text
+    folder_id = folder.json()["id"]
+
+    lst = await api_client.post(
+        f"/api/v1/workspaces/{ws_id}/spaces/{space_id}/lists",
+        headers=owner_headers,
+        json={"folderId": folder_id, "name": "Structure Gate List"},
+    )
+    assert lst.status_code == 201, lst.text
+    list_id = lst.json()["id"]
+
+    await _set_role(api_client, owner_headers, ws_id, member_user_id, "LIMITED_MEMBER")
+    try:
+        # Give them an explicit EDIT override on everything - real content
+        # access, not the ambient-role kind, so this proves the block
+        # isn't just "no VIEW/EDIT" but a deliberate role exclusion.
+        for endpoint, target_id in (
+            ("spaces", space_id),
+            ("folders", folder_id),
+            ("lists", list_id),
+        ):
+            grant = await api_client.post(
+                f"/api/v1/workspaces/{ws_id}/{endpoint}/{target_id}/members",
+                headers=owner_headers,
+                json={"userId": member_user_id, "permissionLevel": "EDIT"},
+            )
+            assert grant.status_code == 201, (endpoint, grant.text)
+
+        new_folder = await api_client.post(
+            f"/api/v1/workspaces/{ws_id}/spaces/{space_id}/folders",
+            headers=member_headers,
+            json={"name": "Should be blocked"},
+        )
+        assert new_folder.status_code == 403, new_folder.text
+
+        new_list = await api_client.post(
+            f"/api/v1/workspaces/{ws_id}/spaces/{space_id}/lists",
+            headers=member_headers,
+            json={"name": "Should be blocked"},
+        )
+        assert new_list.status_code == 403, new_list.text
+
+        rename_folder = await api_client.patch(
+            f"/api/v1/workspaces/{ws_id}/folders/{folder_id}",
+            headers=member_headers,
+            json={"name": "Should not rename"},
+        )
+        assert rename_folder.status_code == 403, rename_folder.text
+
+        rename_list = await api_client.patch(
+            f"/api/v1/workspaces/{ws_id}/lists/{list_id}",
+            headers=member_headers,
+            json={"name": "Should not rename"},
+        )
+        assert rename_list.status_code == 403, rename_list.text
+
+        delete_list = await api_client.delete(
+            f"/api/v1/workspaces/{ws_id}/lists/{list_id}", headers=member_headers
+        )
+        assert delete_list.status_code == 403, delete_list.text
+
+        delete_folder = await api_client.delete(
+            f"/api/v1/workspaces/{ws_id}/folders/{folder_id}", headers=member_headers
+        )
+        assert delete_folder.status_code == 403, delete_folder.text
+
+        delete_space = await api_client.delete(
+            f"/api/v1/workspaces/{ws_id}/spaces/{space_id}", headers=member_headers
+        )
+        assert delete_space.status_code == 403, delete_space.text
+
+        # The tree payload's canManageStructure flag must reflect the same
+        # block, so the frontend hides these menu items entirely.
+        tree = await api_client.get(
+            f"/api/v1/workspaces/{ws_id}/spaces/{space_id}", headers=member_headers
+        )
+        assert tree.status_code == 200, tree.text
+        body = tree.json()
+        assert body["canManageStructure"] is False, body
+        seen_folder = next(f for f in body["folders"] if f["id"] == folder_id)
+        assert seen_folder["canManageStructure"] is False, seen_folder
+        seen_list = next(l for l in seen_folder["lists"] if l["id"] == list_id)
+        assert seen_list["canManageStructure"] is False, seen_list
+    finally:
+        await _set_role(api_client, owner_headers, ws_id, member_user_id, "MEMBER")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_guest_cannot_manage_folder_list_structure_even_with_edit(
+    api_client: AsyncClient,
+):
+    """Same gate as test_limited_member_cannot_manage_structure_even_with_
+    edit, for GUEST - scoped to Folder/List only since a Guest can never
+    receive a Space-level grant at all (a separate, pre-existing rule -
+    see test_guest_cannot_be_given_space_access_but_can_be_given_list_
+    access), so Space-level structural actions aren't reachable to test
+    here in the first place."""
+    owner_token = await login(api_client, *OWNER)
+    owner_headers = auth_headers(owner_token)
+    member_token = await login(api_client, *MEMBER)
+    member_headers = auth_headers(member_token)
+    ws_id = await workspace_id(api_client, owner_token)
+    member_user_id = await user_id(api_client, member_token)
+
+    suffix = int(time.time() * 1000)
+    space = await api_client.post(
+        f"/api/v1/workspaces/{ws_id}/spaces",
+        headers=owner_headers,
+        json={"name": f"Guest Structure Gate Space {suffix}"},
+    )
+    assert space.status_code == 201, space.text
+    space_id = space.json()["id"]
+
+    folder = await api_client.post(
+        f"/api/v1/workspaces/{ws_id}/spaces/{space_id}/folders",
+        headers=owner_headers,
+        json={"name": "Guest Structure Gate Folder"},
+    )
+    assert folder.status_code == 201, folder.text
+    folder_id = folder.json()["id"]
+
+    lst = await api_client.post(
+        f"/api/v1/workspaces/{ws_id}/spaces/{space_id}/lists",
+        headers=owner_headers,
+        json={"folderId": folder_id, "name": "Guest Structure Gate List"},
+    )
+    assert lst.status_code == 201, lst.text
+    list_id = lst.json()["id"]
+
+    await _set_role(api_client, owner_headers, ws_id, member_user_id, "GUEST")
+    try:
+        for endpoint, target_id in (("folders", folder_id), ("lists", list_id)):
+            grant = await api_client.post(
+                f"/api/v1/workspaces/{ws_id}/{endpoint}/{target_id}/members",
+                headers=owner_headers,
+                json={"userId": member_user_id, "permissionLevel": "EDIT"},
+            )
+            assert grant.status_code == 201, (endpoint, grant.text)
+
+        new_list = await api_client.post(
+            f"/api/v1/workspaces/{ws_id}/spaces/{space_id}/lists",
+            headers=member_headers,
+            json={"folderId": folder_id, "name": "Should be blocked"},
+        )
+        assert new_list.status_code == 403, new_list.text
+
+        rename_folder = await api_client.patch(
+            f"/api/v1/workspaces/{ws_id}/folders/{folder_id}",
+            headers=member_headers,
+            json={"name": "Should not rename"},
+        )
+        assert rename_folder.status_code == 403, rename_folder.text
+
+        rename_list = await api_client.patch(
+            f"/api/v1/workspaces/{ws_id}/lists/{list_id}",
+            headers=member_headers,
+            json={"name": "Should not rename"},
+        )
+        assert rename_list.status_code == 403, rename_list.text
+
+        delete_list = await api_client.delete(
+            f"/api/v1/workspaces/{ws_id}/lists/{list_id}", headers=member_headers
+        )
+        assert delete_list.status_code == 403, delete_list.text
+
+        delete_folder = await api_client.delete(
+            f"/api/v1/workspaces/{ws_id}/folders/{folder_id}", headers=member_headers
+        )
+        assert delete_folder.status_code == 403, delete_folder.text
+    finally:
+        await _set_role(api_client, owner_headers, ws_id, member_user_id, "MEMBER")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_member_can_manage_structure_with_edit(api_client: AsyncClient):
+    """Sanity check the other side of the same gate: a plain MEMBER
+    (not Guest/Limited Member) with EDIT access is not restricted -
+    only the two named roles are excluded by _require_can_edit_structure."""
+    owner_token = await login(api_client, *OWNER)
+    owner_headers = auth_headers(owner_token)
+    member_token = await login(api_client, *MEMBER)
+    member_headers = auth_headers(member_token)
+    ws_id = await workspace_id(api_client, owner_token)
+
+    suffix = int(time.time() * 1000)
+    space = await api_client.post(
+        f"/api/v1/workspaces/{ws_id}/spaces",
+        headers=owner_headers,
+        json={"name": f"Member Structure Space {suffix}"},
+    )
+    assert space.status_code == 201, space.text
+    space_id = space.json()["id"]
+
+    tree = await api_client.get(
+        f"/api/v1/workspaces/{ws_id}/spaces/{space_id}", headers=member_headers
+    )
+    assert tree.status_code == 200, tree.text
+    assert tree.json()["canManageStructure"] is True, tree.json()
+
+    folder = await api_client.post(
+        f"/api/v1/workspaces/{ws_id}/spaces/{space_id}/folders",
+        headers=member_headers,
+        json={"name": "Member Made Folder"},
+    )
+    assert folder.status_code == 201, folder.text
+    assert folder.json()["canManageStructure"] is True, folder.json()
+    folder_id = folder.json()["id"]
+
+    rename = await api_client.patch(
+        f"/api/v1/workspaces/{ws_id}/folders/{folder_id}",
+        headers=member_headers,
+        json={"name": "Renamed by Member"},
+    )
+    assert rename.status_code == 200, rename.text
+
+    delete = await api_client.delete(
+        f"/api/v1/workspaces/{ws_id}/folders/{folder_id}", headers=member_headers
+    )
+    assert delete.status_code == 200, delete.text
