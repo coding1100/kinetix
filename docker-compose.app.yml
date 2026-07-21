@@ -58,5 +58,5 @@ services:
 
 networks:
   edge:
+    external: true
     name: kinetix_edge
-    driver: bridge
