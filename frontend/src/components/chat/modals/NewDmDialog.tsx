@@ -16,8 +16,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useUiStore } from "@/stores/ui-store";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
-import { useHomeQuery } from "@/hooks/use-home-query";
-import { createDm, fetchWorkspaceMembers } from "@/lib/api/chat";
+import { createDm } from "@/lib/api/chat";
+import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
 import { useAuthStore } from "@/stores/auth-store";
 import { toast } from "sonner";
 import {
@@ -25,6 +25,7 @@ import {
   avatarInitialFromName,
 } from "@/lib/user-display";
 import { upsertDmInSidebar } from "@/lib/chat/sidebar-dm";
+import { joinDmRoom } from "@/lib/socket/dm-rooms";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api/client";
 
@@ -39,10 +40,7 @@ export function NewDmDialog() {
   const [creating, setCreating] = useState(false);
   const open = activeModal === "new-dm";
 
-  const membersQuery = useHomeQuery(
-    (token, ws) => fetchWorkspaceMembers(token, ws).then((r) => r.data),
-    []
-  );
+  const membersQuery = useWorkspaceMembersQuery();
 
   const members = useMemo(
     () => (membersQuery.data ?? []).filter((m) => m.id !== currentUserId),
@@ -104,6 +102,7 @@ export function NewDmDialog() {
       const name =
         isGroup && groupName.trim() ? groupName.trim() : undefined;
       const dm = await createDm(accessToken, workspaceId, userIds, name);
+      joinDmRoom(workspaceId, dm.id);
       upsertDmInSidebar(dm, workspaceId);
       closeModal();
       reset();

@@ -16,8 +16,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useUiStore } from "@/stores/ui-store";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
-import { useHomeQuery } from "@/hooks/use-home-query";
-import { createChannel, fetchWorkspaceMembers } from "@/lib/api/chat";
+import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
+import { createChannel } from "@/lib/api/chat";
 import { useAuthStore } from "@/stores/auth-store";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { CheckIcon } from "lucide-react";
@@ -44,10 +44,7 @@ export function CreateChannelDialog() {
   const [inviteIds, setInviteIds] = useState<Set<string>>(new Set());
   const currentUserId = useAuthStore((s) => s.user?.id);
 
-  const membersQuery = useHomeQuery(
-    (token, ws) => fetchWorkspaceMembers(token, ws).then((r) => r.data),
-    []
-  );
+  const membersQuery = useWorkspaceMembersQuery();
 
   const inviteCandidates = useMemo(() => {
     return (membersQuery.data ?? []).filter((m) => m.id !== currentUserId);
