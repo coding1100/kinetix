@@ -86,6 +86,21 @@ if [ ! -d "$FRONTEND/.next/static/chunks" ]; then
   exit 1
 fi
 
+log "Assemble standalone output (next.config.ts sets output: standalone - next start does not work with it)"
+run_as_user "$FRONTEND" 'rm -rf .next/standalone/public .next/standalone/.next/static'
+run_as_user "$FRONTEND" 'cp -r public .next/standalone/public'
+run_as_user "$FRONTEND" 'mkdir -p .next/standalone/.next'
+run_as_user "$FRONTEND" 'cp -r .next/static .next/standalone/.next/static'
+
+if [ ! -f "$FRONTEND/.next/standalone/server.js" ]; then
+  echo "ERROR: frontend build missing .next/standalone/server.js"
+  exit 1
+fi
+if [ ! -d "$FRONTEND/.next/standalone/.next/static/chunks" ]; then
+  echo "ERROR: standalone output missing .next/static/chunks after copy"
+  exit 1
+fi
+
 log "Restart services"
 sudo systemctl enable kinetix-api kinetix-web
 sudo systemctl restart kinetix-api kinetix-web

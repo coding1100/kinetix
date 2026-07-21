@@ -6,12 +6,16 @@ After=network.target
 Type=simple
 User=ubuntu
 Group=ubuntu
-WorkingDirectory=/opt/clickup/kinetix/frontend
+WorkingDirectory=/opt/clickup/kinetix/frontend/.next/standalone
 Environment=NODE_ENV=production
 Environment=PORT=3000
+Environment=HOSTNAME=127.0.0.1
+# next.config.ts sets output: standalone - "next start" does not work with that
+# (Next.js warns and serves static chunks incorrectly). Run the standalone
+# server.js instead, same as frontend/Dockerfile does for the Docker path.
 # Do NOT use ExecStartPre with pkill -f "next dev" — the shell cmdline contains
 # that string and pkill kills itself, causing "fatal signal to control process".
-ExecStart=/opt/clickup/kinetix/frontend/node_modules/.bin/next start -p 3000 -H 127.0.0.1
+ExecStart=/usr/bin/env node /opt/clickup/kinetix/frontend/.next/standalone/server.js
 Restart=always
 RestartSec=5
 TimeoutStartSec=120
