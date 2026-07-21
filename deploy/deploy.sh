@@ -122,7 +122,7 @@ if pgrep -af '[n]ext dev' >/dev/null 2>&1; then
   exit 1
 fi
 
-SAMPLE_CHUNK=$(curl -fsS http://127.0.0.1:3000/auth/login | grep -m 1 -oE '/_next/static/chunks/[^"]+\.js')
+SAMPLE_CHUNK=$(curl -fsS http://127.0.0.1:3000/auth/login | grep -oE '/_next/static/chunks/[^"]+\.js' | head -1 || true)
 if [ -n "$SAMPLE_CHUNK" ]; then
   CHUNK_CODE=$(curl -fsS -o /dev/null -w "%{http_code}" "http://127.0.0.1:3000$SAMPLE_CHUNK" 2>/dev/null || echo "000")
   if ! echo "$CHUNK_CODE" | grep -qE '^2'; then
