@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   PlusIcon,
   SearchIcon,
@@ -11,12 +11,18 @@ import {
   PanelLeftCloseIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  FolderPlusIcon,
   HashIcon,
   ListIcon,
+  ListPlusIcon,
   LockIcon,
   MessagesSquareIcon,
   ListChecksIcon,
   FolderIcon,
+  MoreHorizontalIcon,
+  PencilIcon,
+  Share2Icon,
+  Trash2Icon,
 } from "lucide-react";
 import type { DmParticipant } from "@/lib/types/chat";
 import {
@@ -43,10 +49,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { toast } from "sonner";
 import { useShellStore } from "@/stores/shell-store";
 import { SidebarNavIcon } from "@/components/icons/SidebarNavIcon";
@@ -57,7 +65,16 @@ import {
   fetchHomeSidebarConfig,
   updateHomeSidebarConfig,
 } from "@/lib/api/home";
-import { fetchSpacesTree } from "@/lib/api/spaces";
+import {
+  deleteFolder,
+  deleteList,
+  deleteSpace,
+  fetchSpacesTree,
+  type ShareResourceType,
+} from "@/lib/api/spaces";
+import { formatRequestError } from "@/lib/api/client";
+import { fetchSharedWithMe } from "@/lib/api/home";
+import { ShareModal } from "@/components/shared/ShareModal";
 import {
   loadSidebarLists,
   mergeSidebarChannels,
@@ -231,38 +248,103 @@ function SpaceListLink({
   name,
   taskCount,
   active,
+  isPrivate,
+  isPersonal,
+  canShare,
+  onShare,
+  onRename,
+  onDelete,
 }: {
   listId: string;
   name: string;
   taskCount?: number;
   active: boolean;
+  isPrivate?: boolean;
+  isPersonal?: boolean;
+  canShare?: boolean;
+  onShare?: () => void;
+  onRename?: () => void;
+  onDelete?: () => void;
 }) {
+  const canDelete = Boolean(onDelete) && !isPersonal;
+  const hasMenu = Boolean(onRename) || canDelete || (Boolean(canShare) && Boolean(onShare));
   return (
-    <Link
-      href={`/home/l/${listId}`}
-      className={cn(
-        "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-sidebar-accent/80",
-        active
-          ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-          : "text-sidebar-foreground"
-      )}
-    >
-      <ListChecksIcon className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate">{name}</span>
-      {typeof taskCount === "number" ? (
-        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-          {taskCount}
-        </span>
+    <div className="group/list flex items-center gap-0.5">
+      <Link
+        href={`/home/l/${listId}`}
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-sidebar-accent/80",
+          active
+            ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+            : "text-sidebar-foreground"
+        )}
+      >
+        <ListChecksIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate">{name}</span>
+        {isPrivate ? <LockIcon className="size-3 shrink-0 text-muted-foreground" /> : null}
+        {typeof taskCount === "number" ? (
+          <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+            {taskCount}
+          </span>
+        ) : null}
+      </Link>
+      {hasMenu ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="size-5 shrink-0 text-muted-foreground opacity-0 group-hover/list:opacity-100 data-[popup-open]:opacity-100"
+                aria-label={`Actions for ${name}`}
+              >
+                <MoreHorizontalIcon className="size-3.5" />
+              </Button>
+            }
+          />
+          <DropdownMenuContent align="end">
+            {onRename ? (
+              <DropdownMenuItem onClick={onRename}>
+                <PencilIcon className="size-4" />
+                Rename
+              </DropdownMenuItem>
+            ) : null}
+            {canShare && onShare ? (
+              <DropdownMenuItem onClick={onShare}>
+                <Share2Icon className="size-4" />
+                Share
+              </DropdownMenuItem>
+            ) : null}
+            {canDelete ? (
+              <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                <Trash2Icon className="size-4" />
+                Delete list
+              </DropdownMenuItem>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
       ) : null}
-    </Link>
+    </div>
   );
 }
+
+type SpacesTreeMutationTarget = {
+  type: "space" | "folder" | "list";
+  id: string;
+  name: string;
+  isPersonal?: boolean;
+};
 
 function SpaceRow({
   space,
   expanded,
   onToggleExpanded,
+  onAddFolder,
   onAddList,
+  onAddListToFolder,
+  onRename,
+  onDelete,
+  onShare,
   pathname,
 }: {
   space: {
@@ -270,12 +352,42 @@ function SpaceRow({
     name: string;
     color: string;
     description?: string;
-    folders?: { id: string; name: string; lists: { id: string; name: string; taskCount: number }[] }[];
-    standaloneLists?: { id: string; name: string; taskCount: number }[];
+    canShare?: boolean;
+    canManageStructure?: boolean;
+    isPrivate?: boolean;
+    isPersonal?: boolean;
+    folders?: {
+      id: string;
+      name: string;
+      canShare?: boolean;
+      canManageStructure?: boolean;
+      isPrivate?: boolean;
+      lists: {
+        id: string;
+        name: string;
+        taskCount: number;
+        canShare?: boolean;
+        canManageStructure?: boolean;
+        isPrivate?: boolean;
+      }[];
+    }[];
+    standaloneLists?: {
+      id: string;
+      name: string;
+      taskCount: number;
+      canShare?: boolean;
+      canManageStructure?: boolean;
+      isPrivate?: boolean;
+    }[];
   };
   expanded: boolean;
   onToggleExpanded: () => void;
+  onAddFolder: () => void;
   onAddList: () => void;
+  onAddListToFolder: (folderId: string) => void;
+  onRename: (target: SpacesTreeMutationTarget) => void;
+  onDelete: (target: SpacesTreeMutationTarget) => void;
+  onShare: (target: { type: ShareResourceType; id: string; name: string }) => void;
   pathname: string;
 }) {
   const hasChildren =
@@ -310,36 +422,179 @@ function SpaceRow({
             </span>
           </span>
           <span className="min-w-0 flex-1 truncate">{space.name}</span>
+          {space.isPrivate ? (
+            <LockIcon className="size-3 shrink-0 text-muted-foreground" />
+          ) : null}
           {space.description ? (
             <span className="shrink-0 truncate text-xs text-muted-foreground">
               {space.description}
             </span>
           ) : null}
         </button>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="size-5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/space:opacity-100"
-                aria-label="New list"
-                onClick={onAddList}
-              >
-                <PlusIcon className="size-3.5" />
-              </Button>
-            }
-          />
-          <TooltipContent side="bottom">New list</TooltipContent>
-        </Tooltip>
+        {space.canManageStructure || space.canShare ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="size-5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/space:opacity-100 data-[popup-open]:opacity-100"
+                  aria-label={`Actions for ${space.name}`}
+                >
+                  <MoreHorizontalIcon className="size-3.5" />
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end">
+              {space.canManageStructure ? (
+                <>
+                  <DropdownMenuItem onClick={onAddFolder}>
+                    <FolderPlusIcon className="size-4" />
+                    New folder
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={onAddList}>
+                    <ListPlusIcon className="size-4" />
+                    New list
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() =>
+                      onRename({ type: "space", id: space.id, name: space.name })
+                    }
+                  >
+                    <PencilIcon className="size-4" />
+                    Rename
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+              {space.canShare ? (
+                <DropdownMenuItem
+                  onClick={() =>
+                    onShare({ type: "space", id: space.id, name: space.name })
+                  }
+                >
+                  <Share2Icon className="size-4" />
+                  Share
+                </DropdownMenuItem>
+              ) : null}
+              {space.canManageStructure && !space.isPersonal ? (
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() =>
+                    onDelete({
+                      type: "space",
+                      id: space.id,
+                      name: space.name,
+                      isPersonal: space.isPersonal,
+                    })
+                  }
+                >
+                  <Trash2Icon className="size-4" />
+                  Delete space
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+        {space.canManageStructure ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="size-5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/space:opacity-100"
+                  aria-label="New list"
+                  onClick={onAddList}
+                >
+                  <PlusIcon className="size-3.5" />
+                </Button>
+              }
+            />
+            <TooltipContent side="bottom">New list</TooltipContent>
+          </Tooltip>
+        ) : null}
       </div>
       {expanded && hasChildren ? (
         <div className="ml-3 space-y-0.5 border-l border-sidebar-border/60 py-0.5 pl-2">
           {space.folders?.map((folder) => (
-            <div key={folder.id}>
+            <div key={folder.id} className="group/folder">
               <div className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-muted-foreground">
                 <FolderIcon className="size-3.5 shrink-0" />
-                <span className="truncate">{folder.name}</span>
+                <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+                {folder.isPrivate ? (
+                  <LockIcon className="size-3 shrink-0" />
+                ) : null}
+                {folder.canManageStructure || folder.canShare ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          className="size-5 shrink-0 opacity-0 group-hover/folder:opacity-100 data-[popup-open]:opacity-100"
+                          aria-label={`Actions for ${folder.name}`}
+                        >
+                          <MoreHorizontalIcon className="size-3.5" />
+                        </Button>
+                      }
+                    />
+                    <DropdownMenuContent align="end">
+                      {folder.canManageStructure ? (
+                        <>
+                          <DropdownMenuItem
+                            onClick={() => onAddListToFolder(folder.id)}
+                          >
+                            <ListPlusIcon className="size-4" />
+                            New list
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() =>
+                              onRename({
+                                type: "folder",
+                                id: folder.id,
+                                name: folder.name,
+                              })
+                            }
+                          >
+                            <PencilIcon className="size-4" />
+                            Rename
+                          </DropdownMenuItem>
+                        </>
+                      ) : null}
+                      {folder.canShare ? (
+                        <DropdownMenuItem
+                          onClick={() =>
+                            onShare({
+                              type: "folder",
+                              id: folder.id,
+                              name: folder.name,
+                            })
+                          }
+                        >
+                          <Share2Icon className="size-4" />
+                          Share
+                        </DropdownMenuItem>
+                      ) : null}
+                      {folder.canManageStructure ? (
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() =>
+                            onDelete({
+                              type: "folder",
+                              id: folder.id,
+                              name: folder.name,
+                            })
+                          }
+                        >
+                          <Trash2Icon className="size-4" />
+                          Delete folder
+                        </DropdownMenuItem>
+                      ) : null}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
               </div>
               <div className="space-y-0.5 pl-1">
                 {folder.lists.map((list) => (
@@ -349,20 +604,64 @@ function SpaceRow({
                     name={list.name}
                     taskCount={list.taskCount}
                     active={pathname === `/home/l/${list.id}`}
+                    isPrivate={list.isPrivate}
+                    canShare={list.canShare}
+                    onShare={() =>
+                      onShare({ type: "list", id: list.id, name: list.name })
+                    }
+                    onRename={
+                      list.canManageStructure
+                        ? () =>
+                            onRename({ type: "list", id: list.id, name: list.name })
+                        : undefined
+                    }
+                    onDelete={
+                      list.canManageStructure
+                        ? () =>
+                            onDelete({ type: "list", id: list.id, name: list.name })
+                        : undefined
+                    }
                   />
                 ))}
               </div>
             </div>
           ))}
-          {space.standaloneLists?.map((list) => (
-            <SpaceListLink
-              key={list.id}
-              listId={list.id}
-              name={list.name}
-              taskCount={list.taskCount}
-              active={pathname === `/home/l/${list.id}`}
-            />
-          ))}
+          {space.standaloneLists?.map((list) => {
+            const isPersonalList =
+              space.isPersonal && list.name === "Personal List";
+            return (
+              <SpaceListLink
+                key={list.id}
+                listId={list.id}
+                name={list.name}
+                taskCount={list.taskCount}
+                active={pathname === `/home/l/${list.id}`}
+                isPrivate={list.isPrivate}
+                isPersonal={isPersonalList}
+                canShare={list.canShare}
+                onShare={() =>
+                  onShare({ type: "list", id: list.id, name: list.name })
+                }
+                onRename={
+                  list.canManageStructure
+                    ? () =>
+                        onRename({ type: "list", id: list.id, name: list.name })
+                    : undefined
+                }
+                onDelete={
+                  list.canManageStructure
+                    ? () =>
+                        onDelete({
+                          type: "list",
+                          id: list.id,
+                          name: list.name,
+                          isPersonal: isPersonalList,
+                        })
+                    : undefined
+                }
+              />
+            );
+          })}
         </div>
       ) : null}
     </div>
@@ -497,6 +796,7 @@ function DmRow({
 
 export function HomeSidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const inboxTab = pathname === "/home/inbox" ? searchParams.get("tab") : null;
   const currentUserId = useAuthStore((s) => s.user?.id);
@@ -522,7 +822,7 @@ export function HomeSidebar() {
   const openModalDeferred = useUiStore((s) => s.openModalDeferred);
   const { secondaryPanelOpen, setSecondaryPanelOpen } = useShellStore();
   const { unreadCount } = useNotificationsUnread();
-  const { accessToken, workspaceId } = useWorkspaceApi();
+  const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const role = useAuthStore(selectActiveWorkspace)?.role;
   const restricted = isRestrictedRole(role);
   const onMyTasksRoute = pathname.startsWith("/home/my-tasks");
@@ -532,6 +832,68 @@ export function HomeSidebar() {
   const [spacesDialogOpen, setSpacesDialogOpen] = useState(false);
   const [expandedSpaces, setExpandedSpaces] = useState<Record<string, boolean>>({});
   const spacesRefreshKey = useSpacesStore((s) => s.refreshKey);
+  const bumpSpacesRefresh = useSpacesStore((s) => s.bumpRefresh);
+  const [shareTarget, setShareTarget] = useState<{
+    type: ShareResourceType;
+    id: string;
+    name: string;
+  } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    kind: "space" | "folder" | "list";
+    id: string;
+    name: string;
+    isPersonal?: boolean;
+  } | null>(null);
+  const [deletingSpacesItem, setDeletingSpacesItem] = useState(false);
+
+  function openRenameDialog(target: SpacesTreeMutationTarget) {
+    if (target.type === "space") {
+      setSpacesDialogMode({
+        type: "edit-space",
+        spaceId: target.id,
+        initialName: target.name,
+      });
+    } else if (target.type === "folder") {
+      setSpacesDialogMode({
+        type: "edit-folder",
+        folderId: target.id,
+        initialName: target.name,
+      });
+    } else {
+      setSpacesDialogMode({
+        type: "edit-list",
+        listId: target.id,
+        initialName: target.name,
+      });
+    }
+    setSpacesDialogOpen(true);
+  }
+
+  async function handleDeleteSpacesItem() {
+    if (!deleteTarget || !ready || !accessToken || !workspaceId) return;
+    setDeletingSpacesItem(true);
+    try {
+      if (deleteTarget.kind === "space") {
+        await deleteSpace(accessToken, workspaceId, deleteTarget.id);
+        toast.success("Space deleted");
+      } else if (deleteTarget.kind === "folder") {
+        await deleteFolder(accessToken, workspaceId, deleteTarget.id);
+        toast.success("Folder deleted");
+      } else {
+        await deleteList(accessToken, workspaceId, deleteTarget.id);
+        toast.success("List deleted");
+        if (pathname === `/home/l/${deleteTarget.id}`) {
+          router.push("/home");
+        }
+      }
+      bumpSpacesRefresh();
+      setDeleteTarget(null);
+    } catch (err) {
+      toast.error(formatRequestError(err));
+    } finally {
+      setDeletingSpacesItem(false);
+    }
+  }
 
   // Server config (pinned ids + order) is the source of truth; local storage
   // is just the instant-paint cache shown before this resolves.
@@ -562,6 +924,10 @@ export function HomeSidebar() {
 
   const spacesQuery = useHomeQuery(
     (token, ws) => fetchSpacesTree(token, ws).then((r) => r.data),
+    [spacesRefreshKey]
+  );
+  const sharedWithMeQuery = useHomeQuery(
+    (token, ws) => fetchSharedWithMe(token, ws).then((r) => r.data),
     [spacesRefreshKey]
   );
 
@@ -791,13 +1157,64 @@ export function HomeSidebar() {
                   onToggleExpanded={() =>
                     setExpandedSpaces((s) => ({ ...s, [space.id]: !s[space.id] }))
                   }
+                  onAddFolder={() => {
+                    setSpacesDialogMode({ type: "folder", spaceId: space.id });
+                    setSpacesDialogOpen(true);
+                  }}
                   onAddList={() => {
                     setSpacesDialogMode({ type: "list", spaceId: space.id });
                     setSpacesDialogOpen(true);
                   }}
+                  onAddListToFolder={(folderId) => {
+                    setSpacesDialogMode({
+                      type: "list",
+                      spaceId: space.id,
+                      folderId,
+                    });
+                    setSpacesDialogOpen(true);
+                  }}
+                  onRename={openRenameDialog}
+                  onDelete={(target) =>
+                    setDeleteTarget({
+                      kind: target.type,
+                      id: target.id,
+                      name: target.name,
+                      isPersonal: target.isPersonal,
+                    })
+                  }
+                  onShare={setShareTarget}
                   pathname={pathname}
                 />
               ))}
+              {sharedWithMeQuery.data?.map((entry) =>
+                entry.type === "list" ? (
+                  <SpaceListLink
+                    key={`${entry.type}-${entry.id}`}
+                    listId={entry.id}
+                    name={entry.name}
+                    active={pathname === `/home/l/${entry.id}`}
+                  />
+                ) : (
+                  <div key={`${entry.type}-${entry.id}`}>
+                    <div className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground">
+                      <FolderIcon className="size-3.5 shrink-0" />
+                      <span className="truncate">{entry.name}</span>
+                    </div>
+                    <div className="ml-4 space-y-0.5 border-l border-sidebar-border pl-1">
+                      {entry.lists?.map((lst) => (
+                        <SpaceListLink
+                          key={lst.id}
+                          listId={lst.id}
+                          name={lst.name}
+                          taskCount={lst.taskCount}
+                          isPrivate={lst.isPrivate}
+                          active={pathname === `/home/l/${lst.id}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )
+              )}
               {!restricted ? (
                 <button
                   type="button"
@@ -911,6 +1328,40 @@ export function HomeSidebar() {
         open={spacesDialogOpen}
         onOpenChange={setSpacesDialogOpen}
         mode={spacesDialogMode}
+      />
+      {shareTarget ? (
+        <ShareModal
+          open={shareTarget !== null}
+          onOpenChange={(open) => {
+            if (!open) setShareTarget(null);
+          }}
+          resourceType={shareTarget.type}
+          resourceId={shareTarget.id}
+          resourceName={shareTarget.name}
+        />
+      ) : null}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+        title={
+          deleteTarget?.kind === "space"
+            ? "Delete space?"
+            : deleteTarget?.kind === "folder"
+              ? "Delete folder?"
+              : "Delete list?"
+        }
+        description={
+          deleteTarget?.kind === "list" && deleteTarget.isPersonal
+            ? "The Personal list cannot be deleted."
+            : deleteTarget
+              ? `"${deleteTarget.name}" and its tasks will be permanently deleted.`
+              : ""
+        }
+        confirmLabel="Delete"
+        loading={deletingSpacesItem}
+        onConfirm={() => void handleDeleteSpacesItem()}
       />
     </aside>
   );

@@ -19,9 +19,11 @@ export type { ListStatus };
 export interface ListMetaDto {
   id: string;
   name: string;
-  space: { id: string; name: string; color: string };
+  space: { id: string; name: string; color: string; accessible?: boolean };
   statuses?: ListStatus[];
   channelId: string | null;
+  canShare?: boolean;
+  isPrivate?: boolean;
 }
 
 export function fetchSpacesTree(token: string, workspaceId: string) {
@@ -234,9 +236,9 @@ export function createFolder(
   token: string,
   workspaceId: string,
   spaceId: string,
-  input: { name: string }
+  input: { name: string; isPrivate?: boolean }
 ) {
-  return apiFetch<{ id: string; name: string }>(
+  return apiFetch<{ id: string; name: string; isPrivate?: boolean }>(
     wsPath(workspaceId, `/spaces/${spaceId}/folders`),
     { method: "POST", token, body: JSON.stringify(input) }
   );
@@ -246,9 +248,9 @@ export function createList(
   token: string,
   workspaceId: string,
   spaceId: string,
-  input: { name: string; folderId?: string }
+  input: { name: string; folderId?: string; isPrivate?: boolean }
 ) {
-  return apiFetch<{ id: string; name: string }>(
+  return apiFetch<{ id: string; name: string; isPrivate?: boolean }>(
     wsPath(workspaceId, `/spaces/${spaceId}/lists`),
     { method: "POST", token, body: JSON.stringify(input) }
   );
@@ -287,9 +289,9 @@ export function patchFolder(
   token: string,
   workspaceId: string,
   folderId: string,
-  input: { name: string }
+  input: { name?: string; isPrivate?: boolean }
 ) {
-  return apiFetch<{ id: string; name: string }>(
+  return apiFetch<{ id: string; name: string; isPrivate?: boolean }>(
     wsPath(workspaceId, `/folders/${folderId}`),
     { method: "PATCH", token, body: JSON.stringify(input) }
   );
@@ -310,12 +312,28 @@ export function patchList(
   token: string,
   workspaceId: string,
   listId: string,
-  input: { name: string }
+  input: { name?: string; isPrivate?: boolean }
 ) {
-  return apiFetch<{ id: string; name: string }>(
+  return apiFetch<{ id: string; name: string; isPrivate?: boolean }>(
     wsPath(workspaceId, `/lists/${listId}`),
     { method: "PATCH", token, body: JSON.stringify(input) }
   );
+}
+
+export function patchResourcePrivacy(
+  token: string,
+  workspaceId: string,
+  resourceType: ShareResourceType,
+  resourceId: string,
+  isPrivate: boolean
+) {
+  if (resourceType === "space") {
+    return patchSpace(token, workspaceId, resourceId, { isPrivate });
+  }
+  if (resourceType === "folder") {
+    return patchFolder(token, workspaceId, resourceId, { isPrivate });
+  }
+  return patchList(token, workspaceId, resourceId, { isPrivate });
 }
 
 export function deleteList(
@@ -547,6 +565,71 @@ export function uploadTaskAttachmentContent(
       `/tasks/${taskId}/attachments/${attachmentId}/upload${query}`
     ),
     { method: "POST", token, body: form }
+  );
+}
+
+export type ShareResourceType = "space" | "folder" | "list";
+
+export interface ShareMemberDto {
+  userId: string | null;
+  name: string | null;
+  email: string | null;
+  permissionLevel: "VIEW" | "COMMENT" | "EDIT";
+  status: "ACTIVE" | "INVITED" | "SUSPENDED";
+  implicit?: boolean;
+  role?: string;
+}
+
+function shareResourcePath(resourceType: ShareResourceType, resourceId: string) {
+  const segment =
+    resourceType === "space"
+      ? "spaces"
+      : resourceType === "folder"
+        ? "folders"
+        : "lists";
+  return `/${segment}/${resourceId}/members`;
+}
+
+export function fetchShareMembers(
+  token: string,
+  workspaceId: string,
+  resourceType: ShareResourceType,
+  resourceId: string
+) {
+  return apiFetch<{ data: ShareMemberDto[]; isPrivate?: boolean }>(
+    wsPath(workspaceId, shareResourcePath(resourceType, resourceId)),
+    { token }
+  );
+}
+
+export function addShareMember(
+  token: string,
+  workspaceId: string,
+  resourceType: ShareResourceType,
+  resourceId: string,
+  input:
+    | { userId: string; permissionLevel: "VIEW" | "COMMENT" | "EDIT" }
+    | { email: string; permissionLevel: "VIEW" | "COMMENT" | "EDIT" }
+) {
+  return apiFetch<{ data: ShareMemberDto[]; isPrivate?: boolean }>(
+    wsPath(workspaceId, shareResourcePath(resourceType, resourceId)),
+    { method: "POST", token, body: JSON.stringify(input) }
+  );
+}
+
+export function removeShareMember(
+  token: string,
+  workspaceId: string,
+  resourceType: ShareResourceType,
+  resourceId: string,
+  target: string
+) {
+  return apiFetch<{ ok: boolean }>(
+    wsPath(
+      workspaceId,
+      `${shareResourcePath(resourceType, resourceId)}/${encodeURIComponent(target)}`
+    ),
+    { method: "DELETE", token }
   );
 }
 

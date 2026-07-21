@@ -238,11 +238,19 @@ def map_subtask_summary(task: Task, current_user_id: str) -> dict:
     }
 
 
-def map_list_entry(list_row, task_count: int) -> dict:
+def map_list_entry(
+    list_row,
+    task_count: int,
+    can_share: bool = False,
+    can_manage_structure: bool = False,
+) -> dict:
     return {
         "id": list_row.id,
         "name": list_row.name,
         "taskCount": task_count,
+        "canShare": can_share,
+        "canManageStructure": can_manage_structure,
+        "isPrivate": bool(getattr(list_row, "is_private", False)),
     }
 
 
@@ -253,6 +261,8 @@ def map_space_row(
     folder_payload: list,
     standalone_payload: list,
     last_activity_at=None,
+    can_share: bool = False,
+    can_manage_structure: bool = False,
 ) -> dict:
     return {
         "id": space.id,
@@ -266,4 +276,6 @@ def map_space_row(
         "folders": folder_payload,
         "standaloneLists": standalone_payload,
         "lastActivityAt": (last_activity_at or space.created_at).isoformat(),
+        "canShare": can_share,
+        "canManageStructure": can_manage_structure,
     }

@@ -11,11 +11,13 @@ import {
   LayoutListIcon,
   ListChecksIcon,
   ListPlusIcon,
+  LockIcon,
   MoreHorizontalIcon,
   PanelLeftCloseIcon,
   PencilIcon,
   PlusIcon,
   SearchIcon,
+  Share2Icon,
   Trash2Icon,
   UsersIcon,
 } from "lucide-react";
@@ -24,7 +26,10 @@ import {
   deleteList,
   deleteSpace,
   fetchSpacesTree,
+  type ShareResourceType,
 } from "@/lib/api/spaces";
+import { fetchSharedWithMe } from "@/lib/api/home";
+import { ShareModal } from "@/components/shared/ShareModal";
 import { useHomeQuery } from "@/hooks/use-home-query";
 import { HomeDataState } from "@/components/home/HomeDataState";
 import { useShellStore } from "@/stores/shell-store";
@@ -62,6 +67,12 @@ type DeleteTarget =
   | { kind: "folder"; id: string; name: string }
   | { kind: "list"; id: string; name: string; isPersonal?: boolean };
 
+type ShareTarget = {
+  type: ShareResourceType;
+  id: string;
+  name: string;
+};
+
 export function SpacesSidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -78,6 +89,11 @@ export function SpacesSidebar() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [shareTarget, setShareTarget] = useState<ShareTarget | null>(null);
+  const { data: sharedWithMe } = useHomeQuery(
+    (token, ws) => fetchSharedWithMe(token, ws).then((r) => r.data),
+    [refreshKey]
+  );
 
   const defaultExpanded = useMemo(() => {
     const ids: Record<string, boolean> = {};
@@ -197,6 +213,54 @@ export function SpacesSidebar() {
               Shared with me
             </Link>
           </nav>
+          {sharedWithMe && sharedWithMe.length > 0 ? (
+            <div className="mb-3 space-y-0.5 px-1">
+              <div className="px-1.5 py-1 text-xs font-semibold text-muted-foreground">
+                Shared with you
+              </div>
+              {sharedWithMe.map((entry) =>
+                entry.type === "list" ? (
+                  <Link
+                    key={`${entry.type}-${entry.id}`}
+                    href={listHref(entry.id)}
+                    className={cn(
+                      "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-sidebar-accent",
+                      isListActive(pathname, entry.id)
+                        ? "bg-primary/10 font-medium text-primary"
+                        : "text-muted-foreground"
+                    )}
+                  >
+                    <LayoutListIcon className="size-3.5 shrink-0 opacity-70" />
+                    <span className="truncate">{entry.name}</span>
+                  </Link>
+                ) : (
+                  <div key={`${entry.type}-${entry.id}`}>
+                    <div className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground">
+                      <FolderIcon className="size-3.5 shrink-0 opacity-70" />
+                      <span className="truncate">{entry.name}</span>
+                    </div>
+                    <div className="ml-4 space-y-0.5 border-l border-sidebar-border pl-1">
+                      {entry.lists?.map((lst) => (
+                        <Link
+                          key={lst.id}
+                          href={listHref(lst.id)}
+                          className={cn(
+                            "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-sidebar-accent",
+                            isListActive(pathname, lst.id)
+                              ? "bg-primary/10 font-medium text-primary"
+                              : "text-muted-foreground"
+                          )}
+                        >
+                          <LayoutListIcon className="size-3.5 shrink-0 opacity-70" />
+                          <span className="truncate">{lst.name}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+          ) : null}
           <HomeDataState
             loading={loading}
             error={error}
@@ -230,75 +294,97 @@ export function SpacesSidebar() {
                         {space.name.slice(0, 1).toUpperCase()}
                       </span>
                       <span className="truncate">{space.name}</span>
+                      {space.isPrivate ? (
+                        <LockIcon className="size-3 shrink-0 opacity-70" />
+                      ) : null}
                     </button>
-                    <Tooltip>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
-                          render={
-                            <TooltipTrigger
-                              render={
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  className="size-7 shrink-0"
-                                  aria-label={`Actions for ${space.name}`}
-                                >
-                                  <MoreHorizontalIcon className="size-3.5" />
-                                </Button>
-                              }
-                            />
-                          }
-                        />
-                        <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() =>
-                            openDialog({ type: "folder", spaceId: space.id })
-                          }
-                        >
-                          <FolderPlusIcon className="size-4" />
-                          New folder
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() =>
-                            openDialog({ type: "list", spaceId: space.id })
-                          }
-                        >
-                          <ListPlusIcon className="size-4" />
-                          New list
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={() =>
-                            openDialog({
-                              type: "edit-space",
-                              spaceId: space.id,
-                              initialName: space.name,
-                              initialIsPrivate: space.isPrivate,
-                            })
-                          }
-                        >
-                          <PencilIcon className="size-4" />
-                          Rename
-                        </DropdownMenuItem>
-                        {!space.isPersonal ? (
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onClick={() =>
-                              setDeleteTarget({
-                                kind: "space",
-                                id: space.id,
-                                name: space.name,
-                              })
+                    {space.canManageStructure || space.canShare ? (
+                      <Tooltip>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={
+                              <TooltipTrigger
+                                render={
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    className="size-7 shrink-0"
+                                    aria-label={`Actions for ${space.name}`}
+                                  >
+                                    <MoreHorizontalIcon className="size-3.5" />
+                                  </Button>
+                                }
+                              />
                             }
-                          >
-                            <Trash2Icon className="size-4" />
-                            Delete space
-                          </DropdownMenuItem>
-                        ) : null}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      <TooltipContent side="bottom">Actions</TooltipContent>
-                    </Tooltip>
+                          />
+                          <DropdownMenuContent align="end">
+                          {space.canManageStructure ? (
+                            <>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  openDialog({ type: "folder", spaceId: space.id })
+                                }
+                              >
+                                <FolderPlusIcon className="size-4" />
+                                New folder
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  openDialog({ type: "list", spaceId: space.id })
+                                }
+                              >
+                                <ListPlusIcon className="size-4" />
+                                New list
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  openDialog({
+                                    type: "edit-space",
+                                    spaceId: space.id,
+                                    initialName: space.name,
+                                  })
+                                }
+                              >
+                                <PencilIcon className="size-4" />
+                                Rename
+                              </DropdownMenuItem>
+                            </>
+                          ) : null}
+                          {space.canShare ? (
+                            <DropdownMenuItem
+                              onClick={() =>
+                                setShareTarget({
+                                  type: "space",
+                                  id: space.id,
+                                  name: space.name,
+                                })
+                              }
+                            >
+                              <Share2Icon className="size-4" />
+                              Share
+                            </DropdownMenuItem>
+                          ) : null}
+                          {space.canManageStructure && !space.isPersonal ? (
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onClick={() =>
+                                setDeleteTarget({
+                                  kind: "space",
+                                  id: space.id,
+                                  name: space.name,
+                                })
+                              }
+                            >
+                              <Trash2Icon className="size-4" />
+                              Delete space
+                            </DropdownMenuItem>
+                          ) : null}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        <TooltipContent side="bottom">Actions</TooltipContent>
+                      </Tooltip>
+                    ) : null}
                   </div>
                   {expandedState[space.id] ? (
                     <div className="mt-0.5 space-y-2 pl-2">
@@ -308,68 +394,93 @@ export function SpacesSidebar() {
                             <div className="flex min-w-0 flex-1 items-center gap-1.5 text-xs font-medium text-muted-foreground">
                               <FolderIcon className="size-3.5 shrink-0" />
                               <span className="truncate">{folder.name}</span>
+                              {folder.isPrivate ? (
+                                <LockIcon className="size-3 shrink-0" />
+                              ) : null}
                             </div>
-                            <Tooltip>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger
-                                  render={
-                                    <TooltipTrigger
-                                      render={
-                                        <Button
-                                          variant="ghost"
-                                          size="icon-sm"
-                                          className="size-6 shrink-0"
-                                          aria-label={`Actions for ${folder.name}`}
-                                        >
-                                          <MoreHorizontalIcon className="size-3" />
-                                        </Button>
+                            {folder.canManageStructure || folder.canShare ? (
+                              <Tooltip>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger
+                                    render={
+                                      <TooltipTrigger
+                                        render={
+                                          <Button
+                                            variant="ghost"
+                                            size="icon-sm"
+                                            className="size-6 shrink-0"
+                                            aria-label={`Actions for ${folder.name}`}
+                                          >
+                                            <MoreHorizontalIcon className="size-3" />
+                                          </Button>
+                                        }
+                                      />
+                                    }
+                                  />
+                                  <DropdownMenuContent align="end">
+                                  {folder.canManageStructure ? (
+                                    <>
+                                      <DropdownMenuItem
+                                        onClick={() =>
+                                          openDialog({
+                                            type: "list",
+                                            spaceId: space.id,
+                                            folderId: folder.id,
+                                          })
+                                        }
+                                      >
+                                        <ListPlusIcon className="size-4" />
+                                        New list
+                                      </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem
+                                        onClick={() =>
+                                          openDialog({
+                                            type: "edit-folder",
+                                            folderId: folder.id,
+                                            initialName: folder.name,
+                                          })
+                                        }
+                                      >
+                                        <PencilIcon className="size-4" />
+                                        Rename
+                                      </DropdownMenuItem>
+                                    </>
+                                  ) : null}
+                                  {folder.canShare ? (
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        setShareTarget({
+                                          type: "folder",
+                                          id: folder.id,
+                                          name: folder.name,
+                                        })
                                       }
-                                    />
-                                  }
-                                />
-                                <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    openDialog({
-                                      type: "list",
-                                      spaceId: space.id,
-                                      folderId: folder.id,
-                                    })
-                                  }
-                                >
-                                  <ListPlusIcon className="size-4" />
-                                  New list
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    openDialog({
-                                      type: "edit-folder",
-                                      folderId: folder.id,
-                                      initialName: folder.name,
-                                    })
-                                  }
-                                >
-                                  <PencilIcon className="size-4" />
-                                  Rename
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  variant="destructive"
-                                  onClick={() =>
-                                    setDeleteTarget({
-                                      kind: "folder",
-                                      id: folder.id,
-                                      name: folder.name,
-                                    })
-                                  }
-                                >
-                                  <Trash2Icon className="size-4" />
-                                  Delete folder
-                                </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                              <TooltipContent side="bottom">Actions</TooltipContent>
-                            </Tooltip>
+                                    >
+                                      <Share2Icon className="size-4" />
+                                      Share
+                                    </DropdownMenuItem>
+                                  ) : null}
+                                  {folder.canManageStructure ? (
+                                    <DropdownMenuItem
+                                      variant="destructive"
+                                      onClick={() =>
+                                        setDeleteTarget({
+                                          kind: "folder",
+                                          id: folder.id,
+                                          name: folder.name,
+                                        })
+                                      }
+                                    >
+                                      <Trash2Icon className="size-4" />
+                                      Delete folder
+                                    </DropdownMenuItem>
+                                  ) : null}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                                <TooltipContent side="bottom">Actions</TooltipContent>
+                              </Tooltip>
+                            ) : null}
                           </div>
                           <ul className="space-y-0.5">
                             {folder.lists.map((list) => (
@@ -379,16 +490,31 @@ export function SpacesSidebar() {
                                 name={list.name}
                                 taskCount={list.taskCount}
                                 active={isListActive(pathname, list.id)}
-                                onRename={() =>
-                                  openDialog({
-                                    type: "edit-list",
-                                    listId: list.id,
-                                    initialName: list.name,
-                                  })
+                                isPrivate={list.isPrivate}
+                                canShare={list.canShare}
+                                onRename={
+                                  list.canManageStructure
+                                    ? () =>
+                                        openDialog({
+                                          type: "edit-list",
+                                          listId: list.id,
+                                          initialName: list.name,
+                                        })
+                                    : undefined
                                 }
-                                onDelete={() =>
-                                  setDeleteTarget({
-                                    kind: "list",
+                                onDelete={
+                                  list.canManageStructure
+                                    ? () =>
+                                        setDeleteTarget({
+                                          kind: "list",
+                                          id: list.id,
+                                          name: list.name,
+                                        })
+                                    : undefined
+                                }
+                                onShare={() =>
+                                  setShareTarget({
+                                    type: "list",
                                     id: list.id,
                                     name: list.name,
                                   })
@@ -408,24 +534,39 @@ export function SpacesSidebar() {
                               name={list.name}
                               taskCount={list.taskCount}
                               active={isListActive(pathname, list.id)}
+                              isPrivate={list.isPrivate}
+                              canShare={list.canShare}
                               isPersonal={
                                 space.isPersonal && list.name === "Personal List"
                               }
-                              onRename={() =>
-                                openDialog({
-                                  type: "edit-list",
-                                  listId: list.id,
-                                  initialName: list.name,
-                                })
+                              onRename={
+                                list.canManageStructure
+                                  ? () =>
+                                      openDialog({
+                                        type: "edit-list",
+                                        listId: list.id,
+                                        initialName: list.name,
+                                      })
+                                  : undefined
                               }
-                              onDelete={() =>
-                                setDeleteTarget({
-                                  kind: "list",
+                              onDelete={
+                                list.canManageStructure
+                                  ? () =>
+                                      setDeleteTarget({
+                                        kind: "list",
+                                        id: list.id,
+                                        name: list.name,
+                                        isPersonal:
+                                          space.isPersonal &&
+                                          list.name === "Personal List",
+                                      })
+                                  : undefined
+                              }
+                              onShare={() =>
+                                setShareTarget({
+                                  type: "list",
                                   id: list.id,
                                   name: list.name,
-                                  isPersonal:
-                                    space.isPersonal &&
-                                    list.name === "Personal List",
                                 })
                               }
                             />
@@ -478,6 +619,17 @@ export function SpacesSidebar() {
         loading={deleting}
         onConfirm={() => void handleDelete()}
       />
+      {shareTarget ? (
+        <ShareModal
+          open={shareTarget !== null}
+          onOpenChange={(open) => {
+            if (!open) setShareTarget(null);
+          }}
+          resourceType={shareTarget.type}
+          resourceId={shareTarget.id}
+          resourceName={shareTarget.name}
+        />
+      ) : null}
     </>
   );
 }
@@ -488,17 +640,25 @@ function ListNavItem({
   taskCount,
   active,
   isPersonal,
+  isPrivate,
+  canShare,
   onRename,
   onDelete,
+  onShare,
 }: {
   listId: string;
   name: string;
   taskCount?: number;
   active: boolean;
   isPersonal?: boolean;
-  onRename: () => void;
-  onDelete: () => void;
+  isPrivate?: boolean;
+  canShare?: boolean;
+  onRename?: () => void;
+  onDelete?: () => void;
+  onShare: () => void;
 }) {
+  const canDelete = Boolean(onDelete) && !isPersonal;
+  const hasMenu = Boolean(onRename) || canDelete || (Boolean(canShare) && Boolean(onShare));
   return (
     <li className="group flex items-center gap-0.5">
       <Button
@@ -513,45 +673,56 @@ function ListNavItem({
       >
         <LayoutListIcon className="size-3.5 shrink-0 opacity-70" />
         <span className="truncate">{name}</span>
+        {isPrivate ? <LockIcon className="size-3 shrink-0 opacity-70" /> : null}
         {typeof taskCount === "number" ? (
           <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
             {taskCount}
           </span>
         ) : null}
       </Button>
-      <Tooltip>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="size-6 shrink-0 opacity-0 group-hover:opacity-100 data-[popup-open]:opacity-100"
-                    aria-label={`Actions for ${name}`}
-                  >
-                    <MoreHorizontalIcon className="size-3" />
-                  </Button>
-                }
-              />
-            }
-          />
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onRename}>
-              <PencilIcon className="size-4" />
-              Rename
-            </DropdownMenuItem>
-            {!isPersonal ? (
-              <DropdownMenuItem variant="destructive" onClick={onDelete}>
-                <Trash2Icon className="size-4" />
-                Delete list
-              </DropdownMenuItem>
-            ) : null}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <TooltipContent side="bottom">Actions</TooltipContent>
-      </Tooltip>
+      {hasMenu ? (
+        <Tooltip>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="size-6 shrink-0 opacity-0 group-hover:opacity-100 data-[popup-open]:opacity-100"
+                      aria-label={`Actions for ${name}`}
+                    >
+                      <MoreHorizontalIcon className="size-3" />
+                    </Button>
+                  }
+                />
+              }
+            />
+            <DropdownMenuContent align="end">
+              {onRename ? (
+                <DropdownMenuItem onClick={onRename}>
+                  <PencilIcon className="size-4" />
+                  Rename
+                </DropdownMenuItem>
+              ) : null}
+              {canShare ? (
+                <DropdownMenuItem onClick={onShare}>
+                  <Share2Icon className="size-4" />
+                  Share
+                </DropdownMenuItem>
+              ) : null}
+              {canDelete ? (
+                <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                  <Trash2Icon className="size-4" />
+                  Delete list
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <TooltipContent side="bottom">Actions</TooltipContent>
+        </Tooltip>
+      ) : null}
     </li>
   );
 }
