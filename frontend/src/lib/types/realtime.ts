@@ -30,6 +30,18 @@ export type ChatChannelJoinedPayload = {
   channel: import("@/lib/types/chat").Channel;
 };
 
+export type ChatDmJoinedPayload = {
+  workspaceId: string;
+  userIds: string[];
+  conversationId: string;
+};
+
+export type WorkspaceMemberJoinedPayload = {
+  workspaceId: string;
+  member: import("@/lib/api/workspace").WorkspaceMemberRow;
+  inviteEmail: string;
+};
+
 export type ChatChannelRemovedPayload = {
   workspaceId: string;
   userIds: string[];

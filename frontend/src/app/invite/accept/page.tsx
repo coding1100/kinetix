@@ -19,6 +19,7 @@ import {
   getInvitePreview,
 } from "@/lib/api/invites";
 import { ApiError } from "@/lib/api/client";
+import { bumpWorkspacePeopleRefresh } from "@/stores/workspace-store";
 import { useAuthStore } from "@/stores/auth-store";
 
 function inviteLoginHref(token: string) {
@@ -81,6 +82,7 @@ function InviteAcceptForm() {
         workspaces: me.workspaces,
         activeWorkspaceId: result.workspace.id,
       });
+      bumpWorkspacePeopleRefresh();
       toast.success(`Joined ${result.workspace.name}!`);
       navigateWithLoading("/home/inbox", "Joining workspace…");
     } catch (err) {
@@ -116,6 +118,7 @@ function InviteAcceptForm() {
         ],
         activeWorkspaceId: result.workspace.id,
       });
+      bumpWorkspacePeopleRefresh();
       toast.success(`Joined ${result.workspace.name}!`);
       navigateWithLoading("/home/inbox", "Joining workspace…");
     } catch (err) {

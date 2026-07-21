@@ -15,10 +15,9 @@ import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { CheckIcon } from "lucide-react";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
-import { useHomeQuery } from "@/hooks/use-home-query";
+import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
 import {
   addChannelMembers,
-  fetchWorkspaceMembers,
 } from "@/lib/api/chat";
 import { useAuthStore } from "@/stores/auth-store";
 import { cn } from "@/lib/utils";
@@ -50,10 +49,7 @@ export function AddChannelMembersDialog({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
 
-  const membersQuery = useHomeQuery(
-    (token, ws) => fetchWorkspaceMembers(token, ws).then((r) => r.data),
-    []
-  );
+  const membersQuery = useWorkspaceMembersQuery();
 
   const existingSet = useMemo(
     () => new Set(existingMemberIds),

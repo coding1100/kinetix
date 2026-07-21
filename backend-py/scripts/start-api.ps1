@@ -66,6 +66,7 @@ if (-not (Test-PortAvailable $PreferredPort)) {
 }
 
 Set-Location $Root
+Remove-Item Env:DATABASE_URL -ErrorAction SilentlyContinue
 Write-Host "Starting API at http://127.0.0.1:$Port from $Root"
 Write-Host "Health check: http://127.0.0.1:$Port/health (expect build=google-oauth-v1)"
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port $Port
