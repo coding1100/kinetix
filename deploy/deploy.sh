@@ -73,6 +73,11 @@ done
 log "Build and start web"
 compose up -d --build web
 
+log "Ensure edge network exists (kinetix_edge is external - shared with staging, not compose-managed)"
+if ! docker network inspect kinetix_edge >/dev/null 2>&1; then
+  docker network create kinetix_edge
+fi
+
 log "Ensure nginx running"
 compose up -d nginx
 
