@@ -86,18 +86,6 @@ if [ ! -d "$FRONTEND/.next/static/chunks" ]; then
   exit 1
 fi
 
-log "Nginx config"
-if [ -f "$ROOT/kinetix-site.conf" ]; then
-  # Remove stale copies that caused "duplicate upstream kinetix_web"
-  sudo rm -f /etc/nginx/conf.d/kinetix.conf /etc/nginx/conf.d/kinetix-upstreams.conf
-  sudo sed "s|/opt/clickup/kinetix|$APP_ROOT|g" "$ROOT/kinetix-site.conf" \
-    | sudo tee /etc/nginx/sites-available/kinetix >/dev/null
-  sudo ln -sf /etc/nginx/sites-available/kinetix /etc/nginx/sites-enabled/kinetix
-  sudo rm -f /etc/nginx/sites-enabled/default
-  sudo nginx -t
-  sudo systemctl reload nginx
-fi
-
 log "Restart services"
 sudo systemctl enable kinetix-api kinetix-web
 sudo systemctl restart kinetix-api kinetix-web
