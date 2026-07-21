@@ -234,12 +234,28 @@ export function SpacesSidebar() {
                     <span className="truncate">{entry.name}</span>
                   </Link>
                 ) : (
-                  <div
-                    key={`${entry.type}-${entry.id}`}
-                    className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground"
-                  >
-                    <FolderIcon className="size-3.5 shrink-0 opacity-70" />
-                    <span className="truncate">{entry.name}</span>
+                  <div key={`${entry.type}-${entry.id}`}>
+                    <div className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground">
+                      <FolderIcon className="size-3.5 shrink-0 opacity-70" />
+                      <span className="truncate">{entry.name}</span>
+                    </div>
+                    <div className="ml-4 space-y-0.5 border-l border-sidebar-border pl-1">
+                      {entry.lists?.map((lst) => (
+                        <Link
+                          key={lst.id}
+                          href={listHref(lst.id)}
+                          className={cn(
+                            "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-sidebar-accent",
+                            isListActive(pathname, lst.id)
+                              ? "bg-primary/10 font-medium text-primary"
+                              : "text-muted-foreground"
+                          )}
+                        >
+                          <LayoutListIcon className="size-3.5 shrink-0 opacity-70" />
+                          <span className="truncate">{lst.name}</span>
+                        </Link>
+                      ))}
+                    </div>
                   </div>
                 )
               )}

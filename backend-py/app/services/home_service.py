@@ -243,11 +243,11 @@ async def _build_space_payload(
     can_manage = is_workspace_admin(role)
 
     folders = []
+    standalone = []
     for folder in space.folders:
         folder.space = space
         folder_level = await resolve_folder_permission(session, folder, user_id, role)
-        if not level_at_least(folder_level, PermissionLevel.VIEW):
-            continue
+        folder_visible = level_at_least(folder_level, PermissionLevel.VIEW)
         lists = []
         for lst in folder.lists:
             lst.space = space
@@ -255,6 +255,14 @@ async def _build_space_payload(
             if not level_at_least(lst_level, PermissionLevel.VIEW):
                 continue
             lists.append(map_list_entry(lst, len(lst.tasks), can_manage))
+        if not folder_visible:
+            # No access to the Folder itself - don't expose its existence
+            # or name. A directly-shared List inside it (resolve_list_
+            # permission's override always wins over the parent chain)
+            # still needs to surface, just as a standalone entry instead
+            # of nested under a Folder container the user can't see.
+            standalone.extend(lists)
+            continue
         folders.append(
             {
                 "id": folder.id,
@@ -264,7 +272,6 @@ async def _build_space_payload(
                 "isPrivate": folder.is_private,
             }
         )
-    standalone = []
     for lst in space.lists:
         if lst.folder_id is not None:
             continue
@@ -555,7 +562,13 @@ async def list_shared_with_me(
                 FolderMember.user_id == user_id,
                 FolderMember.status == MemberStatus.ACTIVE,
             )
-            .options(selectinload(FolderMember.folder).selectinload(Folder.space))
+            .options(
+                selectinload(FolderMember.folder)
+                .selectinload(Folder.space),
+                selectinload(FolderMember.folder)
+                .selectinload(Folder.lists)
+                .selectinload(TaskList.tasks),
+            )
         )
     ).all()
     list_rows = (
@@ -573,10 +586,19 @@ async def list_shared_with_me(
     ).all()
 
     data = []
+    nested_list_ids: set[str] = set()
     for row in folder_rows:
         folder = row.folder
         if folder.space_id in visible:
             continue
+        lists = []
+        for lst in folder.lists:
+            lst.space = folder.space
+            lst_level = await resolve_list_permission(session, lst, user_id, role)
+            if not level_at_least(lst_level, PermissionLevel.VIEW):
+                continue
+            lists.append(map_list_entry(lst, len(lst.tasks)))
+            nested_list_ids.add(lst.id)
         data.append(
             {
                 "type": "folder",
@@ -584,11 +606,12 @@ async def list_shared_with_me(
                 "name": folder.name,
                 "spaceId": folder.space_id,
                 "spaceName": folder.space.name,
+                "lists": lists,
             }
         )
     for row in list_rows:
         task_list = row.task_list
-        if task_list.space_id in visible:
+        if task_list.space_id in visible or task_list.id in nested_list_ids:
             continue
         data.append(
             {

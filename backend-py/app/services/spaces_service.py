@@ -48,6 +48,7 @@ from app.services.home_helpers import map_list_entry, map_task
 from app.services.list_status_service import ensure_list_statuses
 from app.services.notification_service import (
     create_resource_share_notification,
+    create_resource_unshare_notification,
     create_task_comment_mention_notifications,
     create_task_comment_notifications,
     create_task_comment_reply_notifications,
@@ -65,7 +66,12 @@ from app.services.folder_list_permissions import (
     resolve_share_target,
 )
 from app.services.workspace_permissions import is_privileged, is_workspace_admin
-from app.socket.emit import broadcast_channel_renamed
+from app.socket.emit import (
+    broadcast_channel_privacy_changed,
+    broadcast_channel_renamed,
+    broadcast_resource_access_granted,
+    broadcast_resource_access_removed,
+)
 
 
 def _member_row_payload(row: SpaceMember | FolderMember | ListMember) -> dict:
@@ -271,10 +277,20 @@ async def update_space(
         space.color = body.color
     if body.description is not None:
         space.description = body.description or None
-    if body.is_private is not None and body.is_private != space.is_private:
+    privacy_changed = (
+        body.is_private is not None and body.is_private != space.is_private
+    )
+    if privacy_changed:
         _require_can_manage_access(role)
         space.is_private = body.is_private
     await session.commit()
+    if privacy_changed:
+        # Narrowing/widening privacy changes who can see every List under
+        # this Space - their primary chat channels need to be re-derived
+        # too, or someone who lost/gained access stays stuck with their
+        # old channel membership indefinitely (nothing else would ever
+        # re-sync it otherwise).
+        await sync_list_channel_members_for_space(session, workspace_id, space)
     refreshed = await session.scalar(
         select(Space)
         .where(Space.id == space_id)
@@ -386,6 +402,12 @@ async def add_space_member(
         await session.commit()
         if notifications:
             await emit_home_notifications(session, workspace_id, notifications)
+        await broadcast_resource_access_granted(
+            workspace_id=workspace_id,
+            user_ids=[target_user_id],
+            resource_type="space",
+            resource_id=space.id,
+        )
     return await list_space_members(session, workspace_id, space_id, user_id, role)
 
 
@@ -399,10 +421,9 @@ async def remove_space_member(
 ) -> dict:
     space = await _get_space(session, workspace_id, space_id)
     _require_can_manage_access(role)
-    _reject_if_privileged_target(
-        await _target_workspace_role(session, workspace_id, target)
-    )
-    await session.execute(
+    target_role = await _target_workspace_role(session, workspace_id, target)
+    _reject_if_privileged_target(target_role)
+    result = await session.execute(
         delete(SpaceMember).where(
             SpaceMember.space_id == space.id,
             (SpaceMember.user_id == target)
@@ -411,6 +432,25 @@ async def remove_space_member(
     )
     await session.commit()
     await sync_list_channel_members_for_space(session, workspace_id, space)
+    if result.rowcount:
+        if target_role is not None:
+            notifications = await create_resource_unshare_notification(
+                session,
+                workspace_id=workspace_id,
+                recipient_id=target,
+                actor_user_id=user_id,
+                resource_type="space",
+                resource_name=space.name,
+            )
+            await session.commit()
+            if notifications:
+                await emit_home_notifications(session, workspace_id, notifications)
+        await broadcast_resource_access_removed(
+            workspace_id=workspace_id,
+            user_ids=[target],
+            resource_type="space",
+            resource_id=space.id,
+        )
     return {"ok": True}
 
 
@@ -459,10 +499,15 @@ async def update_folder(
     )
     if body.name is not None:
         folder.name = body.name.strip()
-    if body.is_private is not None and body.is_private != folder.is_private:
+    privacy_changed = (
+        body.is_private is not None and body.is_private != folder.is_private
+    )
+    if privacy_changed:
         _require_can_manage_access(role)
         folder.is_private = body.is_private
     await session.commit()
+    if privacy_changed:
+        await sync_list_channel_members_for_space(session, workspace_id, folder.space)
     return {
         "id": folder.id,
         "name": folder.name,
@@ -564,6 +609,12 @@ async def add_folder_member(
         await session.commit()
         if notifications:
             await emit_home_notifications(session, workspace_id, notifications)
+        await broadcast_resource_access_granted(
+            workspace_id=workspace_id,
+            user_ids=[target_user_id],
+            resource_type="folder",
+            resource_id=folder.id,
+        )
     return await list_folder_members(session, workspace_id, folder_id, user_id, role)
 
 
@@ -577,10 +628,9 @@ async def remove_folder_member(
 ) -> dict:
     folder = await _folder_with_space(session, workspace_id, folder_id)
     _require_can_manage_access(role)
-    _reject_if_privileged_target(
-        await _target_workspace_role(session, workspace_id, target)
-    )
-    await session.execute(
+    target_role = await _target_workspace_role(session, workspace_id, target)
+    _reject_if_privileged_target(target_role)
+    result = await session.execute(
         delete(FolderMember).where(
             FolderMember.folder_id == folder.id,
             (FolderMember.user_id == target)
@@ -589,6 +639,25 @@ async def remove_folder_member(
     )
     await session.commit()
     await sync_list_channel_members_for_space(session, workspace_id, folder.space)
+    if result.rowcount:
+        if target_role is not None:
+            notifications = await create_resource_unshare_notification(
+                session,
+                workspace_id=workspace_id,
+                recipient_id=target,
+                actor_user_id=user_id,
+                resource_type="folder",
+                resource_name=folder.name,
+            )
+            await session.commit()
+            if notifications:
+                await emit_home_notifications(session, workspace_id, notifications)
+        await broadcast_resource_access_removed(
+            workspace_id=workspace_id,
+            user_ids=[target],
+            resource_type="folder",
+            resource_id=folder.id,
+        )
     return {"ok": True}
 
 
@@ -655,23 +724,42 @@ async def update_list(
     if body.name is not None:
         task_list.name = body.name.strip()
         renamed = True
-    if body.is_private is not None and body.is_private != task_list.is_private:
+    privacy_changed = (
+        body.is_private is not None and body.is_private != task_list.is_private
+    )
+    if privacy_changed:
         _require_can_manage_access(role)
         task_list.is_private = body.is_private
     await session.commit()
+    if privacy_changed:
+        await sync_list_channel_members_for_space(session, workspace_id, task_list.space)
 
-    if renamed:
-        # List name is the source of truth for its primary channel's name
-        # (two-way sync - the reverse direction lives in
-        # chat_service.update_channel). Best-effort: a list rename should
-        # never fail just because the channel side hit a name conflict.
+    if renamed or privacy_changed:
         channel = await session.scalar(
             select(ChatChannel).where(
                 ChatChannel.list_id == list_id,
                 ChatChannel.is_list_primary.is_(True),
             )
         )
-        if channel and channel.name != task_list.name:
+        if channel and privacy_changed:
+            # Existing members who stay on the channel (not added/removed
+            # by the resync above) never otherwise learn the List's own
+            # is_private flipped - their cached sidebar entry's isPrivate
+            # (which now mirrors the List, see _channel_payload) would
+            # stay stale forever without this.
+            asyncio.create_task(
+                broadcast_channel_privacy_changed(
+                    workspace_id=workspace_id,
+                    channel_id=channel.id,
+                    is_private=task_list.is_private,
+                )
+            )
+        if renamed and channel and channel.name != task_list.name:
+            # List name is the source of truth for its primary channel's
+            # name (two-way sync - the reverse direction lives in
+            # chat_service.update_channel). Best-effort: a list rename
+            # should never fail just because the channel side hit a name
+            # conflict.
             name = task_list.name
             if await session.scalar(
                 select(ChatChannel).where(
@@ -790,6 +878,12 @@ async def add_list_member(
         await session.commit()
         if notifications:
             await emit_home_notifications(session, workspace_id, notifications)
+        await broadcast_resource_access_granted(
+            workspace_id=workspace_id,
+            user_ids=[target_user_id],
+            resource_type="list",
+            resource_id=task_list.id,
+        )
     return await list_list_members(session, workspace_id, list_id, user_id, role)
 
 
@@ -803,10 +897,9 @@ async def remove_list_member(
 ) -> dict:
     task_list = await _list_with_space(session, workspace_id, list_id)
     _require_can_manage_access(role)
-    _reject_if_privileged_target(
-        await _target_workspace_role(session, workspace_id, target)
-    )
-    await session.execute(
+    target_role = await _target_workspace_role(session, workspace_id, target)
+    _reject_if_privileged_target(target_role)
+    result = await session.execute(
         delete(ListMember).where(
             ListMember.list_id == task_list.id,
             (ListMember.user_id == target)
@@ -815,6 +908,25 @@ async def remove_list_member(
     )
     await session.commit()
     await sync_list_channel_members_for_space(session, workspace_id, task_list.space)
+    if result.rowcount:
+        if target_role is not None:
+            notifications = await create_resource_unshare_notification(
+                session,
+                workspace_id=workspace_id,
+                recipient_id=target,
+                actor_user_id=user_id,
+                resource_type="list",
+                resource_name=task_list.name,
+            )
+            await session.commit()
+            if notifications:
+                await emit_home_notifications(session, workspace_id, notifications)
+        await broadcast_resource_access_removed(
+            workspace_id=workspace_id,
+            user_ids=[target],
+            resource_type="list",
+            resource_id=task_list.id,
+        )
     return {"ok": True}
 
 

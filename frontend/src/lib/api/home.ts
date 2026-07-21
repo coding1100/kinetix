@@ -64,6 +64,13 @@ export interface SharedWithMeEntryDto {
   name: string;
   spaceId: string;
   spaceName: string;
+  lists?: {
+    id: string;
+    name: string;
+    taskCount: number;
+    canShare?: boolean;
+    isPrivate?: boolean;
+  }[];
 }
 
 export function fetchSharedWithMe(token: string, workspaceId: string) {

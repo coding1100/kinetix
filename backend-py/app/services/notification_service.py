@@ -455,6 +455,46 @@ async def create_resource_share_notification(
     return [(recipient_id, item)]
 
 
+async def create_resource_unshare_notification(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    recipient_id: str,
+    actor_user_id: str,
+    resource_type: str,
+    resource_name: str,
+) -> list[tuple[str, InboxItem]]:
+    """Notify one recipient their access to a Space/Folder/List was
+    revoked. Mirrors create_resource_share_notification - only call for a
+    real removal (a row actually existed), same not-notifying-yourself
+    guard. No href: the resource is gone from their view, nothing to
+    link to."""
+    if recipient_id == actor_user_id:
+        return []
+
+    users = await _load_users(session, [actor_user_id])
+    actor_name = (
+        users.get(actor_user_id).full_name if users.get(actor_user_id) else "Someone"
+    )
+    label = _SHARE_RESOURCE_LABELS[resource_type]
+    item = InboxItem(
+        workspace_id=workspace_id,
+        user_id=recipient_id,
+        type=InboxItemType.CHAT,
+        title=f"Removed from {label.lower()}",
+        preview=f'{actor_name} removed your access to the {label.lower()} "{resource_name}"',
+        source=resource_name,
+        unread=True,
+        bucket=InboxBucket.ALL,
+        time_group=InboxTimeGroup.TODAY,
+        href="/home",
+        activity_kind=f"{resource_type}_unshare",
+    )
+    session.add(item)
+    await session.flush()
+    return [(recipient_id, item)]
+
+
 async def create_dm_broadcast_notifications(
     session: AsyncSession,
     *,

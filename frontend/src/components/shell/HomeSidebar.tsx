@@ -946,12 +946,23 @@ export function HomeSidebar() {
                     active={pathname === `/home/l/${entry.id}`}
                   />
                 ) : (
-                  <div
-                    key={`${entry.type}-${entry.id}`}
-                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground"
-                  >
-                    <FolderIcon className="size-3.5 shrink-0" />
-                    <span className="truncate">{entry.name}</span>
+                  <div key={`${entry.type}-${entry.id}`}>
+                    <div className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground">
+                      <FolderIcon className="size-3.5 shrink-0" />
+                      <span className="truncate">{entry.name}</span>
+                    </div>
+                    <div className="ml-4 space-y-0.5 border-l border-sidebar-border pl-1">
+                      {entry.lists?.map((lst) => (
+                        <SpaceListLink
+                          key={lst.id}
+                          listId={lst.id}
+                          name={lst.name}
+                          taskCount={lst.taskCount}
+                          isPrivate={lst.isPrivate}
+                          active={pathname === `/home/l/${lst.id}`}
+                        />
+                      ))}
+                    </div>
                   </div>
                 )
               )}
