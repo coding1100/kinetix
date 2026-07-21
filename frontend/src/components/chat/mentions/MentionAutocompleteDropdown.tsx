@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ConversationType } from "@/lib/types/chat";
 import type { MentionSelection } from "@/lib/chat/mention-types";
+import type { MentionMember } from "@/hooks/use-mention-members";
 import { MentionPickerContent } from "./MentionPickerContent";
 
 export function MentionAutocompleteDropdown({
@@ -11,17 +12,21 @@ export function MentionAutocompleteDropdown({
   anchorRef,
   conversationType,
   conversationId,
+  members,
   query,
   onSelect,
   onDismiss,
+  peopleOnly = false,
 }: {
   open: boolean;
   anchorRef: React.RefObject<HTMLElement | null>;
   conversationType?: ConversationType;
   conversationId?: string;
+  members?: MentionMember[];
   query: string;
   onSelect: (selection: MentionSelection) => void;
   onDismiss: () => void;
+  peopleOnly?: boolean;
 }) {
   const [mounted, setMounted] = useState(false);
   const [style, setStyle] = useState<React.CSSProperties>({});
@@ -45,7 +50,10 @@ export function MentionAutocompleteDropdown({
         left,
         bottom: window.innerHeight - rect.top + 6,
         width,
-        zIndex: 60,
+        // Matches the z-[110] convention used by Popover/Select/DropdownMenu/
+        // Tooltip (2026-07-13 fix) so this still renders above a Dialog's
+        // z-[100] overlay - e.g. the task drawer.
+        zIndex: 110,
       });
     };
 
@@ -83,8 +91,10 @@ export function MentionAutocompleteDropdown({
       <MentionPickerContent
         conversationType={conversationType}
         conversationId={conversationId}
+        members={members}
         query={query}
         showSearch={false}
+        peopleOnly={peopleOnly}
         onSelect={onSelect}
       />
     </div>,

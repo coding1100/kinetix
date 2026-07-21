@@ -5,11 +5,13 @@ export function SidebarNavIcon({
   itemId,
   href,
   active = false,
+  size = "md",
   className,
 }: {
   itemId: string;
   href?: string;
   active?: boolean;
+  size?: "sm" | "md";
   className?: string;
 }) {
   const def = getHomeSidebarIcon(itemId, href);
@@ -19,7 +21,8 @@ export function SidebarNavIcon({
   return (
     <Icon
       className={cn(
-        "size-4 shrink-0",
+        "shrink-0",
+        size === "sm" ? "size-3.5" : "size-4",
         active ? "text-primary" : "text-muted-foreground",
         className
       )}

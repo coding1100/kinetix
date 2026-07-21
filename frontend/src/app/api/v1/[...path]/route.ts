@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const API_PROXY_TARGET =
-  process.env.API_PROXY_TARGET ?? "http://127.0.0.1:4000";
 const PROXY_TIMEOUT_MS = 120_000;
+
+function apiProxyTarget() {
+  return process.env.API_PROXY_TARGET ?? "http://127.0.0.1:4001";
+}
 
 const HOP_BY_HOP = new Set([
   "connection",
@@ -18,7 +20,7 @@ const HOP_BY_HOP = new Set([
 
 async function proxyRequest(request: NextRequest, path: string[]) {
   const suffix = path.join("/");
-  const target = `${API_PROXY_TARGET}/api/v1/${suffix}${request.nextUrl.search}`;
+  const target = `${apiProxyTarget()}/api/v1/${suffix}${request.nextUrl.search}`;
   const headers = new Headers();
 
   request.headers.forEach((value, key) => {

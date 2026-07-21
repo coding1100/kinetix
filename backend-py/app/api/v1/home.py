@@ -1,10 +1,22 @@
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, File, Query, UploadFile, status
 
 from app.deps.auth import CurrentUserDep, DbSession
 from app.deps.workspace import WorkspaceMemberDep
 from app.schemas.home import (
+    AddLineupBody,
+    CreateChecklistBody,
+    CreateChecklistItemBody,
+    CreateFavoriteBody,
     CreatePostBody,
+    CreateReminderBody,
+    CreateSubtaskBody,
     CreateTaskBody,
+    CreateTaskDependencyBody,
+    PresignTaskAttachmentBody,
+    RecordRecentBody,
+    ReorderLineupBody,
+    UpdateChecklistBody,
+    UpdateChecklistItemBody,
     UpdateInboxItemBody,
     UpdateSidebarBody,
     UpdateTaskBody,
@@ -14,11 +26,13 @@ from app.schemas.spaces import (
     CreateListBody,
     CreateSpaceBody,
     CreateTaskCommentBody,
+    ShareMemberBody,
     UpdateFolderBody,
     UpdateListBody,
     UpdateSpaceBody,
+    UpdateTaskCommentBody,
 )
-from app.services import home_service, spaces_service
+from app.services import home_service, spaces_service, task_attachment_service, task_time_service
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["home"])
 
@@ -139,6 +153,120 @@ async def get_recents(
     return await home_service.list_recents(session, workspace_id, user.id)
 
 
+@router.post("/home/reminders", status_code=status.HTTP_201_CREATED)
+async def post_reminder(
+    body: CreateReminderBody,
+    workspace_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.create_reminder(
+        session, workspace_id, user.id, body
+    )
+
+
+@router.delete("/home/reminders/{reminder_id}")
+async def delete_reminder(
+    workspace_id: str,
+    reminder_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.delete_reminder(
+        session, workspace_id, user.id, reminder_id
+    )
+
+
+@router.post("/home/favorites", status_code=status.HTTP_201_CREATED)
+async def post_favorite(
+    body: CreateFavoriteBody,
+    workspace_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.create_favorite(
+        session, workspace_id, user.id, body
+    )
+
+
+@router.delete("/home/favorites/{favorite_id}")
+async def delete_favorite(
+    workspace_id: str,
+    favorite_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.delete_favorite(
+        session, workspace_id, user.id, favorite_id
+    )
+
+
+@router.post("/home/recents", status_code=status.HTTP_201_CREATED)
+async def post_recent(
+    body: RecordRecentBody,
+    workspace_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.record_recent(
+        session, workspace_id, user.id, body
+    )
+
+
+@router.get("/home/lineup")
+async def get_lineup(
+    workspace_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.list_lineup(session, workspace_id, user.id)
+
+
+@router.post("/home/lineup", status_code=status.HTTP_201_CREATED)
+async def post_lineup(
+    body: AddLineupBody,
+    workspace_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.add_to_lineup(
+        session, workspace_id, user.id, body
+    )
+
+
+@router.delete("/home/lineup/{task_id}")
+async def delete_lineup_task(
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.remove_from_lineup(
+        session, workspace_id, user.id, task_id
+    )
+
+
+@router.put("/home/lineup/reorder")
+async def put_lineup_reorder(
+    body: ReorderLineupBody,
+    workspace_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.reorder_lineup(
+        session, workspace_id, user.id, body
+    )
+
+
 @router.get("/home/notifications")
 async def get_notifications(
     workspace_id: str,
@@ -205,9 +333,22 @@ async def patch_sidebar(
 async def get_spaces(
     workspace_id: str,
     session: DbSession,
-    _member: WorkspaceMemberDep,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
 ):
-    return await home_service.list_spaces(session, workspace_id)
+    return await home_service.list_spaces(session, workspace_id, user.id, member.role)
+
+
+@router.get("/home/shared-with-me")
+async def get_shared_with_me(
+    workspace_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await home_service.list_shared_with_me(
+        session, workspace_id, user.id, member.role
+    )
 
 
 @router.post("/spaces", status_code=status.HTTP_201_CREATED)
@@ -215,9 +356,12 @@ async def post_space(
     body: CreateSpaceBody,
     workspace_id: str,
     session: DbSession,
-    _member: WorkspaceMemberDep,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
 ):
-    return await spaces_service.create_space(session, workspace_id, body)
+    return await spaces_service.create_space(
+        session, workspace_id, user.id, member.role, body
+    )
 
 
 @router.patch("/spaces/{space_id}")
@@ -226,9 +370,12 @@ async def patch_space(
     workspace_id: str,
     space_id: str,
     session: DbSession,
-    _member: WorkspaceMemberDep,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
 ):
-    return await spaces_service.update_space(session, workspace_id, space_id, body)
+    return await spaces_service.update_space(
+        session, workspace_id, space_id, user.id, member.role, body
+    )
 
 
 @router.delete("/spaces/{space_id}")
@@ -236,9 +383,53 @@ async def delete_space(
     workspace_id: str,
     space_id: str,
     session: DbSession,
-    _member: WorkspaceMemberDep,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
 ):
-    return await spaces_service.delete_space(session, workspace_id, space_id)
+    return await spaces_service.delete_space(
+        session, workspace_id, space_id, user.id, member.role
+    )
+
+
+@router.get("/spaces/{space_id}/members")
+async def get_space_members(
+    workspace_id: str,
+    space_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await spaces_service.list_space_members(
+        session, workspace_id, space_id, user.id, member.role
+    )
+
+
+@router.post("/spaces/{space_id}/members", status_code=status.HTTP_201_CREATED)
+async def post_space_member(
+    body: ShareMemberBody,
+    workspace_id: str,
+    space_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await spaces_service.add_space_member(
+        session, workspace_id, space_id, user.id, member.role, body
+    )
+
+
+@router.delete("/spaces/{space_id}/members/{target_user_id}")
+async def delete_space_member(
+    workspace_id: str,
+    space_id: str,
+    target_user_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await spaces_service.remove_space_member(
+        session, workspace_id, space_id, target_user_id, user.id, member.role
+    )
 
 
 @router.post(
@@ -250,10 +441,11 @@ async def post_folder(
     workspace_id: str,
     space_id: str,
     session: DbSession,
-    _member: WorkspaceMemberDep,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
 ):
     return await spaces_service.create_folder(
-        session, workspace_id, space_id, body
+        session, workspace_id, space_id, user.id, member.role, body
     )
 
 
@@ -263,10 +455,11 @@ async def patch_folder(
     workspace_id: str,
     folder_id: str,
     session: DbSession,
-    _member: WorkspaceMemberDep,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
 ):
     return await spaces_service.update_folder(
-        session, workspace_id, folder_id, body
+        session, workspace_id, folder_id, user.id, member.role, body
     )
 
 
@@ -275,9 +468,53 @@ async def delete_folder(
     workspace_id: str,
     folder_id: str,
     session: DbSession,
-    _member: WorkspaceMemberDep,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
 ):
-    return await spaces_service.delete_folder(session, workspace_id, folder_id)
+    return await spaces_service.delete_folder(
+        session, workspace_id, folder_id, user.id, member.role
+    )
+
+
+@router.get("/folders/{folder_id}/members")
+async def get_folder_members(
+    workspace_id: str,
+    folder_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await spaces_service.list_folder_members(
+        session, workspace_id, folder_id, user.id, member.role
+    )
+
+
+@router.post("/folders/{folder_id}/members", status_code=status.HTTP_201_CREATED)
+async def post_folder_member(
+    body: ShareMemberBody,
+    workspace_id: str,
+    folder_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await spaces_service.add_folder_member(
+        session, workspace_id, folder_id, user.id, member.role, body
+    )
+
+
+@router.delete("/folders/{folder_id}/members/{target}")
+async def delete_folder_member(
+    workspace_id: str,
+    folder_id: str,
+    target: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await spaces_service.remove_folder_member(
+        session, workspace_id, folder_id, target, user.id, member.role
+    )
 
 
 @router.get("/spaces/{space_id}")
@@ -285,9 +522,12 @@ async def get_space(
     workspace_id: str,
     space_id: str,
     session: DbSession,
-    _member: WorkspaceMemberDep,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
 ):
-    return await home_service.get_space(session, workspace_id, space_id)
+    return await home_service.get_space(
+        session, workspace_id, space_id, user.id, member.role
+    )
 
 
 @router.post(
@@ -299,10 +539,11 @@ async def post_list(
     workspace_id: str,
     space_id: str,
     session: DbSession,
-    _member: WorkspaceMemberDep,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
 ):
     return await spaces_service.create_list(
-        session, workspace_id, space_id, body
+        session, workspace_id, space_id, user.id, member.role, body
     )
 
 
@@ -312,10 +553,11 @@ async def patch_list_meta(
     workspace_id: str,
     list_id: str,
     session: DbSession,
-    _member: WorkspaceMemberDep,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
 ):
     return await spaces_service.update_list(
-        session, workspace_id, list_id, body
+        session, workspace_id, list_id, user.id, member.role, body
     )
 
 
@@ -324,9 +566,53 @@ async def delete_list_meta(
     workspace_id: str,
     list_id: str,
     session: DbSession,
-    _member: WorkspaceMemberDep,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
 ):
-    return await spaces_service.delete_list(session, workspace_id, list_id)
+    return await spaces_service.delete_list(
+        session, workspace_id, list_id, user.id, member.role
+    )
+
+
+@router.get("/lists/{list_id}/members")
+async def get_list_members(
+    workspace_id: str,
+    list_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await spaces_service.list_list_members(
+        session, workspace_id, list_id, user.id, member.role
+    )
+
+
+@router.post("/lists/{list_id}/members", status_code=status.HTTP_201_CREATED)
+async def post_list_member(
+    body: ShareMemberBody,
+    workspace_id: str,
+    list_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await spaces_service.add_list_member(
+        session, workspace_id, list_id, user.id, member.role, body
+    )
+
+
+@router.delete("/lists/{list_id}/members/{target}")
+async def delete_list_member(
+    workspace_id: str,
+    list_id: str,
+    target: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await spaces_service.remove_list_member(
+        session, workspace_id, list_id, target, user.id, member.role
+    )
 
 
 @router.get("/lists/{list_id}")
@@ -334,9 +620,12 @@ async def get_list(
     workspace_id: str,
     list_id: str,
     session: DbSession,
-    _member: WorkspaceMemberDep,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
 ):
-    return await home_service.get_list(session, workspace_id, list_id)
+    return await home_service.get_list(
+        session, workspace_id, list_id, user.id, member.role
+    )
 
 
 @router.get("/lists/{list_id}/tasks")
@@ -345,10 +634,10 @@ async def get_list_tasks(
     list_id: str,
     session: DbSession,
     user: CurrentUserDep,
-    _member: WorkspaceMemberDep,
+    member: WorkspaceMemberDep,
 ):
     return await home_service.list_tasks_for_list(
-        session, workspace_id, user.id, list_id
+        session, workspace_id, user.id, member.role, list_id
     )
 
 
@@ -359,10 +648,10 @@ async def post_list_task(
     list_id: str,
     session: DbSession,
     user: CurrentUserDep,
-    _member: WorkspaceMemberDep,
+    member: WorkspaceMemberDep,
 ):
     return await home_service.create_task(
-        session, workspace_id, user.id, list_id, body
+        session, workspace_id, user.id, member.role, list_id, body
     )
 
 
@@ -371,12 +660,12 @@ async def get_tasks(
     workspace_id: str,
     session: DbSession,
     user: CurrentUserDep,
-    _member: WorkspaceMemberDep,
+    member: WorkspaceMemberDep,
     filter: str | None = Query(None, alias="filter"),
     search: str | None = Query(None),
 ):
     return await home_service.list_tasks(
-        session, workspace_id, user.id, filter, search
+        session, workspace_id, user.id, member.role, filter, search
     )
 
 
@@ -386,10 +675,10 @@ async def get_task(
     task_id: str,
     session: DbSession,
     user: CurrentUserDep,
-    _member: WorkspaceMemberDep,
+    member: WorkspaceMemberDep,
 ):
     return await home_service.get_task(
-        session, workspace_id, user.id, task_id
+        session, workspace_id, user.id, member.role, task_id
     )
 
 
@@ -403,10 +692,129 @@ async def post_task_comment(
     task_id: str,
     session: DbSession,
     user: CurrentUserDep,
-    _member: WorkspaceMemberDep,
+    member: WorkspaceMemberDep,
 ):
     return await spaces_service.add_task_comment(
-        session, workspace_id, user.id, task_id, body
+        session, workspace_id, user.id, member.role, task_id, body
+    )
+
+
+@router.patch("/tasks/{task_id}/comments/{comment_id}")
+async def patch_task_comment(
+    body: UpdateTaskCommentBody,
+    workspace_id: str,
+    task_id: str,
+    comment_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await spaces_service.update_task_comment(
+        session, workspace_id, user.id, task_id, comment_id, body
+    )
+
+
+@router.delete("/tasks/{task_id}/comments/{comment_id}")
+async def delete_task_comment(
+    workspace_id: str,
+    task_id: str,
+    comment_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await spaces_service.delete_task_comment(
+        session, workspace_id, user.id, task_id, comment_id
+    )
+
+
+@router.post("/tasks/{task_id}/time/start")
+async def post_task_time_start(
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await task_time_service.start_task_timer(
+        session, workspace_id, user.id, member.role, task_id
+    )
+
+
+@router.post("/tasks/{task_id}/time/stop")
+async def post_task_time_stop(
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await task_time_service.stop_task_timer(
+        session, workspace_id, user.id, member.role, task_id
+    )
+
+
+@router.post(
+    "/tasks/{task_id}/subtasks",
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_task_subtask(
+    body: CreateSubtaskBody,
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await home_service.create_subtask(
+        session, workspace_id, user.id, member.role, task_id, body
+    )
+
+
+@router.post(
+    "/tasks/{task_id}/attachments/presign",
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_task_attachment_presign(
+    body: PresignTaskAttachmentBody,
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await task_attachment_service.presign_upload(
+        session,
+        workspace_id,
+        user.id,
+        task_id,
+        file_name=body.file_name,
+        mime_type=body.mime_type,
+        size_bytes=body.size_bytes,
+    )
+
+
+@router.post("/tasks/{task_id}/attachments/{attachment_id}/upload")
+async def post_task_attachment_upload(
+    workspace_id: str,
+    task_id: str,
+    attachment_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+    file: UploadFile = File(...),
+    for_comment: bool = False,
+):
+    _ = task_id
+    data = await file.read()
+    return await task_attachment_service.upload_file_content(
+        session,
+        workspace_id,
+        user.id,
+        attachment_id,
+        data,
+        file.content_type,
+        for_comment=for_comment,
     )
 
 
@@ -417,10 +825,198 @@ async def patch_task(
     task_id: str,
     session: DbSession,
     user: CurrentUserDep,
-    _member: WorkspaceMemberDep,
+    member: WorkspaceMemberDep,
 ):
     return await home_service.update_task(
-        session, workspace_id, user.id, task_id, body
+        session, workspace_id, user.id, member.role, task_id, body
+    )
+
+
+@router.delete("/tasks/{task_id}")
+async def delete_task(
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await home_service.delete_task(
+        session, workspace_id, user.id, member.role, task_id
+    )
+
+
+@router.post("/tasks/{task_id}/follow", status_code=status.HTTP_201_CREATED)
+async def follow_task(
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.follow_task(
+        session, workspace_id, user.id, task_id
+    )
+
+
+@router.delete("/tasks/{task_id}/follow")
+async def unfollow_task(
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.unfollow_task(
+        session, workspace_id, user.id, task_id
+    )
+
+
+@router.post("/tasks/{task_id}/dependencies", status_code=status.HTTP_201_CREATED)
+async def add_task_dependency(
+    body: CreateTaskDependencyBody,
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await home_service.add_task_dependency(
+        session, workspace_id, user.id, member.role, task_id, body
+    )
+
+
+@router.post(
+    "/tasks/{task_id}/checklists",
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_task_checklist(
+    body: CreateChecklistBody,
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await home_service.add_checklist(
+        session, workspace_id, user.id, member.role, task_id, body
+    )
+
+
+@router.patch("/tasks/{task_id}/checklists/{checklist_id}")
+async def patch_task_checklist(
+    body: UpdateChecklistBody,
+    workspace_id: str,
+    task_id: str,
+    checklist_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await home_service.update_checklist(
+        session, workspace_id, user.id, member.role, task_id, checklist_id, body
+    )
+
+
+@router.delete("/tasks/{task_id}/checklists/{checklist_id}")
+async def delete_task_checklist(
+    workspace_id: str,
+    task_id: str,
+    checklist_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await home_service.delete_checklist(
+        session, workspace_id, user.id, member.role, task_id, checklist_id
+    )
+
+
+@router.post(
+    "/tasks/{task_id}/checklists/{checklist_id}/items",
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_task_checklist_item(
+    body: CreateChecklistItemBody,
+    workspace_id: str,
+    task_id: str,
+    checklist_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await home_service.add_checklist_item(
+        session, workspace_id, user.id, member.role, task_id, checklist_id, body
+    )
+
+
+@router.patch("/tasks/{task_id}/checklists/{checklist_id}/items/{item_id}")
+async def patch_task_checklist_item(
+    body: UpdateChecklistItemBody,
+    workspace_id: str,
+    task_id: str,
+    checklist_id: str,
+    item_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await home_service.update_checklist_item(
+        session, workspace_id, user.id, member.role, task_id, checklist_id, item_id, body
+    )
+
+
+@router.delete("/tasks/{task_id}/checklists/{checklist_id}/items/{item_id}")
+async def delete_task_checklist_item(
+    workspace_id: str,
+    task_id: str,
+    checklist_id: str,
+    item_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await home_service.delete_checklist_item(
+        session, workspace_id, user.id, member.role, task_id, checklist_id, item_id
+    )
+
+
+@router.get("/tasks/{task_id}/activity")
+async def get_task_activity(
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.list_task_activity(
+        session, workspace_id, user.id, task_id
+    )
+
+
+@router.get("/tasks/{task_id}/notifications")
+async def get_task_notifications(
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+    limit: int = Query(50, ge=1, le=100),
+):
+    return await home_service.list_task_notifications(
+        session, workspace_id, user.id, task_id, limit
+    )
+
+
+@router.post("/tasks/{task_id}/notifications/read-all")
+async def post_task_notifications_read_all(
+    workspace_id: str,
+    task_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await home_service.mark_task_notifications_read(
+        session, workspace_id, user.id, task_id
     )
 
 

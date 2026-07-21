@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_ROOT="${APP_ROOT:-$ROOT}"
 BACKEND="$APP_ROOT/backend-py"
-COMPOSE="docker compose -f $APP_ROOT/docker-compose.yml -f $APP_ROOT/docker-compose.prod.yml"
+COMPOSE="docker compose -f $APP_ROOT/docker-compose.yml -f $APP_ROOT/docker-compose.app.yml"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/kinetix}"
 RETENTION_DAYS="${RETENTION_DAYS:-14}"
 STAMP="$(date +%Y-%m-%d_%H%M%S)"

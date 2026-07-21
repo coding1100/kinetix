@@ -3,9 +3,9 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { HashIcon, LockIcon, SearchIcon } from "lucide-react";
-import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { HomePageShell } from "@/components/home/HomePageShell";
 import { useUiStore } from "@/stores/ui-store";
 import { useHomeQuery } from "@/hooks/use-home-query";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
@@ -60,30 +60,45 @@ export function AllChannelsView() {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-background">
-      <PageHeader title="All Channels">
-        <Button onClick={() => openModal("new-channel")}>Create Channel</Button>
-      </PageHeader>
-
-      <div className="border-b px-6 py-3">
-        <div className="relative max-w-xl">
-          <SearchIcon className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search for Channels"
-            className="h-9 pl-9 focus-visible:ring-[0.5px]"
-          />
+    <HomePageShell
+      title="All Channels"
+      subtitle="Search, follow, and manage channels across your workspace."
+      headerRight={
+        <Button
+          type="button"
+          size="sm"
+          className="h-8"
+          onClick={() => openModal("new-channel")}
+        >
+          Create Channel
+        </Button>
+      }
+      toolbar={
+        <div className="border-b border-border px-6 py-2.5">
+          <div className="relative max-w-2xl">
+            <SearchIcon className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search channels"
+              className="h-8 pl-9 text-sm focus-visible:ring-[0.5px]"
+            />
+          </div>
         </div>
-      </div>
-
+      }
+    >
       <HomeDataState
         loading={channelsQuery.loading}
         error={channelsQuery.error}
         empty={filtered.length === 0 && !channelsQuery.loading}
+        emptyMessage={
+          query.trim()
+            ? "No channels match your search."
+            : "No channels yet. Create one to start collaborating."
+        }
       >
         <div className="min-h-0 flex-1 overflow-auto">
-          <table className="w-full min-w-[720px] border-collapse text-sm">
+          <table className="w-full min-w-[960px] border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-background">
               <tr className="border-b text-left text-xs text-muted-foreground">
                 <th className="px-6 py-2.5 font-medium">Channels and Spaces</th>
@@ -104,7 +119,7 @@ export function AllChannelsView() {
                     <td className="px-6 py-3">
                       <ChannelNameCell channel={channel} />
                     </td>
-                    <td className="max-w-[200px] truncate px-4 py-3 text-muted-foreground">
+                    <td className="max-w-md truncate px-4 py-3 text-muted-foreground">
                       {channel.topic ?? "—"}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
@@ -118,7 +133,7 @@ export function AllChannelsView() {
                         variant="outline"
                         size="sm"
                         className="min-w-[88px]"
-                        onClick={() => toggleFollow(channel)}
+                        onClick={() => void toggleFollow(channel)}
                       >
                         {following ? "Following" : "Follow"}
                       </Button>
@@ -126,21 +141,11 @@ export function AllChannelsView() {
                   </tr>
                 );
               })}
-              {filtered.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="px-6 py-12 text-center text-muted-foreground"
-                  >
-                    No channels match your search.
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
       </HomeDataState>
-    </div>
+    </HomePageShell>
   );
 }
 
@@ -169,6 +174,11 @@ function ChannelNameCell({ channel }: { channel: Channel }) {
           </span>
           {channel.isPrivate ? (
             <LockIcon className="size-3 shrink-0 text-muted-foreground" />
+          ) : null}
+          {channel.unread > 0 ? (
+            <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground">
+              {channel.unread}
+            </span>
           ) : null}
         </span>
         {channel.spaceLabel ? (

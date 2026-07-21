@@ -1,0 +1,180 @@
+import re
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import get_settings
+from app.core.errors import AppError
+from app.db.models.home import Space, Task, TaskAttachment, TaskList
+from app.db.models.user import User
+from app.services.s3_service import object_exists, presign_get, presign_put, put_object
+
+_SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9._-]+")
+
+
+def _sanitize_filename(name: str) -> str:
+    base = (name or "file").strip().replace("\\", "/").split("/")[-1]
+    cleaned = _SAFE_NAME_RE.sub("_", base).strip("._")
+    return (cleaned or "file")[:180]
+
+
+async def _assert_task_in_workspace(
+    session: AsyncSession, workspace_id: str, task_id: str
+) -> Task:
+    task = await session.scalar(
+        select(Task)
+        .join(Task.task_list)
+        .join(TaskList.space)
+        .where(Task.id == task_id, Space.workspace_id == workspace_id)
+    )
+    if not task:
+        raise AppError(404, "NOT_FOUND", "Task not found")
+    return task
+
+
+async def presign_upload(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    task_id: str,
+    *,
+    file_name: str,
+    mime_type: str,
+    size_bytes: int,
+) -> dict:
+    settings = get_settings()
+    if not settings.s3_configured:
+        raise AppError(503, "SERVICE_UNAVAILABLE", "File storage is not configured")
+
+    if size_bytes <= 0 or size_bytes > settings.attachment_max_bytes:
+        raise AppError(400, "VALIDATION_ERROR", "File exceeds size limit")
+
+    await _assert_task_in_workspace(session, workspace_id, task_id)
+
+    attachment_id = str(uuid.uuid4())
+    safe_name = _sanitize_filename(file_name)
+    storage_key = (
+        f"workspaces/{workspace_id}/tasks/{task_id}/{attachment_id}/{safe_name}"
+    )
+
+    row = TaskAttachment(
+        id=attachment_id,
+        task_id=task_id,
+        workspace_id=workspace_id,
+        uploader_id=user_id,
+        storage_key=storage_key,
+        file_name=safe_name,
+        mime_type=mime_type.strip() or "application/octet-stream",
+        size_bytes=size_bytes,
+        status="pending",
+    )
+    session.add(row)
+    await session.commit()
+
+    upload_url = presign_put(storage_key, row.mime_type)
+    return {
+        "attachmentId": attachment_id,
+        "uploadUrl": upload_url,
+        "storageKey": storage_key,
+        "expiresIn": settings.s3_presign_expires_seconds,
+    }
+
+
+async def upload_file_content(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    attachment_id: str,
+    data: bytes,
+    content_type: str | None = None,
+    for_comment: bool = False,
+) -> dict:
+    row = await session.scalar(
+        select(TaskAttachment).where(
+            TaskAttachment.id == attachment_id,
+            TaskAttachment.workspace_id == workspace_id,
+        )
+    )
+    if not row or row.uploader_id != user_id:
+        raise AppError(404, "NOT_FOUND", "Attachment not found")
+    if row.status not in {"pending", "ready"}:
+        raise AppError(400, "VALIDATION_ERROR", "Attachment is no longer uploadable")
+
+    settings = get_settings()
+    if len(data) <= 0 or len(data) > settings.attachment_max_bytes:
+        raise AppError(400, "VALIDATION_ERROR", "File exceeds size limit")
+
+    mime = (content_type or row.mime_type or "application/octet-stream").strip()
+    put_object(row.storage_key, data, mime)
+    row.mime_type = mime
+    row.size_bytes = len(data)
+    row.status = "ready"
+    await session.commit()
+    # Attachments staged from the comment/reply composer are uploaded before
+    # the comment exists (comment_id gets linked afterward by add_task_comment),
+    # so `row.comment_id is None` can't distinguish "standalone task
+    # attachment" from "about-to-be-a-comment-attachment" at this point -
+    # the caller must say which one this is. Comment attachments get no
+    # separate notification/activity entry: the comment itself already shows
+    # up in the feed with the attachment embedded in it.
+    if not for_comment:
+        from app.services.notification_service import (
+            create_task_activity_notifications,
+            emit_home_notifications,
+            task_notification_recipients,
+        )
+
+        task = await _assert_task_in_workspace(session, workspace_id, row.task_id)
+        recipients = await task_notification_recipients(
+            session, task_id=row.task_id, exclude_user_id=user_id
+        )
+        notifications = await create_task_activity_notifications(
+            session,
+            workspace_id=workspace_id,
+            actor_user_id=user_id,
+            task_name=task.name,
+            task_id=row.task_id,
+            recipient_ids=recipients,
+            title=f"Attachment added: {task.name}",
+            preview_template="{actor} uploaded an attachment to {task}",
+            activity_kind="task_attachment_uploaded",
+        )
+        if notifications:
+            await session.commit()
+            await emit_home_notifications(session, workspace_id, notifications)
+
+        actor = await session.get(User, user_id)
+        actor_name = actor.full_name if actor else "Someone"
+        entry = {
+            "id": str(uuid.uuid4()),
+            "type": "activity",
+            "title": f"{actor_name} added attachment \"{row.file_name}\"",
+            "preview": f'{actor_name} added attachment "{row.file_name}"',
+            "source": task.name,
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "activityKind": "task_attachment_uploaded",
+            "actorName": actor_name,
+        }
+        task.activity = [*(task.activity or []), entry]
+        await session.commit()
+    return {"ok": True, "attachmentId": attachment_id, "status": "ready"}
+
+
+def map_task_attachment(row: TaskAttachment) -> dict:
+    download_url = None
+    if row.status == "ready":
+        try:
+            download_url = presign_get(row.storage_key, row.file_name)
+        except Exception:
+            download_url = None
+    return {
+        "id": row.id,
+        "fileName": row.file_name,
+        "mimeType": row.mime_type,
+        "sizeBytes": row.size_bytes,
+        "status": row.status,
+        "downloadUrl": download_url,
+        "createdAt": row.created_at.isoformat() if row.created_at else None,
+    }

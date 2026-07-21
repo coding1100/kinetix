@@ -3,6 +3,7 @@ import enum
 
 class WorkspaceRole(str, enum.Enum):
     OWNER = "OWNER"
+    SUPER_ADMIN = "SUPER_ADMIN"
     ADMIN = "ADMIN"
     MEMBER = "MEMBER"
     GUEST = "GUEST"
@@ -15,11 +16,29 @@ class MemberStatus(str, enum.Enum):
     SUSPENDED = "SUSPENDED"
 
 
+class TeamRole(str, enum.Enum):
+    LEAD = "LEAD"
+    MEMBER = "MEMBER"
+
+
+class PermissionLevel(str, enum.Enum):
+    VIEW = "VIEW"
+    COMMENT = "COMMENT"
+    EDIT = "EDIT"
+
+
 class TaskStatus(str, enum.Enum):
     OPEN = "OPEN"
     TODO = "TODO"
     IN_PROGRESS = "IN_PROGRESS"
     DONE = "DONE"
+
+
+class StatusGroup(str, enum.Enum):
+    NOT_STARTED = "NOT_STARTED"
+    ACTIVE = "ACTIVE"
+    DONE = "DONE"
+    CLOSED = "CLOSED"
 
 
 class TaskPriority(str, enum.Enum):

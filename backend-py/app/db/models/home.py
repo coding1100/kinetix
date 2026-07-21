@@ -1,18 +1,20 @@
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from sqlalchemy import (
     Boolean,
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy.dialects.postgresql import ARRAY, JSON, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -20,6 +22,9 @@ from app.db.models.enums import (
     InboxBucket,
     InboxItemType,
     InboxTimeGroup,
+    MemberStatus,
+    PermissionLevel,
+    StatusGroup,
     TaskPriority,
     TaskStatus,
 )
@@ -37,11 +42,75 @@ class Space(Base):
     name: Mapped[str] = mapped_column(String)
     color: Mapped[str] = mapped_column(String, default="#7B68EE")
     description: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_personal: Mapped[bool] = mapped_column(
+        "isPersonal", Boolean, default=False, server_default="false"
+    )
+    is_private: Mapped[bool] = mapped_column(
+        "isPrivate", Boolean, default=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(
         "createdAt", DateTime(timezone=True), server_default=func.now()
     )
-    folders: Mapped[list["Folder"]] = relationship(back_populates="space")
-    lists: Mapped[list["TaskList"]] = relationship(back_populates="space")
+    folders: Mapped[list["Folder"]] = relationship(
+        back_populates="space", passive_deletes=True
+    )
+    lists: Mapped[list["TaskList"]] = relationship(
+        back_populates="space", passive_deletes=True
+    )
+    members: Mapped[list["SpaceMember"]] = relationship(
+        back_populates="space", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class SpaceMember(Base):
+    """Explicit per-user permission override on a Space.
+
+    Only meaningful for private Spaces (grants access) or to hand a
+    GUEST/LIMITED_MEMBER a higher level than their role default. Owner/
+    Super Admin always bypass this and don't need a row here.
+
+    `user_id` is nullable to support sharing with an email that has a
+    pending workspace Invite but hasn't accepted yet: such rows are created
+    with `user_id=None, email=<address>, status=INVITED` and get filled in
+    with a real `user_id` (status flips to ACTIVE) when that invite is
+    accepted — see `resolve_pending_shares` in folder_list_permissions.py.
+    """
+
+    __tablename__ = "SpaceMember"
+    __table_args__ = (
+        UniqueConstraint("spaceId", "userId", name="SpaceMember_spaceId_userId_key"),
+        Index(
+            "SpaceMember_spaceId_email_key",
+            "spaceId",
+            "email",
+            unique=True,
+            postgresql_where=Text("\"email\" IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    space_id: Mapped[str] = mapped_column(
+        "spaceId", String, ForeignKey("Space.id", ondelete="CASCADE")
+    )
+    user_id: Mapped[str | None] = mapped_column(
+        "userId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=True
+    )
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[MemberStatus] = mapped_column(
+        Enum(MemberStatus, name="MemberStatus"),
+        default=MemberStatus.ACTIVE,
+        server_default=MemberStatus.ACTIVE.value,
+    )
+    permission_level: Mapped[PermissionLevel] = mapped_column(
+        "permissionLevel", Enum(PermissionLevel, name="PermissionLevel")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        "createdAt", DateTime(timezone=True), server_default=func.now()
+    )
+    space: Mapped["Space"] = relationship(back_populates="members")
+    user: Mapped["User | None"] = relationship()
 
 
 class Folder(Base):
@@ -55,8 +124,59 @@ class Folder(Base):
     )
     name: Mapped[str] = mapped_column(String)
     sort_order: Mapped[int] = mapped_column("sortOrder", Integer, default=0)
+    is_private: Mapped[bool] = mapped_column(
+        "isPrivate", Boolean, default=False, server_default="false"
+    )
     space: Mapped["Space"] = relationship(back_populates="folders")
-    lists: Mapped[list["TaskList"]] = relationship(back_populates="folder")
+    lists: Mapped[list["TaskList"]] = relationship(
+        back_populates="folder", passive_deletes=True
+    )
+    members: Mapped[list["FolderMember"]] = relationship(
+        back_populates="folder", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class FolderMember(Base):
+    """Explicit per-user permission grant on a Folder. Same shape/semantics
+    as SpaceMember, scoped one level down — see SpaceMember's docstring."""
+
+    __tablename__ = "FolderMember"
+    __table_args__ = (
+        UniqueConstraint(
+            "folderId", "userId", name="FolderMember_folderId_userId_key"
+        ),
+        Index(
+            "FolderMember_folderId_email_key",
+            "folderId",
+            "email",
+            unique=True,
+            postgresql_where=Text("\"email\" IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    folder_id: Mapped[str] = mapped_column(
+        "folderId", String, ForeignKey("Folder.id", ondelete="CASCADE")
+    )
+    user_id: Mapped[str | None] = mapped_column(
+        "userId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=True
+    )
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[MemberStatus] = mapped_column(
+        Enum(MemberStatus, name="MemberStatus"),
+        default=MemberStatus.ACTIVE,
+        server_default=MemberStatus.ACTIVE.value,
+    )
+    permission_level: Mapped[PermissionLevel] = mapped_column(
+        "permissionLevel", Enum(PermissionLevel, name="PermissionLevel")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        "createdAt", DateTime(timezone=True), server_default=func.now()
+    )
+    folder: Mapped["Folder"] = relationship(back_populates="members")
+    user: Mapped["User | None"] = relationship()
 
 
 class TaskList(Base):
@@ -73,9 +193,83 @@ class TaskList(Base):
     )
     name: Mapped[str] = mapped_column(String)
     sort_order: Mapped[int] = mapped_column("sortOrder", Integer, default=0)
+    is_private: Mapped[bool] = mapped_column(
+        "isPrivate", Boolean, default=False, server_default="false"
+    )
     space: Mapped["Space"] = relationship(back_populates="lists")
     folder: Mapped["Folder | None"] = relationship(back_populates="lists")
-    tasks: Mapped[list["Task"]] = relationship(back_populates="task_list")
+    tasks: Mapped[list["Task"]] = relationship(
+        back_populates="task_list", passive_deletes=True
+    )
+    statuses: Mapped[list["ListStatus"]] = relationship(
+        back_populates="task_list", passive_deletes=True
+    )
+    members: Mapped[list["ListMember"]] = relationship(
+        back_populates="task_list", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class ListMember(Base):
+    """Explicit per-user permission grant on a List. Same shape/semantics
+    as SpaceMember, scoped to a single List — see SpaceMember's docstring."""
+
+    __tablename__ = "ListMember"
+    __table_args__ = (
+        UniqueConstraint("listId", "userId", name="ListMember_listId_userId_key"),
+        Index(
+            "ListMember_listId_email_key",
+            "listId",
+            "email",
+            unique=True,
+            postgresql_where=Text("\"email\" IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    list_id: Mapped[str] = mapped_column(
+        "listId", String, ForeignKey("TaskList.id", ondelete="CASCADE")
+    )
+    user_id: Mapped[str | None] = mapped_column(
+        "userId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=True
+    )
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[MemberStatus] = mapped_column(
+        Enum(MemberStatus, name="MemberStatus"),
+        default=MemberStatus.ACTIVE,
+        server_default=MemberStatus.ACTIVE.value,
+    )
+    permission_level: Mapped[PermissionLevel] = mapped_column(
+        "permissionLevel", Enum(PermissionLevel, name="PermissionLevel")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        "createdAt", DateTime(timezone=True), server_default=func.now()
+    )
+    task_list: Mapped["TaskList"] = relationship(back_populates="members")
+    user: Mapped["User | None"] = relationship()
+
+
+class ListStatus(Base):
+    __tablename__ = "ListStatus"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    list_id: Mapped[str] = mapped_column(
+        "listId", String, ForeignKey("TaskList.id", ondelete="CASCADE")
+    )
+    name: Mapped[str] = mapped_column(String)
+    color: Mapped[str] = mapped_column(String, default="#87909e")
+    status_group: Mapped[StatusGroup] = mapped_column(
+        "statusGroup", Enum(StatusGroup, name="StatusGroup"), default=StatusGroup.NOT_STARTED
+    )
+    legacy_key: Mapped[str | None] = mapped_column("legacyKey", String, nullable=True)
+    sort_order: Mapped[int] = mapped_column("sortOrder", Integer, default=0)
+    task_list: Mapped["TaskList"] = relationship(back_populates="statuses")
+    tasks: Mapped[list["Task"]] = relationship(
+        back_populates="list_status", passive_deletes=True
+    )
 
 
 class Task(Base):
@@ -92,12 +286,36 @@ class Task(Base):
     status: Mapped[TaskStatus] = mapped_column(
         Enum(TaskStatus, name="TaskStatus"), default=TaskStatus.TODO
     )
+    status_id: Mapped[str | None] = mapped_column(
+        "statusId", String, ForeignKey("ListStatus.id", ondelete="SET NULL"), nullable=True
+    )
     status_color: Mapped[str] = mapped_column("statusColor", String, default="#87909e")
     priority: Mapped[TaskPriority | None] = mapped_column(
         Enum(TaskPriority, name="TaskPriority"), nullable=True
     )
     due_date: Mapped[datetime | None] = mapped_column(
         "dueDate", DateTime(timezone=True), nullable=True
+    )
+    start_date: Mapped[datetime | None] = mapped_column(
+        "startDate", DateTime(timezone=True), nullable=True
+    )
+    time_estimate_minutes: Mapped[int | None] = mapped_column(
+        "timeEstimateMinutes", Integer, nullable=True
+    )
+    assignee_ids: Mapped[list[str]] = mapped_column(
+        "assigneeIds", ARRAY(String), nullable=False, default=list, server_default="{}"
+    )
+    follower_ids: Mapped[list[str]] = mapped_column(
+        "followerIds", ARRAY(String), nullable=False, default=list, server_default="{}"
+    )
+    parent_task_id: Mapped[str | None] = mapped_column(
+        "parentTaskId",
+        String,
+        ForeignKey("Task.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    activity: Mapped[list[dict]] = mapped_column(
+        "activity", JSONB, nullable=False, default=list, server_default="[]"
     )
     created_at: Mapped[datetime] = mapped_column(
         "createdAt", DateTime(timezone=True), server_default=func.now()
@@ -109,21 +327,147 @@ class Task(Base):
         onupdate=func.now(),
     )
     task_list: Mapped["TaskList"] = relationship(back_populates="tasks")
-    assignees: Mapped[list["TaskAssignee"]] = relationship(back_populates="task")
-    comments: Mapped[list["TaskComment"]] = relationship(back_populates="task")
+    list_status: Mapped["ListStatus | None"] = relationship(back_populates="tasks")
+    comments: Mapped[list["TaskComment"]] = relationship(
+        back_populates="task", cascade="all, delete-orphan"
+    )
+    parent_task: Mapped["Task | None"] = relationship(
+        "Task",
+        remote_side="Task.id",
+        foreign_keys=[parent_task_id],
+        back_populates="subtasks",
+    )
+    subtasks: Mapped[list["Task"]] = relationship(
+        "Task",
+        foreign_keys=[parent_task_id],
+        back_populates="parent_task",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    attachments: Mapped[list["TaskAttachment"]] = relationship(
+        back_populates="task", cascade="all, delete-orphan"
+    )
+    checklists: Mapped[list["TaskChecklist"]] = relationship(
+        back_populates="task", cascade="all, delete-orphan"
+    )
 
 
-class TaskAssignee(Base):
-    __tablename__ = "TaskAssignee"
+class TaskAttachment(Base):
+    __tablename__ = "TaskAttachment"
 
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
     task_id: Mapped[str] = mapped_column(
-        "taskId", String, ForeignKey("Task.id", ondelete="CASCADE"), primary_key=True
+        "taskId", String, ForeignKey("Task.id", ondelete="CASCADE")
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        "workspaceId", String, ForeignKey("Workspace.id", ondelete="CASCADE")
+    )
+    uploader_id: Mapped[str] = mapped_column(
+        "uploaderId", String, ForeignKey("User.id", ondelete="CASCADE")
+    )
+    comment_id: Mapped[Optional[str]] = mapped_column(
+        "commentId", String, ForeignKey("TaskComment.id", ondelete="SET NULL"), nullable=True
+    )
+    storage_key: Mapped[str] = mapped_column("storageKey", String)
+    file_name: Mapped[str] = mapped_column("fileName", String)
+    mime_type: Mapped[str] = mapped_column("mimeType", String)
+    size_bytes: Mapped[int] = mapped_column("sizeBytes")
+    status: Mapped[str] = mapped_column(String, default="pending")
+    created_at: Mapped[datetime] = mapped_column(
+        "createdAt", DateTime(timezone=True), server_default=func.now()
+    )
+    task: Mapped["Task"] = relationship(back_populates="attachments")
+    uploader: Mapped["User"] = relationship()
+
+
+class TaskTimeEntry(Base):
+    __tablename__ = "TaskTimeEntry"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    task_id: Mapped[str] = mapped_column(
+        "taskId", String, ForeignKey("Task.id", ondelete="CASCADE")
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        "workspaceId", String, ForeignKey("Workspace.id", ondelete="CASCADE")
     )
     user_id: Mapped[str] = mapped_column(
-        "userId", String, ForeignKey("User.id", ondelete="CASCADE"), primary_key=True
+        "userId", String, ForeignKey("User.id", ondelete="CASCADE")
     )
-    task: Mapped["Task"] = relationship(back_populates="assignees")
+    started_at: Mapped[datetime] = mapped_column(
+        "startedAt", DateTime(timezone=True), server_default=func.now()
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(
+        "endedAt", DateTime(timezone=True), nullable=True
+    )
+    task: Mapped["Task"] = relationship()
     user: Mapped["User"] = relationship()
+
+
+class TaskDependency(Base):
+    __tablename__ = "TaskDependency"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    task_id: Mapped[str] = mapped_column(
+        "taskId", String, ForeignKey("Task.id", ondelete="CASCADE")
+    )
+    related_task_id: Mapped[str] = mapped_column(
+        "relatedTaskId", String, ForeignKey("Task.id", ondelete="CASCADE")
+    )
+    dependency_type: Mapped[str] = mapped_column("dependencyType", String)
+    created_at: Mapped[datetime] = mapped_column(
+        "createdAt", DateTime(timezone=True), server_default=func.now()
+    )
+    task: Mapped["Task"] = relationship(foreign_keys=[task_id])
+    related_task: Mapped["Task"] = relationship(foreign_keys=[related_task_id])
+
+
+class TaskChecklist(Base):
+    __tablename__ = "TaskChecklist"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    task_id: Mapped[str] = mapped_column(
+        "taskId", String, ForeignKey("Task.id", ondelete="CASCADE")
+    )
+    name: Mapped[str] = mapped_column(String)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        "createdAt", DateTime(timezone=True), server_default=func.now()
+    )
+    task: Mapped["Task"] = relationship(back_populates="checklists")
+    items: Mapped[list["TaskChecklistItem"]] = relationship(
+        back_populates="checklist", cascade="all, delete-orphan"
+    )
+
+
+class TaskChecklistItem(Base):
+    __tablename__ = "TaskChecklistItem"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    checklist_id: Mapped[str] = mapped_column(
+        "checklistId", String, ForeignKey("TaskChecklist.id", ondelete="CASCADE")
+    )
+    text: Mapped[str] = mapped_column(String)
+    is_checked: Mapped[bool] = mapped_column(
+        "isChecked", Boolean, default=False, server_default="false"
+    )
+    assignee_id: Mapped[str | None] = mapped_column(
+        "assigneeId", String, ForeignKey("User.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        "createdAt", DateTime(timezone=True), server_default=func.now()
+    )
+    checklist: Mapped["TaskChecklist"] = relationship(back_populates="items")
+    assignee: Mapped["User | None"] = relationship()
 
 
 class TaskComment(Base):
@@ -138,12 +482,38 @@ class TaskComment(Base):
     user_id: Mapped[str] = mapped_column(
         "userId", String, ForeignKey("User.id", ondelete="CASCADE")
     )
+    parent_comment_id: Mapped[Optional[str]] = mapped_column(
+        "parentCommentId",
+        String,
+        ForeignKey("TaskComment.id", ondelete="CASCADE"),
+        nullable=True,
+    )
     body: Mapped[str] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(
         "createdAt", DateTime(timezone=True), server_default=func.now()
     )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        "updatedAt", DateTime(timezone=True), nullable=True
+    )
     task: Mapped["Task"] = relationship(back_populates="comments")
     user: Mapped["User"] = relationship()
+    parent: Mapped[Optional["TaskComment"]] = relationship(
+        "TaskComment",
+        remote_side="TaskComment.id",
+        back_populates="replies",
+        foreign_keys=[parent_comment_id],
+    )
+    replies: Mapped[list["TaskComment"]] = relationship(
+        "TaskComment",
+        back_populates="parent",
+        foreign_keys=[parent_comment_id],
+        lazy="select",
+    )
+    attachments: Mapped[list["TaskAttachment"]] = relationship(
+        "TaskAttachment",
+        foreign_keys="TaskAttachment.comment_id",
+        lazy="select",
+    )
 
 
 class AssignedComment(Base):
@@ -277,6 +647,28 @@ class HomeRecent(Base):
     item_type: Mapped[str] = mapped_column("itemType", String)
     space: Mapped[str] = mapped_column(String)
     href: Mapped[str] = mapped_column(String)
+    visited_at: Mapped[datetime] = mapped_column(
+        "visitedAt", DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class UserTaskLineup(Base):
+    __tablename__ = "UserTaskLineup"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        "workspaceId", String, ForeignKey("Workspace.id", ondelete="CASCADE")
+    )
+    user_id: Mapped[str] = mapped_column(
+        "userId", String, ForeignKey("User.id", ondelete="CASCADE")
+    )
+    task_id: Mapped[str] = mapped_column(
+        "taskId", String, ForeignKey("Task.id", ondelete="CASCADE")
+    )
+    sort_order: Mapped[int] = mapped_column("sortOrder", Integer, default=0)
+    task: Mapped["Task"] = relationship()
 
 
 class UserHomeSidebar(Base):

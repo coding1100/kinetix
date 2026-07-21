@@ -32,12 +32,56 @@ export interface SpaceDto {
   memberCount: number;
   listCount: number;
   description?: string;
+  isPersonal?: boolean;
+  isPrivate?: boolean;
+  canShare?: boolean;
+  canManageStructure?: boolean;
   folders?: {
     id: string;
     name: string;
-    lists: { id: string; name: string; taskCount: number }[];
+    lists: {
+      id: string;
+      name: string;
+      taskCount: number;
+      canShare?: boolean;
+      canManageStructure?: boolean;
+      isPrivate?: boolean;
+    }[];
+    canShare?: boolean;
+    canManageStructure?: boolean;
+    isPrivate?: boolean;
   }[];
-  standaloneLists?: { id: string; name: string; taskCount: number }[];
+  standaloneLists?: {
+    id: string;
+    name: string;
+    taskCount: number;
+    canShare?: boolean;
+    canManageStructure?: boolean;
+    isPrivate?: boolean;
+  }[];
+  lastActivityAt?: string;
+}
+
+export interface SharedWithMeEntryDto {
+  type: "folder" | "list";
+  id: string;
+  name: string;
+  spaceId: string;
+  spaceName: string;
+  lists?: {
+    id: string;
+    name: string;
+    taskCount: number;
+    canShare?: boolean;
+    isPrivate?: boolean;
+  }[];
+}
+
+export function fetchSharedWithMe(token: string, workspaceId: string) {
+  return apiFetch<{ data: SharedWithMeEntryDto[] }>(
+    wsPath(workspaceId, "/home/shared-with-me"),
+    { token }
+  );
 }
 
 export interface PostDto {
@@ -203,6 +247,143 @@ export function fetchRecents(token: string, workspaceId: string) {
   return apiFetch<{
     data: { id: string; name: string; type: string; space: string; href: string }[];
   }>(wsPath(workspaceId, "/home/recents"), { token });
+}
+
+export function createReminder(
+  token: string,
+  workspaceId: string,
+  input: { title: string; dueAt?: string }
+) {
+  return apiFetch<{ id: string; title: string; due: string }>(
+    wsPath(workspaceId, "/home/reminders"),
+    { method: "POST", token, body: JSON.stringify(input) }
+  );
+}
+
+// Diff-only shape: which item ids are pinned + their order, plus which
+// sidebar sections (Spaces/Channels/Direct Messages) are collapsed. New nav
+// items/sections added later just fall back to their code-defined default
+// until the user touches them, so this never needs a migration when we ship
+// new items.
+export interface HomeSidebarConfig {
+  pinnedIds: string[];
+  order: string[];
+  collapsedSections: string[];
+}
+
+export function fetchHomeSidebarConfig(token: string, workspaceId: string) {
+  return apiFetch<{ config: HomeSidebarConfig | null }>(
+    wsPath(workspaceId, "/home/sidebar"),
+    { token }
+  );
+}
+
+export function updateHomeSidebarConfig(
+  token: string,
+  workspaceId: string,
+  config: HomeSidebarConfig
+) {
+  return apiFetch<{ config: HomeSidebarConfig }>(
+    wsPath(workspaceId, "/home/sidebar"),
+    { method: "PATCH", token, body: JSON.stringify({ config }) }
+  );
+}
+
+export function deleteReminder(
+  token: string,
+  workspaceId: string,
+  reminderId: string
+) {
+  return apiFetch<{ ok: boolean }>(
+    wsPath(workspaceId, `/home/reminders/${reminderId}`),
+    { method: "DELETE", token }
+  );
+}
+
+export function createFavorite(
+  token: string,
+  workspaceId: string,
+  input: { name: string; itemType: string; href: string }
+) {
+  return apiFetch<{ id: string; name: string; type: string; href: string }>(
+    wsPath(workspaceId, "/home/favorites"),
+    { method: "POST", token, body: JSON.stringify(input) }
+  );
+}
+
+export function deleteFavorite(
+  token: string,
+  workspaceId: string,
+  favoriteId: string
+) {
+  return apiFetch<{ ok: boolean }>(
+    wsPath(workspaceId, `/home/favorites/${favoriteId}`),
+    { method: "DELETE", token }
+  );
+}
+
+export function recordRecent(
+  token: string,
+  workspaceId: string,
+  input: { name: string; itemType: string; space?: string; href: string }
+) {
+  return apiFetch<{ id: string; name: string; type: string; space: string; href: string }>(
+    wsPath(workspaceId, "/home/recents"),
+    { method: "POST", token, body: JSON.stringify(input) }
+  );
+}
+
+export function fetchLineup(token: string, workspaceId: string) {
+  return apiFetch<{ data: Task[] }>(wsPath(workspaceId, "/home/lineup"), { token });
+}
+
+export function addToLineup(
+  token: string,
+  workspaceId: string,
+  taskId: string
+) {
+  return apiFetch<{ ok: boolean; taskId: string }>(
+    wsPath(workspaceId, "/home/lineup"),
+    { method: "POST", token, body: JSON.stringify({ taskId }) }
+  );
+}
+
+export function removeFromLineup(
+  token: string,
+  workspaceId: string,
+  taskId: string
+) {
+  return apiFetch<{ ok: boolean }>(
+    wsPath(workspaceId, `/home/lineup/${taskId}`),
+    { method: "DELETE", token }
+  );
+}
+
+export function reorderLineup(
+  token: string,
+  workspaceId: string,
+  taskIds: string[]
+) {
+  return apiFetch<{ ok: boolean }>(wsPath(workspaceId, "/home/lineup/reorder"), {
+    method: "PUT",
+    token,
+    body: JSON.stringify({ taskIds }),
+  });
+}
+
+export function recordTaskRecent(
+  token: string,
+  workspaceId: string,
+  task: Task
+) {
+  return recordRecent(token, workspaceId, {
+    name: task.name,
+    itemType: "task",
+    space: task.space,
+    href: task.listId
+      ? `/spaces/l/${task.listId}?task=${task.id}`
+      : `/home/tasks/${task.id}`,
+  });
 }
 
 export function fetchUnreadSummary(token: string, workspaceId: string) {

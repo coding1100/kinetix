@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Task } from "@/lib/types/task";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { taskPriorityLabel } from "@/lib/task-priority";
 
 const rowClassName =
   "group flex w-full cursor-pointer items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-left transition-colors hover:border-border hover:bg-muted/60";
@@ -25,6 +26,7 @@ export function TaskRow({
         <p className="truncate text-sm font-medium">{task.name}</p>
         <p className="truncate text-xs text-muted-foreground">
           {task.space} · {task.list}
+          {task.priority ? ` · ${taskPriorityLabel(task.priority)}` : ""}
         </p>
       </div>
       {task.dueDate && (

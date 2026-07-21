@@ -3,10 +3,13 @@ import { fetchSpacesTree, createListTask, firstListIdFromSpaces } from "@/lib/ap
 export async function createTaskFromThreadMessage(
   token: string,
   workspaceId: string,
-  messageBody: string
+  messageBody: string,
+  listId?: string
 ) {
-  const spacesRes = await fetchSpacesTree(token, workspaceId);
-  const listId = firstListIdFromSpaces(spacesRes.data);
+  if (!listId) {
+    const spacesRes = await fetchSpacesTree(token, workspaceId);
+    listId = firstListIdFromSpaces(spacesRes.data) ?? undefined;
+  }
   if (!listId) {
     throw new Error("No list available. Add a space and list first.");
   }

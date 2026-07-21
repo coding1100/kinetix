@@ -4,12 +4,13 @@ import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
 import { toast } from "sonner";
-import { getSocketBaseUrl } from "@/lib/socket/config";
+import { getSocketConnectionConfig } from "@/lib/socket/config";
 import type {
   ChatChannelJoinedPayload,
   ChatChannelMemberPayload,
+  ChatChannelPrivacyPayload,
   ChatChannelRemovedPayload,
-  ChatDmJoinedPayload,
+  ChatChannelRenamedPayload,
   ChatMessageDeletePayload,
   ChatMessageEditPayload,
   ChatReactionPayload,
@@ -19,22 +20,29 @@ import type {
   HomeNotificationPayload,
   PresenceSyncPayload,
   PresenceUpdatePayload,
-  WorkspaceMemberJoinedPayload,
+  ResourceAccessChangedPayload,
+  TaskRealtimePayload,
+  WorkspaceMemberRolePayload,
 } from "@/lib/types/realtime";
+import { ingestTaskEvent } from "@/lib/tasks/realtime";
 import { registerChatTypingSocket } from "@/lib/socket/chat-typing";
-import { joinDmRoom, registerDmRoomsSocket } from "@/lib/socket/dm-rooms";
 import { applyHomeNotification } from "@/lib/notifications/realtime";
-import { applyWorkspaceMemberJoined } from "@/lib/workspace/realtime";
+import { clearLiveNotifications } from "@/lib/notifications/live-cache";
+import { bumpWorkspaceMembersRefresh } from "@/lib/workspace/realtime";
+import { getMe } from "@/lib/api/auth";
 import {
   applyChannelJoinedToSidebar,
   applyChannelMemberUpdate,
+  applyChannelPrivacyChanged,
   applyChannelRemovedFromSidebar,
+  applyChannelRenamedToSidebar,
   applyRealtimeMessageToSidebar,
 } from "@/lib/chat/sidebar-realtime";
 import { useAuthStore } from "@/stores/auth-store";
 import { useChatStore } from "@/stores/chat-store";
 import { usePresenceStore } from "@/stores/presence-store";
 import { useProfileStore } from "@/stores/profile-store";
+import { useSpacesStore } from "@/stores/spaces-store";
 
 export function ChatSocketProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -42,6 +50,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
   const userId = useAuthStore((s) => s.user?.id);
   const workspaceId = useAuthStore((s) => s.activeWorkspaceId);
   const hydrated = useAuthStore((s) => s.hydrated);
+  const updateSession = useAuthStore((s) => s.updateSession);
   const presence = useProfileStore((s) => s.presence);
   const ingestRealtimeEvent = useChatStore((s) => s.ingestRealtimeEvent);
   const ingestMessageEditEvent = useChatStore((s) => s.ingestMessageEditEvent);
@@ -54,6 +63,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
   const syncPresence = usePresenceStore((s) => s.syncPresence);
   const upsertPresence = usePresenceStore((s) => s.upsertPresence);
   const setPresenceWorkspace = usePresenceStore((s) => s.setWorkspace);
+  const bumpSpacesRefresh = useSpacesStore((s) => s.bumpRefresh);
   const socketRef = useRef<Socket | null>(null);
   const presenceRef = useRef(presence);
   const joinedWorkspaceRef = useRef<string | null>(null);
@@ -65,18 +75,21 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     setPresenceWorkspace(workspaceId);
     joinedWorkspaceRef.current = null;
+    // Drop live notifications cached for the previous workspace.
+    clearLiveNotifications();
   }, [workspaceId, setPresenceWorkspace]);
 
   useEffect(() => {
     if (!hydrated || !accessToken) return;
+    const { url, path } = getSocketConnectionConfig();
 
-    const socket: Socket = io(getSocketBaseUrl(), {
+    const socket: Socket = io(url, {
+      path,
       auth: { token: accessToken },
       transports: ["websocket", "polling"],
     });
     socketRef.current = socket;
     registerChatTypingSocket(socket);
-    registerDmRoomsSocket(socket);
 
     const joinWorkspace = () => {
       if (!workspaceId) return;
@@ -102,16 +115,6 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     socket.on("chat:channel:joined", (payload: ChatChannelJoinedPayload) => {
       applyChannelJoinedToSidebar(payload, userId);
     });
-    socket.on("chat:dm:joined", (payload: ChatDmJoinedPayload) => {
-      if (!userId || !payload.userIds.includes(userId)) return;
-      joinDmRoom(payload.workspaceId, payload.conversationId);
-    });
-    socket.on(
-      "workspace:member:joined",
-      (payload: WorkspaceMemberJoinedPayload) => {
-        applyWorkspaceMemberJoined(payload, workspaceId ?? undefined);
-      }
-    );
     socket.on("chat:channel:removed", (payload: ChatChannelRemovedPayload) => {
       const viewingRemoved = applyChannelRemovedFromSidebar(payload, userId);
       if (!viewingRemoved) return;
@@ -121,11 +124,64 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       router.push(nextChannel ? `/chat/c/${nextChannel.id}` : "/chat");
     });
     socket.on("chat:channel:member", (payload: ChatChannelMemberPayload) => {
-      applyChannelMemberUpdate(payload, userId, accessToken);
+      const viewingRemoved = applyChannelMemberUpdate(
+        payload,
+        userId,
+        accessToken
+      );
+      if (!viewingRemoved) return;
+      toast.info("This channel is no longer available");
+      const remaining = useChatStore.getState().sidebarListsCache?.channels;
+      const nextChannel = remaining?.[0];
+      router.push(nextChannel ? `/chat/c/${nextChannel.id}` : "/chat");
+    });
+    socket.on("chat:channel:renamed", (payload: ChatChannelRenamedPayload) => {
+      applyChannelRenamedToSidebar(payload);
+    });
+    socket.on("chat:channel:privacy", (payload: ChatChannelPrivacyPayload) => {
+      applyChannelPrivacyChanged(payload);
     });
     socket.on("home:notification", (payload: HomeNotificationPayload) => {
-      applyHomeNotification(payload, userId);
+      applyHomeNotification(payload, userId, workspaceId);
     });
+    socket.on(
+      "workspace:member:role",
+      (payload: WorkspaceMemberRolePayload) => {
+        if (payload.workspaceId !== workspaceId) return;
+        bumpWorkspaceMembersRefresh();
+        if (payload.userId !== userId) return;
+        void getMe(accessToken).then((me) => {
+          updateSession({
+            accessToken,
+            user: {
+              id: me.id,
+              email: me.email,
+              fullName: me.fullName,
+              avatarUrl: me.avatarUrl,
+            },
+            workspaces: me.workspaces,
+            activeWorkspaceId: workspaceId,
+          });
+          toast.info("Your role in this workspace was updated");
+        });
+      }
+    );
+    socket.on(
+      "space:access:removed",
+      (payload: ResourceAccessChangedPayload) => {
+        if (payload.workspaceId !== workspaceId) return;
+        if (!userId || !payload.userIds.includes(userId)) return;
+        bumpSpacesRefresh();
+      }
+    );
+    socket.on(
+      "space:access:granted",
+      (payload: ResourceAccessChangedPayload) => {
+        if (payload.workspaceId !== workspaceId) return;
+        if (!userId || !payload.userIds.includes(userId)) return;
+        bumpSpacesRefresh();
+      }
+    );
     socket.on("chat:message:edit", (payload: ChatMessageEditPayload) => {
       ingestMessageEditEvent(payload);
     });
@@ -141,6 +197,10 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     socket.on("chat:read", (payload: ChatReadPayload) => {
       ingestReadEvent(payload);
     });
+    socket.on("task:event", (payload: TaskRealtimePayload) => {
+      if (payload.workspaceId !== workspaceId) return;
+      ingestTaskEvent(payload);
+    });
     socket.on("presence:sync", (payload: PresenceSyncPayload) => {
       syncPresence(payload.workspaceId, payload.users);
     });
@@ -155,19 +215,22 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       socket.off("connect", joinWorkspace);
       socket.off("chat:message");
       socket.off("chat:channel:joined");
-      socket.off("chat:dm:joined");
-      socket.off("workspace:member:joined");
       socket.off("chat:channel:removed");
       socket.off("chat:channel:member");
+      socket.off("chat:channel:renamed");
+      socket.off("chat:channel:privacy");
       socket.off("home:notification");
+      socket.off("workspace:member:role");
+      socket.off("space:access:removed");
+      socket.off("space:access:granted");
       socket.off("chat:message:edit");
       socket.off("chat:message:delete");
       socket.off("chat:reaction");
       socket.off("chat:typing");
       socket.off("chat:read");
+      socket.off("task:event");
       socket.off("presence:sync");
       registerChatTypingSocket(null);
-      registerDmRoomsSocket(null);
       socket.off("presence:update");
       socket.disconnect();
       socketRef.current = null;
@@ -186,6 +249,8 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     syncPresence,
     upsertPresence,
     router,
+    updateSession,
+    bumpSpacesRefresh,
   ]);
 
   useEffect(() => {

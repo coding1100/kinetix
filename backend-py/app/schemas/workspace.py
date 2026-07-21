@@ -20,6 +20,19 @@ class UpdateWorkspaceMemberBody(BaseModel):
     role: WorkspaceRole
 
 
+class UpdateMemberPermissionsBody(BaseModel):
+    can_see_time_estimate: bool | None = Field(default=None, alias="canSeeTimeEstimate")
+    can_track_time: bool | None = Field(default=None, alias="canTrackTime")
+
+    model_config = {"populate_by_name": True}
+
+
+class UpdateMemberManagerBody(BaseModel):
+    manager_id: str | None = Field(default=None, alias="managerId")
+
+    model_config = {"populate_by_name": True}
+
+
 class DeleteWorkspaceBody(BaseModel):
     confirm_name: str = Field(min_length=1, max_length=80, alias="confirmName")
 

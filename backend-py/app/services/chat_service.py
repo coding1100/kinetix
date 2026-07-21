@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from sqlalchemy import and_, delete, func, or_, select
@@ -15,6 +16,7 @@ from app.db.models.chat import (
     MessageReaction,
 )
 from app.db.models.enums import MemberStatus, WorkspaceRole
+from app.db.models.home import Space, TaskList
 from app.db.models.user import User
 from app.db.models.workspace import WorkspaceMember
 from app.schemas.chat import (
@@ -30,33 +32,42 @@ from app.services.notification_service import (
     create_channel_broadcast_notifications,
     create_channel_deleted_notifications,
     create_channel_follow_notifications,
+    create_dm_broadcast_notifications,
     create_mention_notifications,
     create_thread_reply_notifications,
     emit_channel_access_notifications,
     emit_home_notifications,
 )
 from app.services.chat_helpers import (
+    ThreadSummary,
     dm_display_name,
     map_message,
     map_message_broadcast,
     map_search_message,
 )
+from app.services.folder_list_permissions import user_ids_with_list_access
+from app.services.workspace_permissions import (
+    get_active_workspace_role,
+    has_privileged_workspace_access,
+    is_privileged,
+    is_workspace_admin as _role_is_workspace_admin,
+)
 from app.socket.emit import (
     broadcast_channel_joined,
     broadcast_channel_member_updated,
     broadcast_channel_removed,
+    broadcast_channel_renamed,
     broadcast_chat_message,
     broadcast_chat_message_delete,
     broadcast_chat_message_edit,
     broadcast_chat_read,
     broadcast_chat_reaction,
-    broadcast_dm_joined,
 )
 from app.socket.presence import get_presence
 
 _MESSAGE_LIST_LOAD = (
     selectinload(ChatMessage.author),
-    selectinload(ChatMessage.reactions),
+    selectinload(ChatMessage.reactions).selectinload(MessageReaction.user),
     selectinload(ChatMessage.attachments),
 )
 
@@ -69,21 +80,77 @@ _MESSAGE_SEND_LOAD = _MESSAGE_LIST_LOAD
 
 async def _thread_counts_for_messages(
     session: AsyncSession, message_ids: list[str]
-) -> dict[str, int]:
+) -> dict[str, ThreadSummary]:
     if not message_ids:
         return {}
-    rows = (
+    count_rows = (
         await session.execute(
             select(ChatMessage.parent_id, func.count())
             .where(ChatMessage.parent_id.in_(message_ids))
             .group_by(ChatMessage.parent_id)
         )
     ).all()
-    return {str(row[0]): int(row[1]) for row in rows}
+    counts = {str(row[0]): int(row[1]) for row in count_rows}
+    if not counts:
+        return {}
+
+    last_created = (
+        select(
+            ChatMessage.parent_id.label("parent_id"),
+            func.max(ChatMessage.created_at).label("max_created"),
+        )
+        .where(ChatMessage.parent_id.in_(message_ids))
+        .group_by(ChatMessage.parent_id)
+        .subquery()
+    )
+    last_reply_rows = (
+        await session.execute(
+            select(
+                ChatMessage.parent_id,
+                ChatMessage.author_id,
+                User.full_name,
+                ChatMessage.created_at,
+            )
+            .join(
+                last_created,
+                and_(
+                    ChatMessage.parent_id == last_created.c.parent_id,
+                    ChatMessage.created_at == last_created.c.max_created,
+                ),
+            )
+            .join(User, User.id == ChatMessage.author_id)
+        )
+    ).all()
+
+    return {
+        str(parent_id): ThreadSummary(
+            count=counts.get(str(parent_id), 0),
+            last_reply_author_id=author_id,
+            last_reply_author_name=author_name,
+            last_reply_at=created_at,
+        )
+        for parent_id, author_id, author_name, created_at in last_reply_rows
+    }
 
 
 def _epoch() -> datetime:
     return datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+@dataclass
+class _PrivilegedChannelAccess:
+    channel: ChatChannel
+    user_id: str
+    starred: bool = False
+    is_following: bool = True
+    pinned_at: datetime | None = None
+    last_read_at: datetime | None = None
+    notification_level: str = "ALL"
+    id: str = ""
+
+    @property
+    def channel_id(self) -> str:
+        return self.channel.id
 
 
 async def _unread_channel_count(
@@ -128,34 +195,57 @@ async def _unread_dm_count(
 
 async def _unread_channel_counts_batch(
     session: AsyncSession,
-    memberships: list[ChatChannelMember],
+    memberships: list[ChatChannelMember | _PrivilegedChannelAccess],
     user_id: str,
 ) -> dict[str, int]:
     if not memberships:
         return {}
 
-    channel_ids = [m.channel_id for m in memberships]
-    rows = (
-        await session.execute(
-            select(ChatMessage.channel_id, func.count())
-            .join(
-                ChatChannelMember,
-                and_(
-                    ChatChannelMember.channel_id == ChatMessage.channel_id,
-                    ChatChannelMember.user_id == user_id,
-                ),
+    real = [m for m in memberships if not isinstance(m, _PrivilegedChannelAccess)]
+    privileged = [m for m in memberships if isinstance(m, _PrivilegedChannelAccess)]
+
+    counts: dict[str, int] = {}
+
+    if real:
+        channel_ids = [m.channel_id for m in real]
+        rows = (
+            await session.execute(
+                select(ChatMessage.channel_id, func.count())
+                .join(
+                    ChatChannelMember,
+                    and_(
+                        ChatChannelMember.channel_id == ChatMessage.channel_id,
+                        ChatChannelMember.user_id == user_id,
+                    ),
+                )
+                .where(
+                    ChatMessage.channel_id.in_(channel_ids),
+                    ChatMessage.parent_id.is_(None),
+                    ChatMessage.author_id != user_id,
+                    ChatMessage.created_at
+                    > func.coalesce(ChatChannelMember.last_read_at, _epoch()),
+                )
+                .group_by(ChatMessage.channel_id)
             )
-            .where(
-                ChatMessage.channel_id.in_(channel_ids),
-                ChatMessage.parent_id.is_(None),
-                ChatMessage.author_id != user_id,
-                ChatMessage.created_at
-                > func.coalesce(ChatChannelMember.last_read_at, _epoch()),
+        ).all()
+        counts.update({channel_id: int(count) for channel_id, count in rows})
+
+    if privileged:
+        priv_ids = [m.channel_id for m in privileged]
+        rows = (
+            await session.execute(
+                select(ChatMessage.channel_id, func.count())
+                .where(
+                    ChatMessage.channel_id.in_(priv_ids),
+                    ChatMessage.parent_id.is_(None),
+                    ChatMessage.author_id != user_id,
+                )
+                .group_by(ChatMessage.channel_id)
             )
-            .group_by(ChatMessage.channel_id)
-        )
-    ).all()
-    return {channel_id: int(count) for channel_id, count in rows}
+        ).all()
+        counts.update({channel_id: int(count) for channel_id, count in rows})
+
+    return counts
 
 
 async def _unread_dm_counts_batch(
@@ -192,7 +282,7 @@ async def _unread_dm_counts_batch(
 
 async def _assert_channel_member(
     session: AsyncSession, channel_id: str, user_id: str
-) -> ChatChannelMember:
+) -> ChatChannelMember | _PrivilegedChannelAccess:
     member = await session.scalar(
         select(ChatChannelMember)
         .where(
@@ -201,9 +291,17 @@ async def _assert_channel_member(
         )
         .options(selectinload(ChatChannelMember.channel))
     )
-    if not member:
+    if member:
+        return member
+
+    channel = await session.scalar(select(ChatChannel).where(ChatChannel.id == channel_id))
+    if not channel:
         raise AppError(404, "NOT_FOUND", "Channel not found")
-    return member
+
+    if await has_privileged_workspace_access(session, channel.workspace_id, user_id):
+        return _PrivilegedChannelAccess(channel=channel, user_id=user_id)
+
+    raise AppError(404, "NOT_FOUND", "Channel not found")
 
 
 async def _assert_dm_participant(
@@ -226,16 +324,38 @@ async def _assert_dm_participant(
     return participant
 
 
+async def _dm_participant_user_ids(
+    session: AsyncSession, conversation_id: str
+) -> list[str]:
+    return list(
+        (
+            await session.scalars(
+                select(DirectParticipant.user_id).where(
+                    DirectParticipant.conversation_id == conversation_id
+                )
+            )
+        ).all()
+    )
+
+
 def _channel_payload(
     channel: ChatChannel,
-    member: ChatChannelMember,
+    member: ChatChannelMember | _PrivilegedChannelAccess,
     member_count: int,
     last_message: str,
     last_at: datetime,
     unread: int,
     *,
     can_delete: bool = False,
+    list_is_private: bool | None = None,
 ) -> dict:
+    # A List-primary channel's own ChatChannel.is_private is always False
+    # (create_list_channel never sets it) - it mirrors its List's privacy
+    # instead, which is a separate flag the caller has to fetch and pass
+    # in (list_is_private) since it lives on TaskList, not ChatChannel.
+    is_private = (
+        bool(list_is_private) if channel.is_list_primary else channel.is_private
+    )
     payload = {
         "id": channel.id,
         "name": channel.name,
@@ -246,10 +366,12 @@ def _channel_payload(
         "starred": member.starred,
         "topic": channel.topic,
         "spaceLabel": channel.space_label,
-        "isPrivate": channel.is_private,
+        "isPrivate": is_private,
         "isFollowing": member.is_following,
         "customIconColor": channel.custom_icon_color,
         "createdById": channel.created_by_id,
+        "listId": channel.list_id,
+        "isListPrimary": channel.is_list_primary,
         "canDelete": can_delete,
         "notificationLevel": (
             getattr(member, "notification_level", None) or "MENTIONS"
@@ -324,6 +446,11 @@ async def _emit_channel_joined(
         starred=False,
         is_following=False,
     )
+    list_is_private = None
+    if channel.is_list_primary and channel.list_id:
+        list_is_private = await session.scalar(
+            select(TaskList.is_private).where(TaskList.id == channel.list_id)
+        )
     channel_payload = _channel_payload(
         channel,
         template_member,
@@ -331,6 +458,7 @@ async def _emit_channel_joined(
         last_message,
         last_at,
         0,
+        list_is_private=list_is_private,
     )
     await broadcast_channel_joined(
         workspace_id=workspace_id,
@@ -368,10 +496,24 @@ async def list_channels(
         )
     ).all()
 
-    if not memberships:
-        return {"data": []}
+    member_by_channel = {m.channel_id: m for m in memberships}
+    channel_ids = list(member_by_channel.keys())
 
-    channel_ids = [m.channel_id for m in memberships]
+    if await has_privileged_workspace_access(session, workspace_id, user_id):
+        extra_channels = (
+            await session.scalars(
+                select(ChatChannel).where(ChatChannel.workspace_id == workspace_id)
+            )
+        ).all()
+        for channel in extra_channels:
+            if channel.id not in member_by_channel:
+                member_by_channel[channel.id] = _PrivilegedChannelAccess(
+                    channel=channel, user_id=user_id
+                )
+        channel_ids = list(member_by_channel.keys())
+
+    if not channel_ids:
+        return {"data": []}
 
     member_count_rows = (
         await session.execute(
@@ -398,26 +540,44 @@ async def list_channels(
             last_by_channel[msg.channel_id] = msg
 
     unread_by_channel = await _unread_channel_counts_batch(
-        session, memberships, user_id
+        session, list(member_by_channel.values()), user_id
     )
 
+    list_ids = {
+        m.channel.list_id
+        for m in member_by_channel.values()
+        if m.channel.is_list_primary and m.channel.list_id
+    }
+    list_privacy_by_id: dict[str, bool] = {}
+    if list_ids:
+        list_privacy_rows = (
+            await session.execute(
+                select(TaskList.id, TaskList.is_private).where(
+                    TaskList.id.in_(list_ids)
+                )
+            )
+        ).all()
+        list_privacy_by_id = {row[0]: row[1] for row in list_privacy_rows}
+
     channels = []
-    for m in memberships:
-        last = last_by_channel.get(m.channel_id)
-        unread = unread_by_channel.get(m.channel_id, 0)
-        last_at = last.created_at if last else m.channel.created_at
+    for channel_id, m in member_by_channel.items():
+        channel = m.channel
+        last = last_by_channel.get(channel_id)
+        unread = unread_by_channel.get(channel_id, 0)
+        last_at = last.created_at if last else channel.created_at
         can_delete = await _user_can_delete_channel(
-            session, workspace_id, m.channel, user_id
+            session, workspace_id, channel, user_id
         )
         channels.append(
             _channel_payload(
-                m.channel,
+                channel,
                 m,
-                member_counts.get(m.channel_id, 0),
+                member_counts.get(channel_id, 0),
                 last.body if last else "",
                 last_at,
                 unread,
                 can_delete=can_delete,
+                list_is_private=list_privacy_by_id.get(channel.list_id),
             )
         )
 
@@ -443,6 +603,11 @@ async def get_channel(
     can_delete = await _user_can_delete_channel(
         session, workspace_id, member.channel, user_id
     )
+    list_is_private = None
+    if member.channel.is_list_primary and member.channel.list_id:
+        list_is_private = await session.scalar(
+            select(TaskList.is_private).where(TaskList.id == member.channel.list_id)
+        )
     return _channel_payload(
         member.channel,
         member,
@@ -451,6 +616,7 @@ async def get_channel(
         member.channel.created_at,
         unread,
         can_delete=can_delete,
+        list_is_private=list_is_private,
     )
 
 
@@ -465,6 +631,7 @@ async def update_channel(
     if member.channel.workspace_id != workspace_id:
         raise AppError(404, "NOT_FOUND", "Channel not found")
 
+    renamed = False
     if body.name is not None:
         trimmed = body.name.strip().lstrip("#").strip()
         if not trimmed:
@@ -479,12 +646,33 @@ async def update_channel(
         if existing:
             raise AppError(409, "CONFLICT", "A channel with this name already exists")
         member.channel.name = trimmed
+        renamed = True
 
     if body.topic is not None:
         topic = body.topic.strip()
         member.channel.topic = topic or None
 
+    # A list-primary channel's name IS the list's name (two-way sync) - the
+    # reverse direction lives in spaces_service.update_list. Non-primary
+    # channels that merely reference a list are left alone.
+    if renamed and member.channel.is_list_primary and member.channel.list_id:
+        list_row = await session.scalar(
+            select(TaskList).where(TaskList.id == member.channel.list_id)
+        )
+        if list_row:
+            list_row.name = member.channel.name
+
     await session.commit()
+
+    if renamed:
+        asyncio.create_task(
+            broadcast_channel_renamed(
+                workspace_id=workspace_id,
+                channel_id=channel_id,
+                name=member.channel.name,
+            )
+        )
+
     return await get_channel(session, workspace_id, user_id, channel_id)
 
 
@@ -639,7 +827,20 @@ async def create_channel(
                 "Some users are not active workspace members",
             )
     else:
-        member_ids = list(active_set)
+        # Public channels auto-include every active member EXCEPT Guests —
+        # Guests only get channels they're explicitly shared into, matching
+        # ClickUp's "guests only access what's shared with them".
+        non_guest_ids = (
+            await session.scalars(
+                select(WorkspaceMember.user_id).where(
+                    WorkspaceMember.workspace_id == workspace_id,
+                    WorkspaceMember.status == MemberStatus.ACTIVE,
+                    WorkspaceMember.role != WorkspaceRole.GUEST,
+                )
+            )
+        ).all()
+        explicit_guests = set(body.memberIds or []) & active_set
+        member_ids = list(set(non_guest_ids) | explicit_guests)
 
     channel = ChatChannel(
         workspace_id=workspace_id,
@@ -700,6 +901,147 @@ async def create_channel(
     )
 
 
+async def create_list_channel(
+    session: AsyncSession,
+    workspace_id: str,
+    task_list: TaskList,
+    space: Space,
+    user_id: str,
+) -> ChatChannel:
+    """Auto-create a List's mandatory 1:1 primary channel. Unlike the manual
+    `create_channel` path (blanket workspace membership), members here mirror
+    whoever can see the list, via `user_ids_with_list_access` - kept in sync
+    afterwards by `sync_list_channel_members_for_space` whenever Space/
+    Folder/List/Workspace membership changes.
+    """
+    name = task_list.name.strip()
+    if await session.scalar(
+        select(ChatChannel).where(
+            ChatChannel.workspace_id == workspace_id, ChatChannel.name == name
+        )
+    ):
+        candidate = f"{name} ({space.name})"
+        if await session.scalar(
+            select(ChatChannel).where(
+                ChatChannel.workspace_id == workspace_id,
+                ChatChannel.name == candidate,
+            )
+        ):
+            candidate = f"{name}-{task_list.id[:6]}"
+        name = candidate
+
+    task_list.space = space
+    member_ids = await user_ids_with_list_access(session, workspace_id, task_list)
+    member_ids.add(user_id)
+
+    channel = ChatChannel(
+        workspace_id=workspace_id,
+        name=name,
+        is_private=False,
+        space_label=space.name,
+        created_by_id=user_id,
+        list_id=task_list.id,
+        is_list_primary=True,
+    )
+    session.add(channel)
+    await session.flush()
+
+    for uid in member_ids:
+        session.add(
+            ChatChannelMember(
+                channel_id=channel.id,
+                user_id=uid,
+                starred=False,
+                is_following=uid == user_id,
+            )
+        )
+
+    await session.commit()
+    await session.refresh(channel)
+
+    joined_notify = [uid for uid in member_ids if uid != user_id]
+    if joined_notify:
+        await _emit_channel_joined(session, workspace_id, channel, joined_notify)
+
+    return channel
+
+
+async def sync_list_channel_members_for_space(
+    session: AsyncSession, workspace_id: str, space: Space
+) -> None:
+    """Re-derive membership for every list-primary channel under `space`
+    after a Space/Workspace membership change. Adds newly-visible users,
+    removes users who lost access; leaves existing members' starred/following
+    state untouched.
+    """
+    rows = (
+        await session.execute(
+            select(ChatChannel, TaskList)
+            .join(TaskList, TaskList.id == ChatChannel.list_id)
+            .where(
+                ChatChannel.is_list_primary.is_(True),
+                TaskList.space_id == space.id,
+            )
+        )
+    ).all()
+    if not rows:
+        return
+
+    for channel, task_list in rows:
+        task_list.space = space
+        target_ids = await user_ids_with_list_access(session, workspace_id, task_list)
+        current_ids = set(
+            (
+                await session.scalars(
+                    select(ChatChannelMember.user_id).where(
+                        ChatChannelMember.channel_id == channel.id
+                    )
+                )
+            ).all()
+        )
+        to_add = target_ids - current_ids
+        to_remove = current_ids - target_ids
+        for uid in to_add:
+            session.add(
+                ChatChannelMember(channel_id=channel.id, user_id=uid, starred=False)
+            )
+        if to_remove:
+            await session.execute(
+                delete(ChatChannelMember).where(
+                    ChatChannelMember.channel_id == channel.id,
+                    ChatChannelMember.user_id.in_(to_remove),
+                )
+            )
+        await session.commit()
+
+        if to_add:
+            await _emit_channel_joined(session, workspace_id, channel, list(to_add))
+        for uid in to_remove:
+            asyncio.create_task(
+                broadcast_channel_member_updated(
+                    workspace_id=workspace_id,
+                    channel_id=channel.id,
+                    member={"id": uid},
+                    removed=True,
+                )
+            )
+
+
+async def sync_list_channel_members_for_workspace(
+    session: AsyncSession, workspace_id: str
+) -> None:
+    """Workspace-wide membership changes (join/leave/role change) can shift
+    who can see every Space, so re-sync every Space's list-primary channels.
+    Thin wrapper around sync_list_channel_members_for_space for the three
+    call sites that only have a workspace_id, not a specific Space.
+    """
+    spaces = (
+        await session.scalars(select(Space).where(Space.workspace_id == workspace_id))
+    ).all()
+    for space in spaces:
+        await sync_list_channel_members_for_space(session, workspace_id, space)
+
+
 async def list_channel_messages(
     session: AsyncSession,
     workspace_id: str,
@@ -737,12 +1079,12 @@ async def list_channel_messages(
         )
     ).all()
 
-    thread_counts = await _thread_counts_for_messages(
+    thread_summaries = await _thread_counts_for_messages(
         session, [m.id for m in messages]
     )
     return {
         "data": [
-            map_message(m, user_id, thread_count=thread_counts.get(m.id, 0))
+            map_message(m, user_id, thread_summary=thread_summaries.get(m.id))
             for m in messages
         ]
     }
@@ -754,6 +1096,8 @@ async def mark_channel_read(
     member = await _assert_channel_member(session, channel_id, user_id)
     if member.channel.workspace_id != workspace_id:
         raise AppError(404, "NOT_FOUND", "Channel not found")
+    if isinstance(member, _PrivilegedChannelAccess):
+        return {"ok": True}
     member.last_read_at = datetime.now(timezone.utc)
     await session.commit()
     asyncio.create_task(
@@ -843,14 +1187,21 @@ async def send_channel_message(
     return payload
 
 
+def _as_aware_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def _thread_has_new(
     replies: list[ChatMessage],
     user_id: str,
     last_read_at: datetime | None,
 ) -> bool:
-    last_read = last_read_at or _epoch()
+    last_read = _as_aware_utc(last_read_at) if last_read_at else _epoch()
     return any(
-        r.author_id != user_id and r.created_at > last_read for r in replies
+        r.author_id != user_id and _as_aware_utc(r.created_at) > last_read
+        for r in replies
     )
 
 
@@ -944,7 +1295,6 @@ async def send_thread_reply(
         author_user_id=user_id,
         body=message.body,
         channel=mention_channel,
-        conversation_id=conversation_id,
     )
     thread_notifications = await create_thread_reply_notifications(
         session,
@@ -968,6 +1318,9 @@ async def send_thread_reply(
         await emit_home_notifications(session, workspace_id, all_notifications)
     conv_id = channel_id or conversation_id
     kind = "channel" if channel_id else "dm"
+    audience_user_ids: list[str] | None = None
+    if kind == "dm" and conversation_id:
+        audience_user_ids = await _dm_participant_user_ids(session, conversation_id)
     if conv_id:
         asyncio.create_task(
             broadcast_chat_message(
@@ -976,6 +1329,7 @@ async def send_thread_reply(
                 conversation_id=conv_id,
                 message=map_message_broadcast(loaded, thread_count=0),
                 parent_id=parent_id,
+                user_ids=audience_user_ids,
             )
         )
     return payload
@@ -1176,14 +1530,6 @@ async def create_or_get_dm(
         )
     await session.commit()
 
-    asyncio.create_task(
-        broadcast_dm_joined(
-            workspace_id=workspace_id,
-            user_ids=unique_ids,
-            conversation_id=conversation.id,
-        )
-    )
-
     return await get_dm(session, workspace_id, user_id, conversation.id)
 
 
@@ -1224,12 +1570,12 @@ async def list_dm_messages(
         )
     ).all()
 
-    thread_counts = await _thread_counts_for_messages(
+    thread_summaries = await _thread_counts_for_messages(
         session, [m.id for m in messages]
     )
     return {
         "data": [
-            map_message(m, user_id, thread_count=thread_counts.get(m.id, 0))
+            map_message(m, user_id, thread_summary=thread_summaries.get(m.id))
             for m in messages
         ]
     }
@@ -1246,6 +1592,7 @@ async def mark_dm_read(
         raise AppError(404, "NOT_FOUND", "Conversation not found")
     participant.last_read_at = datetime.now(timezone.utc)
     await session.commit()
+    audience_user_ids = [p.user_id for p in participant.conversation.participants]
     asyncio.create_task(
         broadcast_chat_read(
             workspace_id=workspace_id,
@@ -1253,6 +1600,7 @@ async def mark_dm_read(
             conversation_id=conversation_id,
             user_id=user_id,
             read_at=participant.last_read_at.isoformat(),
+            audience_user_ids=audience_user_ids,
         )
     )
     return {"ok": True, "unread": 0}
@@ -1309,7 +1657,14 @@ async def send_dm_message(
         author_user_id=user_id,
         body=message.body,
         channel=None,
+    )
+    dm_notifications = await create_dm_broadcast_notifications(
+        session,
+        workspace_id=workspace_id,
+        author_user_id=user_id,
         conversation_id=conversation_id,
+        recipient_ids=[p.user_id for p in participant.conversation.participants],
+        body=message.body,
     )
     await session.commit()
 
@@ -1319,14 +1674,17 @@ async def send_dm_message(
         .options(*_MESSAGE_SEND_LOAD)
     )
     payload = map_message(loaded, user_id, thread_count=0)
-    if mention_notifications:
-        await emit_home_notifications(session, workspace_id, mention_notifications)
+    all_notifications = mention_notifications + dm_notifications
+    if all_notifications:
+        await emit_home_notifications(session, workspace_id, all_notifications)
+    audience_user_ids = [p.user_id for p in participant.conversation.participants]
     asyncio.create_task(
         broadcast_chat_message(
             workspace_id=workspace_id,
             kind="dm",
             conversation_id=conversation_id,
             message=map_message_broadcast(loaded, thread_count=0),
+            user_ids=audience_user_ids,
         )
     )
     return payload
@@ -1373,12 +1731,18 @@ async def get_dm_message_thread(
 async def _reaction_counts(session: AsyncSession, message_id: str) -> list[dict]:
     rows = (
         await session.execute(
-            select(MessageReaction.emoji, func.count())
+            select(MessageReaction.emoji, MessageReaction.user_id, User.full_name)
+            .join(User, User.id == MessageReaction.user_id)
             .where(MessageReaction.message_id == message_id)
-            .group_by(MessageReaction.emoji)
         )
     ).all()
-    return [{"emoji": row[0], "count": int(row[1])} for row in rows]
+    grouped: dict[str, list[dict]] = {}
+    for emoji, user_id, full_name in rows:
+        grouped.setdefault(emoji, []).append({"id": user_id, "fullName": full_name})
+    return [
+        {"emoji": emoji, "count": len(users), "users": users}
+        for emoji, users in grouped.items()
+    ]
 
 
 async def _assert_message_access(
@@ -1468,6 +1832,11 @@ async def update_message(
     payload = map_message(loaded, user_id)
     kind = "channel" if loaded.channel_id else "dm"
     conv_id = loaded.channel_id or loaded.conversation_id
+    audience_user_ids: list[str] | None = None
+    if kind == "dm" and loaded.conversation_id:
+        audience_user_ids = await _dm_participant_user_ids(
+            session, loaded.conversation_id
+        )
     if conv_id:
         asyncio.create_task(
             broadcast_chat_message_edit(
@@ -1476,6 +1845,7 @@ async def update_message(
                 conversation_id=conv_id,
                 message=map_message_broadcast(loaded),
                 parent_id=loaded.parent_id,
+                user_ids=audience_user_ids,
             )
         )
     return payload
@@ -1496,6 +1866,11 @@ async def delete_message(
     kind = "channel" if message.channel_id else "dm"
     conv_id = message.channel_id or message.conversation_id
     parent_id = message.parent_id
+    audience_user_ids: list[str] | None = None
+    if kind == "dm" and message.conversation_id:
+        audience_user_ids = await _dm_participant_user_ids(
+            session, message.conversation_id
+        )
 
     await session.delete(message)
     await session.commit()
@@ -1508,6 +1883,7 @@ async def delete_message(
                 conversation_id=conv_id,
                 message_id=message_id,
                 parent_id=parent_id,
+                user_ids=audience_user_ids,
             )
         )
     return {"ok": True, "messageId": message_id}
@@ -1546,14 +1922,20 @@ async def toggle_message_reaction(
 
     reactions = await _reaction_counts(session, message_id)
     kind = "channel" if message.channel_id else "dm"
-    conv_id = message.channel_id or message.conversation_id
+    conversation_id = message.channel_id or message.conversation_id or ""
+    audience_user_ids: list[str] | None = None
+    if kind == "dm" and message.conversation_id:
+        audience_user_ids = await _dm_participant_user_ids(
+            session, message.conversation_id
+        )
     asyncio.create_task(
         broadcast_chat_reaction(
             workspace_id=workspace_id,
+            kind=kind,
+            conversation_id=conversation_id,
             message_id=message_id,
             reactions=reactions,
-            kind=kind if conv_id else None,
-            conversation_id=conv_id,
+            user_ids=audience_user_ids,
         )
     )
     return {"messageId": message_id, "reactions": reactions}
@@ -1626,12 +2008,33 @@ async def list_channel_members(
     if channel.is_private:
         user_ids = [m.user_id for m in rows]
         roles = await _workspace_role_map(session, workspace_id, user_ids)
-        return {
-            "data": [
-                _channel_member_json(m.user, m, roles.get(m.user_id))
-                for m in rows
-            ]
-        }
+        data = [
+            _channel_member_json(m.user, m, roles.get(m.user_id)) for m in rows
+        ]
+
+        explicit_ids = set(user_ids)
+        privileged_members = (
+            await session.scalars(
+                select(WorkspaceMember)
+                .where(
+                    WorkspaceMember.workspace_id == workspace_id,
+                    WorkspaceMember.status == MemberStatus.ACTIVE,
+                    WorkspaceMember.role.in_(
+                        [WorkspaceRole.OWNER, WorkspaceRole.SUPER_ADMIN]
+                    ),
+                )
+                .options(selectinload(WorkspaceMember.user))
+            )
+        ).all()
+        for pm in privileged_members:
+            if pm.user_id in explicit_ids:
+                continue
+            data.append(
+                _workspace_member_as_channel_json(
+                    pm.user, pm.role.value, is_following=False
+                )
+            )
+        return {"data": data}
 
     workspace_members = (
         await session.scalars(
@@ -1815,7 +2218,7 @@ async def remove_channel_member(
                     WorkspaceMember.status == MemberStatus.ACTIVE,
                 )
             )
-            if not wm or wm.role not in (WorkspaceRole.OWNER, WorkspaceRole.ADMIN):
+            if not wm or not _role_is_workspace_admin(wm.role):
                 raise AppError(
                     403,
                     "FORBIDDEN",
@@ -1881,14 +2284,8 @@ async def update_channel_member(
 async def _is_workspace_admin(
     session: AsyncSession, workspace_id: str, user_id: str
 ) -> bool:
-    wm = await session.scalar(
-        select(WorkspaceMember).where(
-            WorkspaceMember.workspace_id == workspace_id,
-            WorkspaceMember.user_id == user_id,
-            WorkspaceMember.status == MemberStatus.ACTIVE,
-        )
-    )
-    return bool(wm and wm.role in (WorkspaceRole.OWNER, WorkspaceRole.ADMIN))
+    role = await get_active_workspace_role(session, workspace_id, user_id)
+    return _role_is_workspace_admin(role)
 
 
 async def _is_workspace_owner(
@@ -1925,8 +2322,6 @@ async def update_channel_member_target(
         )
     )
     if not target:
-        if channel.is_private:
-            raise AppError(404, "NOT_FOUND", "User is not a channel member")
         workspace_member = await session.scalar(
             select(WorkspaceMember).where(
                 WorkspaceMember.workspace_id == workspace_id,
@@ -1936,6 +2331,12 @@ async def update_channel_member_target(
         )
         if not workspace_member:
             raise AppError(404, "NOT_FOUND", "User is not a workspace member")
+        # A private channel's OWNER/SUPER_ADMIN have bypass access but no
+        # explicit membership row until an action like this needs one — lazily
+        # create it. Anyone else without an explicit row is genuinely not in
+        # a private channel.
+        if channel.is_private and not is_privileged(workspace_member.role):
+            raise AppError(404, "NOT_FOUND", "User is not a channel member")
         target = ChatChannelMember(
             channel_id=channel_id,
             user_id=target_user_id,

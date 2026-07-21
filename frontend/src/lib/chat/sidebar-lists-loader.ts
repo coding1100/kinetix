@@ -24,38 +24,31 @@ function sortByLastAt<T extends { lastAt: string }>(items: T[]) {
   );
 }
 
-/** Merge API lists with socket/cache upserts; cache is authoritative for removals. */
+/** Merge API lists with socket/cache upserts; the fresh API response is authoritative for set membership (additions and removals) once it has loaded, cache only carries forward local fields. While the fresh response hasn't loaded yet (undefined), show the cache as-is (stale-while-revalidate) instead of going blank. */
 export function mergeSidebarChannels(
   queryChannels: Channel[] | undefined,
   cacheChannels: Channel[] | undefined
 ): Channel[] {
+  if (queryChannels === undefined) {
+    return sortByLastAt([...(cacheChannels ?? [])]);
+  }
   const merged = new Map<string, Channel>();
-  for (const channel of queryChannels ?? []) {
+  for (const channel of queryChannels) {
     merged.set(channel.id, channel);
   }
   if (cacheChannels !== undefined) {
-    const cacheIds = new Set(cacheChannels.map((c) => c.id));
     for (const channel of cacheChannels) {
       const existing = merged.get(channel.id);
-      merged.set(
-        channel.id,
-        existing
-          ? {
-              ...existing,
-              ...channel,
-              canDelete: channel.canDelete ?? existing.canDelete,
-              createdById: channel.createdById ?? existing.createdById,
-              unread: mergeConversationUnread(channel.unread, existing.unread, {
-                isActive: activeChannelId() === channel.id,
-              }),
-            }
-          : channel
-      );
-    }
-    for (const id of [...merged.keys()]) {
-      if (!cacheIds.has(id)) {
-        merged.delete(id);
-      }
+      if (!existing) continue;
+      merged.set(channel.id, {
+        ...existing,
+        ...channel,
+        canDelete: channel.canDelete ?? existing.canDelete,
+        createdById: channel.createdById ?? existing.createdById,
+        unread: mergeConversationUnread(channel.unread, existing.unread, {
+          isActive: activeChannelId() === channel.id,
+        }),
+      });
     }
   }
   return sortByLastAt([...merged.values()]);

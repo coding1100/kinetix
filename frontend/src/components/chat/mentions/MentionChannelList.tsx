@@ -9,11 +9,13 @@ export function MentionChannelList({
   loading,
   onSelect,
   emptyLabel = "No channels found",
+  activeIndex = -1,
 }: {
   channels: MentionChannel[];
   loading?: boolean;
   onSelect: (channel: MentionChannel) => void;
   emptyLabel?: string;
+  activeIndex?: number;
 }) {
   if (loading) {
     return (
@@ -33,13 +35,16 @@ export function MentionChannelList({
 
   return (
     <ul className="max-h-56 w-full overflow-y-auto py-1">
-      {channels.map((channel) => (
+      {channels.map((channel, index) => (
         <li key={channel.id} className="w-full">
           <button
             type="button"
+            ref={(el) => {
+              if (index === activeIndex) el?.scrollIntoView({ block: "nearest" });
+            }}
             className={cn(
               "flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm",
-              "bg-card hover:bg-muted/80"
+              index === activeIndex ? "bg-muted/80" : "bg-card hover:bg-muted/80"
             )}
             onClick={() => onSelect(channel)}
           >

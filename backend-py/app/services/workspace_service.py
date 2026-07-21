@@ -7,7 +7,21 @@ from app.core.utils import unique_workspace_slug
 from app.db.models.enums import MemberStatus, WorkspaceRole
 from app.db.models.workspace import Workspace, WorkspaceMember
 from app.socket.presence import get_presence
-from app.schemas.workspace import CreateWorkspaceBody, UpdateWorkspaceMemberBody
+from app.socket.emit import broadcast_workspace_member_role_updated
+from app.services.chat_service import sync_list_channel_members_for_workspace
+from app.services.personal_space_service import ensure_personal_space
+from app.services.workspace_permissions import (
+    can_assign_role,
+    can_delete_workspace,
+    can_edit_member,
+    can_manage_people,
+    can_transfer_ownership,
+)
+from app.schemas.workspace import (
+    CreateWorkspaceBody,
+    UpdateMemberPermissionsBody,
+    UpdateWorkspaceMemberBody,
+)
 
 
 def _workspace_json(ws: Workspace) -> dict:
@@ -64,6 +78,7 @@ async def create_workspace(
             status=MemberStatus.ACTIVE,
         )
     )
+    await ensure_personal_space(session, workspace.id)
     await session.commit()
     await session.refresh(workspace)
     return _workspace_json(workspace)
@@ -110,10 +125,7 @@ async def update_workspace(
             WorkspaceMember.user_id == user_id,
         )
     )
-    if not membership or membership.role not in (
-        WorkspaceRole.OWNER,
-        WorkspaceRole.ADMIN,
-    ):
+    if not membership or not can_manage_people(membership.role):
         raise AppError(
             403, "FORBIDDEN", "Only owners and admins can update workspace"
         )
@@ -129,41 +141,11 @@ async def update_workspace(
     return _workspace_json(ws)
 
 
-def map_workspace_member_json(
-    membership: WorkspaceMember, workspace_id: str
-) -> dict:
-    user = membership.user
-    return {
-        "id": user.id,
-        "membershipId": membership.id,
-        "email": user.email,
-        "fullName": user.full_name,
-        "avatarUrl": user.avatar_url,
-        "role": membership.role.value,
-        "status": membership.status.value,
-        "joinedAt": membership.joined_at.isoformat() if membership.joined_at else None,
-        "presence": get_presence(workspace_id, user.id),
-    }
-
-
-async def get_active_member_json(
-    session: AsyncSession, workspace_id: str, user_id: str
-) -> dict:
-    membership = await session.scalar(
-        select(WorkspaceMember)
-        .where(
-            WorkspaceMember.workspace_id == workspace_id,
-            WorkspaceMember.user_id == user_id,
-            WorkspaceMember.status == MemberStatus.ACTIVE,
-        )
-        .options(selectinload(WorkspaceMember.user))
-    )
-    if not membership:
-        raise AppError(404, "NOT_FOUND", "Workspace member not found")
-    return map_workspace_member_json(membership, workspace_id)
-
-
 async def list_workspace_members(session: AsyncSession, workspace_id: str) -> list[dict]:
+    from app.services import team_service
+    from app.db.models.invite import Invite
+
+    teams_by_user = await team_service.member_teams_map(session, workspace_id)
     rows = (
         await session.scalars(
             select(WorkspaceMember)
@@ -171,15 +153,55 @@ async def list_workspace_members(session: AsyncSession, workspace_id: str) -> li
                 WorkspaceMember.workspace_id == workspace_id,
                 WorkspaceMember.status == MemberStatus.ACTIVE,
             )
-            .options(selectinload(WorkspaceMember.user))
+            .options(
+                selectinload(WorkspaceMember.user),
+                selectinload(WorkspaceMember.manager),
+            )
             .order_by(WorkspaceMember.joined_at.asc())
         )
     ).all()
-    return [map_workspace_member_json(m, workspace_id) for m in rows]
+
+    emails = [m.user.email for m in rows]
+    invited_by_email: dict[str, str] = {}
+    if emails:
+        invite_rows = (
+            await session.scalars(
+                select(Invite)
+                .where(
+                    Invite.workspace_id == workspace_id,
+                    Invite.email.in_(emails),
+                    Invite.accepted_at.isnot(None),
+                )
+                .options(selectinload(Invite.inviter))
+                .order_by(Invite.accepted_at.asc())
+            )
+        ).all()
+        for inv in invite_rows:
+            if inv.inviter:
+                invited_by_email[inv.email] = inv.inviter.full_name
+
+    return [
+        {
+            "id": m.user.id,
+            "membershipId": m.id,
+            "email": m.user.email,
+            "fullName": m.user.full_name,
+            "avatarUrl": m.user.avatar_url,
+            "role": m.role.value,
+            "status": m.status.value,
+            "joinedAt": m.joined_at.isoformat() if m.joined_at else None,
+            "presence": get_presence(workspace_id, m.user.id),
+            "teams": teams_by_user.get(m.user.id, []),
+            "invitedBy": invited_by_email.get(m.user.email),
+            "managerId": m.manager_id,
+            "managerName": m.manager.full_name if m.manager else None,
+        }
+        for m in rows
+    ]
 
 
 def _assert_can_manage_people(actor_role: WorkspaceRole) -> None:
-    if actor_role not in (WorkspaceRole.OWNER, WorkspaceRole.ADMIN):
+    if not can_manage_people(actor_role):
         raise AppError(
             403,
             "FORBIDDEN",
@@ -188,14 +210,11 @@ def _assert_can_manage_people(actor_role: WorkspaceRole) -> None:
 
 
 def _assert_can_edit_target(actor_role: WorkspaceRole, target_role: WorkspaceRole) -> None:
-    if actor_role == WorkspaceRole.ADMIN and target_role in (
-        WorkspaceRole.OWNER,
-        WorkspaceRole.ADMIN,
-    ):
+    if not can_edit_member(actor_role, target_role):
         raise AppError(
             403,
             "FORBIDDEN",
-            "Admins cannot change owners or other admins",
+            "You cannot change this member's role",
         )
 
 
@@ -209,11 +228,8 @@ async def update_workspace_member(
 ) -> dict:
     _assert_can_manage_people(actor_role)
 
-    if actor_role == WorkspaceRole.ADMIN and body.role in (
-        WorkspaceRole.OWNER,
-        WorkspaceRole.ADMIN,
-    ):
-        raise AppError(403, "FORBIDDEN", "Admins can only assign member or guest roles")
+    if not can_assign_role(actor_role, body.role):
+        raise AppError(403, "FORBIDDEN", "You cannot assign this role")
 
     target = await session.scalar(
         select(WorkspaceMember).where(
@@ -246,7 +262,91 @@ async def update_workspace_member(
 
     target.role = body.role
     await session.commit()
+    await broadcast_workspace_member_role_updated(
+        workspace_id=workspace_id, user_id=target_user_id, role=body.role.value
+    )
     return {"ok": True, "userId": target_user_id, "role": body.role.value}
+
+
+async def update_member_permissions(
+    session: AsyncSession,
+    workspace_id: str,
+    actor_role: WorkspaceRole,
+    target_user_id: str,
+    body: UpdateMemberPermissionsBody,
+) -> dict:
+    _assert_can_manage_people(actor_role)
+
+    target = await session.scalar(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.user_id == target_user_id,
+            WorkspaceMember.status == MemberStatus.ACTIVE,
+        )
+    )
+    if not target:
+        raise AppError(404, "NOT_FOUND", "Member not found")
+
+    if body.can_see_time_estimate is not None:
+        target.can_see_time_estimate = body.can_see_time_estimate
+    if body.can_track_time is not None:
+        target.can_track_time = body.can_track_time
+
+    await session.commit()
+    return {
+        "ok": True,
+        "userId": target_user_id,
+        "canSeeTimeEstimate": target.can_see_time_estimate,
+        "canTrackTime": target.can_track_time,
+    }
+
+
+async def update_member_manager(
+    session: AsyncSession,
+    workspace_id: str,
+    actor_id: str,
+    actor_role: WorkspaceRole,
+    target_user_id: str,
+    manager_id: str | None,
+) -> dict:
+    if actor_id != target_user_id:
+        _assert_can_manage_people(actor_role)
+
+    target = await session.scalar(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.user_id == target_user_id,
+            WorkspaceMember.status == MemberStatus.ACTIVE,
+        )
+    )
+    if not target:
+        raise AppError(404, "NOT_FOUND", "Member not found")
+
+    manager_name: str | None = None
+    if manager_id is not None:
+        if manager_id == target_user_id:
+            raise AppError(400, "VALIDATION_ERROR", "A member cannot be their own manager")
+        manager_membership = await session.scalar(
+            select(WorkspaceMember)
+            .where(
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.user_id == manager_id,
+                WorkspaceMember.status == MemberStatus.ACTIVE,
+            )
+            .options(selectinload(WorkspaceMember.user))
+        )
+        if not manager_membership:
+            raise AppError(404, "NOT_FOUND", "Manager not found in this workspace")
+        manager_name = manager_membership.user.full_name
+
+    target.manager_id = manager_id
+    await session.commit()
+    return {
+        "ok": True,
+        "userId": target_user_id,
+        "managerId": manager_id,
+        "managerName": manager_name,
+    }
 
 
 async def remove_workspace_member(
@@ -271,6 +371,9 @@ async def remove_workspace_member(
     if target.role == WorkspaceRole.OWNER:
         raise AppError(403, "FORBIDDEN", "Cannot remove the workspace owner")
 
+    if target.role == WorkspaceRole.SUPER_ADMIN and actor_role != WorkspaceRole.OWNER:
+        raise AppError(403, "FORBIDDEN", "Only the workspace owner can remove a super admin")
+
     _assert_can_edit_target(actor_role, target.role)
 
     if target_user_id == actor_id:
@@ -282,6 +385,7 @@ async def remove_workspace_member(
 
     await session.delete(target)
     await session.commit()
+    await sync_list_channel_members_for_workspace(session, workspace_id)
     return {"ok": True}
 
 
@@ -357,6 +461,14 @@ async def transfer_workspace_ownership(
     actor.role = WorkspaceRole.ADMIN
     target.role = WorkspaceRole.OWNER
     await session.commit()
+    await broadcast_workspace_member_role_updated(
+        workspace_id=workspace_id, user_id=actor_id, role=WorkspaceRole.ADMIN.value
+    )
+    await broadcast_workspace_member_role_updated(
+        workspace_id=workspace_id,
+        user_id=new_owner_user_id,
+        role=WorkspaceRole.OWNER.value,
+    )
     return {
         "ok": True,
         "newOwnerUserId": new_owner_user_id,

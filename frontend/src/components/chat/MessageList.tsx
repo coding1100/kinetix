@@ -130,7 +130,7 @@ export function MessageList({
                     <ChatMessageRow
                       key={msg.id}
                       message={msg}
-                      showHeader={index === 0}
+                      showHeader={index === 0 || (msg.threadCount ?? 0) > 0}
                       conversationType={conversationType}
                       conversationId={conversationId}
                       onToggleReaction={onToggleReaction}

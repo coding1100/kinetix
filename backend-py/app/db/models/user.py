@@ -33,7 +33,9 @@ class User(Base):
         onupdate=func.now(),
     )
 
-    memberships: Mapped[list["WorkspaceMember"]] = relationship(back_populates="user")
+    memberships: Mapped[list["WorkspaceMember"]] = relationship(
+        back_populates="user", foreign_keys="WorkspaceMember.user_id"
+    )
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(back_populates="user")
     oauth_accounts: Mapped[list["OAuthAccount"]] = relationship(
         "OAuthAccount", back_populates="user"
