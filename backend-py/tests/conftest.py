@@ -9,10 +9,27 @@ import httpx
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 
+from app.db.session import get_engine
 from app.main import app
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
+
+SUPER_ADMIN_MIGRATION = """
+DO $$ BEGIN
+    ALTER TYPE "WorkspaceRole" ADD VALUE IF NOT EXISTS 'SUPER_ADMIN';
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+"""
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def ensure_super_admin_enum():
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(text(SUPER_ADMIN_MIGRATION))
 
 
 def api_base() -> str:

@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
+import { fetchWorkspaceMembers } from "@/lib/api/chat";
 import type { ConversationType } from "@/lib/types/chat";
 import { useChannelMembers } from "@/hooks/use-channel-members";
-import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
+import { useHomeQuery } from "@/hooks/use-home-query";
 import { useChatStore } from "@/stores/chat-store";
+
 export type MentionMember = {
   id: string;
   fullName: string;
@@ -24,7 +26,14 @@ export function useMentionMembers(
     { enabled: isChannel }
   );
 
-  const workspaceQuery = useWorkspaceMembersQuery();
+  const isWorkspaceFallback = !isChannel && !isDm;
+
+  const workspaceQuery = useHomeQuery(
+    (token, ws) => fetchWorkspaceMembers(token, ws).then((r) => r.data),
+    [conversationType, conversationId],
+    { initialData: null }
+  );
+
   const dmSidebarEntry = useChatStore((s) =>
     isDm && conversationId
       ? s.sidebarListsCache?.dms.find((d) => d.id === conversationId)
@@ -40,13 +49,14 @@ export function useMentionMembers(
         avatarUrl: m.avatarUrl,
       }));
     }
-    if (isDm) {
+    if (isDm || isWorkspaceFallback) {
       const fromWorkspace = (workspaceQuery.data ?? []).map((m) => ({
         id: m.id,
         fullName: m.fullName,
         email: m.email,
         avatarUrl: m.avatarUrl,
       }));
+      if (isWorkspaceFallback) return fromWorkspace;
       if (!dmSidebarEntry?.otherUserId || !dmSidebarEntry.name) {
         return fromWorkspace;
       }
@@ -64,9 +74,9 @@ export function useMentionMembers(
       ];
     }
     return [];
-  }, [isChannel, isDm, channelMembers, workspaceQuery.data, dmSidebarEntry]);
+  }, [isChannel, isDm, isWorkspaceFallback, channelMembers, workspaceQuery.data, dmSidebarEntry]);
 
-  const loading = isChannel ? channelLoading : isDm ? workspaceQuery.loading : false;
+  const loading = isChannel ? channelLoading : (isDm || isWorkspaceFallback) ? workspaceQuery.loading : false;
 
   return { members, loading };
 }

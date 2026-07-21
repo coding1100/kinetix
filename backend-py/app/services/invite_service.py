@@ -1,13 +1,14 @@
 from datetime import datetime, timedelta, timezone
 
-import asyncio
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.core.errors import AppError
+from app.services.chat_service import sync_list_channel_members_for_workspace
+from app.services.folder_list_permissions import resolve_pending_shares
+from app.services.personal_space_service import ensure_personal_space
 from app.core.security import hash_password, sign_access_token
 from app.core.utils import generate_token
 from app.db.models.enums import MemberStatus, WorkspaceRole
@@ -16,12 +17,16 @@ from app.db.models.user import User
 from app.db.models.workspace import Workspace, WorkspaceMember
 from app.schemas.workspace import CreateInviteBody
 from app.services import email_service
+from app.services.notification_service import (
+    create_invite_accepted_notification,
+    emit_home_notifications,
+)
+from app.services.workspace_permissions import can_assign_role
 from app.services.auth_service import issue_refresh_for_user
-from app.services.workspace_service import get_active_member_json
-from app.socket.emit import broadcast_workspace_member_joined
 
 _INVITE_ROLES = {
     WorkspaceRole.OWNER,
+    WorkspaceRole.SUPER_ADMIN,
     WorkspaceRole.ADMIN,
     WorkspaceRole.MEMBER,
 }
@@ -47,6 +52,9 @@ async def create_invite(
     if inviter_role not in _INVITE_ROLES:
         raise AppError(403, "FORBIDDEN", "You cannot invite users to this workspace")
 
+    if not can_assign_role(inviter_role, body.role):
+        raise AppError(403, "FORBIDDEN", "You cannot invite users with this role")
+
     email = body.email.lower()
     existing_user = await session.scalar(
         select(User).where(User.email == email)
@@ -62,10 +70,6 @@ async def create_invite(
         if active:
             raise AppError(409, "ALREADY_MEMBER", "User is already in this workspace")
 
-    settings = get_settings()
-    now = _utc_now()
-    expires_at = now + timedelta(days=settings.invite_token_expires_days)
-
     pending = await session.scalar(
         select(Invite).where(
             Invite.workspace_id == workspace_id,
@@ -74,22 +78,23 @@ async def create_invite(
         )
     )
     if pending:
-        pending.role = body.role
-        pending.token = generate_token()
-        pending.expires_at = expires_at
-        pending.invited_by_id = invited_by_id
-        invite = pending
-    else:
-        token = generate_token()
-        invite = Invite(
-            workspace_id=workspace_id,
-            email=email,
-            role=body.role,
-            token=token,
-            expires_at=expires_at,
-            invited_by_id=invited_by_id,
+        raise AppError(
+            409, "ALREADY_INVITED", "This person has already been invited"
         )
-        session.add(invite)
+
+    settings = get_settings()
+    now = _utc_now()
+    expires_at = now + timedelta(days=settings.invite_token_expires_days)
+    token = generate_token()
+    invite = Invite(
+        workspace_id=workspace_id,
+        email=email,
+        role=body.role,
+        token=token,
+        expires_at=expires_at,
+        invited_by_id=invited_by_id,
+    )
+    session.add(invite)
 
     await session.flush()
     workspace = await session.get(Workspace, workspace_id)
@@ -302,18 +307,23 @@ async def accept_invite_for_user(
             )
         )
     invite.accepted_at = datetime.now(timezone.utc)
+    await ensure_personal_space(session, invite.workspace_id)
+    await resolve_pending_shares(session, invite.workspace_id, invite.email, user_id)
     await session.commit()
-
-    member = await get_active_member_json(session, invite.workspace_id, user_id)
-    asyncio.create_task(
-        broadcast_workspace_member_joined(
-            workspace_id=invite.workspace_id,
-            member=member,
-            invite_email=invite.email,
-        )
-    )
+    await sync_list_channel_members_for_workspace(session, invite.workspace_id)
 
     workspace = await session.get(Workspace, invite.workspace_id)
+    if invite.invited_by_id:
+        notifications = await create_invite_accepted_notification(
+            session,
+            workspace_id=invite.workspace_id,
+            actor_user_id=user_id,
+            recipient_id=invite.invited_by_id,
+            workspace_name=workspace.name,
+        )
+        if notifications:
+            await session.commit()
+            await emit_home_notifications(session, invite.workspace_id, notifications)
     return {
         "workspace": {
             "id": workspace.id,
@@ -358,18 +368,23 @@ async def accept_invite_with_signup(
         )
     )
     invite.accepted_at = datetime.now(timezone.utc)
+    await ensure_personal_space(session, invite.workspace_id)
+    await resolve_pending_shares(session, invite.workspace_id, invite.email, user.id)
     await session.commit()
-
-    member = await get_active_member_json(session, invite.workspace_id, user.id)
-    asyncio.create_task(
-        broadcast_workspace_member_joined(
-            workspace_id=invite.workspace_id,
-            member=member,
-            invite_email=invite.email,
-        )
-    )
+    await sync_list_channel_members_for_workspace(session, invite.workspace_id)
 
     workspace = await session.get(Workspace, invite.workspace_id)
+    if invite.invited_by_id:
+        notifications = await create_invite_accepted_notification(
+            session,
+            workspace_id=invite.workspace_id,
+            actor_user_id=user.id,
+            recipient_id=invite.invited_by_id,
+            workspace_name=workspace.name,
+        )
+        if notifications:
+            await session.commit()
+            await emit_home_notifications(session, invite.workspace_id, notifications)
     access_token = sign_access_token(sub=str(user.id), email=user.email)
     refresh_token = await issue_refresh_for_user(session, user.id)
 

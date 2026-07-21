@@ -21,10 +21,12 @@ export const INVITE_ROLE_MAP: Record<string, string> = {
   "limited-member": "LIMITED_MEMBER",
   guest: "GUEST",
   admin: "ADMIN",
+  "super-admin": "SUPER_ADMIN",
 };
 
 export const ROLE_LABELS: Record<string, string> = {
   OWNER: "Owner",
+  SUPER_ADMIN: "Super admin",
   ADMIN: "Admin",
   MEMBER: "Member",
   LIMITED_MEMBER: "Limited member",
@@ -35,6 +37,7 @@ type Props = {
   accessToken: string;
   workspaceId: string;
   canInviteAdmin?: boolean;
+  canInviteSuperAdmin?: boolean;
   onSuccess?: () => void;
   compact?: boolean;
 };
@@ -43,6 +46,7 @@ export function WorkspaceInviteForm({
   accessToken,
   workspaceId,
   canInviteAdmin = false,
+  canInviteSuperAdmin = false,
   onSuccess,
   compact = false,
 }: Props) {
@@ -153,6 +157,9 @@ export function WorkspaceInviteForm({
                 <SelectItem value="guest">Guest</SelectItem>
                 {canInviteAdmin ? (
                   <SelectItem value="admin">Admin</SelectItem>
+                ) : null}
+                {canInviteSuperAdmin ? (
+                  <SelectItem value="super-admin">Super admin</SelectItem>
                 ) : null}
               </>
             ) : null}

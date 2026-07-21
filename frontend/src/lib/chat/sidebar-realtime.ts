@@ -2,6 +2,7 @@ import { fetchChannel, fetchDm } from "@/lib/api/chat";
 import { stripMessageHtml } from "@/lib/chat/rich-text/sanitize";
 import {
   patchChannelActivityInSidebar,
+  patchSidebarChannel,
   removeChannelFromSidebar,
   upsertChannelInSidebar,
 } from "@/lib/chat/sidebar-channel";
@@ -14,7 +15,9 @@ import {
 import type {
   ChatChannelJoinedPayload,
   ChatChannelMemberPayload,
+  ChatChannelPrivacyPayload,
   ChatChannelRemovedPayload,
+  ChatChannelRenamedPayload,
   ChatRealtimePayload,
 } from "@/lib/types/realtime";
 
@@ -58,13 +61,23 @@ export function applyChannelRemovedFromSidebar(
   return viewingRemovedChannel;
 }
 
+export function applyChannelRenamedToSidebar(event: ChatChannelRenamedPayload) {
+  patchSidebarChannel(event.channelId, { name: event.name });
+}
+
+export function applyChannelPrivacyChanged(
+  event: ChatChannelPrivacyPayload
+) {
+  patchSidebarChannel(event.channelId, { isPrivate: event.isPrivate });
+}
+
 const pendingChannelFetches = new Set<string>();
 
 export function applyChannelMemberUpdate(
   event: ChatChannelMemberPayload,
   currentUserId: string | undefined,
   accessToken: string | undefined
-) {
+): boolean {
   const { workspaceId, channelId, member, removed } = event;
   patchCachedChannelMembers(workspaceId, channelId, (members) => {
     if (removed) {
@@ -79,20 +92,41 @@ export function applyChannelMemberUpdate(
     return next;
   });
 
-  if (
-    removed ||
-    !currentUserId ||
-    member.id !== currentUserId ||
-    !accessToken
-  ) {
-    return;
+  if (!currentUserId || member.id !== currentUserId) {
+    return false;
   }
+
+  if (removed) {
+    // This is how a List-privacy toggle (or any other membership resync
+    // not driven by an explicit "remove from channel" action) reaches the
+    // sidebar - chat:channel:removed only fires for an explicit removal,
+    // sync_list_channel_members_for_space always emits this event instead.
+    // Without this branch the channel stayed in the recipient's own
+    // Channels tab forever once they lost access, even though the
+    // ChatChannelMember row backing it was already gone server-side.
+    removeChannelFromSidebar(channelId);
+    invalidateChannelMembers(workspaceId, channelId);
+
+    const active = useChatStore.getState().activeConversation;
+    const viewingRemovedChannel =
+      active?.kind === "channel" && active.id === channelId;
+    if (viewingRemovedChannel) {
+      const { setActiveConversation, setActiveThread, setChannelDetailsView } =
+        useChatStore.getState();
+      setActiveConversation(null);
+      setActiveThread(null);
+      setChannelDetailsView(null);
+    }
+    return viewingRemovedChannel;
+  }
+
+  if (!accessToken) return false;
 
   const cache = useChatStore.getState().sidebarListsCache;
   const alreadyListed =
     isSidebarCacheForSession(cache, currentUserId, workspaceId) &&
     cache!.channels.some((c) => c.id === channelId);
-  if (alreadyListed || pendingChannelFetches.has(channelId)) return;
+  if (alreadyListed || pendingChannelFetches.has(channelId)) return false;
 
   pendingChannelFetches.add(channelId);
   void fetchChannel(accessToken, workspaceId, channelId)
@@ -101,6 +135,7 @@ export function applyChannelMemberUpdate(
     .finally(() => {
       pendingChannelFetches.delete(channelId);
     });
+  return false;
 }
 
 export function applyRealtimeMessageToSidebar(
@@ -109,12 +144,15 @@ export function applyRealtimeMessageToSidebar(
   accessToken: string | undefined
 ) {
   if (event.parentId) return;
-  if (!currentUserId || event.message.authorId === currentUserId) return;
+  if (!currentUserId) return;
 
   const { workspaceId, kind, conversationId, message } = event;
+  const isOwnMessage = message.authorId === currentUserId;
   const lastMessage = stripMessageHtml(message.body);
   const lastAt = message.createdAt;
-  const bumpUnread = !isActiveConversation(event);
+  // Own messages still bump the conversation to the top of the sidebar,
+  // just never as unread for the sender.
+  const bumpUnread = !isOwnMessage && !isActiveConversation(event);
   const cache = useChatStore.getState().sidebarListsCache;
 
   if (kind === "dm") {

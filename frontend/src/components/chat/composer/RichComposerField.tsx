@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { ConversationType } from "@/lib/types/chat";
+import type { MentionMember } from "@/hooks/use-mention-members";
 import type { ComposerSegment } from "@/lib/chat/mention-types";
 import type { MentionSelection } from "@/lib/chat/mention-types";
 import { cn } from "@/lib/utils";
@@ -27,12 +28,14 @@ export function RichComposerField({
   mentionQuery,
   conversationType,
   conversationId,
+  members,
   onSelectMention,
   onDismissMentionAutocomplete,
   onKeyDown,
   onInput,
   onPasteFiles,
   leadingContent,
+  peopleOnlyMentions = false,
 }: {
   segments: ComposerSegment[];
   draftPlain: string;
@@ -43,12 +46,14 @@ export function RichComposerField({
   mentionQuery: string | null;
   conversationType?: ConversationType;
   conversationId?: string;
+  members?: MentionMember[];
   onSelectMention: (selection: MentionSelection) => void;
   onDismissMentionAutocomplete: () => void;
   onKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
   onInput: () => void;
   onPasteFiles?: (files: File[]) => void;
   leadingContent?: React.ReactNode;
+  peopleOnlyMentions?: boolean;
 }) {
   const fieldRef = useRef<HTMLDivElement>(null);
   const {
@@ -137,9 +142,11 @@ export function RichComposerField({
           anchorRef={fieldRef}
           conversationType={conversationType}
           conversationId={conversationId}
+          members={members}
           query={mentionQuery ?? ""}
           onSelect={onSelectMention}
           onDismiss={onDismissMentionAutocomplete}
+          peopleOnly={peopleOnlyMentions}
         />
 
         <div

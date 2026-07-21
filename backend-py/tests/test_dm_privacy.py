@@ -9,20 +9,10 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
-from app.socket.rooms import conversation_room
 
 PASSWORD = "password123"
 OWNER_EMAIL = "owner@demo.com"
 HUSNAIN_EMAIL = "htrajpoot3998@gmail.com"
-
-
-def test_conversation_room_routes_dms_to_participant_room():
-    assert conversation_room(
-        workspace_id="ws-1", kind="dm", conversation_id="dm-1"
-    ) == "dm:dm-1"
-    assert conversation_room(
-        workspace_id="ws-1", kind="channel", conversation_id="ch-1"
-    ) == "ws:ws-1"
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")

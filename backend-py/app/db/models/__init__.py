@@ -14,16 +14,18 @@ from app.db.models.home import (
     HomeRecent,
     HomeReminder,
     InboxItem,
+    ListStatus,
     Post,
     Space,
     Task,
-    TaskAssignee,
     TaskComment,
     TaskList,
     UserHomeSidebar,
+    UserTaskLineup,
 )
 from app.db.models.invite import Invite
 from app.db.models.oauth import OAuthAccount, OAuthExchange, OAuthState
+from app.db.models.team import Team, TeamMember
 from app.db.models.user import PasswordResetToken, RefreshToken, User
 from app.db.models.workspace import Workspace, WorkspaceMember
 
@@ -37,11 +39,13 @@ __all__ = [
     "Workspace",
     "WorkspaceMember",
     "Invite",
+    "Team",
+    "TeamMember",
     "Space",
     "Folder",
     "TaskList",
+    "ListStatus",
     "Task",
-    "TaskAssignee",
     "TaskComment",
     "AssignedComment",
     "InboxItem",
@@ -50,6 +54,7 @@ __all__ = [
     "HomeFavorite",
     "HomeRecent",
     "UserHomeSidebar",
+    "UserTaskLineup",
     "ChatChannel",
     "ChatChannelMember",
     "DirectConversation",

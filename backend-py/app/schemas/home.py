@@ -13,6 +13,53 @@ class CreateTaskBody(BaseModel):
     description: str | None = Field(default=None, max_length=5000)
 
 
+class CreateSubtaskBody(BaseModel):
+    name: str = Field(min_length=1, max_length=500)
+
+
+class CreateTaskDependencyBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    related_task_id: str = Field(min_length=1, alias="relatedTaskId")
+    type: Literal["blocking", "blocked_by", "linked"]
+
+
+class CreateChecklistBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(min_length=1, max_length=255)
+
+
+class UpdateChecklistBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+
+
+class CreateChecklistItemBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    text: str = Field(min_length=1, max_length=500)
+    assignee_id: str | None = Field(default=None, alias="assigneeId")
+    is_checked: bool = Field(default=False, alias="isChecked")
+
+
+class UpdateChecklistItemBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    text: str | None = Field(default=None, min_length=1, max_length=500)
+    is_checked: bool | None = Field(default=None, alias="isChecked")
+    assignee_id: str | None = Field(default=None, alias="assigneeId")
+
+
+class PresignTaskAttachmentBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    file_name: str = Field(min_length=1, max_length=255, alias="fileName")
+    mime_type: str = Field(min_length=1, max_length=120, alias="mimeType")
+    size_bytes: int = Field(gt=0, alias="sizeBytes")
+
+
 class UpdateTaskBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -20,7 +67,15 @@ class UpdateTaskBody(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=500)
     description: str | None = Field(default=None, max_length=5000)
     due_date: str | None = Field(default=None, alias="dueDate")
+    start_date: str | None = Field(default=None, alias="startDate")
+    time_estimate_minutes: int | None = Field(
+        default=None, alias="timeEstimateMinutes", ge=0, le=60 * 24 * 365
+    )
     assignee_ids: list[str] | None = Field(default=None, alias="assigneeIds")
+    follower_ids: list[str] | None = Field(default=None, alias="followerIds")
+    priority: Literal["urgent", "high", "normal", "low"] | None = None
+    list_id: str | None = Field(default=None, alias="listId")
+    status_id: str | None = Field(default=None, alias="statusId")
 
 
 class UpdateInboxItemBody(BaseModel):
@@ -30,3 +85,39 @@ class UpdateInboxItemBody(BaseModel):
 
 class UpdateSidebarBody(BaseModel):
     config: dict[str, Any]
+
+
+class CreateReminderBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    title: str = Field(min_length=1, max_length=200)
+    due_at: str | None = Field(default=None, alias="dueAt")
+
+
+class CreateFavoriteBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(min_length=1, max_length=200)
+    item_type: str = Field(min_length=1, max_length=40, alias="itemType")
+    href: str = Field(min_length=1, max_length=500)
+
+
+class RecordRecentBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(min_length=1, max_length=200)
+    item_type: str = Field(min_length=1, max_length=40, alias="itemType")
+    space: str = Field(default="", max_length=120)
+    href: str = Field(min_length=1, max_length=500)
+
+
+class AddLineupBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    task_id: str = Field(alias="taskId")
+
+
+class ReorderLineupBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    task_ids: list[str] = Field(min_length=1, alias="taskIds")

@@ -1,10 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import {
   AppWindowIcon,
   BoxIcon,
   CheckIcon,
+  SearchIcon,
   SettingsIcon,
   UserPlusIcon,
   UsersIcon,
@@ -13,6 +15,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { resetSessionScopedState } from "@/lib/auth/reset-session-scoped-state";
 import {
   selectActiveWorkspace,
@@ -28,10 +31,15 @@ const manageItems = [
   { label: "Automations", icon: WandSparklesIcon },
 ];
 
-export function WorkspaceSwitcherPopup() {
+export function WorkspaceSwitcherPopup({
+  onClose,
+}: {
+  onClose?: () => void;
+}) {
   const workspaces = useAuthStore((s) => s.workspaces);
   const activeWorkspace = useAuthStore(selectActiveWorkspace);
   const setActiveWorkspace = useAuthStore((s) => s.setActiveWorkspace);
+  const [search, setSearch] = useState("");
 
   if (!activeWorkspace && workspaces.length === 0) {
     return (
@@ -42,6 +50,11 @@ export function WorkspaceSwitcherPopup() {
   }
 
   const current = activeWorkspace ?? workspaces[0]!;
+  const filteredWorkspaces = search.trim()
+    ? workspaces.filter((workspace) =>
+        workspace.name.toLowerCase().includes(search.trim().toLowerCase())
+      )
+    : workspaces;
 
   return (
     <div className="w-[320px] space-y-3 p-2">
@@ -64,7 +77,22 @@ export function WorkspaceSwitcherPopup() {
           <p className="px-1 text-xs font-medium text-muted-foreground">
             Switch workspace
           </p>
-          {workspaces.map((workspace) => {
+          <div className="relative px-1 pb-1">
+            <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
+              placeholder="Search workspaces"
+              className="h-8 pl-7 text-sm"
+            />
+          </div>
+          {filteredWorkspaces.length === 0 ? (
+            <p className="px-2 py-1.5 text-sm text-muted-foreground">
+              No workspaces found
+            </p>
+          ) : null}
+          {filteredWorkspaces.map((workspace) => {
             const isActive = workspace.id === current.id;
             return (
               <Button
@@ -75,6 +103,7 @@ export function WorkspaceSwitcherPopup() {
                   isActive && "bg-accent"
                 )}
                 onClick={() => {
+                  onClose?.();
                   if (workspace.id === current.id) return;
                   resetSessionScopedState();
                   setActiveWorkspace(workspace.id);
@@ -99,7 +128,7 @@ export function WorkspaceSwitcherPopup() {
           variant="outline"
           className="justify-center"
           nativeButton={false}
-          render={<Link href="/people" />}
+          render={<Link href="/people" onClick={() => onClose?.()} />}
         >
           <UsersIcon className="size-4" />
           People
@@ -108,7 +137,7 @@ export function WorkspaceSwitcherPopup() {
           variant="outline"
           className="justify-center"
           nativeButton={false}
-          render={<Link href="/people?invite=1" />}
+          render={<Link href="/people?invite=1" onClick={() => onClose?.()} />}
         >
           <UserPlusIcon className="size-4" />
           Invite
@@ -119,7 +148,7 @@ export function WorkspaceSwitcherPopup() {
         variant="outline"
         className="w-full justify-center"
         nativeButton={false}
-        render={<Link href="/workspace/settings" />}
+        render={<Link href="/workspace/settings" onClick={() => onClose?.()} />}
       >
         <SettingsIcon className="size-4" />
         Workspace settings
@@ -132,7 +161,10 @@ export function WorkspaceSwitcherPopup() {
             key={label}
             variant="ghost"
             className="w-full justify-start"
-            onClick={() => toast(`${label} — Phase 3`)}
+            onClick={() => {
+              onClose?.();
+              toast(`${label} — Phase 3`);
+            }}
           >
             <Icon className="size-4" />
             {label}
@@ -143,7 +175,12 @@ export function WorkspaceSwitcherPopup() {
       <Button
         variant="outline"
         nativeButton={false}
-        render={<Link href="/workspace/create/use-case" />}
+        render={
+          <Link
+            href="/workspace/create/use-case"
+            onClick={() => onClose?.()}
+          />
+        }
         className="w-full justify-center"
       >
         <PlusIcon className="size-4" />

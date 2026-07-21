@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
@@ -40,11 +41,11 @@ export function UnderlineTabBar<T extends string>({
   className,
   size = "default",
 }: {
-  tabs: { id: T; label: string; disabled?: boolean }[];
+  tabs: { id: T; label: string; icon?: ReactNode; disabled?: boolean }[];
   active: T;
   onChange: (id: T) => void;
   className?: string;
-  size?: "default" | "compact";
+  size?: "default" | "compact" | "xs";
 }) {
   return (
     <div
@@ -66,8 +67,12 @@ export function UnderlineTabBar<T extends string>({
             title={tab.disabled ? "Coming soon" : undefined}
             onClick={() => !tab.disabled && onChange(tab.id)}
             className={cn(
-              "relative -mb-px border-0 bg-transparent transition-colors outline-none",
-              size === "compact" ? "px-2.5 py-1.5 text-xs" : "px-3 py-2.5 text-sm",
+              "relative -mb-px flex items-center border-0 bg-transparent transition-colors outline-none",
+              size === "xs"
+                ? "gap-1 px-1.5 py-1 text-[11px]"
+                : size === "compact"
+                  ? "gap-1.5 px-2 py-1.5 text-xs"
+                  : "gap-1.5 px-3 py-2.5 text-sm",
               "font-medium text-muted-foreground hover:text-foreground",
               isActive && "font-semibold text-foreground",
               isActive &&
@@ -75,6 +80,7 @@ export function UnderlineTabBar<T extends string>({
               tab.disabled && "cursor-not-allowed opacity-50"
             )}
           >
+            {tab.icon}
             {tab.label}
           </button>
         );

@@ -57,6 +57,47 @@ export function formatChatMessageTime(date: Date, now = new Date()): string {
   return `${datePart} at ${timePart}`;
 }
 
+/** Completed calendar months between two dates (e.g. 30 days into month 2 is still 1, not 0). */
+function completedMonthsBetween(from: Date, to: Date): number {
+  let months =
+    (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+  if (to.getDate() < from.getDate()) months -= 1;
+  return months;
+}
+
+/** Completed calendar years between two dates. */
+function completedYearsBetween(from: Date, to: Date): number {
+  let years = to.getFullYear() - from.getFullYear();
+  const monthDayBefore =
+    to.getMonth() < from.getMonth() ||
+    (to.getMonth() === from.getMonth() && to.getDate() < from.getDate());
+  if (monthDayBefore) years -= 1;
+  return years;
+}
+
+export function formatThreadReplyTime(date: Date, now = new Date()): string {
+  const day = startOfDay(date);
+  const today = startOfDay(now);
+  const diffDays = Math.round((today.getTime() - day.getTime()) / 86_400_000);
+
+  if (diffDays <= 0) {
+    return date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  }
+  if (diffDays < 30) {
+    return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+  }
+  const months = completedMonthsBetween(date, now);
+  if (months < 12) {
+    return `${months} month${months === 1 ? "" : "s"} ago`;
+  }
+  const years = completedYearsBetween(date, now);
+  return `${years} year${years === 1 ? "" : "s"} ago`;
+}
+
 export type ChatDayGroup = {
   dayKey: string;
   label: string;

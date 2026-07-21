@@ -21,6 +21,7 @@ import { ChannelFilesDialog } from "@/components/chat/modals/ChannelFilesDialog"
 import { SyncUpDialog } from "@/components/chat/modals/SyncUpDialog";
 import { NewDmDialog } from "@/components/chat/modals/NewDmDialog";
 import { RenameChannelDialog } from "@/components/chat/modals/RenameChannelDialog";
+import { GlobalCreateTaskDialog } from "@/components/modals/GlobalCreateTaskDialog";
 
 export function Modals() {
   const router = useRouter();
@@ -44,8 +45,7 @@ export function Modals() {
           <DialogHeader>
             <DialogTitle>Customize Home Sidebar</DialogTitle>
             <DialogDescription>
-              Pin items to show them in the Home sidebar (Inbox, Replies, All
-              Channels).
+              Pin items to show them in the Home sidebar.
             </DialogDescription>
           </DialogHeader>
           <ul className="max-h-64 space-y-2 overflow-y-auto">
@@ -79,6 +79,7 @@ export function Modals() {
         </DialogContent>
       </Dialog>
 
+      <GlobalCreateTaskDialog />
       <CreateChannelDialog />
       <ChannelShareDialog />
       <ChannelFilesDialog />

@@ -1,5 +1,19 @@
-from app.socket.rooms import conversation_room, workspace_room
 from app.socket.server import get_sio
+
+
+async def _emit_workspace_or_users(
+    *,
+    event: str,
+    payload: dict,
+    workspace_id: str,
+    user_ids: list[str] | None = None,
+) -> None:
+    sio = get_sio()
+    if user_ids:
+        for user_id in sorted(set(user_ids)):
+            await sio.emit(event, payload, room=f"user:{user_id}")
+        return
+    await sio.emit(event, payload, room=f"ws:{workspace_id}")
 
 
 async def broadcast_chat_message(
@@ -9,22 +23,19 @@ async def broadcast_chat_message(
     conversation_id: str,
     message: dict,
     parent_id: str | None = None,
+    user_ids: list[str] | None = None,
 ) -> None:
-    sio = get_sio()
-    await sio.emit(
-        "chat:message",
-        {
+    await _emit_workspace_or_users(
+        event="chat:message",
+        payload={
             "workspaceId": workspace_id,
             "kind": kind,
             "conversationId": conversation_id,
             "message": message,
             "parentId": parent_id,
         },
-        room=conversation_room(
-            workspace_id=workspace_id,
-            kind=kind,
-            conversation_id=conversation_id,
-        ),
+        workspace_id=workspace_id,
+        user_ids=user_ids,
     )
 
 
@@ -35,22 +46,19 @@ async def broadcast_chat_message_delete(
     conversation_id: str,
     message_id: str,
     parent_id: str | None = None,
+    user_ids: list[str] | None = None,
 ) -> None:
-    sio = get_sio()
-    await sio.emit(
-        "chat:message:delete",
-        {
+    await _emit_workspace_or_users(
+        event="chat:message:delete",
+        payload={
             "workspaceId": workspace_id,
             "kind": kind,
             "conversationId": conversation_id,
             "messageId": message_id,
             "parentId": parent_id,
         },
-        room=conversation_room(
-            workspace_id=workspace_id,
-            kind=kind,
-            conversation_id=conversation_id,
-        ),
+        workspace_id=workspace_id,
+        user_ids=user_ids,
     )
 
 
@@ -61,22 +69,19 @@ async def broadcast_chat_message_edit(
     conversation_id: str,
     message: dict,
     parent_id: str | None = None,
+    user_ids: list[str] | None = None,
 ) -> None:
-    sio = get_sio()
-    await sio.emit(
-        "chat:message:edit",
-        {
+    await _emit_workspace_or_users(
+        event="chat:message:edit",
+        payload={
             "workspaceId": workspace_id,
             "kind": kind,
             "conversationId": conversation_id,
             "message": message,
             "parentId": parent_id,
         },
-        room=conversation_room(
-            workspace_id=workspace_id,
-            kind=kind,
-            conversation_id=conversation_id,
-        ),
+        workspace_id=workspace_id,
+        user_ids=user_ids,
     )
 
 
@@ -94,43 +99,7 @@ async def broadcast_channel_joined(
             "userIds": user_ids,
             "channel": channel,
         },
-        room=workspace_room(workspace_id),
-    )
-
-
-async def broadcast_dm_joined(
-    *,
-    workspace_id: str,
-    user_ids: list[str],
-    conversation_id: str,
-) -> None:
-    sio = get_sio()
-    await sio.emit(
-        "chat:dm:joined",
-        {
-            "workspaceId": workspace_id,
-            "userIds": user_ids,
-            "conversationId": conversation_id,
-        },
-        room=workspace_room(workspace_id),
-    )
-
-
-async def broadcast_workspace_member_joined(
-    *,
-    workspace_id: str,
-    member: dict,
-    invite_email: str,
-) -> None:
-    sio = get_sio()
-    await sio.emit(
-        "workspace:member:joined",
-        {
-            "workspaceId": workspace_id,
-            "member": member,
-            "inviteEmail": invite_email,
-        },
-        room=workspace_room(workspace_id),
+        room=f"ws:{workspace_id}",
     )
 
 
@@ -148,7 +117,7 @@ async def broadcast_home_notification(
             "userIds": user_ids,
             "notification": notification,
         },
-        room=workspace_room(workspace_id),
+        room=f"ws:{workspace_id}",
     )
 
 
@@ -168,7 +137,7 @@ async def broadcast_channel_member_updated(
             "member": member,
             "removed": removed,
         },
-        room=workspace_room(workspace_id),
+        room=f"ws:{workspace_id}",
     )
 
 
@@ -186,7 +155,101 @@ async def broadcast_channel_removed(
             "userIds": user_ids,
             "channelId": channel_id,
         },
-        room=workspace_room(workspace_id),
+        room=f"ws:{workspace_id}",
+    )
+
+
+async def broadcast_resource_access_granted(
+    *,
+    workspace_id: str,
+    user_ids: list[str],
+    resource_type: str,
+    resource_id: str,
+) -> None:
+    """Mirrors broadcast_resource_access_removed - tells the newly-shared
+    user's own sidebar (Shared with me) a Space/Folder/List just became
+    visible to them, instead of only surfacing via the inbox notification
+    until their next reload."""
+    sio = get_sio()
+    await sio.emit(
+        "space:access:granted",
+        {
+            "workspaceId": workspace_id,
+            "userIds": user_ids,
+            "resourceType": resource_type,
+            "resourceId": resource_id,
+        },
+        room=f"ws:{workspace_id}",
+    )
+
+
+async def broadcast_resource_access_removed(
+    *,
+    workspace_id: str,
+    user_ids: list[str],
+    resource_type: str,
+    resource_id: str,
+) -> None:
+    """Tells the removed user's own sidebar (Shared with me) to drop this
+    Space/Folder/List - explicit-share removal doesn't otherwise touch
+    anything the removed user's client is subscribed to."""
+    sio = get_sio()
+    await sio.emit(
+        "space:access:removed",
+        {
+            "workspaceId": workspace_id,
+            "userIds": user_ids,
+            "resourceType": resource_type,
+            "resourceId": resource_id,
+        },
+        room=f"ws:{workspace_id}",
+    )
+
+
+async def broadcast_channel_privacy_changed(
+    *,
+    workspace_id: str,
+    channel_id: str,
+    is_private: bool,
+) -> None:
+    """Mirrors broadcast_channel_renamed - a List's own is_private flag
+    drives its channel's displayed isPrivate (see _channel_payload,
+    chat_service.py), but nothing else tells an existing member's already-
+    cached sidebar entry that the flag flipped after the List was created
+    (sync_list_channel_members_for_space only emits events for added/
+    removed members, not for members who stay but whose channel's privacy
+    display went stale)."""
+    sio = get_sio()
+    await sio.emit(
+        "chat:channel:privacy",
+        {
+            "workspaceId": workspace_id,
+            "channelId": channel_id,
+            "isPrivate": is_private,
+        },
+        room=f"ws:{workspace_id}",
+    )
+
+
+async def broadcast_channel_renamed(
+    *,
+    workspace_id: str,
+    channel_id: str,
+    name: str,
+) -> None:
+    # Deliberately just {channelId, name} rather than a full channel payload -
+    # reusing broadcast_channel_joined's shape would clobber each recipient's
+    # own starred/isFollowing state (that payload uses a generic template
+    # member). This propagates a List <-> Channel two-way name sync live.
+    sio = get_sio()
+    await sio.emit(
+        "chat:channel:renamed",
+        {
+            "workspaceId": workspace_id,
+            "channelId": channel_id,
+            "name": name,
+        },
+        room=f"ws:{workspace_id}",
     )
 
 
@@ -208,11 +271,7 @@ async def broadcast_chat_typing(
             "userId": user_id,
             "typing": typing,
         },
-        room=conversation_room(
-            workspace_id=workspace_id,
-            kind=kind,
-            conversation_id=conversation_id,
-        ),
+        room=f"ws:{workspace_id}",
     )
 
 
@@ -223,49 +282,80 @@ async def broadcast_chat_read(
     conversation_id: str,
     user_id: str,
     read_at: str,
+    audience_user_ids: list[str] | None = None,
 ) -> None:
-    sio = get_sio()
-    await sio.emit(
-        "chat:read",
-        {
+    await _emit_workspace_or_users(
+        event="chat:read",
+        payload={
             "workspaceId": workspace_id,
             "kind": kind,
             "conversationId": conversation_id,
             "userId": user_id,
             "readAt": read_at,
         },
-        room=conversation_room(
-            workspace_id=workspace_id,
-            kind=kind,
-            conversation_id=conversation_id,
-        ),
+        workspace_id=workspace_id,
+        user_ids=audience_user_ids,
     )
 
 
 async def broadcast_chat_reaction(
     *,
     workspace_id: str,
+    kind: str,
+    conversation_id: str,
     message_id: str,
     reactions: list[dict],
-    kind: str | None = None,
-    conversation_id: str | None = None,
+    user_ids: list[str] | None = None,
 ) -> None:
-    sio = get_sio()
-    room = (
-        conversation_room(
-            workspace_id=workspace_id,
-            kind=kind,
-            conversation_id=conversation_id,
-        )
-        if kind and conversation_id
-        else workspace_room(workspace_id)
-    )
-    await sio.emit(
-        "chat:reaction",
-        {
+    await _emit_workspace_or_users(
+        event="chat:reaction",
+        payload={
             "workspaceId": workspace_id,
+            "kind": kind,
+            "conversationId": conversation_id,
             "messageId": message_id,
             "reactions": reactions,
         },
-        room=room,
+        workspace_id=workspace_id,
+        user_ids=user_ids,
+    )
+
+
+async def broadcast_workspace_member_role_updated(
+    *,
+    workspace_id: str,
+    user_id: str,
+    role: str,
+) -> None:
+    sio = get_sio()
+    await sio.emit(
+        "workspace:member:role",
+        {
+            "workspaceId": workspace_id,
+            "userId": user_id,
+            "role": role,
+        },
+        room=f"ws:{workspace_id}",
+    )
+
+
+async def broadcast_task_event(
+    *,
+    workspace_id: str,
+    action: str,
+    task_id: str,
+    list_id: str | None = None,
+    task: dict | None = None,
+) -> None:
+    sio = get_sio()
+    await sio.emit(
+        "task:event",
+        {
+            "workspaceId": workspace_id,
+            "action": action,
+            "taskId": task_id,
+            "listId": list_id,
+            "task": task,
+        },
+        room=f"ws:{workspace_id}",
     )

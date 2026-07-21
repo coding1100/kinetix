@@ -8,6 +8,7 @@ import {
   MessageSquareIcon,
   CalendarIcon,
   UsersIcon,
+  UsersRoundIcon,
   FileTextIcon,
   LayoutDashboardIcon,
   ClipboardCheckIcon,
@@ -38,6 +39,7 @@ const BASE_NAV_ITEMS: NavItem[] = [
   { label: "Home", icon: HomeIcon, href: "/home/inbox" },
   { label: "Chat", icon: MessageSquareIcon, href: "/chat", badge: "dot" },
   { label: "Spaces", icon: BoxesIcon, href: "/spaces" },
+  { label: "Teams", icon: UsersRoundIcon, href: "/teams" },
   { label: "Planner", icon: CalendarIcon, disabled: true, hidden: true },
   { label: "People", icon: UsersIcon, href: "/people" },
   { label: "Docs", icon: FileTextIcon, disabled: true, hidden: true },
@@ -67,6 +69,7 @@ export function GlobalNav() {
     if (item.label === "Home") return pathname.startsWith("/home");
     if (item.label === "Chat") return pathname.startsWith("/chat");
     if (item.label === "Spaces") return pathname.startsWith("/spaces");
+    if (item.label === "Teams") return pathname.startsWith("/teams");
     if (item.label === "People") return pathname.startsWith("/people");
     return pathname === item.href;
   };

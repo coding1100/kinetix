@@ -2,6 +2,60 @@ from datetime import datetime, timezone
 
 from app.db.models.enums import InboxItemType, TaskStatus
 from app.db.models.home import Task
+from app.services.task_attachment_service import map_task_attachment
+
+
+def _as_aware_utc(dt: datetime) -> datetime:
+    """asyncpg sometimes returns a naive datetime for a DateTime(timezone=True)
+    column (same driver/schema quirk fixed for chat threads in
+    chat_service._as_aware_utc) - without this, isoformat() omits the UTC
+    offset and the frontend's `new Date(...)` misparses it as local time."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _map_task_comment(comment) -> dict:
+    updated = getattr(comment, "updated_at", None)
+    created_at = _as_aware_utc(comment.created_at) if comment.created_at else None
+    updated_at = _as_aware_utc(updated) if updated else None
+    return {
+        "id": comment.id,
+        "authorId": comment.user_id,
+        "author": comment.user.full_name,
+        "body": comment.body,
+        "at": comment_relative_time(created_at),
+        "createdAt": created_at.isoformat() if created_at else None,
+        "updatedAt": updated_at.isoformat() if updated_at else None,
+        "isEdited": bool(updated),
+        "parentCommentId": comment.parent_comment_id,
+        "attachments": [
+            map_task_attachment(a)
+            for a in (getattr(comment, "attachments", None) or [])
+            if a.status == "ready"
+        ],
+    }
+
+
+def _map_task_comments_threaded(comments: list) -> list[dict]:
+    sorted_comments = sorted(comments, key=lambda c: c.created_at)
+    replies_by_parent: dict[str, list] = {}
+    for comment in sorted_comments:
+        if comment.parent_comment_id:
+            replies_by_parent.setdefault(comment.parent_comment_id, []).append(comment)
+
+    def with_replies(comment) -> dict:
+        payload = _map_task_comment(comment)
+        replies = sorted(
+            replies_by_parent.get(comment.id, []),
+            key=lambda c: c.created_at,
+        )
+        payload["replyCount"] = len(replies)
+        payload["replies"] = [_map_task_comment(r) for r in replies]
+        return payload
+
+    top_level = [c for c in sorted_comments if not c.parent_comment_id]
+    return [with_replies(c) for c in top_level]
 
 
 STATUS_LABELS: dict[TaskStatus, str] = {
@@ -85,45 +139,118 @@ def map_inbox_type(item_type: InboxItemType) -> str:
     return item_type.value.lower()
 
 
-def map_task(task: Task, current_user_id: str) -> dict:
+def map_checklist_item(item) -> dict:
+    return {
+        "id": item.id,
+        "text": item.text,
+        "isChecked": item.is_checked,
+        "assigneeId": item.assignee_id,
+        "assigneeName": item.assignee.full_name if item.assignee else None,
+    }
+
+
+def map_checklist(checklist) -> dict:
+    items = sorted(
+        getattr(checklist, "items", None) or [],
+        key=lambda i: i.created_at,
+    )
+    checked_count = sum(1 for i in items if i.is_checked)
+    return {
+        "id": checklist.id,
+        "name": checklist.name,
+        "itemCount": len(items),
+        "checkedCount": checked_count,
+        "items": [map_checklist_item(i) for i in items],
+    }
+
+
+def map_task(
+    task: Task, current_user_id: str, assignee_names: dict[str, str] | None = None
+) -> dict:
     assignee_labels = []
-    for a in task.assignees:
-        name = a.user.full_name.split(" ")[0] if a.user.full_name else "User"
-        assignee_labels.append("You" if a.user_id == current_user_id else name)
+    for uid in task.assignee_ids:
+        if uid == current_user_id:
+            assignee_labels.append("You")
+            continue
+        full_name = (assignee_names or {}).get(uid)
+        assignee_labels.append(full_name.split(" ")[0] if full_name else "User")
 
     comments = sorted(task.comments, key=lambda c: c.created_at)
+    if task.list_status:
+        status_label = task.list_status.name
+        status_color = task.list_status.color
+        status_key = task.list_status.legacy_key or task.status.value
+    else:
+        status_label = STATUS_LABELS.get(task.status, task.status.value.lower())
+        status_color = task.status_color
+        status_key = task.status.value
     return {
         "id": task.id,
         "name": task.name,
-        "status": STATUS_LABELS.get(task.status, task.status.value.lower()),
-        "statusKey": task.status.value,
-        "statusColor": task.status_color,
-        "assigneeIds": [a.user_id for a in task.assignees],
+        "status": status_label,
+        "statusKey": status_key,
+        "statusId": task.status_id,
+        "statusColor": status_color,
+        "assigneeIds": list(task.assignee_ids),
+        "followerIds": list(task.follower_ids),
         "dueDate": format_due_date(task.due_date),
         "dueDateIso": task.due_date.isoformat() if task.due_date else None,
+        "startDate": format_due_date(task.start_date),
+        "startDateIso": task.start_date.isoformat() if task.start_date else None,
+        "timeEstimateMinutes": task.time_estimate_minutes,
         "assignees": assignee_labels,
         "list": task.task_list.name,
+        "listId": task.task_list.id,
         "space": task.task_list.space.name,
         "priority": task.priority.value.lower() if task.priority else None,
         "overdue": is_overdue(task.due_date, task.status),
         "description": task.description,
-        "comments": [
-            {
-                "id": c.id,
-                "author": c.user.full_name,
-                "body": c.body,
-                "at": comment_relative_time(c.created_at),
-            }
-            for c in comments
+        "createdAt": task.created_at.isoformat() if task.created_at else None,
+        "updatedAt": task.updated_at.isoformat() if task.updated_at else None,
+        "commentCount": len(comments),
+        "subtaskCount": len(getattr(task, "subtasks", None) or []),
+        "comments": _map_task_comments_threaded(comments),
+        "checklists": [
+            map_checklist(c)
+            for c in sorted(
+                getattr(task, "checklists", None) or [],
+                key=lambda c: c.position,
+            )
         ],
     }
 
 
-def map_list_entry(list_row, task_count: int) -> dict:
+def map_subtask_summary(task: Task, current_user_id: str) -> dict:
+    if task.list_status:
+        status_label = task.list_status.name
+        status_color = task.list_status.color
+        status_key = task.list_status.legacy_key or task.status.value
+    else:
+        status_label = STATUS_LABELS.get(task.status, task.status.value.lower())
+        status_color = task.status_color
+        status_key = task.status.value
+    return {
+        "id": task.id,
+        "name": task.name,
+        "status": status_label,
+        "statusKey": status_key,
+        "statusColor": status_color,
+    }
+
+
+def map_list_entry(
+    list_row,
+    task_count: int,
+    can_share: bool = False,
+    can_manage_structure: bool = False,
+) -> dict:
     return {
         "id": list_row.id,
         "name": list_row.name,
         "taskCount": task_count,
+        "canShare": can_share,
+        "canManageStructure": can_manage_structure,
+        "isPrivate": bool(getattr(list_row, "is_private", False)),
     }
 
 
@@ -133,6 +260,9 @@ def map_space_row(
     list_count: int,
     folder_payload: list,
     standalone_payload: list,
+    last_activity_at=None,
+    can_share: bool = False,
+    can_manage_structure: bool = False,
 ) -> dict:
     return {
         "id": space.id,
@@ -141,6 +271,11 @@ def map_space_row(
         "memberCount": member_count,
         "listCount": list_count,
         "description": space.description,
+        "isPersonal": bool(getattr(space, "is_personal", False)),
+        "isPrivate": bool(getattr(space, "is_private", False)),
         "folders": folder_payload,
         "standaloneLists": standalone_payload,
+        "lastActivityAt": (last_activity_at or space.created_at).isoformat(),
+        "canShare": can_share,
+        "canManageStructure": can_manage_structure,
     }

@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.db.models.chat import ChatChannel, ChatChannelMember, ChatMessage, DirectParticipant
 from app.db.models.enums import InboxBucket, InboxItemType, InboxTimeGroup, MemberStatus
-from app.db.models.home import InboxItem
+from app.db.models.home import InboxItem, Task
 from app.db.models.user import User
 from app.db.models.workspace import WorkspaceMember
 from app.services.home_helpers import map_inbox_type
@@ -30,7 +30,7 @@ def body_has_channel_mention(body: str) -> bool:
 
 
 def _notification_level(member: ChatChannelMember) -> str:
-    level = getattr(member, "notification_level", None) or "MENTIONS"
+    level = getattr(member, "notification_level", None) or "ALL"
     return str(level).upper()
 
 
@@ -223,6 +223,39 @@ async def create_channel_access_notifications(
     return created
 
 
+async def create_invite_accepted_notification(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    actor_user_id: str,
+    recipient_id: str,
+    workspace_name: str,
+) -> list[tuple[str, InboxItem]]:
+    if recipient_id == actor_user_id:
+        return []
+
+    users = await _load_users(session, [actor_user_id])
+    actor = users.get(actor_user_id)
+    actor_name = actor.full_name if actor else "Someone"
+
+    item = InboxItem(
+        workspace_id=workspace_id,
+        user_id=recipient_id,
+        type=InboxItemType.REMINDER,
+        title="Invite accepted",
+        preview=f"{actor_name} accepted your invite to {workspace_name}",
+        source=workspace_name,
+        unread=True,
+        bucket=InboxBucket.ALL,
+        time_group=InboxTimeGroup.TODAY,
+        href="/people",
+        activity_kind="invite_accepted",
+    )
+    session.add(item)
+    await session.flush()
+    return [(recipient_id, item)]
+
+
 async def _resolve_mentioned_user_ids(
     session: AsyncSession,
     workspace_id: str,
@@ -395,6 +428,130 @@ async def create_channel_broadcast_notifications(
     return created
 
 
+_SHARE_RESOURCE_LABELS = {"space": "Space", "folder": "Folder", "list": "List"}
+
+
+async def create_resource_share_notification(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    recipient_id: str,
+    actor_user_id: str,
+    resource_type: str,
+    resource_name: str,
+    href: str,
+) -> list[tuple[str, InboxItem]]:
+    """Notify one recipient they were granted access to a Space/Folder/List.
+    Only call this for an immediate (ACTIVE, real user) grant - a
+    pending/email-only share has no user to notify yet."""
+    if recipient_id == actor_user_id:
+        return []
+
+    users = await _load_users(session, [actor_user_id])
+    actor_name = (
+        users.get(actor_user_id).full_name if users.get(actor_user_id) else "Someone"
+    )
+    label = _SHARE_RESOURCE_LABELS[resource_type]
+    item = InboxItem(
+        workspace_id=workspace_id,
+        user_id=recipient_id,
+        type=InboxItemType.CHAT,
+        title=f"{label} shared with you",
+        preview=f'{actor_name} shared the {label.lower()} "{resource_name}" with you',
+        source=resource_name,
+        unread=True,
+        bucket=InboxBucket.ALL,
+        time_group=InboxTimeGroup.TODAY,
+        href=href,
+        activity_kind=f"{resource_type}_share",
+    )
+    session.add(item)
+    await session.flush()
+    return [(recipient_id, item)]
+
+
+async def create_resource_unshare_notification(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    recipient_id: str,
+    actor_user_id: str,
+    resource_type: str,
+    resource_name: str,
+) -> list[tuple[str, InboxItem]]:
+    """Notify one recipient their access to a Space/Folder/List was
+    revoked. Mirrors create_resource_share_notification - only call for a
+    real removal (a row actually existed), same not-notifying-yourself
+    guard. No href: the resource is gone from their view, nothing to
+    link to."""
+    if recipient_id == actor_user_id:
+        return []
+
+    users = await _load_users(session, [actor_user_id])
+    actor_name = (
+        users.get(actor_user_id).full_name if users.get(actor_user_id) else "Someone"
+    )
+    label = _SHARE_RESOURCE_LABELS[resource_type]
+    item = InboxItem(
+        workspace_id=workspace_id,
+        user_id=recipient_id,
+        type=InboxItemType.CHAT,
+        title=f"Removed from {label.lower()}",
+        preview=f'{actor_name} removed your access to the {label.lower()} "{resource_name}"',
+        source=resource_name,
+        unread=True,
+        bucket=InboxBucket.ALL,
+        time_group=InboxTimeGroup.TODAY,
+        href="/home",
+        activity_kind=f"{resource_type}_unshare",
+    )
+    session.add(item)
+    await session.flush()
+    return [(recipient_id, item)]
+
+
+async def create_dm_broadcast_notifications(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    author_user_id: str,
+    conversation_id: str,
+    recipient_ids: list[str],
+    body: str,
+) -> list[tuple[str, InboxItem]]:
+    targets = [rid for rid in dict.fromkeys(recipient_ids) if rid != author_user_id]
+    if not targets:
+        return []
+
+    users = await _load_users(session, [author_user_id, *targets])
+    actor_name = (
+        users.get(author_user_id).full_name if users.get(author_user_id) else "Someone"
+    )
+    snippet = _message_snippet(body)
+    href = f"/chat/dm/{conversation_id}"
+
+    created: list[tuple[str, InboxItem]] = []
+    for recipient_id in targets:
+        item = InboxItem(
+            workspace_id=workspace_id,
+            user_id=recipient_id,
+            type=InboxItemType.CHAT,
+            title=f"New message from {actor_name}",
+            preview=f"{actor_name}: {snippet}",
+            source=actor_name,
+            unread=True,
+            bucket=InboxBucket.ALL,
+            time_group=InboxTimeGroup.TODAY,
+            href=href,
+            activity_kind="dm_message",
+        )
+        session.add(item)
+        created.append((recipient_id, item))
+
+    await session.flush()
+    return created
+
+
 async def create_thread_reply_notifications(
     session: AsyncSession,
     *,
@@ -411,15 +568,22 @@ async def create_thread_reply_notifications(
 
     replies = (
         await session.scalars(
-            select(ChatMessage.author_id).where(
-                ChatMessage.parent_id == parent.id,
-                ChatMessage.author_id != author_user_id,
-            )
+            select(ChatMessage).where(ChatMessage.parent_id == parent.id)
         )
     ).all()
-    for author_id in replies:
-        if author_id != author_user_id:
-            users_to_notify.add(author_id)
+    for reply in replies:
+        if reply.author_id != author_user_id:
+            users_to_notify.add(reply.author_id)
+
+    # Anyone @mentioned anywhere in the thread (parent or earlier replies)
+    # also hears about new activity, even if they never replied themselves.
+    thread_bodies = [parent.body, *[r.body for r in replies]]
+    for text in thread_bodies:
+        labels = parse_person_mention_labels(text)
+        mentioned = await _resolve_mentioned_user_ids(
+            session, workspace_id, labels, exclude_user_id=author_user_id
+        )
+        users_to_notify.update(mentioned)
 
     if not users_to_notify:
         return []
@@ -673,3 +837,250 @@ async def emit_channel_access_notifications(
     created: list[tuple[str, InboxItem]],
 ) -> None:
     await emit_home_notifications(session, workspace_id, created)
+
+
+async def create_task_comment_notifications(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    actor_user_id: str,
+    task_name: str,
+    task_id: str,
+    comment_preview: str,
+    follower_ids: list[str],
+) -> list[tuple[str, InboxItem]]:
+    if not follower_ids:
+        return []
+
+    users = await _load_users(session, [actor_user_id, *follower_ids])
+    actor = users.get(actor_user_id)
+    actor_name = actor.full_name if actor else "Someone"
+    href = f"/home/tasks/{task_id}"
+    preview = _message_snippet(comment_preview, 120)
+    created: list[tuple[str, InboxItem]] = []
+
+    for follower_id in dict.fromkeys(follower_ids):
+        if follower_id == actor_user_id:
+            continue
+        item = InboxItem(
+            workspace_id=workspace_id,
+            user_id=follower_id,
+            type=InboxItemType.COMMENT,
+            title=f"Comment on {task_name}",
+            preview=f"{actor_name}: {preview}",
+            source=task_name,
+            unread=True,
+            bucket=InboxBucket.ALL,
+            time_group=InboxTimeGroup.TODAY,
+            href=href,
+            activity_kind="task_comment",
+        )
+        session.add(item)
+        created.append((follower_id, item))
+
+    if created:
+        await session.flush()
+    return created
+
+
+async def create_task_comment_mention_notifications(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    actor_user_id: str,
+    task_name: str,
+    task_id: str,
+    comment_body: str,
+    already_notified_ids: set[str] | None = None,
+) -> list[tuple[str, InboxItem]]:
+    """Send inbox notifications to @mentioned users in a task comment."""
+    labels = parse_person_mention_labels(comment_body)
+    mentioned_ids = await _resolve_mentioned_user_ids(
+        session, workspace_id, labels, exclude_user_id=actor_user_id
+    )
+    if not mentioned_ids:
+        return []
+
+    users = await _load_users(session, [actor_user_id, *mentioned_ids])
+    actor = users.get(actor_user_id)
+    actor_name = actor.full_name if actor else "Someone"
+    href = f"/home/tasks/{task_id}"
+    snippet = _message_snippet(comment_body)
+    created: list[tuple[str, InboxItem]] = []
+
+    for user_id in mentioned_ids:
+        if already_notified_ids and user_id in already_notified_ids:
+            continue
+        item = InboxItem(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            type=InboxItemType.MENTION,
+            title=f"Mentioned you in {task_name}",
+            preview=f"{actor_name}: {snippet}",
+            source=task_name,
+            unread=True,
+            bucket=InboxBucket.ALL,
+            time_group=InboxTimeGroup.TODAY,
+            href=href,
+            activity_kind="task_mention",
+        )
+        session.add(item)
+        created.append((user_id, item))
+
+    if created:
+        await session.flush()
+    return created
+
+
+async def create_task_comment_reply_notifications(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    actor_user_id: str,
+    task_name: str,
+    task_id: str,
+    parent_author_id: str,
+    comment_preview: str,
+    already_notified_ids: set[str] | None = None,
+) -> list[tuple[str, InboxItem]]:
+    if parent_author_id == actor_user_id:
+        return []
+    if already_notified_ids and parent_author_id in already_notified_ids:
+        return []
+
+    users = await _load_users(session, [actor_user_id, parent_author_id])
+    actor = users.get(actor_user_id)
+    actor_name = actor.full_name if actor else "Someone"
+    href = f"/home/tasks/{task_id}"
+    preview = _message_snippet(comment_preview, 120)
+    item = InboxItem(
+        workspace_id=workspace_id,
+        user_id=parent_author_id,
+        type=InboxItemType.COMMENT,
+        title=f"Reply on {task_name}",
+        preview=f"{actor_name}: {preview}",
+        source=task_name,
+        unread=True,
+        bucket=InboxBucket.ALL,
+        time_group=InboxTimeGroup.TODAY,
+        href=href,
+        activity_kind="task_comment_reply",
+    )
+    session.add(item)
+    await session.flush()
+    return [(parent_author_id, item)]
+
+
+async def create_task_assignment_notifications(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    actor_user_id: str,
+    task_name: str,
+    task_id: str,
+    assignee_ids: list[str],
+) -> list[tuple[str, InboxItem]]:
+    if not assignee_ids:
+        return []
+
+    users = await _load_users(session, [actor_user_id, *assignee_ids])
+    actor = users.get(actor_user_id)
+    actor_name = actor.full_name if actor else "Someone"
+    href = f"/home/tasks/{task_id}"
+    created: list[tuple[str, InboxItem]] = []
+
+    for assignee_id in dict.fromkeys(assignee_ids):
+        if assignee_id == actor_user_id:
+            continue
+        item = InboxItem(
+            workspace_id=workspace_id,
+            user_id=assignee_id,
+            type=InboxItemType.ASSIGNMENT,
+            title=f"Assigned: {task_name}",
+            preview=f"{actor_name} assigned you to {task_name}",
+            source=task_name,
+            unread=True,
+            bucket=InboxBucket.ALL,
+            time_group=InboxTimeGroup.TODAY,
+            href=href,
+            activity_kind="task_assigned",
+        )
+        session.add(item)
+        created.append((assignee_id, item))
+
+    if created:
+        await session.flush()
+    return created
+
+
+async def task_notification_recipients(
+    session: AsyncSession,
+    *,
+    task_id: str,
+    exclude_user_id: str | None = None,
+) -> list[str]:
+    row = (
+        await session.execute(
+            select(Task.assignee_ids, Task.follower_ids).where(Task.id == task_id)
+        )
+    ).first()
+    assignees = row[0] if row else []
+    followers = row[1] if row else []
+    recipient_ids: list[str] = []
+    seen: set[str] = set()
+    for user_id in [*assignees, *followers]:
+        if not user_id:
+            continue
+        if exclude_user_id and user_id == exclude_user_id:
+            continue
+        if user_id in seen:
+            continue
+        seen.add(user_id)
+        recipient_ids.append(user_id)
+    return recipient_ids
+
+
+async def create_task_activity_notifications(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    actor_user_id: str,
+    task_name: str,
+    task_id: str,
+    recipient_ids: list[str],
+    title: str,
+    preview_template: str,
+    activity_kind: str,
+    item_type: InboxItemType = InboxItemType.ASSIGNMENT,
+) -> list[tuple[str, InboxItem]]:
+    if not recipient_ids:
+        return []
+
+    users = await _load_users(session, [actor_user_id, *recipient_ids])
+    actor = users.get(actor_user_id)
+    actor_name = actor.full_name if actor else "Someone"
+    href = f"/home/tasks/{task_id}"
+    created: list[tuple[str, InboxItem]] = []
+
+    for recipient_id in dict.fromkeys(recipient_ids):
+        if recipient_id == actor_user_id:
+            continue
+        item = InboxItem(
+            workspace_id=workspace_id,
+            user_id=recipient_id,
+            type=item_type,
+            title=title,
+            preview=preview_template.format(actor=actor_name, task=task_name),
+            source=task_name,
+            unread=True,
+            bucket=InboxBucket.ALL,
+            time_group=InboxTimeGroup.TODAY,
+            href=href,
+            activity_kind=activity_kind,
+        )
+        session.add(item)
+        created.append((recipient_id, item))
+
+    if created:
+        await session.flush()
+    return created

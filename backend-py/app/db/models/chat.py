@@ -35,7 +35,22 @@ class ChatChannel(Base):
     created_at: Mapped[datetime] = mapped_column(
         "createdAt", DateTime(timezone=True), server_default=func.now()
     )
+    list_id: Mapped[str | None] = mapped_column(
+        "listId",
+        String,
+        ForeignKey("TaskList.id", ondelete="SET NULL"),
+        nullable=True,
+        unique=True,
+    )
+    # True only for a List's own auto-created channel. A workspace channel can
+    # also optionally reference a list (listId set) without being the list's
+    # primary channel - this flag is the explicit "this IS the list's channel"
+    # signal, kept separate from listId presence.
+    is_list_primary: Mapped[bool] = mapped_column(
+        "isListPrimary", Boolean, default=False
+    )
     created_by: Mapped["User | None"] = relationship()
+    task_list: Mapped["TaskList | None"] = relationship()
     members: Mapped[list["ChatChannelMember"]] = relationship(back_populates="channel")
     messages: Mapped[list["ChatMessage"]] = relationship(back_populates="channel")
 
@@ -61,7 +76,7 @@ class ChatChannelMember(Base):
         "pinnedAt", DateTime(timezone=True), nullable=True
     )
     notification_level: Mapped[str] = mapped_column(
-        "notificationLevel", String, default="MENTIONS"
+        "notificationLevel", String, default="ALL"
     )
     last_read_at: Mapped[datetime | None] = mapped_column(
         "lastReadAt", DateTime(timezone=True), nullable=True

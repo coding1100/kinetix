@@ -52,7 +52,7 @@ API_PUBLIC_URL="http://localhost:4001"
 FRONTEND_URL="http://localhost:3001"
 ```
 
-5. Apply DB migration once: run `backend-py/scripts/migrate_google_oauth.sql` via `psql` or any SQL client.
+5. Apply DB migration once: run `backend-py/scripts/migrate_google_oauth.sql` in Supabase SQL editor.
 6. Restart `backend-py`, open [http://localhost:3001/auth/login](http://localhost:3001/auth/login) → **Continue with Google**.
 
 **Verify:** `GET http://localhost:4001/health` must include `"googleOAuth": { "routesRegistered": true }`. If that field is missing, an old API process is still on port 4001 — stop all uvicorn windows, then from `backend-py` run `.\scripts\start-api.ps1` (or start uvicorn once manually).
@@ -64,122 +64,39 @@ cd backend-py && python -m pytest tests/test_google_oauth.py -v
 cd frontend && npm run test
 ```
 
-## Database (Docker PostgreSQL)
+## Backend (Phase 2A)
 
-Local and production use the same [`docker-compose.yml`](docker-compose.yml) (Postgres 16 Alpine).
+### 1. Configure Supabase (database)
 
-### Local setup (hybrid — recommended)
-
-Postgres in Docker; API and frontend run on your machine (production Docker stack unchanged).
+Copy env and set your Supabase URLs in `backend/.env`:
 
 ```bash
-# 1. Root — Postgres credentials
-cp docker-compose.env.example docker-compose.env
-# If 5432 is busy on Windows: set POSTGRES_HOST_PORT=5433 and use :5433 in DATABASE_URL below
-
-# 2. Start Postgres only
-docker compose up -d postgres
-
-# 3. Backend
-cd backend-py
+cd backend
 cp .env.example .env
-# DATABASE_URL user/password/port must match docker-compose.env
-uv sync
-# First time only (empty Postgres): create tables + demo login
-uv run python scripts/bootstrap_local_db.py
-uv run uvicorn app.main:app --reload --port 4001
+```
 
-# 4. Frontend (new terminal)
-cd frontend
-cp .env.local.example .env.local
+Required variables:
+
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | Pooled URL (port **6543**, `?pgbouncer=true`) — used by the API at runtime |
+| `DIRECT_URL` | Direct/session URL (port **5432**) — used by Prisma `db push` / migrations |
+
+Get both from [Supabase Dashboard](https://supabase.com/dashboard) → **Project Settings** → **Database** → **Connection string**.
+
+### 2. Install, sync schema, seed
+
+```bash
 npm install
+npm run db:generate
+npm run db:push
+npm run db:seed
 npm run dev
 ```
 
-Open [http://localhost:3001](http://localhost:3001) · API health [http://localhost:4001/health](http://localhost:4001/health)
+> **Local Docker Postgres** (`docker compose up -d`) is optional — not needed when using Supabase.
 
-| Service | Local URL |
-|---------|-----------|
-| Frontend | http://localhost:3001 |
-| API | http://localhost:4001 |
-| Postgres | 127.0.0.1:5433 (Docker; set `POSTGRES_HOST_PORT=5433` in root `.env` if 5432 is busy) |
-
-**Windows:** Docker Desktop must be running. Default dev DB password in examples is `riseup` / `riseup` (not production).
-
-### Migrate from Supabase (one-time, on EC2)
-
-```bash
-pg_dump "$SUPABASE_DIRECT_URL" --format=custom --no-owner --no-acl -f supabase.dump
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d postgres
-pg_restore --dbname="postgresql://riseup:PASS@127.0.0.1:5432/riseup" --no-owner --no-acl supabase.dump
-```
-
-Update `backend-py/.env` `DATABASE_URL` to the local Docker URL, then restart the API.
-
-### Run everything with Docker (Postgres + API + Web + Nginx)
-
-Use this instead of running uvicorn / `next start` / host nginx manually.
-
-```bash
-cp docker-compose.env.example docker-compose.env
-cp backend-py/.env.example backend-py/.env
-# Edit docker-compose.env — POSTGRES_PASSWORD, PUBLIC_APP_URL (e.g. http://3.140.5.67 on EC2)
-# Edit backend-py/.env — JWT, Google, SMTP, AWS secrets (DATABASE_URL is overridden in Docker)
-
-docker compose --env-file docker-compose.env \
-  -f docker-compose.yml -f docker-compose.app.yml up -d --build
-```
-
-`docker-compose.env` must include `DATABASE_URL` with host **`postgres`** (Docker network), plus `PUBLIC_APP_URL` / `API_PUBLIC_URL` / `FRONTEND_URL`.
-
-Open `PUBLIC_APP_URL` in the browser (default `http://localhost`).
-
-| Service | Container | Role |
-|---------|-----------|------|
-| `postgres` | `kinetix-postgres-1` | Database |
-| `api` | FastAPI + Socket.IO | Backend |
-| `web` | Next.js | Frontend |
-| `nginx` | Reverse proxy | Port 80 → `/api`, `/socket.io`, `/` |
-
-**On EC2 (switch from systemd to full Docker):**
-
-```bash
-sudo systemctl stop kinetix-api kinetix-web
-sudo systemctl disable kinetix-api kinetix-web
-sudo systemctl stop nginx   # free port 80 for Docker nginx
-
-cd /opt/clickup/kinetix
-# PUBLIC_APP_URL=http://3.140.5.67 in docker-compose.env
-docker compose --env-file docker-compose.env \
-  -f docker-compose.yml -f docker-compose.app.yml up -d --build
-docker compose --env-file docker-compose.env \
-  -f docker-compose.yml -f docker-compose.app.yml ps
-curl -s http://127.0.0.1/health   # nginx → api (check "database":"connected")
-```
-
-**Useful commands:**
-
-```bash
-# Logs
-docker compose --env-file docker-compose.env \
-  -f docker-compose.yml -f docker-compose.app.yml logs -f api
-
-# Rebuild after code changes
-docker compose --env-file docker-compose.env \
-  -f docker-compose.yml -f docker-compose.app.yml up -d --build
-
-# Stop all
-docker compose --env-file docker-compose.env \
-  -f docker-compose.yml -f docker-compose.app.yml down
-```
-
-**Postgres only** (hybrid with systemd API/web): `docker compose up -d postgres`
-
-## Backend (Phase 2A — legacy Express)
-
-The Node/Express `backend/` folder is no longer in this repo. Use **backend-py** (FastAPI) instead.
-
-API (legacy docs): [http://localhost:4000](http://localhost:4000)
+API: [http://localhost:4000](http://localhost:4000)
 
 ### Health & docs
 
@@ -229,16 +146,20 @@ If SMTP is not configured, invites are still created and the invite link is copi
 
 ### Seed credentials
 
-- `owner@demo.com` / `password123`
-- `alex@demo.com` / `password123`
+- `owner@demo.com` / `password123` (Owner)
+- `admin@demo.com` / `password123` (Admin)
+- `alex@demo.com` / `password123` (Member)
 - Workspace: **Acme Demo**
 
-### Database
+Create or refresh the admin user: `cd backend-py && uv run python scripts/seed_demo_admin.py`
 
-- **Provider:** PostgreSQL 16 in Docker (`docker compose up -d postgres`)
-- **Runtime:** `DATABASE_URL` → `127.0.0.1:5432`
-- **Migrations:** SQL scripts in `backend-py/scripts/`
-- **Backups (production):** `deploy/backup-postgres.sh` (cron + optional S3 upload)
+### Database (Supabase)
+
+- **Provider:** Supabase PostgreSQL
+- **Runtime:** `DATABASE_URL` (pooler port 6543)
+- **Migrations:** `DIRECT_URL` (port 5432)
+- **Browse data:** `cd backend && npm run db:studio` → [http://localhost:5555](http://localhost:5555)
+- **Supabase Dashboard:** [https://supabase.com/dashboard](https://supabase.com/dashboard) → Table Editor
 
 ## Python API (`backend-py`) — Phases PY-1 & PY-2
 
@@ -272,24 +193,18 @@ Pushes to `main` deploy automatically via GitHub Actions (`.github/workflows/dep
 
 ```bash
 sudo apt update
-sudo apt install -y git nginx docker.io docker-compose-plugin postgresql-client
+sudo apt install -y git nginx python3 python3-venv nodejs npm
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
-sudo usermod -aG docker ubuntu
 
 sudo mkdir -p /opt/clickup
 sudo chown ubuntu:ubuntu /opt/clickup
 git clone git@github.com:coding1100/kinetix.git /opt/clickup/kinetix
 cd /opt/clickup/kinetix
 
-# Postgres credentials (never commit)
-cp docker-compose.env.example docker-compose.env
-nano docker-compose.env
-
 # Backend env (never commit .env)
 cp backend-py/.env.example backend-py/.env
 nano backend-py/.env
-# DATABASE_URL must match docker-compose.env (127.0.0.1:5432)
 
 # Frontend env
 nano frontend/.env.local
@@ -297,12 +212,9 @@ nano frontend/.env.local
 # NEXT_PUBLIC_APP_URL=http://YOUR_EC2_IP
 # NEXT_PUBLIC_SOCKET_URL=http://YOUR_EC2_IP
 
-chmod +x deploy/setup-services.sh deploy/deploy.sh deploy/backup-postgres.sh
+chmod +x deploy/setup-services.sh deploy/deploy.sh
 ./deploy/setup-services.sh
 ./deploy/deploy.sh
-
-# Optional: daily backup at 3am
-# (crontab -e) 0 3 * * * /opt/clickup/kinetix/deploy/backup-postgres.sh
 ```
 
 ### GitHub repository secrets
@@ -325,16 +237,70 @@ Allow the deploy key: add the public key that matches `EC2_SSH_KEY` to `~/.ssh/a
 
 The deploy script stops `next dev`, builds production frontend, reloads nginx, and fails if Turbopack/dev mode is detected.
 
+## EC2 staging deploy (`develop` branch)
+
+Pushes to `develop` deploy automatically via `.github/workflows/deploy-staging-ec2.yml`. Production (`main`) is unchanged.
+
+| | Production | Staging |
+|---|------------|---------|
+| Branch | `main` | `develop` |
+| Path | `/opt/clickup/kinetix` | `/opt/clickup/kinetix-staging` |
+| Web / API ports | `3000` / `4000` (Docker internal) | Docker internal (no host ports) |
+| Public URL | `http://YOUR_EC2_IP` | `http://YOUR_EC2_IP/staging` |
+| Runtime | Docker (`kinetix-api`, `kinetix-web`, `kinetix-nginx`) | Docker (`kinetix-staging-api`, `kinetix-staging-web`) |
+
+Staging is proxied through **production Docker nginx** on port **80** at `/staging`. Staging containers join the shared `kinetix_edge` Docker network — **no systemd**.
+
+### One-time EC2 staging setup
+
+```bash
+ssh -i your-key.pem ubuntu@YOUR_EC2_IP
+
+sudo mkdir -p /opt/clickup
+sudo chown ubuntu:ubuntu /opt/clickup
+git clone -b develop git@github.com:coding1100/kinetix.git /opt/clickup/kinetix-staging
+cd /opt/clickup/kinetix-staging
+
+# Backend
+cp backend-py/.env.example backend-py/.env
+nano backend-py/.env
+
+# Docker env (staging DB credentials)
+cp docker-compose.env.example docker-compose.env
+nano docker-compose.env
+# POSTGRES_DB=riseup_staging
+
+chmod +x deploy/setup-staging-services.sh deploy/deploy-staging.sh deploy/ec2-restore.sh
+./deploy/setup-staging-services.sh
+```
+
+Or restore everything (prod Docker + staging) in one step from the staging clone:
+
+```bash
+cd /opt/clickup/kinetix-staging
+git pull origin develop
+chmod +x deploy/ec2-restore.sh
+./deploy/ec2-restore.sh
+```
+
+### GitHub secret (staging)
+
+| Secret | Example |
+|--------|---------|
+| `EC2_STAGING_APP_PATH` | `/opt/clickup/kinetix-staging` |
+
+Reuses `EC2_HOST`, `EC2_USER`, and `EC2_SSH_KEY` from production.
+
+### After staging is set up
+
+- `git push origin develop` → deploys staging only (`http://YOUR_EC2_IP/staging`).
+- Manual deploy: **Actions → Deploy Staging to EC2 → Run workflow**.
+- `git push origin main` → still deploys production only.
+
 ## Stack
 
 | Layer | Technology |
 |-------|------------|
 | Frontend | Next.js, React, TypeScript, Tailwind, shadcn/ui, Zustand |
 | Backend (current) | Node.js, Express, TypeScript, Prisma, PostgreSQL, Zod, JWT |
-| Backend (migration) | Python 3.12, uv, FastAPI, SQLAlchemy, asyncpg, Pydantic |
-| Backend (migration) | Python 3.12, uv, FastAPI, SQLAlchemy, asyncpg, Pydantic |
-| Backend (migration) | Python 3.12, uv, FastAPI, SQLAlchemy, asyncpg, Pydantic |
-| Backend (migration) | Python 3.12, uv, FastAPI, SQLAlchemy, asyncpg, Pydantic |
-| Backend (migration) | Python 3.12, uv, FastAPI, SQLAlchemy, asyncpg, Pydantic |
-| Backend (migration) | Python 3.12, uv, FastAPI, SQLAlchemy, asyncpg, Pydantic |
 | Backend (migration) | Python 3.12, uv, FastAPI, SQLAlchemy, asyncpg, Pydantic |

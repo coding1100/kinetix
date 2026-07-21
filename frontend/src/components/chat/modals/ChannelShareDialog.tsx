@@ -27,7 +27,9 @@ import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 
 function accessPermission(role?: string | null) {
-  if (role === "OWNER" || role === "ADMIN") return "admin";
+  if (role === "OWNER" || role === "SUPER_ADMIN" || role === "ADMIN") {
+    return "admin";
+  }
   return "member";
 }
 
@@ -36,7 +38,8 @@ export function ChannelShareDialog() {
   const workspaceRole = useAuthStore((s) =>
     s.workspaces.find((w) => w.id === workspaceId)?.role
   );
-  const canAddToAccess = workspaceRole === "OWNER";
+  const canAddToAccess =
+    workspaceRole === "OWNER" || workspaceRole === "SUPER_ADMIN";
   const { activeModal, closeModal, modalChannelId } = useUiStore();
   const channelFromStore = useChatStore((s) =>
     modalChannelId

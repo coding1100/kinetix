@@ -56,6 +56,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { matchesQuery } from "@/lib/search/match-query";
 import { useSidebarUnread } from "@/lib/chat/sidebar-display-unread";
 import { useShellStore } from "@/stores/shell-store";
@@ -109,6 +110,7 @@ export function ChatSidebar() {
   const sidebarListsCache = useChatStore((s) => s.sidebarListsCache);
   const setSidebarListsCache = useChatStore((s) => s.setSidebarListsCache);
   const openModal = useUiStore((s) => s.openModal);
+  const openModalDeferred = useUiStore((s) => s.openModalDeferred);
   const { secondaryPanelOpen, setSecondaryPanelOpen } = useShellStore();
   const seedPresence = usePresenceStore((s) => s.seedPresence);
   const userId = useAuthStore((s) => s.user?.id);
@@ -212,7 +214,8 @@ export function ChatSidebar() {
         dms={dms}
         pathname={pathname}
         currentUserId={userId}
-        onAddChannel={goToAllChannels}
+        onAddChannel={() => openModal("new-channel")}
+        onNewDm={() => openModal("new-dm")}
       />
     ) : (
       <OrganizedList
@@ -220,7 +223,8 @@ export function ChatSidebar() {
         dms={dms}
         pathname={pathname}
         currentUserId={userId}
-        onAddChannel={goToAllChannels}
+        onAddChannel={() => openModal("new-channel")}
+        onNewDm={() => openModal("new-dm")}
       />
     );
 
@@ -229,46 +233,70 @@ export function ChatSidebar() {
       <div className="flex items-center justify-between px-3 py-3">
         <span className="text-sm font-semibold">Chat</span>
         <div className="flex gap-0.5">
-          <Button
-            variant={listSearchOpen ? "secondary" : "ghost"}
-            size="icon-sm"
-            aria-label="Search channels and DMs"
-            aria-pressed={listSearchOpen}
-            onClick={() => {
-              setListSearchOpen((open) => {
-                const next = !open;
-                if (!next) setListQuery("");
-                return next;
-              });
-            }}
-          >
-            <SearchIcon className="size-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant={listSearchOpen ? "secondary" : "ghost"}
+                  size="icon-sm"
+                  aria-label="Search channels and DMs"
+                  aria-pressed={listSearchOpen}
+                  onClick={() => {
+                    setListSearchOpen((open) => {
+                      const next = !open;
+                      if (!next) setListQuery("");
+                      return next;
+                    });
+                  }}
+                >
+                  <SearchIcon className="size-4" />
+                </Button>
+              }
+            />
+            <TooltipContent side="bottom">Search</TooltipContent>
+          </Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
-                <Button variant="ghost" size="icon-sm">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Create chat"
+                  title="Create"
+                >
                   <PlusIcon className="size-4" />
                 </Button>
               }
             />
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => openModal("new-channel")}>
+              <DropdownMenuItem
+                onClick={() => openModalDeferred("new-channel")}
+              >
                 New channel
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => openModal("new-dm")}>
+              <DropdownMenuItem onClick={() => openModalDeferred("new-dm")}>
                 New DM
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={goToAllChannels}>
+                Browse channels
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => setSecondaryPanelOpen(false)}
-            title="Collapse sidebar"
-          >
-            <PanelLeftCloseIcon className="size-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Collapse sidebar"
+                  onClick={() => setSecondaryPanelOpen(false)}
+                >
+                  <PanelLeftCloseIcon className="size-4" />
+                </Button>
+              }
+            />
+            <TooltipContent side="bottom">Collapse sidebar</TooltipContent>
+          </Tooltip>
         </div>
       </div>
       {listSearchOpen ? (
@@ -315,22 +343,36 @@ export function ChatSidebar() {
       </ScrollArea>
       <Separator />
       <div className="hidden">
-        <Button
-          variant={layout === "organized" ? "secondary" : "ghost"}
-          size="icon-sm"
-          onClick={() => setLayout("organized")}
-          title="Organized"
-        >
-          <LayoutListIcon className="size-4" />
-        </Button>
-        <Button
-          variant={layout === "recents" ? "secondary" : "ghost"}
-          size="icon-sm"
-          onClick={() => setLayout("recents")}
-          title="Recents"
-        >
-          <ListIcon className="size-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant={layout === "organized" ? "secondary" : "ghost"}
+                size="icon-sm"
+                onClick={() => setLayout("organized")}
+                aria-label="Organized"
+              >
+                <LayoutListIcon className="size-4" />
+              </Button>
+            }
+          />
+          <TooltipContent side="top">Organized</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant={layout === "recents" ? "secondary" : "ghost"}
+                size="icon-sm"
+                onClick={() => setLayout("recents")}
+                aria-label="Recents"
+              >
+                <ListIcon className="size-4" />
+              </Button>
+            }
+          />
+          <TooltipContent side="top">Recents</TooltipContent>
+        </Tooltip>
       </div>
     </aside>
   );
@@ -342,12 +384,14 @@ function OrganizedList({
   pathname,
   currentUserId,
   onAddChannel,
+  onNewDm,
 }: {
   channels: Channel[];
   dms: DirectMessage[];
   pathname: string;
   currentUserId?: string | null;
   onAddChannel: () => void;
+  onNewDm: () => void;
 }) {
   const favoriteChannels = channels.filter((c) => c.starred);
   const otherChannels = channels.filter((c) => !c.starred);
@@ -369,6 +413,7 @@ function OrganizedList({
                 name={c.name}
                 unread={c.unread}
                 privateChannel={c.isPrivate}
+                listChannel={c.isListPrimary}
                 starred
               />
             ))}
@@ -390,6 +435,7 @@ function OrganizedList({
               name={c.name}
               unread={c.unread}
               privateChannel={c.isPrivate}
+              listChannel={c.isListPrimary}
             />
           ))}
           <Button
@@ -425,6 +471,15 @@ function OrganizedList({
               isGroup={d.isGroup}
             />
           ))}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-full justify-start gap-2 px-2 text-muted-foreground"
+            onClick={onNewDm}
+          >
+            <PlusIcon className="size-3.5" />
+            New message
+          </Button>
         </div>
       </div>
     </div>
@@ -437,12 +492,14 @@ function RecentsList({
   pathname,
   currentUserId,
   onAddChannel,
+  onNewDm,
 }: {
   channels: Channel[];
   dms: DirectMessage[];
   pathname: string;
   currentUserId?: string | null;
   onAddChannel: () => void;
+  onNewDm: () => void;
 }) {
   return (
     <OrganizedList
@@ -451,6 +508,7 @@ function RecentsList({
       pathname={pathname}
       currentUserId={currentUserId}
       onAddChannel={onAddChannel}
+      onNewDm={onNewDm}
     />
   );
 }
@@ -462,6 +520,7 @@ function ChannelRow({
   name,
   unread,
   privateChannel,
+  listChannel,
   starred,
 }: {
   channelId: string;
@@ -470,6 +529,7 @@ function ChannelRow({
   name: string;
   unread: number;
   privateChannel?: boolean;
+  listChannel?: boolean;
   starred?: boolean;
 }) {
   const unreadBadgeHold = useChatStore((s) => s.unreadBadgeHold);
@@ -492,7 +552,14 @@ function ChannelRow({
       )}
     >
       <span className="flex min-w-0 items-center gap-2 text-sm">
-        <HashIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        {listChannel ? (
+          <span className="flex shrink-0 items-center gap-0.5">
+            <HashIcon className="size-3.5 text-muted-foreground" />
+            <ListIcon className="size-3.5 text-muted-foreground" />
+          </span>
+        ) : (
+          <HashIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        )}
         {starred ? (
           <StarIcon className="size-3 shrink-0 fill-amber-400 text-amber-400" />
         ) : null}

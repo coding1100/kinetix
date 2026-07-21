@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone
 
 from sqlalchemy import func, or_, select
@@ -27,7 +26,6 @@ from app.services.chat_service import (
     _assert_dm_participant,
     _thread_counts_for_messages,
 )
-from app.socket.emit import broadcast_dm_joined
 
 _GLOBAL_SEARCH_LIMIT = 50
 _DEFAULT_PAGE_SIZE = 50
@@ -129,10 +127,10 @@ async def list_paginated_root_messages(
         rows = rows[:page_size]
     rows.reverse()
 
-    thread_counts = await _thread_counts_for_messages(session, [m.id for m in rows])
+    thread_summaries = await _thread_counts_for_messages(session, [m.id for m in rows])
     data = []
     for m in rows:
-        payload = map_message(m, user_id, thread_count=thread_counts.get(m.id, 0))
+        payload = map_message(m, user_id, thread_summary=thread_summaries.get(m.id))
         if m.pinned_at:
             payload["pinnedAt"] = m.pinned_at.isoformat()
         read_by = await _read_receipt_user_ids(
@@ -208,7 +206,7 @@ async def search_workspace_messages(
         ).all()
     )
 
-    thread_counts = await _thread_counts_for_messages(
+    thread_summaries = await _thread_counts_for_messages(
         session, [m.id for m in messages if m.parent_id is None]
     )
 
@@ -217,7 +215,7 @@ async def search_workspace_messages(
         hit = map_search_message(
             msg,
             user_id,
-            thread_count=thread_counts.get(msg.id, 0) if not msg.parent_id else 0,
+            thread_summary=thread_summaries.get(msg.id) if not msg.parent_id else None,
         )
         if msg.channel_id:
             hit["kind"] = "channel"
@@ -349,14 +347,6 @@ async def add_dm_participants(
         added.append(uid)
 
     await session.commit()
-    if added:
-        asyncio.create_task(
-            broadcast_dm_joined(
-                workspace_id=workspace_id,
-                user_ids=added,
-                conversation_id=conversation_id,
-            )
-        )
     return {"ok": True, "addedUserIds": added}
 
 

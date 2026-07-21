@@ -55,6 +55,18 @@ export type ChatChannelMemberPayload = {
   removed?: boolean;
 };
 
+export type ChatChannelRenamedPayload = {
+  workspaceId: string;
+  channelId: string;
+  name: string;
+};
+
+export type ChatChannelPrivacyPayload = {
+  workspaceId: string;
+  channelId: string;
+  isPrivate: boolean;
+};
+
 export type { HomeNotificationPayload } from "@/lib/notifications/realtime";
 
 export type PresenceSyncPayload = {
@@ -82,4 +94,19 @@ export type ChatReadPayload = {
   conversationId: string;
   userId: string;
   readAt: string;
+};
+
+export type { TaskRealtimePayload } from "@/lib/tasks/realtime";
+
+export type WorkspaceMemberRolePayload = {
+  workspaceId: string;
+  userId: string;
+  role: string;
+};
+
+export type ResourceAccessChangedPayload = {
+  workspaceId: string;
+  userIds: string[];
+  resourceType: "space" | "folder" | "list";
+  resourceId: string;
 };
