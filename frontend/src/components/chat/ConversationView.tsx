@@ -1089,14 +1089,14 @@ export function ConversationView({
         <div className="flex min-w-0 items-center gap-2">
           {type === "channel" ? (
             <div className="min-w-0">
-              <h2 className="truncate text-base font-semibold leading-tight">
+              <h2 className="truncate text-sm font-semibold leading-tight">
                 <ChannelNameLabel
                   name={title}
                   starred={starred}
                   nameClassName="font-semibold text-foreground"
                 />
               </h2>
-              <p className="truncate text-xs text-muted-foreground">
+              <p className="truncate text-sm text-muted-foreground">
                 {channel?.topic?.trim()
                   ? channel.topic
                   : `${channel?.memberCount ?? cachedChannelMemberCount ?? 0} member${
@@ -1126,10 +1126,10 @@ export function ConversationView({
                 </Avatar>
               )}
               <div className="min-w-0">
-                <h2 className="truncate text-base font-semibold leading-tight">
+                <h2 className="truncate text-sm font-semibold leading-tight">
                   {title}
                 </h2>
-                <p className="truncate text-xs text-muted-foreground">
+                <p className="truncate text-sm text-muted-foreground">
                   {dmMeta?.isGroup
                     ? `${dmMeta.participants?.length ?? dmMeta.members?.length ?? 0} members`
                     : "Direct message"}

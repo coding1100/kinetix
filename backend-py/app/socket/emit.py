@@ -159,6 +159,78 @@ async def broadcast_channel_removed(
     )
 
 
+async def broadcast_resource_access_granted(
+    *,
+    workspace_id: str,
+    user_ids: list[str],
+    resource_type: str,
+    resource_id: str,
+) -> None:
+    """Mirrors broadcast_resource_access_removed - tells the newly-shared
+    user's own sidebar (Shared with me) a Space/Folder/List just became
+    visible to them, instead of only surfacing via the inbox notification
+    until their next reload."""
+    sio = get_sio()
+    await sio.emit(
+        "space:access:granted",
+        {
+            "workspaceId": workspace_id,
+            "userIds": user_ids,
+            "resourceType": resource_type,
+            "resourceId": resource_id,
+        },
+        room=f"ws:{workspace_id}",
+    )
+
+
+async def broadcast_resource_access_removed(
+    *,
+    workspace_id: str,
+    user_ids: list[str],
+    resource_type: str,
+    resource_id: str,
+) -> None:
+    """Tells the removed user's own sidebar (Shared with me) to drop this
+    Space/Folder/List - explicit-share removal doesn't otherwise touch
+    anything the removed user's client is subscribed to."""
+    sio = get_sio()
+    await sio.emit(
+        "space:access:removed",
+        {
+            "workspaceId": workspace_id,
+            "userIds": user_ids,
+            "resourceType": resource_type,
+            "resourceId": resource_id,
+        },
+        room=f"ws:{workspace_id}",
+    )
+
+
+async def broadcast_channel_privacy_changed(
+    *,
+    workspace_id: str,
+    channel_id: str,
+    is_private: bool,
+) -> None:
+    """Mirrors broadcast_channel_renamed - a List's own is_private flag
+    drives its channel's displayed isPrivate (see _channel_payload,
+    chat_service.py), but nothing else tells an existing member's already-
+    cached sidebar entry that the flag flipped after the List was created
+    (sync_list_channel_members_for_space only emits events for added/
+    removed members, not for members who stay but whose channel's privacy
+    display went stale)."""
+    sio = get_sio()
+    await sio.emit(
+        "chat:channel:privacy",
+        {
+            "workspaceId": workspace_id,
+            "channelId": channel_id,
+            "isPrivate": is_private,
+        },
+        room=f"ws:{workspace_id}",
+    )
+
+
 async def broadcast_channel_renamed(
     *,
     workspace_id: str,

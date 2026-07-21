@@ -22,11 +22,11 @@ from app.schemas.home import (
     UpdateTaskBody,
 )
 from app.schemas.spaces import (
-    AddSpaceMemberBody,
     CreateFolderBody,
     CreateListBody,
     CreateSpaceBody,
     CreateTaskCommentBody,
+    ShareMemberBody,
     UpdateFolderBody,
     UpdateListBody,
     UpdateSpaceBody,
@@ -339,6 +339,18 @@ async def get_spaces(
     return await home_service.list_spaces(session, workspace_id, user.id, member.role)
 
 
+@router.get("/home/shared-with-me")
+async def get_shared_with_me(
+    workspace_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await home_service.list_shared_with_me(
+        session, workspace_id, user.id, member.role
+    )
+
+
 @router.post("/spaces", status_code=status.HTTP_201_CREATED)
 async def post_space(
     body: CreateSpaceBody,
@@ -394,7 +406,7 @@ async def get_space_members(
 
 @router.post("/spaces/{space_id}/members", status_code=status.HTTP_201_CREATED)
 async def post_space_member(
-    body: AddSpaceMemberBody,
+    body: ShareMemberBody,
     workspace_id: str,
     space_id: str,
     session: DbSession,
@@ -464,6 +476,47 @@ async def delete_folder(
     )
 
 
+@router.get("/folders/{folder_id}/members")
+async def get_folder_members(
+    workspace_id: str,
+    folder_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await spaces_service.list_folder_members(
+        session, workspace_id, folder_id, user.id, member.role
+    )
+
+
+@router.post("/folders/{folder_id}/members", status_code=status.HTTP_201_CREATED)
+async def post_folder_member(
+    body: ShareMemberBody,
+    workspace_id: str,
+    folder_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await spaces_service.add_folder_member(
+        session, workspace_id, folder_id, user.id, member.role, body
+    )
+
+
+@router.delete("/folders/{folder_id}/members/{target}")
+async def delete_folder_member(
+    workspace_id: str,
+    folder_id: str,
+    target: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await spaces_service.remove_folder_member(
+        session, workspace_id, folder_id, target, user.id, member.role
+    )
+
+
 @router.get("/spaces/{space_id}")
 async def get_space(
     workspace_id: str,
@@ -518,6 +571,47 @@ async def delete_list_meta(
 ):
     return await spaces_service.delete_list(
         session, workspace_id, list_id, user.id, member.role
+    )
+
+
+@router.get("/lists/{list_id}/members")
+async def get_list_members(
+    workspace_id: str,
+    list_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await spaces_service.list_list_members(
+        session, workspace_id, list_id, user.id, member.role
+    )
+
+
+@router.post("/lists/{list_id}/members", status_code=status.HTTP_201_CREATED)
+async def post_list_member(
+    body: ShareMemberBody,
+    workspace_id: str,
+    list_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await spaces_service.add_list_member(
+        session, workspace_id, list_id, user.id, member.role, body
+    )
+
+
+@router.delete("/lists/{list_id}/members/{target}")
+async def delete_list_member(
+    workspace_id: str,
+    list_id: str,
+    target: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await spaces_service.remove_list_member(
+        session, workspace_id, list_id, target, user.id, member.role
     )
 
 

@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -21,6 +22,7 @@ from app.db.models.enums import (
     InboxBucket,
     InboxItemType,
     InboxTimeGroup,
+    MemberStatus,
     PermissionLevel,
     StatusGroup,
     TaskPriority,
@@ -66,11 +68,24 @@ class SpaceMember(Base):
     Only meaningful for private Spaces (grants access) or to hand a
     GUEST/LIMITED_MEMBER a higher level than their role default. Owner/
     Super Admin always bypass this and don't need a row here.
+
+    `user_id` is nullable to support sharing with an email that has a
+    pending workspace Invite but hasn't accepted yet: such rows are created
+    with `user_id=None, email=<address>, status=INVITED` and get filled in
+    with a real `user_id` (status flips to ACTIVE) when that invite is
+    accepted — see `resolve_pending_shares` in folder_list_permissions.py.
     """
 
     __tablename__ = "SpaceMember"
     __table_args__ = (
         UniqueConstraint("spaceId", "userId", name="SpaceMember_spaceId_userId_key"),
+        Index(
+            "SpaceMember_spaceId_email_key",
+            "spaceId",
+            "email",
+            unique=True,
+            postgresql_where=Text("\"email\" IS NOT NULL"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(
@@ -79,8 +94,14 @@ class SpaceMember(Base):
     space_id: Mapped[str] = mapped_column(
         "spaceId", String, ForeignKey("Space.id", ondelete="CASCADE")
     )
-    user_id: Mapped[str] = mapped_column(
-        "userId", String, ForeignKey("User.id", ondelete="CASCADE")
+    user_id: Mapped[str | None] = mapped_column(
+        "userId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=True
+    )
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[MemberStatus] = mapped_column(
+        Enum(MemberStatus, name="MemberStatus"),
+        default=MemberStatus.ACTIVE,
+        server_default=MemberStatus.ACTIVE.value,
     )
     permission_level: Mapped[PermissionLevel] = mapped_column(
         "permissionLevel", Enum(PermissionLevel, name="PermissionLevel")
@@ -89,7 +110,7 @@ class SpaceMember(Base):
         "createdAt", DateTime(timezone=True), server_default=func.now()
     )
     space: Mapped["Space"] = relationship(back_populates="members")
-    user: Mapped["User"] = relationship()
+    user: Mapped["User | None"] = relationship()
 
 
 class Folder(Base):
@@ -103,10 +124,59 @@ class Folder(Base):
     )
     name: Mapped[str] = mapped_column(String)
     sort_order: Mapped[int] = mapped_column("sortOrder", Integer, default=0)
+    is_private: Mapped[bool] = mapped_column(
+        "isPrivate", Boolean, default=False, server_default="false"
+    )
     space: Mapped["Space"] = relationship(back_populates="folders")
     lists: Mapped[list["TaskList"]] = relationship(
         back_populates="folder", passive_deletes=True
     )
+    members: Mapped[list["FolderMember"]] = relationship(
+        back_populates="folder", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class FolderMember(Base):
+    """Explicit per-user permission grant on a Folder. Same shape/semantics
+    as SpaceMember, scoped one level down — see SpaceMember's docstring."""
+
+    __tablename__ = "FolderMember"
+    __table_args__ = (
+        UniqueConstraint(
+            "folderId", "userId", name="FolderMember_folderId_userId_key"
+        ),
+        Index(
+            "FolderMember_folderId_email_key",
+            "folderId",
+            "email",
+            unique=True,
+            postgresql_where=Text("\"email\" IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    folder_id: Mapped[str] = mapped_column(
+        "folderId", String, ForeignKey("Folder.id", ondelete="CASCADE")
+    )
+    user_id: Mapped[str | None] = mapped_column(
+        "userId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=True
+    )
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[MemberStatus] = mapped_column(
+        Enum(MemberStatus, name="MemberStatus"),
+        default=MemberStatus.ACTIVE,
+        server_default=MemberStatus.ACTIVE.value,
+    )
+    permission_level: Mapped[PermissionLevel] = mapped_column(
+        "permissionLevel", Enum(PermissionLevel, name="PermissionLevel")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        "createdAt", DateTime(timezone=True), server_default=func.now()
+    )
+    folder: Mapped["Folder"] = relationship(back_populates="members")
+    user: Mapped["User | None"] = relationship()
 
 
 class TaskList(Base):
@@ -123,6 +193,9 @@ class TaskList(Base):
     )
     name: Mapped[str] = mapped_column(String)
     sort_order: Mapped[int] = mapped_column("sortOrder", Integer, default=0)
+    is_private: Mapped[bool] = mapped_column(
+        "isPrivate", Boolean, default=False, server_default="false"
+    )
     space: Mapped["Space"] = relationship(back_populates="lists")
     folder: Mapped["Folder | None"] = relationship(back_populates="lists")
     tasks: Mapped[list["Task"]] = relationship(
@@ -131,6 +204,50 @@ class TaskList(Base):
     statuses: Mapped[list["ListStatus"]] = relationship(
         back_populates="task_list", passive_deletes=True
     )
+    members: Mapped[list["ListMember"]] = relationship(
+        back_populates="task_list", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class ListMember(Base):
+    """Explicit per-user permission grant on a List. Same shape/semantics
+    as SpaceMember, scoped to a single List — see SpaceMember's docstring."""
+
+    __tablename__ = "ListMember"
+    __table_args__ = (
+        UniqueConstraint("listId", "userId", name="ListMember_listId_userId_key"),
+        Index(
+            "ListMember_listId_email_key",
+            "listId",
+            "email",
+            unique=True,
+            postgresql_where=Text("\"email\" IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    list_id: Mapped[str] = mapped_column(
+        "listId", String, ForeignKey("TaskList.id", ondelete="CASCADE")
+    )
+    user_id: Mapped[str | None] = mapped_column(
+        "userId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=True
+    )
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[MemberStatus] = mapped_column(
+        Enum(MemberStatus, name="MemberStatus"),
+        default=MemberStatus.ACTIVE,
+        server_default=MemberStatus.ACTIVE.value,
+    )
+    permission_level: Mapped[PermissionLevel] = mapped_column(
+        "permissionLevel", Enum(PermissionLevel, name="PermissionLevel")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        "createdAt", DateTime(timezone=True), server_default=func.now()
+    )
+    task_list: Mapped["TaskList"] = relationship(back_populates="members")
+    user: Mapped["User | None"] = relationship()
 
 
 class ListStatus(Base):

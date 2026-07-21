@@ -8,7 +8,12 @@ import {
 
 export function patchSidebarChannel(
   channelId: string,
-  patch: Partial<Pick<Channel, "name" | "starred" | "pinnedAt" | "notificationLevel">>
+  patch: Partial<
+    Pick<
+      Channel,
+      "name" | "starred" | "pinnedAt" | "notificationLevel" | "isPrivate"
+    >
+  >
 ) {
   useChatStore.setState((s) => {
     const channelMetaOverrides = {

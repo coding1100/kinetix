@@ -8,6 +8,7 @@ import { getSocketConnectionConfig } from "@/lib/socket/config";
 import type {
   ChatChannelJoinedPayload,
   ChatChannelMemberPayload,
+  ChatChannelPrivacyPayload,
   ChatChannelRemovedPayload,
   ChatChannelRenamedPayload,
   ChatMessageDeletePayload,
@@ -19,6 +20,7 @@ import type {
   HomeNotificationPayload,
   PresenceSyncPayload,
   PresenceUpdatePayload,
+  ResourceAccessChangedPayload,
   TaskRealtimePayload,
   WorkspaceMemberRolePayload,
 } from "@/lib/types/realtime";
@@ -31,6 +33,7 @@ import { getMe } from "@/lib/api/auth";
 import {
   applyChannelJoinedToSidebar,
   applyChannelMemberUpdate,
+  applyChannelPrivacyChanged,
   applyChannelRemovedFromSidebar,
   applyChannelRenamedToSidebar,
   applyRealtimeMessageToSidebar,
@@ -39,6 +42,7 @@ import { useAuthStore } from "@/stores/auth-store";
 import { useChatStore } from "@/stores/chat-store";
 import { usePresenceStore } from "@/stores/presence-store";
 import { useProfileStore } from "@/stores/profile-store";
+import { useSpacesStore } from "@/stores/spaces-store";
 
 export function ChatSocketProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -59,6 +63,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
   const syncPresence = usePresenceStore((s) => s.syncPresence);
   const upsertPresence = usePresenceStore((s) => s.upsertPresence);
   const setPresenceWorkspace = usePresenceStore((s) => s.setWorkspace);
+  const bumpSpacesRefresh = useSpacesStore((s) => s.bumpRefresh);
   const socketRef = useRef<Socket | null>(null);
   const presenceRef = useRef(presence);
   const joinedWorkspaceRef = useRef<string | null>(null);
@@ -119,10 +124,22 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       router.push(nextChannel ? `/chat/c/${nextChannel.id}` : "/chat");
     });
     socket.on("chat:channel:member", (payload: ChatChannelMemberPayload) => {
-      applyChannelMemberUpdate(payload, userId, accessToken);
+      const viewingRemoved = applyChannelMemberUpdate(
+        payload,
+        userId,
+        accessToken
+      );
+      if (!viewingRemoved) return;
+      toast.info("This channel is no longer available");
+      const remaining = useChatStore.getState().sidebarListsCache?.channels;
+      const nextChannel = remaining?.[0];
+      router.push(nextChannel ? `/chat/c/${nextChannel.id}` : "/chat");
     });
     socket.on("chat:channel:renamed", (payload: ChatChannelRenamedPayload) => {
       applyChannelRenamedToSidebar(payload);
+    });
+    socket.on("chat:channel:privacy", (payload: ChatChannelPrivacyPayload) => {
+      applyChannelPrivacyChanged(payload);
     });
     socket.on("home:notification", (payload: HomeNotificationPayload) => {
       applyHomeNotification(payload, userId, workspaceId);
@@ -147,6 +164,22 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
           });
           toast.info("Your role in this workspace was updated");
         });
+      }
+    );
+    socket.on(
+      "space:access:removed",
+      (payload: ResourceAccessChangedPayload) => {
+        if (payload.workspaceId !== workspaceId) return;
+        if (!userId || !payload.userIds.includes(userId)) return;
+        bumpSpacesRefresh();
+      }
+    );
+    socket.on(
+      "space:access:granted",
+      (payload: ResourceAccessChangedPayload) => {
+        if (payload.workspaceId !== workspaceId) return;
+        if (!userId || !payload.userIds.includes(userId)) return;
+        bumpSpacesRefresh();
       }
     );
     socket.on("chat:message:edit", (payload: ChatMessageEditPayload) => {
@@ -185,8 +218,11 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       socket.off("chat:channel:removed");
       socket.off("chat:channel:member");
       socket.off("chat:channel:renamed");
+      socket.off("chat:channel:privacy");
       socket.off("home:notification");
       socket.off("workspace:member:role");
+      socket.off("space:access:removed");
+      socket.off("space:access:granted");
       socket.off("chat:message:edit");
       socket.off("chat:message:delete");
       socket.off("chat:reaction");
@@ -214,6 +250,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     upsertPresence,
     router,
     updateSession,
+    bumpSpacesRefresh,
   ]);
 
   useEffect(() => {

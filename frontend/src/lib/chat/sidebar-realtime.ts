@@ -15,6 +15,7 @@ import {
 import type {
   ChatChannelJoinedPayload,
   ChatChannelMemberPayload,
+  ChatChannelPrivacyPayload,
   ChatChannelRemovedPayload,
   ChatChannelRenamedPayload,
   ChatRealtimePayload,
@@ -64,13 +65,19 @@ export function applyChannelRenamedToSidebar(event: ChatChannelRenamedPayload) {
   patchSidebarChannel(event.channelId, { name: event.name });
 }
 
+export function applyChannelPrivacyChanged(
+  event: ChatChannelPrivacyPayload
+) {
+  patchSidebarChannel(event.channelId, { isPrivate: event.isPrivate });
+}
+
 const pendingChannelFetches = new Set<string>();
 
 export function applyChannelMemberUpdate(
   event: ChatChannelMemberPayload,
   currentUserId: string | undefined,
   accessToken: string | undefined
-) {
+): boolean {
   const { workspaceId, channelId, member, removed } = event;
   patchCachedChannelMembers(workspaceId, channelId, (members) => {
     if (removed) {
@@ -85,20 +92,41 @@ export function applyChannelMemberUpdate(
     return next;
   });
 
-  if (
-    removed ||
-    !currentUserId ||
-    member.id !== currentUserId ||
-    !accessToken
-  ) {
-    return;
+  if (!currentUserId || member.id !== currentUserId) {
+    return false;
   }
+
+  if (removed) {
+    // This is how a List-privacy toggle (or any other membership resync
+    // not driven by an explicit "remove from channel" action) reaches the
+    // sidebar - chat:channel:removed only fires for an explicit removal,
+    // sync_list_channel_members_for_space always emits this event instead.
+    // Without this branch the channel stayed in the recipient's own
+    // Channels tab forever once they lost access, even though the
+    // ChatChannelMember row backing it was already gone server-side.
+    removeChannelFromSidebar(channelId);
+    invalidateChannelMembers(workspaceId, channelId);
+
+    const active = useChatStore.getState().activeConversation;
+    const viewingRemovedChannel =
+      active?.kind === "channel" && active.id === channelId;
+    if (viewingRemovedChannel) {
+      const { setActiveConversation, setActiveThread, setChannelDetailsView } =
+        useChatStore.getState();
+      setActiveConversation(null);
+      setActiveThread(null);
+      setChannelDetailsView(null);
+    }
+    return viewingRemovedChannel;
+  }
+
+  if (!accessToken) return false;
 
   const cache = useChatStore.getState().sidebarListsCache;
   const alreadyListed =
     isSidebarCacheForSession(cache, currentUserId, workspaceId) &&
     cache!.channels.some((c) => c.id === channelId);
-  if (alreadyListed || pendingChannelFetches.has(channelId)) return;
+  if (alreadyListed || pendingChannelFetches.has(channelId)) return false;
 
   pendingChannelFetches.add(channelId);
   void fetchChannel(accessToken, workspaceId, channelId)
@@ -107,6 +135,7 @@ export function applyChannelMemberUpdate(
     .finally(() => {
       pendingChannelFetches.delete(channelId);
     });
+  return false;
 }
 
 export function applyRealtimeMessageToSidebar(

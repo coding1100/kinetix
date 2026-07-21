@@ -45,7 +45,7 @@ from app.services.chat_helpers import (
     map_message_broadcast,
     map_search_message,
 )
-from app.services.space_permissions import user_ids_with_space_access
+from app.services.folder_list_permissions import user_ids_with_list_access
 from app.services.workspace_permissions import (
     get_active_workspace_role,
     has_privileged_workspace_access,
@@ -347,7 +347,15 @@ def _channel_payload(
     unread: int,
     *,
     can_delete: bool = False,
+    list_is_private: bool | None = None,
 ) -> dict:
+    # A List-primary channel's own ChatChannel.is_private is always False
+    # (create_list_channel never sets it) - it mirrors its List's privacy
+    # instead, which is a separate flag the caller has to fetch and pass
+    # in (list_is_private) since it lives on TaskList, not ChatChannel.
+    is_private = (
+        bool(list_is_private) if channel.is_list_primary else channel.is_private
+    )
     payload = {
         "id": channel.id,
         "name": channel.name,
@@ -358,7 +366,7 @@ def _channel_payload(
         "starred": member.starred,
         "topic": channel.topic,
         "spaceLabel": channel.space_label,
-        "isPrivate": channel.is_private,
+        "isPrivate": is_private,
         "isFollowing": member.is_following,
         "customIconColor": channel.custom_icon_color,
         "createdById": channel.created_by_id,
@@ -438,6 +446,11 @@ async def _emit_channel_joined(
         starred=False,
         is_following=False,
     )
+    list_is_private = None
+    if channel.is_list_primary and channel.list_id:
+        list_is_private = await session.scalar(
+            select(TaskList.is_private).where(TaskList.id == channel.list_id)
+        )
     channel_payload = _channel_payload(
         channel,
         template_member,
@@ -445,6 +458,7 @@ async def _emit_channel_joined(
         last_message,
         last_at,
         0,
+        list_is_private=list_is_private,
     )
     await broadcast_channel_joined(
         workspace_id=workspace_id,
@@ -529,6 +543,22 @@ async def list_channels(
         session, list(member_by_channel.values()), user_id
     )
 
+    list_ids = {
+        m.channel.list_id
+        for m in member_by_channel.values()
+        if m.channel.is_list_primary and m.channel.list_id
+    }
+    list_privacy_by_id: dict[str, bool] = {}
+    if list_ids:
+        list_privacy_rows = (
+            await session.execute(
+                select(TaskList.id, TaskList.is_private).where(
+                    TaskList.id.in_(list_ids)
+                )
+            )
+        ).all()
+        list_privacy_by_id = {row[0]: row[1] for row in list_privacy_rows}
+
     channels = []
     for channel_id, m in member_by_channel.items():
         channel = m.channel
@@ -547,6 +577,7 @@ async def list_channels(
                 last_at,
                 unread,
                 can_delete=can_delete,
+                list_is_private=list_privacy_by_id.get(channel.list_id),
             )
         )
 
@@ -572,6 +603,11 @@ async def get_channel(
     can_delete = await _user_can_delete_channel(
         session, workspace_id, member.channel, user_id
     )
+    list_is_private = None
+    if member.channel.is_list_primary and member.channel.list_id:
+        list_is_private = await session.scalar(
+            select(TaskList.is_private).where(TaskList.id == member.channel.list_id)
+        )
     return _channel_payload(
         member.channel,
         member,
@@ -580,6 +616,7 @@ async def get_channel(
         member.channel.created_at,
         unread,
         can_delete=can_delete,
+        list_is_private=list_is_private,
     )
 
 
@@ -873,9 +910,9 @@ async def create_list_channel(
 ) -> ChatChannel:
     """Auto-create a List's mandatory 1:1 primary channel. Unlike the manual
     `create_channel` path (blanket workspace membership), members here mirror
-    whoever can see the list's Space, via `user_ids_with_space_access` - kept
-    in sync afterwards by `sync_list_channel_members_for_space` whenever
-    Space/Workspace membership changes.
+    whoever can see the list, via `user_ids_with_list_access` - kept in sync
+    afterwards by `sync_list_channel_members_for_space` whenever Space/
+    Folder/List/Workspace membership changes.
     """
     name = task_list.name.strip()
     if await session.scalar(
@@ -893,7 +930,8 @@ async def create_list_channel(
             candidate = f"{name}-{task_list.id[:6]}"
         name = candidate
 
-    member_ids = await user_ids_with_space_access(session, workspace_id, space)
+    task_list.space = space
+    member_ids = await user_ids_with_list_access(session, workspace_id, task_list)
     member_ids.add(user_id)
 
     channel = ChatChannel(
@@ -936,9 +974,9 @@ async def sync_list_channel_members_for_space(
     removes users who lost access; leaves existing members' starred/following
     state untouched.
     """
-    channels = (
-        await session.scalars(
-            select(ChatChannel)
+    rows = (
+        await session.execute(
+            select(ChatChannel, TaskList)
             .join(TaskList, TaskList.id == ChatChannel.list_id)
             .where(
                 ChatChannel.is_list_primary.is_(True),
@@ -946,12 +984,12 @@ async def sync_list_channel_members_for_space(
             )
         )
     ).all()
-    if not channels:
+    if not rows:
         return
 
-    target_ids = await user_ids_with_space_access(session, workspace_id, space)
-
-    for channel in channels:
+    for channel, task_list in rows:
+        task_list.space = space
+        target_ids = await user_ids_with_list_access(session, workspace_id, task_list)
         current_ids = set(
             (
                 await session.scalars(
