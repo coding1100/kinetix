@@ -33,7 +33,12 @@ services:
       start_period: 30s
 
   web:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: /api/v1
+        NEXT_PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://3.140.5.67}
+        NEXT_PUBLIC_SOCKET_URL: ${PUBLIC_APP_URL:-http://3.140.5.67}
     image: kinetix-web
     restart: unless-stopped
     environment:
