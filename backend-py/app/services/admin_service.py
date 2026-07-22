@@ -158,9 +158,9 @@ async def admin_logout(session: AsyncSession, refresh_token: str | None) -> None
 async def create_workspace_admin(
     session: AsyncSession, actor_id: str, body: CreateWorkspaceBody
 ) -> dict:
-    # Reuses workspace_service.create_workspace as-is - the staff member
-    # creating it becomes OWNER, same as any self-serve workspace creation.
-    ws = await workspace_service.create_workspace(session, actor_id, body)
+    # Staff creating a workspace from the admin portal isn't added as a
+    # member - they invite someone else as owner afterward instead.
+    ws = await workspace_service.create_workspace(session, actor_id, body, add_owner=False)
     _add_audit(session, actor_id, "workspace.create", "workspace", ws["id"], {"name": ws["name"]})
     await session.commit()
     return ws

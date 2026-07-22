@@ -5129,5 +5129,66 @@ and demotion are already done.
 Verified: `uv run python -c "import app.main"` clean, `npx tsc --noEmit`
 and `npx next build` both clean for admin-frontend.
 
+TAG: [FEATURE]
+PARENT: Platform admin portal (workspaces/users, separate app)
+TITLE: Admin no longer joins workspaces they create - invite an owner instead
+DESC:
+First item of a longer backlog the user is working through one-by-one
+(spec pasted at session start covering admin portal + several unrelated
+frontend/notification/task features - each to be picked off in order,
+pausing after each for user testing).
+
+Change: admin portal "Create workspace" flow. Previously
+create_workspace_admin (admin_service.py) reused workspace_service.
+create_workspace as-is, which always adds the creating user as an
+OWNER WorkspaceMember - so the staff member who created it from the
+admin portal ended up a member of every workspace they spun up. Per the
+ask, admin should not be part of the workspace at all; instead they
+invite someone else in as owner.
+
+Backend: workspace_service.create_workspace(...) gained an add_owner:
+bool = True keyword-only param - when False, skips the WorkspaceMember
+insert but still creates the workspace + provisions the personal space
+as before. create_workspace_admin now calls it with add_owner=False.
+No new function needed - reused the existing one via a conditional,
+per the "only add new code if nothing existing covers it" rule.
+Self-serve workspace creation (workspace_service call sites elsewhere)
+is untouched, still defaults to add_owner=True.
+
+Invite-as-owner: the admin-side invite endpoint
+(create_workspace_invite_admin) already called invite_service.
+create_invite with inviter_role=WorkspaceRole.OWNER (staff acts as
+OWNER as a permission ceiling, not real membership) - can_assign_role
+already permits OWNER assigning OWNER, so no backend change was needed
+to allow inviting someone as OWNER. Only added "OWNER" to the frontend
+INVITE_ROLES list (admin-frontend/src/lib/api/admin.ts) which is what
+had been missing it.
+
+Frontend: CreateWorkspaceDialog.tsx rewritten as a 2-step modal instead
+of closing immediately after creation - step 1 is just the name input
+(copy updated: "You won't be added as a member..."); on success it
+flips to step 2 in the *same* modal (per "in the same modal show the
+people to invite"), an inline email+role invite form defaulting role to
+OWNER, with a running list of invites sent this session and a "Done"
+button that closes/refreshes. Once an OWNER invite has been sent in
+that session the OWNER option drops out of the role dropdown (state is
+local to the dialog since the workspace is brand new and has no invites
+yet from anywhere else).
+
+For the *existing*-workspace inline invite row on workspaces/page.tsx
+(the expandable per-workspace panel used for workspaces that already
+have members), added a hasOwner(workspaceId) helper - true if the
+currently-loaded members or invites for that workspace include an
+OWNER - and used it to filter the OWNER option out of that dropdown too,
+so already-owned workspaces (every workspace created before this
+change, or via normal self-serve signup) don't offer a redundant/
+conflicting "invite as owner" option.
+
+Verified: `npx tsc --noEmit` clean for admin-frontend; backend files
+parse clean (ast.parse). Not yet run end-to-end in a browser - next
+step is the user testing this manually before moving to the next item
+in the backlog (auto-showing invite-people after creating a workspace
+was actually bundled into this same change since it's the same modal).
+
 ========================================
 DATE_END: 2026-07-22
