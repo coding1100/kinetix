@@ -15,13 +15,13 @@ import {
   type WorkspaceRole,
   WORKSPACE_ROLES,
   deleteWorkspace,
-  disableUser,
-  enableUser,
   listAuditLog,
   listWorkspaceMembers,
   listWorkspaces,
+  reactivateMember,
   reactivateWorkspace,
   restoreWorkspace,
+  suspendMember,
   suspendWorkspace,
   updateMemberRole,
 } from "@/lib/api/admin";
@@ -41,6 +41,7 @@ interface PendingRoleChange {
 }
 
 interface PendingDisable {
+  workspaceId: string;
   userId: string;
   userName: string;
 }
@@ -244,12 +245,12 @@ export default function WorkspacesPage() {
   };
 
   const confirmDisableMember = async () => {
-    if (!pendingDisable || !accessToken || !membersFor) return;
+    if (!pendingDisable || !accessToken) return;
     setConfirmBusy(true);
     try {
-      await disableUser(accessToken, pendingDisable.userId);
-      await loadMembers(membersFor);
-      await load(debouncedQ, statusFilter, showArchived, offset);
+      await suspendMember(accessToken, pendingDisable.workspaceId, pendingDisable.userId);
+      await loadMembers(pendingDisable.workspaceId);
+      await refreshAudit(pendingDisable.workspaceId);
       setPendingDisable(null);
     } catch (err) {
       setError(formatRequestError(err));
@@ -262,8 +263,9 @@ export default function WorkspacesPage() {
     if (!accessToken || !membersFor) return;
     setBusyMemberId(member.id);
     try {
-      await enableUser(accessToken, member.id);
+      await reactivateMember(accessToken, membersFor, member.id);
       await loadMembers(membersFor);
+      await refreshAudit(membersFor);
     } catch (err) {
       setError(formatRequestError(err));
     } finally {
@@ -461,13 +463,18 @@ export default function WorkspacesPage() {
                                   <td className="py-1.5 pr-3">
                                     <span
                                       className={
-                                        m.isDisabled
+                                        m.status === "SUSPENDED"
                                           ? "text-[var(--destructive)]"
                                           : "text-[var(--muted-foreground)]"
                                       }
                                     >
-                                      {m.isDisabled ? "DISABLED" : "ACTIVE"}
+                                      {m.status}
                                     </span>
+                                    {m.isDisabled && (
+                                      <span className="ml-1 text-[var(--muted-foreground)]">
+                                        (account disabled)
+                                      </span>
+                                    )}
                                   </td>
                                   <td className="py-1.5 pr-3">
                                     {m.role === "OWNER" ? (
@@ -497,7 +504,7 @@ export default function WorkspacesPage() {
                                       >
                                         Transfer ownership
                                       </button>
-                                    ) : m.isDisabled ? (
+                                    ) : m.status === "SUSPENDED" ? (
                                       <button
                                         disabled={busyMemberId === m.id}
                                         onClick={() => handleEnableMember(m)}
@@ -509,7 +516,11 @@ export default function WorkspacesPage() {
                                       <button
                                         disabled={busyMemberId === m.id}
                                         onClick={() =>
-                                          setPendingDisable({ userId: m.id, userName: m.fullName })
+                                          setPendingDisable({
+                                            workspaceId: ws.id,
+                                            userId: m.id,
+                                            userName: m.fullName,
+                                          })
                                         }
                                         className="rounded border border-[var(--destructive)] px-2 py-1 text-[var(--destructive)] hover:bg-[var(--destructive)]/10"
                                       >
@@ -587,13 +598,13 @@ export default function WorkspacesPage() {
 
       <ConfirmDialog
         open={pendingDisable !== null}
-        title="Disable this user?"
+        title="Disable this member?"
         description={
           pendingDisable
-            ? `Disabling ${pendingDisable.userName} blocks their login and revokes all active sessions immediately, across every workspace they belong to — not just this one. This can be undone from the Users page.`
+            ? `Disabling ${pendingDisable.userName} blocks their access to this workspace only — their account and every other workspace they belong to are unaffected. This can be undone with Enable.`
             : undefined
         }
-        confirmLabel="Disable user"
+        confirmLabel="Disable"
         danger
         busy={confirmBusy}
         onConfirm={confirmDisableMember}

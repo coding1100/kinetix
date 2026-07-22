@@ -24,6 +24,7 @@ import type {
   TaskRealtimePayload,
   AccountDisabledPayload,
   WorkspaceMemberRolePayload,
+  WorkspaceMemberSuspendedPayload,
   WorkspaceStatusPayload,
 } from "@/lib/types/realtime";
 import { ingestTaskEvent } from "@/lib/tasks/realtime";
@@ -193,6 +194,29 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       };
     socket.on("workspace:suspended", handleWorkspaceGone("suspended"));
     socket.on("workspace:deleted", handleWorkspaceGone("deleted"));
+    socket.on(
+      "workspace:member:suspended",
+      (payload: WorkspaceMemberSuspendedPayload) => {
+        // Targeted at this user's own room by the backend, so it's always
+        // "us" - but only act on it if it's the workspace we're currently
+        // sitting in; otherwise it'll just be missing next time /me loads.
+        if (payload.workspaceId !== workspaceId) return;
+        toast.error("Your access to this workspace was suspended");
+        void getMe(accessToken).then((me) => {
+          updateSession({
+            accessToken,
+            user: {
+              id: me.id,
+              email: me.email,
+              fullName: me.fullName,
+              avatarUrl: me.avatarUrl,
+            },
+            workspaces: me.workspaces,
+          });
+          router.push(me.workspaces[0] ? "/home/inbox" : "/auth/login");
+        });
+      }
+    );
     socket.on("account:disabled", (payload: AccountDisabledPayload) => {
       if (payload.userId !== userId) return;
       toast.error("Your account has been disabled");
@@ -256,6 +280,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       socket.off("workspace:member:role");
       socket.off("workspace:suspended");
       socket.off("workspace:deleted");
+      socket.off("workspace:member:suspended");
       socket.off("account:disabled");
       socket.off("space:access:removed");
       socket.off("space:access:granted");
