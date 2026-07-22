@@ -581,6 +581,7 @@ export function PeopleView() {
                       {ROLE_LABELS[inv.role] ?? inv.role}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">—</td>
+                    <td className="px-4 py-3 text-muted-foreground">—</td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">
                       {inv.invitedBy?.fullName ?? "—"}
                     </td>
