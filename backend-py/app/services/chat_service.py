@@ -1345,7 +1345,7 @@ def _dm_payload(
         "isGroup": conv.is_group,
         "members": members,
         "participants": participants,
-        "avatarUrl": None,
+        "avatarUrl": other.user.avatar_url if other and not conv.is_group else None,
         "lastMessage": last_message,
         "lastAt": last_at.isoformat(),
         "unread": unread,
