@@ -4,8 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComposerSegment } from "@/lib/chat/mention-types";
 import type { MentionSelection } from "@/lib/chat/mention-types";
 import {
+  formatChannelMention,
+  formatPersonMention,
   getDraftMentionQuery,
   mentionSelectionToSegment,
+  MENTION_CHIP_CHANNEL_CLASS,
+  MENTION_CHIP_PERSON_CLASS,
   stripDraftMentionQuery,
 } from "@/lib/chat/mention-utils";
 import {
@@ -14,7 +18,9 @@ import {
   focusEditorEnd,
   getPlainTextBeforeCursor,
   getPlainTextBeforeCursorInBlock,
+  insertChipAtCursor,
   insertTextAtCursor,
+  repairMentionChipOverflow,
 } from "@/lib/chat/rich-text/dom";
 import {
   bodyToComposerHtml,
@@ -36,6 +42,7 @@ export function useRichComposerField() {
   const syncFromEditor = useCallback(() => {
     const el = editorRef.current;
     if (!el) return;
+    repairMentionChipOverflow(el);
     setDraftHtml(el.innerHTML);
     const plain = el.innerText;
     setDraftPlain(plain);
@@ -80,20 +87,47 @@ export function useRichComposerField() {
   const insertMention = useCallback(
     (selection: MentionSelection) => {
       const el = editorRef.current;
-      const segment = mentionSelectionToSegment(selection);
-      setSegments((prev) => [...prev, segment]);
 
-      if (el) {
-        const before = getPlainTextBeforeCursorInBlock(el);
-        const stripped = stripDraftMentionQuery(before);
-        const removeCount = before.length - stripped.length;
-        if (removeCount > 0) {
-          deleteTextBeforeCursor(el, removeCount);
-        }
-        syncFromEditor();
-        focusEditorEnd(el);
+      if (!el) {
+        // No live editor to anchor on (shouldn't normally happen) - fall
+        // back to appending a segment so the mention isn't silently lost.
+        setSegments((prev) => [...prev, mentionSelectionToSegment(selection)]);
+        setPickerOpen(false);
+        return;
       }
 
+      const before = getPlainTextBeforeCursorInBlock(el);
+      const stripped = stripDraftMentionQuery(before);
+      const removeCount = before.length - stripped.length;
+      if (removeCount > 0) {
+        deleteTextBeforeCursor(el, removeCount);
+      }
+
+      // Insert an atomic, highlighted chip right at the (now-collapsed)
+      // cursor - NOT appended as a trailing segment, which always
+      // rendered/serialized before whatever the user had already typed
+      // regardless of where the "@" was actually typed. The chip's own
+      // text content is the same plain "@First Last"/"#channel" token
+      // formatPersonMention/formatChannelMention would produce, so
+      // serialization (which just walks text nodes) needs no special
+      // handling - the highlighting is a pure visual wrapper.
+      const chip = document.createElement("span");
+      chip.setAttribute("contenteditable", "false");
+      chip.dataset.mentionId = selection.id;
+      chip.dataset.mentionType = selection.mentionType;
+      chip.dataset.mentionLabel = selection.label;
+      chip.className =
+        selection.mentionType === "person"
+          ? MENTION_CHIP_PERSON_CLASS
+          : MENTION_CHIP_CHANNEL_CLASS;
+      chip.textContent = (
+        selection.mentionType === "person"
+          ? formatPersonMention(selection.label)
+          : formatChannelMention(selection.label)
+      ).trimEnd();
+      insertChipAtCursor(chip);
+
+      syncFromEditor();
       setPickerOpen(false);
     },
     [syncFromEditor]
