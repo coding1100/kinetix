@@ -33,6 +33,7 @@ import { applyHomeNotification } from "@/lib/notifications/realtime";
 import { clearLiveNotifications } from "@/lib/notifications/live-cache";
 import { bumpWorkspaceMembersRefresh } from "@/lib/workspace/realtime";
 import { getMe } from "@/lib/api/auth";
+import { bumpSidebarRefresh } from "@/lib/chat/sidebar-channel";
 import {
   applyChannelJoinedToSidebar,
   applyChannelMemberUpdate,
@@ -154,6 +155,13 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
         if (payload.workspaceId !== workspaceId) return;
         bumpWorkspaceMembersRefresh();
         if (payload.userId !== userId) return;
+        // A role change can shift which Spaces/Lists and channels/DMs are
+        // visible - bumping these two shared refresh keys re-fetches both
+        // the Spaces tree and the channel/DM sidebar lists, which Home and
+        // Chat pages both read off of (HomeSidebar and ChatSidebar share
+        // the same spacesRefreshKey/sidebarRefreshKey stores).
+        bumpSpacesRefresh();
+        bumpSidebarRefresh();
         void getMe(accessToken).then((me) => {
           updateSession({
             accessToken,
