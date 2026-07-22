@@ -23,6 +23,7 @@ def _map_task_comment(comment) -> dict:
         "id": comment.id,
         "authorId": comment.user_id,
         "author": comment.user.full_name,
+        "authorIsDisabled": comment.user.is_disabled,
         "body": comment.body,
         "at": comment_relative_time(created_at),
         "createdAt": created_at.isoformat() if created_at else None,
@@ -165,15 +166,21 @@ def map_checklist(checklist) -> dict:
 
 
 def map_task(
-    task: Task, current_user_id: str, assignee_names: dict[str, str] | None = None
+    task: Task,
+    current_user_id: str,
+    assignee_names: dict[str, tuple[str, bool]] | None = None,
 ) -> dict:
     assignee_labels = []
+    disabled_assignee_ids = []
     for uid in task.assignee_ids:
         if uid == current_user_id:
             assignee_labels.append("You")
             continue
-        full_name = (assignee_names or {}).get(uid)
+        info = (assignee_names or {}).get(uid)
+        full_name = info[0] if info else None
         assignee_labels.append(full_name.split(" ")[0] if full_name else "User")
+        if info and info[1]:
+            disabled_assignee_ids.append(uid)
 
     comments = sorted(task.comments, key=lambda c: c.created_at)
     if task.list_status:
@@ -199,6 +206,7 @@ def map_task(
         "startDateIso": task.start_date.isoformat() if task.start_date else None,
         "timeEstimateMinutes": task.time_estimate_minutes,
         "assignees": assignee_labels,
+        "disabledAssigneeIds": disabled_assignee_ids,
         "list": task.task_list.name,
         "listId": task.task_list.id,
         "space": task.task_list.space.name,

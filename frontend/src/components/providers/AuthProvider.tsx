@@ -5,8 +5,10 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { getMe, refreshSession } from "@/lib/api/auth";
 import { ApiError, setUnauthorizedHandler } from "@/lib/api/client";
 import { resetSessionScopedState } from "@/lib/auth/reset-session-scoped-state";
@@ -33,9 +35,18 @@ export function useAuthReady() {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
   const hydrated = useAuthStore((s) => s.hydrated);
   const accessToken = useAuthStore((s) => s.accessToken);
   const [ready, setReady] = useState(false);
+
+  const forceLogout = useCallback(() => {
+    useAuthStore.getState().clearSession();
+    router.replace(`/auth/login?next=${encodeURIComponent(pathnameRef.current)}`);
+  }, [router]);
 
   const bootstrap = useCallback(async () => {
     const store = useAuthStore.getState();
@@ -93,7 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 (refreshErr.status === 401 ||
                   refreshErr.code === "INVALID_REFRESH")
               ) {
-                clearSession();
+                forceLogout();
               }
             }
           }
@@ -136,14 +147,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         err instanceof ApiError &&
         (err.status === 401 || err.code === "INVALID_REFRESH")
       ) {
-        clearSession();
+        forceLogout();
       } else if (!token) {
         clearSession();
       }
     } finally {
       setReady(true);
     }
-  }, []);
+  }, [forceLogout]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -156,11 +167,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // notice via bootstrap().
     setUnauthorizedHandler((code) => {
       if (code === "ACCOUNT_DISABLED") {
-        useAuthStore.getState().clearSession();
+        forceLogout();
       }
     });
     return () => setUnauthorizedHandler(null);
-  }, []);
+  }, [forceLogout]);
 
   useEffect(() => {
     if (!hydrated) return;

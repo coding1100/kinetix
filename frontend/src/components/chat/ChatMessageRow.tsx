@@ -266,7 +266,9 @@ export function ChatMessageRow({
               authorName={displayName}
               className="mt-0.5 shrink-0 rounded-full"
             >
-              <Avatar className="size-9">
+              <Avatar
+                className={cn("size-9", message.authorIsDisabled && "opacity-50")}
+              >
                 <AvatarFallback
                   className={cn(
                     "text-sm font-semibold",
@@ -295,6 +297,11 @@ export function ChatMessageRow({
               >
                 {displayName}
               </MessageAuthorButton>
+              {message.authorIsDisabled && (
+                <span className="text-xs font-medium text-destructive">
+                  Deactivated
+                </span>
+              )}
               <time
                 className="text-xs text-muted-foreground"
                 dateTime={message.createdAt}

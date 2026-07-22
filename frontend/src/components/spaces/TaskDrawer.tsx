@@ -1685,24 +1685,38 @@ export function TaskDrawer({
                                 Empty
                               </span>
                             ) : (
-                              selectedAssignees.map((m) => (
-                                <span
-                                  key={m.id}
-                                  className="flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium"
-                                >
-                                  <Avatar className="size-5">
-                                    <AvatarFallback
+                              selectedAssignees.map((m) => {
+                                const isDeactivated =
+                                  task?.disabledAssigneeIds?.includes(m.id);
+                                return (
+                                  <span
+                                    key={m.id}
+                                    className="flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium"
+                                  >
+                                    <Avatar
                                       className={cn(
-                                        "text-[10px] text-white",
-                                        avatarColorClassForKey(m.id)
+                                        "size-5",
+                                        isDeactivated && "opacity-50"
                                       )}
                                     >
-                                      {avatarInitialFromName(m.fullName)}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  {m.fullName}
-                                </span>
-                              ))
+                                      <AvatarFallback
+                                        className={cn(
+                                          "text-[10px] text-white",
+                                          avatarColorClassForKey(m.id)
+                                        )}
+                                      >
+                                        {avatarInitialFromName(m.fullName)}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    {m.fullName}
+                                    {isDeactivated && (
+                                      <span className="text-destructive">
+                                        (Deactivated)
+                                      </span>
+                                    )}
+                                  </span>
+                                );
+                              })
                             )}
                           </button>
                         }

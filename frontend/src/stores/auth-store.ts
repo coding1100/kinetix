@@ -6,6 +6,12 @@ import {
   setSessionCookie,
 } from "@/lib/auth/session-cookie";
 
+export function firstSelectableWorkspaceId(workspaces: WorkspaceSummary[]) {
+  return (
+    workspaces.find((w) => w.membershipStatus !== "SUSPENDED")?.id ?? null
+  );
+}
+
 interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
@@ -52,17 +58,22 @@ export const useAuthStore = create<AuthState>()(
           user,
           workspaces: workspaces ?? [],
           activeWorkspaceId:
-            activeWorkspaceId ?? workspaces?.[0]?.id ?? null,
+            activeWorkspaceId ?? firstSelectableWorkspaceId(workspaces ?? []),
         });
       },
       updateSession: ({ accessToken, refreshToken, user, workspaces, activeWorkspaceId }) => {
         setSessionCookie();
         const currentActive = get().activeWorkspaceId;
+        const currentIsSelectable = workspaces.find(
+          (w) => w.id === currentActive
+        )?.membershipStatus !== "SUSPENDED";
         const nextActive =
           activeWorkspaceId ??
-          (currentActive && workspaces.some((w) => w.id === currentActive)
+          (currentActive &&
+          currentIsSelectable &&
+          workspaces.some((w) => w.id === currentActive)
             ? currentActive
-            : workspaces[0]?.id ?? null);
+            : firstSelectableWorkspaceId(workspaces));
         set({
           accessToken,
           refreshToken: refreshToken ?? get().refreshToken,
@@ -105,7 +116,7 @@ export const useAuthStore = create<AuthState>()(
 export function selectActiveWorkspace(state: AuthState) {
   return (
     state.workspaces.find((w) => w.id === state.activeWorkspaceId) ??
-    state.workspaces[0] ??
+    state.workspaces.find((w) => w.membershipStatus !== "SUSPENDED") ??
     null
   );
 }

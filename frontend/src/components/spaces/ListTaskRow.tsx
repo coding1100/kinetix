@@ -74,7 +74,18 @@ export function ListTaskRow({
       <div className="flex items-center gap-1">
         {task.assigneeIds?.length ? (
           task.assigneeIds.slice(0, 3).map((id, index) => (
-            <Avatar key={id} className="size-6 border border-background">
+            <Avatar
+              key={id}
+              className={cn(
+                "size-6 border border-background",
+                task.disabledAssigneeIds?.includes(id) && "opacity-50"
+              )}
+              title={
+                task.disabledAssigneeIds?.includes(id)
+                  ? "Deactivated"
+                  : undefined
+              }
+            >
               <AvatarFallback
                 className={cn(
                   "text-[10px] text-white",
