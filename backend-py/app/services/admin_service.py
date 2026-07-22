@@ -19,8 +19,8 @@ from app.core.security import (
     verify_refresh_token,
     verify_token_hash,
 )
-from app.db.models.enums import MemberStatus, WorkspaceRole, WorkspaceStatus
-from app.db.models.platform import AdminAuditLog
+from app.db.models.enums import MemberStatus, PlatformRole, WorkspaceRole, WorkspaceStatus
+from app.db.models.platform import AdminAuditLog, PlatformStaff
 from app.db.models.user import RefreshToken, User
 from app.db.models.workspace import Workspace, WorkspaceMember
 from app.schemas.admin import AdminLoginBody
@@ -571,6 +571,107 @@ async def set_user_disabled(
         # reasoning as the workspace:suspended broadcast.
         await broadcast_account_disabled(user_id=user_id)
     return {"id": user.id, "isDisabled": user.is_disabled}
+
+
+# --- Platform staff --------------------------------------------------------
+
+
+async def list_platform_staff(session: AsyncSession) -> dict:
+    stmt = (
+        select(PlatformStaff)
+        .options(selectinload(PlatformStaff.user))
+        .order_by(PlatformStaff.created_at.desc())
+    )
+    rows = (await session.scalars(stmt)).all()
+
+    granter_ids = {row.granted_by for row in rows if row.granted_by}
+    granters: dict[str, User] = {}
+    if granter_ids:
+        granter_rows = (
+            await session.scalars(select(User).where(User.id.in_(granter_ids)))
+        ).all()
+        granters = {u.id: u for u in granter_rows}
+
+    items = [
+        {
+            "id": row.id,
+            "userId": row.user_id,
+            "email": row.user.email,
+            "fullName": row.user.full_name,
+            "role": row.role.value,
+            "grantedBy": (
+                {
+                    "id": row.granted_by,
+                    "email": granters[row.granted_by].email,
+                    "fullName": granters[row.granted_by].full_name,
+                }
+                if row.granted_by and row.granted_by in granters
+                else None
+            ),
+            "createdAt": row.created_at.isoformat(),
+        }
+        for row in rows
+    ]
+    return {"items": items}
+
+
+async def grant_platform_staff(session: AsyncSession, actor_id: str, email: str) -> dict:
+    normalized = email.strip().lower()
+    user = await session.scalar(select(User).where(func.lower(User.email) == normalized))
+    if not user:
+        raise AppError(404, "NOT_FOUND", "No user with that email")
+    if user.is_disabled:
+        raise AppError(400, "VALIDATION_ERROR", "That user's account is disabled")
+
+    existing = await session.scalar(
+        select(PlatformStaff).where(PlatformStaff.user_id == user.id)
+    )
+    if existing:
+        raise AppError(409, "ALREADY_STAFF", "That user already has platform staff access")
+
+    staff = PlatformStaff(user_id=user.id, role=PlatformRole.STAFF, granted_by=actor_id)
+    session.add(staff)
+    await session.flush()
+    _add_audit(
+        session,
+        actor_id,
+        "platform_staff.grant",
+        "user",
+        user.id,
+        {"email": user.email, "fullName": user.full_name},
+    )
+    await session.commit()
+    return {
+        "id": staff.id,
+        "userId": user.id,
+        "email": user.email,
+        "fullName": user.full_name,
+        "role": staff.role.value,
+    }
+
+
+async def revoke_platform_staff(session: AsyncSession, actor_id: str, target_user_id: str) -> dict:
+    if target_user_id == actor_id:
+        raise AppError(400, "VALIDATION_ERROR", "You cannot revoke your own platform staff access")
+
+    staff = await session.scalar(
+        select(PlatformStaff).where(PlatformStaff.user_id == target_user_id)
+    )
+    if not staff:
+        raise AppError(404, "NOT_FOUND", "That user is not platform staff")
+
+    user = await session.get(User, target_user_id)
+    await session.delete(staff)
+    _add_audit(
+        session,
+        actor_id,
+        "platform_staff.revoke",
+        "user",
+        target_user_id,
+        {"email": user.email if user else None, "fullName": user.full_name if user else None},
+    )
+    await session.commit()
+    return {"ok": True}
 
 
 # --- Audit log -------------------------------------------------------------

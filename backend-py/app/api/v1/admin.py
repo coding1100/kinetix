@@ -6,6 +6,7 @@ from app.db.models.enums import WorkspaceStatus
 from app.deps.auth import CurrentUserDep, DbSession
 from app.deps.platform import PlatformStaffDep
 from app.schemas.admin import (
+    AdminGrantStaffBody,
     AdminLoginBody,
     AdminRefreshBody,
     AdminTransferOwnershipBody,
@@ -193,6 +194,34 @@ async def enable_user(
     session: DbSession,
 ):
     return await admin_service.set_user_disabled(session, userId, user.id, False)
+
+
+@router.get("/staff")
+async def list_staff(
+    staff: PlatformStaffDep,
+    session: DbSession,
+):
+    return await admin_service.list_platform_staff(session)
+
+
+@router.post("/staff")
+async def grant_staff(
+    body: AdminGrantStaffBody,
+    staff: PlatformStaffDep,
+    user: CurrentUserDep,
+    session: DbSession,
+):
+    return await admin_service.grant_platform_staff(session, user.id, body.email)
+
+
+@router.delete("/staff/{userId}")
+async def revoke_staff(
+    userId: str,
+    staff: PlatformStaffDep,
+    user: CurrentUserDep,
+    session: DbSession,
+):
+    return await admin_service.revoke_platform_staff(session, user.id, userId)
 
 
 @router.get("/audit-log")

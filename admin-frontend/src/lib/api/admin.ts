@@ -236,6 +236,34 @@ export interface AuditLogEntry {
   createdAt: string;
 }
 
+export interface PlatformStaffMember {
+  id: string;
+  userId: string;
+  email: string;
+  fullName: string;
+  role: string;
+  grantedBy: { id: string; email: string; fullName: string } | null;
+  createdAt: string;
+}
+
+export function listPlatformStaff(token: string) {
+  return apiFetch<{ items: PlatformStaffMember[] }>("/admin/staff", { token });
+}
+
+export function grantPlatformStaff(token: string, email: string) {
+  return apiFetch<{ id: string; userId: string; email: string; fullName: string; role: string }>(
+    "/admin/staff",
+    { method: "POST", token, body: JSON.stringify({ email }) }
+  );
+}
+
+export function revokePlatformStaff(token: string, userId: string) {
+  return apiFetch<{ ok: boolean }>(`/admin/staff/${userId}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
 export function listAuditLog(
   token: string,
   params: { targetType?: string; targetId?: string; limit?: number; offset?: number } = {}

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { SESSION_COOKIE } from "@/lib/auth/session-cookie";
 
-const PROTECTED_PREFIXES = ["/workspaces", "/users"];
+const PROTECTED_PREFIXES = ["/workspaces", "/users", "/staff"];
 const AUTH_PREFIXES = ["/login"];
 
 function matches(pathname: string, prefixes: string[]) {
@@ -35,5 +35,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/workspaces/:path*", "/users/:path*", "/login"],
+  matcher: ["/", "/workspaces/:path*", "/users/:path*", "/staff/:path*", "/login"],
 };

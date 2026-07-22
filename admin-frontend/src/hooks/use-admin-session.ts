@@ -1,34 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { adminRefresh } from "@/lib/api/admin";
+import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { useAdminAuthStore } from "@/stores/auth-store";
 
-/** Silently restores an access token from the httpOnly admin refresh cookie on first load. */
+/**
+ * No persistence, no silent cookie-based restore - every fresh mount of the
+ * admin portal (new tab, reload, browser restart) requires a real login.
+ * Bounces to /login the moment there's no in-memory access token.
+ */
 export function useAdminSession() {
-  const { accessToken, hydrated, setSession, clearSession } = useAdminAuthStore();
-  const [ready, setReady] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+  const accessToken = useAdminAuthStore((s) => s.accessToken);
 
   useEffect(() => {
-    if (!hydrated) return;
-    if (accessToken) {
-      setReady(true);
-      return;
+    if (!accessToken) {
+      router.replace(`/login?next=${encodeURIComponent(pathname)}`);
     }
-    adminRefresh()
-      .then((result) => {
-        setSession({
-          accessToken: result.accessToken,
-          refreshToken: result.refreshToken ?? null,
-          user: result.user,
-        });
-      })
-      .catch(() => {
-        clearSession();
-      })
-      .finally(() => setReady(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated]);
+  }, [accessToken]);
 
-  return { ready, accessToken };
+  return { ready: true, accessToken };
 }

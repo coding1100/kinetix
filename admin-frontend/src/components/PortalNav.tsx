@@ -8,6 +8,7 @@ import { useAdminAuthStore } from "@/stores/auth-store";
 const TABS = [
   { href: "/workspaces", label: "Workspaces" },
   { href: "/users", label: "Users" },
+  { href: "/staff", label: "Admins" },
 ];
 
 export function PortalNav() {
