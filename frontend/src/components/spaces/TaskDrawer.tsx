@@ -128,10 +128,11 @@ import {
   WandSparklesIcon,
 } from "lucide-react";
 
-type Member = { id: string; fullName: string; email: string; avatarUrl?: string | null };
+type Member = { id: string; fullName: string; email: string; avatarUrl?: string | null; isDisabled?: boolean };
 
 function FollowerAvatar({ member }: { member: Member }) {
-  const presence = useUserPresence(member.id);
+  const livePresence = useUserPresence(member.id);
+  const presence = member.isDisabled ? "offline" : livePresence;
   return (
     <UserAvatarWithPresence
       name={member.fullName}
@@ -1711,7 +1712,7 @@ export function TaskDrawer({
                                     {m.fullName}
                                     {isDeactivated && (
                                       <span className="text-destructive">
-                                        (Deactivated)
+                                        (deactivated)
                                       </span>
                                     )}
                                   </span>
@@ -1756,6 +1757,9 @@ export function TaskDrawer({
                                   </Avatar>
                                   <span className="flex-1 truncate text-left">
                                     {m.fullName}
+                                    {m.isDisabled ? (
+                                      <span className="text-destructive"> (deactivated)</span>
+                                    ) : null}
                                   </span>
                                 </button>
                               </li>
@@ -2718,6 +2722,9 @@ export function TaskDrawer({
                               <FollowerAvatar member={m} />
                               <span className="flex-1 truncate text-sm">
                                 {m.id === currentUserId ? "Me" : m.fullName}
+                                {m.id !== currentUserId && m.isDisabled ? (
+                                  <span className="text-destructive"> (deactivated)</span>
+                                ) : null}
                               </span>
                               <UserMinusIcon className="size-3.5 shrink-0 text-muted-foreground opacity-0 group-hover/follower:opacity-100" />
                             </button>
@@ -2739,6 +2746,9 @@ export function TaskDrawer({
                                 <FollowerAvatar member={m} />
                                 <span className="flex-1 truncate text-sm">
                                   {m.fullName}
+                                  {m.isDisabled ? (
+                                    <span className="text-destructive"> (deactivated)</span>
+                                  ) : null}
                                 </span>
                                 <UserPlusIcon className="size-3.5 shrink-0 text-muted-foreground" />
                               </button>

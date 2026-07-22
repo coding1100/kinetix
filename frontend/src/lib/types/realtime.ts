@@ -113,6 +113,11 @@ export type WorkspaceMemberSuspendedPayload = {
   userId: string;
 };
 
+export type WorkspaceMemberReactivatedPayload = {
+  workspaceId: string;
+  userId: string;
+};
+
 export type AccountDisabledPayload = {
   userId: string;
 };

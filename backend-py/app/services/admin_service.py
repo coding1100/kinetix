@@ -32,6 +32,7 @@ from app.services.personal_space_service import ensure_personal_space
 from app.socket.emit import (
     broadcast_account_disabled,
     broadcast_workspace_deleted,
+    broadcast_workspace_member_reactivated,
     broadcast_workspace_member_role_updated,
     broadcast_workspace_member_suspended,
     broadcast_workspace_reactivated,
@@ -561,6 +562,12 @@ async def set_member_status_admin(
         # reasoning as broadcast_workspace_suspended, just scoped to one
         # member instead of the whole room.
         await broadcast_workspace_member_suspended(
+            workspace_id=workspace_id, user_id=target_user_id
+        )
+    else:
+        # Instant un-gray in their workspace switcher instead of waiting
+        # for a reload to notice the membership is ACTIVE again.
+        await broadcast_workspace_member_reactivated(
             workspace_id=workspace_id, user_id=target_user_id
         )
     return {"userId": target_user_id, "status": target.status.value}

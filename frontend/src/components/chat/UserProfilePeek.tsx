@@ -46,7 +46,8 @@ export function UserProfilePeek({
 }) {
   const [open, setOpen] = useState(false);
   const { member, loading } = usePersonProfileMember(userId, channelId);
-  const presence = useUserPresence(userId, "offline");
+  const livePresence = useUserPresence(userId, "offline");
+  const presence = member?.isDisabled ? "offline" : livePresence;
   const { openProfile } = useOpenPersonProfile();
   const { openDirectMessage, openingUserId } = useOpenDirectMessage();
 
@@ -70,6 +71,9 @@ export function UserProfilePeek({
             <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-3">
               <p className="min-w-0 truncate text-lg font-semibold leading-tight">
                 {displayName}
+                {member?.isDisabled && (
+                  <span className="text-destructive"> (deactivated)</span>
+                )}
               </p>
               <span className="relative inline-flex shrink-0">
                 <Avatar className="size-10">

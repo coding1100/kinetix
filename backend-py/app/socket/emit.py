@@ -342,6 +342,14 @@ async def broadcast_workspace_member_role_updated(
 async def broadcast_account_disabled(*, user_id: str) -> None:
     sio = get_sio()
     await sio.emit("account:disabled", {"userId": user_id}, room=f"user:{user_id}")
+    # Force-disconnect any live sockets rather than waiting for the client
+    # to voluntarily close after handling the event above - this is also
+    # what flips their presence to offline for everyone else immediately,
+    # instead of leaving them looking "online" until ping-timeout.
+    room = f"user:{user_id}"
+    sids = [sid for sid, _ in sio.manager.get_participants("/", room)]
+    for sid in sids:
+        await sio.disconnect(sid, namespace="/")
 
 
 async def broadcast_workspace_suspended(*, workspace_id: str) -> None:
@@ -358,6 +366,20 @@ async def broadcast_workspace_member_suspended(*, workspace_id: str, user_id: st
     sio = get_sio()
     await sio.emit(
         "workspace:member:suspended",
+        {"workspaceId": workspace_id, "userId": user_id},
+        room=f"user:{user_id}",
+    )
+
+
+async def broadcast_workspace_member_reactivated(
+    *, workspace_id: str, user_id: str
+) -> None:
+    # Mirrors broadcast_workspace_member_suspended - targets only this one
+    # member's sockets so their workspace switcher can flip the workspace
+    # back to enabled in realtime instead of waiting for a reload.
+    sio = get_sio()
+    await sio.emit(
+        "workspace:member:reactivated",
         {"workspaceId": workspace_id, "userId": user_id},
         room=f"user:{user_id}",
     )

@@ -296,12 +296,10 @@ export function ChatMessageRow({
                 className="text-[15px] font-bold text-foreground hover:text-primary"
               >
                 {displayName}
+                {message.authorIsDisabled && (
+                  <span className="text-destructive"> (deactivated)</span>
+                )}
               </MessageAuthorButton>
-              {message.authorIsDisabled && (
-                <span className="text-xs font-medium text-destructive">
-                  Deactivated
-                </span>
-              )}
               <time
                 className="text-xs text-muted-foreground"
                 dateTime={message.createdAt}
