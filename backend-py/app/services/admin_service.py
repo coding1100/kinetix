@@ -24,7 +24,8 @@ from app.db.models.platform import AdminAuditLog, PlatformStaff
 from app.db.models.user import RefreshToken, User
 from app.db.models.workspace import Workspace, WorkspaceMember
 from app.schemas.admin import AdminLoginBody
-from app.services import auth_service
+from app.schemas.workspace import CreateInviteBody, CreateWorkspaceBody
+from app.services import auth_service, invite_service, workspace_service
 from app.services.auth_service import issue_refresh_for_user
 from app.services.platform_permissions import get_platform_role
 from app.services.chat_service import sync_list_channel_members_for_workspace
@@ -152,6 +153,17 @@ async def admin_logout(session: AsyncSession, refresh_token: str | None) -> None
 
 
 # --- Workspaces ---------------------------------------------------------
+
+
+async def create_workspace_admin(
+    session: AsyncSession, actor_id: str, body: CreateWorkspaceBody
+) -> dict:
+    # Reuses workspace_service.create_workspace as-is - the staff member
+    # creating it becomes OWNER, same as any self-serve workspace creation.
+    ws = await workspace_service.create_workspace(session, actor_id, body)
+    _add_audit(session, actor_id, "workspace.create", "workspace", ws["id"], {"name": ws["name"]})
+    await session.commit()
+    return ws
 
 
 async def list_workspaces(
@@ -439,6 +451,73 @@ async def list_workspace_members_admin(session: AsyncSession, workspace_id: str)
         }
         for m in rows
     ]
+
+
+async def list_workspace_invites_admin(session: AsyncSession, workspace_id: str) -> dict:
+    await _get_workspace_or_404(session, workspace_id)
+    return {"items": await invite_service.list_workspace_invites(session, workspace_id)}
+
+
+async def create_workspace_invite_admin(
+    session: AsyncSession, workspace_id: str, actor_id: str, body: CreateInviteBody
+) -> dict:
+    await _get_workspace_or_404(session, workspace_id)
+    # Reuses invite_service.create_invite verbatim - it already 409s on
+    # ALREADY_MEMBER / ALREADY_INVITED, same dedupe the in-app People page
+    # relies on. Staff acts as OWNER here since they aren't a member of
+    # this workspace themselves; that's just the permission ceiling passed
+    # into can_assign_role, not a real membership.
+    result = await invite_service.create_invite(
+        session, workspace_id, actor_id, WorkspaceRole.OWNER, body
+    )
+    _add_audit(
+        session,
+        actor_id,
+        "workspace.invite.create",
+        "workspace",
+        workspace_id,
+        {"email": body.email, "role": body.role.value},
+    )
+    await session.commit()
+    return result
+
+
+async def cancel_workspace_invite_admin(
+    session: AsyncSession, workspace_id: str, actor_id: str, invite_id: str
+) -> dict:
+    await _get_workspace_or_404(session, workspace_id)
+    result = await invite_service.cancel_workspace_invite(
+        session, workspace_id, WorkspaceRole.OWNER, invite_id
+    )
+    _add_audit(
+        session,
+        actor_id,
+        "workspace.invite.cancel",
+        "workspace",
+        workspace_id,
+        {"inviteId": invite_id},
+    )
+    await session.commit()
+    return result
+
+
+async def resend_workspace_invite_admin(
+    session: AsyncSession, workspace_id: str, actor_id: str, invite_id: str
+) -> dict:
+    await _get_workspace_or_404(session, workspace_id)
+    result = await invite_service.resend_workspace_invite(
+        session, workspace_id, WorkspaceRole.OWNER, invite_id
+    )
+    _add_audit(
+        session,
+        actor_id,
+        "workspace.invite.resend",
+        "workspace",
+        workspace_id,
+        {"inviteId": invite_id},
+    )
+    await session.commit()
+    return result
 
 
 async def update_member_role_admin(
