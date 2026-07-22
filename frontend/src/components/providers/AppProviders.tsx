@@ -20,7 +20,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
           </ChatSocketProvider>
           <Modals />
           <GlobalLoader />
-          <Toaster position="bottom-center" richColors />
+          <Toaster position="top-right" richColors />
         </AuthProvider>
       </TooltipProvider>
     </ThemeProvider>
