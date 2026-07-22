@@ -18,7 +18,7 @@ from app.core.security import (
     verify_token_hash,
 )
 from app.core.utils import generate_token, unique_workspace_slug
-from app.db.models.enums import MemberStatus, WorkspaceRole
+from app.db.models.enums import MemberStatus, WorkspaceRole, WorkspaceStatus
 from app.db.models.user import PasswordResetToken, RefreshToken, User
 from app.db.models.workspace import Workspace, WorkspaceMember
 from app.schemas.auth import ChangePasswordBody, LoginBody, SignupBody, UpdateProfileBody
@@ -166,7 +166,9 @@ async def logout(session: AsyncSession, refresh_token: str | None) -> None:
             return
 
 
-async def get_me(session: AsyncSession, user_id: str) -> dict:
+async def get_me(
+    session: AsyncSession, user_id: str, include_suspended: bool = False
+) -> dict:
     user = await session.scalar(
         select(User)
         .where(User.id == user_id)
@@ -180,7 +182,18 @@ async def get_me(session: AsyncSession, user_id: str) -> dict:
     # Relationship order is undefined; sort so workspaces[0] is stable
     # (oldest membership first, matching list_workspaces).
     active = sorted(
-        (m for m in user.memberships if m.status == MemberStatus.ACTIVE),
+        (
+            m
+            for m in user.memberships
+            if m.status == MemberStatus.ACTIVE
+            and (
+                include_suspended
+                or (
+                    m.workspace.status != WorkspaceStatus.SUSPENDED
+                    and not m.workspace.is_deleted
+                )
+            )
+        ),
         key=lambda m: (m.joined_at is None, m.joined_at),
     )
     workspaces = [
@@ -189,6 +202,8 @@ async def get_me(session: AsyncSession, user_id: str) -> dict:
             "name": m.workspace.name,
             "slug": m.workspace.slug,
             "role": m.role.value,
+            "status": m.workspace.status.value,
+            "isDeleted": m.workspace.is_deleted,
         }
         for m in active
     ]

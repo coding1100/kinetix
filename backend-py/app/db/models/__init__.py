@@ -25,6 +25,7 @@ from app.db.models.home import (
 )
 from app.db.models.invite import Invite
 from app.db.models.oauth import OAuthAccount, OAuthExchange, OAuthState
+from app.db.models.platform import AdminAuditLog, PlatformStaff
 from app.db.models.team import Team, TeamMember
 from app.db.models.user import PasswordResetToken, RefreshToken, User
 from app.db.models.workspace import Workspace, WorkspaceMember
@@ -38,6 +39,8 @@ __all__ = [
     "OAuthExchange",
     "Workspace",
     "WorkspaceMember",
+    "PlatformStaff",
+    "AdminAuditLog",
     "Invite",
     "Team",
     "TeamMember",

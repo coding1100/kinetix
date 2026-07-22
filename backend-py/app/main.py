@@ -38,6 +38,10 @@ OPENAPI_TAGS = [
         "description": "Chat channels, DMs, messages, threads (workspace member).",
     },
     {"name": "meta", "description": "API index and metadata."},
+    {
+        "name": "admin",
+        "description": "Platform admin portal: cross-workspace/user management (PlatformStaff only).",
+    },
 ]
 
 @asynccontextmanager
