@@ -339,6 +339,32 @@ async def broadcast_workspace_member_role_updated(
     )
 
 
+async def broadcast_account_disabled(*, user_id: str) -> None:
+    sio = get_sio()
+    await sio.emit("account:disabled", {"userId": user_id}, room=f"user:{user_id}")
+
+
+async def broadcast_workspace_suspended(*, workspace_id: str) -> None:
+    sio = get_sio()
+    await sio.emit(
+        "workspace:suspended", {"workspaceId": workspace_id}, room=f"ws:{workspace_id}"
+    )
+
+
+async def broadcast_workspace_reactivated(*, workspace_id: str) -> None:
+    sio = get_sio()
+    await sio.emit(
+        "workspace:reactivated", {"workspaceId": workspace_id}, room=f"ws:{workspace_id}"
+    )
+
+
+async def broadcast_workspace_deleted(*, workspace_id: str) -> None:
+    sio = get_sio()
+    await sio.emit(
+        "workspace:deleted", {"workspaceId": workspace_id}, room=f"ws:{workspace_id}"
+    )
+
+
 async def broadcast_task_event(
     *,
     workspace_id: str,

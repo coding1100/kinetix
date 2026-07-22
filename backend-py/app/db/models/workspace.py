@@ -5,7 +5,7 @@ from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.db.models.enums import MemberStatus, WorkspaceRole
+from app.db.models.enums import MemberStatus, WorkspaceRole, WorkspaceStatus
 
 
 class Workspace(Base):
@@ -16,6 +16,15 @@ class Workspace(Base):
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
     slug: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    status: Mapped[WorkspaceStatus] = mapped_column(
+        Enum(WorkspaceStatus, name="WorkspaceStatus"), default=WorkspaceStatus.ACTIVE
+    )
+    is_deleted: Mapped[bool] = mapped_column(
+        "isDeleted", Boolean, default=False, server_default="false"
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        "deletedAt", DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         "createdAt",
         DateTime(timezone=True),
