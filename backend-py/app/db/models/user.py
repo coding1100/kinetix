@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -19,6 +19,9 @@ class User(Base):
     )
     full_name: Mapped[str] = mapped_column("fullName", String, nullable=False)
     avatar_url: Mapped[str | None] = mapped_column("avatarUrl", String, nullable=True)
+    is_disabled: Mapped[bool] = mapped_column(
+        "isDisabled", Boolean, default=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(
         "createdAt",
         DateTime(timezone=True),
