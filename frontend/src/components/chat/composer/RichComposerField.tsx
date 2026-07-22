@@ -10,7 +10,9 @@ import { MentionChip } from "@/components/chat/mentions/MentionChip";
 import { MentionAutocompleteDropdown } from "@/components/chat/mentions/MentionAutocompleteDropdown";
 import { ComposerFormatToolbar } from "@/components/chat/composer/ComposerFormatToolbar";
 import { ComposerLinkPopover } from "@/components/chat/composer/ComposerLinkPopover";
+import { ComposerMentionHoverPeek } from "@/components/chat/composer/ComposerMentionHoverPeek";
 import { useComposerFormat } from "@/hooks/use-composer-format";
+import { useMentionHoverPeek } from "@/hooks/use-mention-hover-peek";
 import type { TurnIntoBlockType } from "@/lib/chat/rich-text/block-types";
 import { applyTurnInto } from "@/lib/chat/rich-text/commands";
 import { RICH_TEXT_CONTENT_CLASS } from "@/lib/chat/rich-text/rich-text-styles";
@@ -65,6 +67,8 @@ export function RichComposerField({
     submitLink,
   } = useComposerFormat(editorRef);
   const showPlaceholder = segments.length === 0 && !draftPlain.trim();
+  const mentionHoverPeek = useMentionHoverPeek(editorRef);
+  const channelId = conversationType === "channel" ? conversationId : undefined;
 
   const resizeEditor = () => {
     const el = editorRef.current;
@@ -117,6 +121,15 @@ export function RichComposerField({
 
   return (
     <>
+      {mentionHoverPeek.target ? (
+        <ComposerMentionHoverPeek
+          userId={mentionHoverPeek.target.userId}
+          rect={mentionHoverPeek.target.rect}
+          channelId={channelId}
+          onMouseEnter={mentionHoverPeek.holdOpen}
+          onMouseLeave={mentionHoverPeek.releaseAndClose}
+        />
+      ) : null}
       {linkPosition ? (
         <ComposerLinkPopover
           position={linkPosition}

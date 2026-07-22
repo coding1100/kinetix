@@ -1,3 +1,8 @@
+import {
+  formatChannelMention,
+  formatPersonMention,
+} from "@/lib/chat/mention-utils";
+
 type CharRef = { node: Text; offset: number };
 
 let savedEditorRange: Range | null = null;
@@ -86,7 +91,11 @@ function getBlockAncestor(node: Node, root: HTMLElement): HTMLElement {
   return root;
 }
 
-/** Text in the current block only — avoids stale @ queries after blockquotes/quotes. */
+/** Text in the current block only — avoids stale @ queries after blockquotes/quotes.
+ * Already-picked mention chips are stripped out entirely first: an inserted
+ * chip's own "@Name" text must never be mistaken for a still-being-typed
+ * query just because whatever comes after it happens to run on without a
+ * plain space (e.g. punctuation right after the mention). */
 export function getPlainTextBeforeCursorInBlock(root: HTMLElement): string {
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0) return "";
@@ -97,7 +106,10 @@ export function getPlainTextBeforeCursorInBlock(root: HTMLElement): string {
   const preRange = range.cloneRange();
   preRange.selectNodeContents(block);
   preRange.setEnd(range.endContainer, range.endOffset);
-  return preRange.toString();
+
+  const fragment = preRange.cloneContents();
+  fragment.querySelectorAll("[data-mention-type]").forEach((chip) => chip.remove());
+  return fragment.textContent ?? "";
 }
 
 export function deleteTextBeforeCursor(root: HTMLElement, charCount: number): void {
@@ -140,6 +152,104 @@ export function insertTextAtCursor(text: string): void {
   range.collapse(true);
   sel.removeAllRanges();
   sel.addRange(range);
+}
+
+/** Splice an atomic (contenteditable=false) chip node in at the cursor,
+ * followed by a plain space, then collapse the cursor right after that
+ * space - same "insert exactly where the caret is" contract as
+ * insertTextAtCursor, just for a real element instead of a text node. */
+export function insertChipAtCursor(chip: HTMLElement): void {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  const range = sel.getRangeAt(0);
+  range.deleteContents();
+
+  // Must be U+0020, not U+00A0 - this exact literal was previously
+  // silently corrupted into a non-breaking space by file-write tooling,
+  // which looks identical here but merges visually into the chip's run
+  // with no visible gap once more text is typed after it.
+  const space = document.createTextNode(" ");
+  const frag = document.createDocumentFragment();
+  frag.appendChild(chip);
+  frag.appendChild(space);
+  range.insertNode(frag);
+
+  // Collapse *inside* the space text node (not a parent+offset boundary
+  // just past it) - matches where native typing itself would leave the
+  // caret, so the next keystroke extends this text node instead of the
+  // browser folding it into the chip's run.
+  range.setStart(space, space.length);
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+/** Defensive repair: if the browser ever lets typed characters land INSIDE
+ * an atomic mention chip's own text (a contenteditable=false leaf edge case
+ * that varies across browsers and can't be reliably prevented up front),
+ * split the overflow back out into a plain sibling text node right after
+ * the chip and restore the chip to just its own label. Run on every
+ * input/selection sync so any such drift self-heals on the very next
+ * keystroke instead of silently growing the chip. Returns true if it
+ * changed anything. */
+export function repairMentionChipOverflow(root: HTMLElement): boolean {
+  let changed = false;
+  // Compare with nbsp folded to a plain space: the chip's own label uses an
+  // nbsp between first/last name, but the browser can normalize whitespace
+  // when it merges typed text in, so a raw === / startsWith would miss it.
+  const norm = (s: string) => s.replace(/\s+/g, " ");
+
+  root.querySelectorAll<HTMLElement>("[data-mention-type]").forEach((chip) => {
+    const label = chip.dataset.mentionLabel ?? "";
+    const expected = (
+      chip.dataset.mentionType === "channel"
+        ? formatChannelMention(label)
+        : formatPersonMention(label)
+    ).trimEnd();
+
+    // (1) Pull any text the browser folded INTO the chip back out into a
+    //     plain sibling text node right after it.
+    const actual = chip.textContent ?? "";
+    if (
+      norm(actual) !== norm(expected) &&
+      norm(actual).startsWith(norm(expected))
+    ) {
+      const overflow = actual.slice(expected.length);
+      chip.textContent = expected;
+
+      const overflowNode = document.createTextNode(overflow);
+      chip.parentNode?.insertBefore(overflowNode, chip.nextSibling);
+
+      const sel = window.getSelection();
+      if (sel) {
+        const range = document.createRange();
+        range.setStart(overflowNode, overflow.length);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+
+      changed = true;
+    }
+
+    // (2) Guarantee a separator right after the chip. A lone trailing space
+    //     text node after an atomic contenteditable=false element can get
+    //     collapsed away, which both glues the next word onto the chip
+    //     visually and drops the space from the serialized message body.
+    const next = chip.nextSibling;
+    const hasSeparator =
+      next?.nodeType === Node.TEXT_NODE &&
+      /^\s/.test((next as Text).data);
+    if (!hasSeparator) {
+      chip.parentNode?.insertBefore(
+        document.createTextNode(" "),
+        chip.nextSibling
+      );
+      changed = true;
+    }
+  });
+
+  return changed;
 }
 
 export function focusEditorEnd(root: HTMLElement): void {
