@@ -22,7 +22,9 @@ import type {
   PresenceUpdatePayload,
   ResourceAccessChangedPayload,
   TaskRealtimePayload,
+  AccountDisabledPayload,
   WorkspaceMemberRolePayload,
+  WorkspaceStatusPayload,
 } from "@/lib/types/realtime";
 import { ingestTaskEvent } from "@/lib/tasks/realtime";
 import { registerChatTypingSocket } from "@/lib/socket/chat-typing";
@@ -51,6 +53,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
   const workspaceId = useAuthStore((s) => s.activeWorkspaceId);
   const hydrated = useAuthStore((s) => s.hydrated);
   const updateSession = useAuthStore((s) => s.updateSession);
+  const clearSession = useAuthStore((s) => s.clearSession);
   const presence = useProfileStore((s) => s.presence);
   const ingestRealtimeEvent = useChatStore((s) => s.ingestRealtimeEvent);
   const ingestMessageEditEvent = useChatStore((s) => s.ingestMessageEditEvent);
@@ -166,6 +169,36 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
         });
       }
     );
+    const handleWorkspaceGone = (reason: "suspended" | "deleted") =>
+      (payload: WorkspaceStatusPayload) => {
+        if (payload.workspaceId !== workspaceId) return;
+        toast.error(
+          reason === "suspended"
+            ? "This workspace has been suspended"
+            : "This workspace no longer exists"
+        );
+        void getMe(accessToken).then((me) => {
+          updateSession({
+            accessToken,
+            user: {
+              id: me.id,
+              email: me.email,
+              fullName: me.fullName,
+              avatarUrl: me.avatarUrl,
+            },
+            workspaces: me.workspaces,
+          });
+          router.push(me.workspaces[0] ? "/home/inbox" : "/auth/login");
+        });
+      };
+    socket.on("workspace:suspended", handleWorkspaceGone("suspended"));
+    socket.on("workspace:deleted", handleWorkspaceGone("deleted"));
+    socket.on("account:disabled", (payload: AccountDisabledPayload) => {
+      if (payload.userId !== userId) return;
+      toast.error("Your account has been disabled");
+      clearSession();
+      router.push("/auth/login");
+    });
     socket.on(
       "space:access:removed",
       (payload: ResourceAccessChangedPayload) => {
@@ -221,6 +254,9 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       socket.off("chat:channel:privacy");
       socket.off("home:notification");
       socket.off("workspace:member:role");
+      socket.off("workspace:suspended");
+      socket.off("workspace:deleted");
+      socket.off("account:disabled");
       socket.off("space:access:removed");
       socket.off("space:access:granted");
       socket.off("chat:message:edit");

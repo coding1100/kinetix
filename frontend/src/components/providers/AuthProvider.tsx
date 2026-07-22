@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import { getMe, refreshSession } from "@/lib/api/auth";
-import { ApiError } from "@/lib/api/client";
+import { ApiError, setUnauthorizedHandler } from "@/lib/api/client";
 import { resetSessionScopedState } from "@/lib/auth/reset-session-scoped-state";
 import { SESSION_COOKIE } from "@/lib/auth/session-cookie";
 import { useAuthStore } from "@/stores/auth-store";
@@ -149,6 +149,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!hydrated) return;
     void bootstrap();
   }, [hydrated, bootstrap]);
+
+  useEffect(() => {
+    // Non-recoverable 401s (account disabled) force an immediate logout from
+    // wherever the user is, instead of waiting for the next hard refresh to
+    // notice via bootstrap().
+    setUnauthorizedHandler((code) => {
+      if (code === "ACCOUNT_DISABLED") {
+        useAuthStore.getState().clearSession();
+      }
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
 
   useEffect(() => {
     if (!hydrated) return;

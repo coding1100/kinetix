@@ -104,6 +104,14 @@ export type WorkspaceMemberRolePayload = {
   role: string;
 };
 
+export type WorkspaceStatusPayload = {
+  workspaceId: string;
+};
+
+export type AccountDisabledPayload = {
+  userId: string;
+};
+
 export type ResourceAccessChangedPayload = {
   workspaceId: string;
   userIds: string[];

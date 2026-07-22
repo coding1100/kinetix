@@ -47,6 +47,21 @@ services:
     depends_on:
       - api
 
+  admin:
+    build:
+      context: ./admin-frontend
+      args:
+        NEXT_PUBLIC_BASE_PATH: /admin-portal
+        NEXT_PUBLIC_API_URL: /api/v1
+    image: kinetix-admin
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3002"
+      NEXT_PUBLIC_BASE_PATH: /admin-portal
+    depends_on:
+      - api
+
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
@@ -57,6 +72,7 @@ services:
     depends_on:
       - api
       - web
+      - admin
     networks:
       - default
       - edge
