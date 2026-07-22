@@ -16,6 +16,15 @@ class MemberStatus(str, enum.Enum):
     SUSPENDED = "SUSPENDED"
 
 
+class PlatformRole(str, enum.Enum):
+    STAFF = "STAFF"
+
+
+class WorkspaceStatus(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    SUSPENDED = "SUSPENDED"
+
+
 class TeamRole(str, enum.Enum):
     LEAD = "LEAD"
     MEMBER = "MEMBER"

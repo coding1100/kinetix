@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { useNavigateWithLoading } from "@/hooks/use-navigate-with-loading";
 import { login, getMe } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import { useAuthStore } from "@/stores/auth-store";
 
 function safeNextPath(next: string | null) {
@@ -62,9 +63,16 @@ function LoginForm() {
   };
 
   return (
-    <AuthFormCard title="Log in" description="Use Google or your work email and password.">
+    <AuthFormCard
+      title="Log in"
+      description={
+        FEATURE_FLAGS.googleAuth
+          ? "Use Google or your work email and password."
+          : "Use your work email and password."
+      }
+    >
       <form onSubmit={handleSubmit} className="space-y-4">
-        <AuthSocialButtons />
+        {FEATURE_FLAGS.googleAuth && <AuthSocialButtons />}
         <div className="space-y-1.5">
           <Label htmlFor="login-email">Email</Label>
           <div className="relative">
@@ -115,24 +123,28 @@ function LoginForm() {
           <ArrowRightIcon className="size-4" />
         </Button>
       </form>
-      <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
-        <p className="flex items-center gap-2 text-xs text-muted-foreground">
-          <ShieldCheckIcon className="size-4 text-primary" />
-          Demo: owner@demo.com / password123
-        </p>
-      </div>
+      {FEATURE_FLAGS.demoCredentialsBanner && (
+        <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
+            <ShieldCheckIcon className="size-4 text-primary" />
+            Demo: owner@demo.com / password123
+          </p>
+        </div>
+      )}
       <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
           <CheckCircle2Icon className="size-4 text-emerald-600" />
           Quick access to Inbox, Home, and Chat after sign in.
         </p>
       </div>
-      <p className="text-center text-sm text-muted-foreground">
-        New here?{" "}
-        <Link href="/auth/signup" className="text-primary hover:underline">
-          Create an account
-        </Link>
-      </p>
+      {FEATURE_FLAGS.selfSignup && (
+        <p className="text-center text-sm text-muted-foreground">
+          New here?{" "}
+          <Link href="/auth/signup" className="text-primary hover:underline">
+            Create an account
+          </Link>
+        </p>
+      )}
     </AuthFormCard>
   );
 }

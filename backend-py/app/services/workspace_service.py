@@ -4,7 +4,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.errors import AppError
 from app.core.utils import unique_workspace_slug
-from app.db.models.enums import MemberStatus, WorkspaceRole
+from app.db.models.enums import MemberStatus, WorkspaceRole, WorkspaceStatus
 from app.db.models.workspace import Workspace, WorkspaceMember
 from app.socket.presence import get_presence
 from app.socket.emit import broadcast_workspace_member_role_updated
@@ -55,6 +55,7 @@ async def list_workspaces(session: AsyncSession, user_id: str) -> list[dict]:
             "joinedAt": m.joined_at.isoformat() if m.joined_at else None,
         }
         for m in rows
+        if m.workspace.status != WorkspaceStatus.SUSPENDED and not m.workspace.is_deleted
     ]
 
 
@@ -187,6 +188,7 @@ async def list_workspace_members(session: AsyncSession, workspace_id: str) -> li
             "email": m.user.email,
             "fullName": m.user.full_name,
             "avatarUrl": m.user.avatar_url,
+            "isDisabled": m.user.is_disabled,
             "role": m.role.value,
             "status": m.status.value,
             "joinedAt": m.joined_at.isoformat() if m.joined_at else None,
@@ -262,6 +264,10 @@ async def update_workspace_member(
 
     target.role = body.role
     await session.commit()
+    # A role change can shift which private Spaces/Lists (and their
+    # list-primary chat channels) this member can see - same re-sync
+    # already done on member removal, just missing here until now.
+    await sync_list_channel_members_for_workspace(session, workspace_id)
     await broadcast_workspace_member_role_updated(
         workspace_id=workspace_id, user_id=target_user_id, role=body.role.value
     )
@@ -461,6 +467,7 @@ async def transfer_workspace_ownership(
     actor.role = WorkspaceRole.ADMIN
     target.role = WorkspaceRole.OWNER
     await session.commit()
+    await sync_list_channel_members_for_workspace(session, workspace_id)
     await broadcast_workspace_member_role_updated(
         workspace_id=workspace_id, user_id=actor_id, role=WorkspaceRole.ADMIN.value
     )
