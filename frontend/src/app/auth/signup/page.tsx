@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowRightIcon,
@@ -20,9 +21,14 @@ import { Label } from "@/components/ui/label";
 import { useNavigateWithLoading } from "@/hooks/use-navigate-with-loading";
 import { signup, getMe } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import { useAuthStore } from "@/stores/auth-store";
 
 export default function SignupPage() {
+  if (!FEATURE_FLAGS.selfSignup) {
+    redirect("/auth/login");
+  }
+
   const navigateWithLoading = useNavigateWithLoading();
   const setSession = useAuthStore((s) => s.setSession);
   const [fullName, setFullName] = useState("");
@@ -78,9 +84,11 @@ export default function SignupPage() {
       </div>
       <AuthFormCard title="Sign up" description="Create your profile in seconds.">
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Suspense fallback={null}>
-            <AuthSocialButtons />
-          </Suspense>
+          {FEATURE_FLAGS.googleAuth && (
+            <Suspense fallback={null}>
+              <AuthSocialButtons />
+            </Suspense>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="signup-name">Full name</Label>
             <div className="relative">

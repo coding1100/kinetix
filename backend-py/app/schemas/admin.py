@@ -7,6 +7,10 @@ class AdminUpdateMemberRoleBody(BaseModel):
     role: WorkspaceRole
 
 
+class AdminGrantStaffBody(BaseModel):
+    email: EmailStr
+
+
 class AdminLoginBody(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1)
