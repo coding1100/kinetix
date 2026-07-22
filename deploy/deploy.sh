@@ -1,142 +1,107 @@
 #!/usr/bin/env bash
 # Production deploy for EC2 — run manually or via GitHub Actions.
+#
+# Prod actually runs as Docker containers (nginx routes `location /` to
+# http://web:3000 and `location /api/` to http://api:4000 — see
+# deploy/nginx/docker.conf), built from docker-compose.yml +
+# docker-compose.app.yml. Rebuild/restart those, not systemd services.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_ROOT="${APP_ROOT:-$ROOT}"
-FRONTEND="$APP_ROOT/frontend"
-BACKEND="$APP_ROOT/backend-py"
-DEPLOY_USER="${DEPLOY_USER:-ubuntu}"
+COMPOSE_FILES="-f $APP_ROOT/docker-compose.yml -f $APP_ROOT/docker-compose.app.yml"
 
 log() { echo "==> $*"; }
 
-wait_for_http() {
-  local url="$1"
-  local label="$2"
-  local attempts="${3:-45}"
-  local i=1
-  while [ "$i" -le "$attempts" ]; do
-    if curl -fsS "$url" >/dev/null 2>&1; then
-      log "$label ready ($url)"
-      return 0
-    fi
-    sleep 2
-    i=$((i + 1))
-  done
-  echo "ERROR: $label not ready after $((attempts * 2))s — $url"
-  return 1
+compose() {
+  docker compose $COMPOSE_FILES "$@"
 }
 
-run_as_user() {
-  local dir="$1"
-  shift
-  if [ "$(id -un)" = "$DEPLOY_USER" ]; then
-    bash -lc "cd '$dir' && $*"
-  else
-    sudo -u "$DEPLOY_USER" -- bash -lc "cd '$dir' && $*"
-  fi
+container_running() {
+  local id
+  id="$(compose ps -q "$1" 2>/dev/null || true)"
+  [ -n "$id" ] && [ "$(docker inspect -f '{{.State.Running}}' "$id" 2>/dev/null)" = "true" ]
 }
 
 log "App root: $APP_ROOT"
-log "Fix ownership ($DEPLOY_USER — avoids EACCES after sudo deploys)"
-sudo chown -R "$DEPLOY_USER:$DEPLOY_USER" "$FRONTEND" "$BACKEND" 2>/dev/null || true
 cd "$APP_ROOT"
 
 log "Pull latest code"
 git fetch origin main
 git reset --hard origin/main
 
-log "Stop dev Next.js (prevents Turbopack chunk errors)"
-sudo systemctl stop kinetix-web 2>/dev/null || true
-pkill -f '[n]ext dev' 2>/dev/null || true
-if lsof -i :3000 -t >/dev/null 2>&1; then
-  fuser -k 3000/tcp 2>/dev/null || true
-  sleep 2
+log "Disable legacy systemd services (superseded by Docker - avoids two prod builds silently coexisting)"
+sudo systemctl stop kinetix-api kinetix-web 2>/dev/null || true
+sudo systemctl disable kinetix-api kinetix-web 2>/dev/null || true
+
+if [ -f "$APP_ROOT/docker-compose.env" ]; then
+  cp "$APP_ROOT/docker-compose.env" "$APP_ROOT/.env"
+  log "Synced docker-compose.env -> .env for compose variable substitution"
 fi
 
-log "Install systemd units"
-sudo cp "$ROOT/deploy/systemd/kinetix-api.service" /etc/systemd/system/
-sudo cp "$ROOT/deploy/systemd/kinetix-web.service" /etc/systemd/system/
-sudo sed -i "s|/opt/clickup/kinetix|$APP_ROOT|g" /etc/systemd/system/kinetix-api.service
-sudo sed -i "s|/opt/clickup/kinetix|$APP_ROOT|g" /etc/systemd/system/kinetix-web.service
-sudo systemctl daemon-reload
-
-log "Backend dependencies"
-cd "$BACKEND"
-export PATH="$HOME/.local/bin:$PATH"
-if ! command -v uv >/dev/null 2>&1; then
-  curl -LsSf https://astral.sh/uv/install.sh | sh
-  export PATH="$HOME/.local/bin:$PATH"
-fi
-if ! command -v uv >/dev/null 2>&1; then
-  echo "ERROR: uv not found after install (expected in \$HOME/.local/bin)"
-  exit 1
-fi
-# uv sync creates/updates .venv — avoid system pip (PEP 668 on Ubuntu 24.04+)
-uv sync
-sudo chown -R "$DEPLOY_USER:$DEPLOY_USER" "$BACKEND"
-
-log "Frontend production build"
-run_as_user "$FRONTEND" 'rm -rf .next node_modules/.cache'
-run_as_user "$FRONTEND" 'npm ci'
-run_as_user "$FRONTEND" 'NODE_ENV=production npm run build'
-
-if [ ! -d "$FRONTEND/.next/static/chunks" ]; then
-  echo "ERROR: frontend build missing .next/static/chunks"
-  exit 1
-fi
-
-log "Nginx config"
-if [ -f "$ROOT/kinetix-site.conf" ]; then
-  # Remove stale copies that caused "duplicate upstream kinetix_web"
-  sudo rm -f /etc/nginx/conf.d/kinetix.conf /etc/nginx/conf.d/kinetix-upstreams.conf
-  sudo sed "s|/opt/clickup/kinetix|$APP_ROOT|g" "$ROOT/kinetix-site.conf" \
-    | sudo tee /etc/nginx/sites-available/kinetix >/dev/null
-  sudo ln -sf /etc/nginx/sites-available/kinetix /etc/nginx/sites-enabled/kinetix
-  sudo rm -f /etc/nginx/sites-enabled/default
-  sudo nginx -t
-  sudo systemctl reload nginx
-fi
-
-log "Restart services"
-sudo systemctl enable kinetix-api kinetix-web
-sudo systemctl restart kinetix-api kinetix-web
-
-log "Health checks"
-if ! wait_for_http "http://127.0.0.1:4000/health" "API"; then
-  sudo journalctl -u kinetix-api -n 40 --no-pager
-  exit 1
-fi
-
-if ! wait_for_http "http://127.0.0.1:3000/auth/login" "Web"; then
-  sudo journalctl -u kinetix-web -n 40 --no-pager
-  exit 1
-fi
-
-if pgrep -af '[n]ext dev' >/dev/null 2>&1; then
-  echo "ERROR: next dev is still running. Use next start only."
-  pgrep -af next || true
-  exit 1
-fi
-
-SAMPLE_CHUNK=$(curl -fsS http://127.0.0.1:3000/auth/login | grep -oE '/_next/static/chunks/[^"]+\.js' | head -1)
-if [ -n "$SAMPLE_CHUNK" ]; then
-  CHUNK_CODE=$(curl -fsS -o /dev/null -w "%{http_code}" "http://127.0.0.1:3000$SAMPLE_CHUNK" 2>/dev/null || echo "000")
-  if ! echo "$CHUNK_CODE" | grep -qE '^2'; then
-    echo "ERROR: chunk $SAMPLE_CHUNK returned HTTP $CHUNK_CODE"
-    sudo journalctl -u kinetix-web -n 40 --no-pager
+log "Start postgres first"
+compose up -d postgres
+for i in $(seq 1 30); do
+  if compose ps postgres 2>/dev/null | grep -q "(healthy)"; then
+    log "postgres healthy"
+    break
+  fi
+  if [ "$i" -eq 30 ]; then
+    echo "ERROR: postgres not healthy"
+    compose logs postgres --tail 50
     exit 1
   fi
+  sleep 2
+done
+
+log "Build and start api"
+compose up -d --build api
+for i in $(seq 1 45); do
+  api_id="$(compose ps -q api 2>/dev/null || true)"
+  if [ -n "$api_id" ] && docker exec "$api_id" python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health')" >/dev/null 2>&1; then
+    log "api healthy"
+    break
+  fi
+  if [ "$i" -eq 45 ]; then
+    echo "ERROR: api not healthy"
+    compose logs api --tail 80
+    exit 1
+  fi
+  sleep 2
+done
+
+log "Build and start web"
+compose up -d --build web
+
+log "Ensure edge network exists (kinetix_edge is external - shared with staging, not compose-managed)"
+if ! docker network inspect kinetix_edge >/dev/null 2>&1; then
+  docker network create kinetix_edge
 fi
 
-if ! sudo systemctl is-active --quiet kinetix-api; then
-  echo "ERROR: kinetix-api is not active"
+log "Ensure nginx running"
+compose up -d nginx
+
+log "Wait for containers"
+sleep 8
+compose ps
+
+if ! container_running web; then
+  echo "ERROR: web container is not running"
+  compose logs web --tail 80 2>/dev/null || true
+  exit 1
+fi
+if ! container_running api; then
+  echo "ERROR: api container is not running"
+  compose logs api --tail 80 2>/dev/null || true
   exit 1
 fi
 
-if ! sudo systemctl is-active --quiet kinetix-web; then
-  echo "ERROR: kinetix-web is not active"
+log "Health check via nginx"
+if ! curl -fsS http://127.0.0.1/auth/login >/dev/null 2>&1; then
+  echo "ERROR: prod site not responding via nginx"
+  docker logs kinetix-nginx-1 --tail 30 2>/dev/null || true
+  compose logs web --tail 40
   exit 1
 fi
 
-log "Deploy complete — API and web are healthy (production mode)"
+log "Deploy complete — API and web are healthy (Docker)"
