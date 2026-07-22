@@ -108,6 +108,16 @@ export type WorkspaceStatusPayload = {
   workspaceId: string;
 };
 
+export type WorkspaceMemberSuspendedPayload = {
+  workspaceId: string;
+  userId: string;
+};
+
+export type WorkspaceMemberReactivatedPayload = {
+  workspaceId: string;
+  userId: string;
+};
+
 export type AccountDisabledPayload = {
   userId: string;
 };

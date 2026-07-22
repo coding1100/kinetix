@@ -138,7 +138,8 @@ function MemberPresenceAvatar({
 }: {
   member: WorkspaceMemberRow;
 }) {
-  const presence = useUserPresence(member.id, member.presence ?? "offline");
+  const livePresence = useUserPresence(member.id, member.presence ?? "offline");
+  const presence = member.isDisabled ? "offline" : livePresence;
 
   return (
     <UserAvatarWithPresence
@@ -476,7 +477,12 @@ export function PeopleView() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <MemberPresenceAvatar member={m} />
-                        <span className="font-medium">{m.fullName}</span>
+                        <span className="font-medium">
+                          {m.fullName}
+                          {m.isDisabled ? (
+                            <span className="text-destructive"> (deactivated)</span>
+                          ) : null}
+                        </span>
                         {m.id === currentUserId ? (
                           <Badge variant="outline" className="text-[10px]">
                             You

@@ -141,7 +141,8 @@ export function PersonProfilePanel({
   const { member, loading } = usePersonProfileMember(userId, channelId);
   const { openDirectMessage, openingUserId } = useOpenDirectMessage();
   const { openProfile } = useOpenPersonProfile();
-  const memberPresence = useUserPresence(userId, "offline");
+  const liveMemberPresence = useUserPresence(userId, "offline");
+  const memberPresence = member?.isDisabled ? "offline" : liveMemberPresence;
   const currentUserId = useAuthStore((s) => s.user?.id);
   const workspaceRole = useAuthStore(
     (s) => s.workspaces.find((w) => w.id === workspaceId)?.role
@@ -339,7 +340,12 @@ export function PersonProfilePanel({
                           type="button"
                           className="inline-flex min-w-0 items-center gap-1 text-lg font-semibold hover:text-primary"
                         >
-                          <span className="truncate">{displayName}</span>
+                          <span className="truncate">
+                            {displayName}
+                            {member?.isDisabled && (
+                              <span className="text-destructive"> (deactivated)</span>
+                            )}
+                          </span>
                           <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
                         </button>
                       }

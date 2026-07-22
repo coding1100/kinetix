@@ -24,16 +24,18 @@ from app.db.models.platform import AdminAuditLog, PlatformStaff
 from app.db.models.user import RefreshToken, User
 from app.db.models.workspace import Workspace, WorkspaceMember
 from app.schemas.admin import AdminLoginBody
-from app.services import auth_service
+from app.schemas.workspace import CreateInviteBody, CreateWorkspaceBody
+from app.services import auth_service, invite_service, workspace_service
 from app.services.auth_service import issue_refresh_for_user
 from app.services.platform_permissions import get_platform_role
 from app.services.chat_service import sync_list_channel_members_for_workspace
 from app.services.personal_space_service import ensure_personal_space
-from app.services.workspace_service import list_workspace_members
 from app.socket.emit import (
     broadcast_account_disabled,
     broadcast_workspace_deleted,
+    broadcast_workspace_member_reactivated,
     broadcast_workspace_member_role_updated,
+    broadcast_workspace_member_suspended,
     broadcast_workspace_reactivated,
     broadcast_workspace_suspended,
 )
@@ -151,6 +153,17 @@ async def admin_logout(session: AsyncSession, refresh_token: str | None) -> None
 
 
 # --- Workspaces ---------------------------------------------------------
+
+
+async def create_workspace_admin(
+    session: AsyncSession, actor_id: str, body: CreateWorkspaceBody
+) -> dict:
+    # Reuses workspace_service.create_workspace as-is - the staff member
+    # creating it becomes OWNER, same as any self-serve workspace creation.
+    ws = await workspace_service.create_workspace(session, actor_id, body)
+    _add_audit(session, actor_id, "workspace.create", "workspace", ws["id"], {"name": ws["name"]})
+    await session.commit()
+    return ws
 
 
 async def list_workspaces(
@@ -409,7 +422,102 @@ async def transfer_ownership_admin(
 
 async def list_workspace_members_admin(session: AsyncSession, workspace_id: str) -> list[dict]:
     await _get_workspace_or_404(session, workspace_id)
-    return await list_workspace_members(session, workspace_id)
+    # Deliberately its own query rather than reusing workspace_service's
+    # list_workspace_members - that one hard-filters to ACTIVE only (right
+    # for the in-app member list), but staff need to see and reactivate
+    # SUSPENDED members too.
+    rows = (
+        await session.scalars(
+            select(WorkspaceMember)
+            .where(
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.status.in_(
+                    [MemberStatus.ACTIVE, MemberStatus.SUSPENDED]
+                ),
+            )
+            .options(selectinload(WorkspaceMember.user))
+            .order_by(WorkspaceMember.joined_at.asc())
+        )
+    ).all()
+    return [
+        {
+            "id": m.user.id,
+            "membershipId": m.id,
+            "email": m.user.email,
+            "fullName": m.user.full_name,
+            "isDisabled": m.user.is_disabled,
+            "status": m.status.value,
+            "role": m.role.value,
+        }
+        for m in rows
+    ]
+
+
+async def list_workspace_invites_admin(session: AsyncSession, workspace_id: str) -> dict:
+    await _get_workspace_or_404(session, workspace_id)
+    return {"items": await invite_service.list_workspace_invites(session, workspace_id)}
+
+
+async def create_workspace_invite_admin(
+    session: AsyncSession, workspace_id: str, actor_id: str, body: CreateInviteBody
+) -> dict:
+    await _get_workspace_or_404(session, workspace_id)
+    # Reuses invite_service.create_invite verbatim - it already 409s on
+    # ALREADY_MEMBER / ALREADY_INVITED, same dedupe the in-app People page
+    # relies on. Staff acts as OWNER here since they aren't a member of
+    # this workspace themselves; that's just the permission ceiling passed
+    # into can_assign_role, not a real membership.
+    result = await invite_service.create_invite(
+        session, workspace_id, actor_id, WorkspaceRole.OWNER, body
+    )
+    _add_audit(
+        session,
+        actor_id,
+        "workspace.invite.create",
+        "workspace",
+        workspace_id,
+        {"email": body.email, "role": body.role.value},
+    )
+    await session.commit()
+    return result
+
+
+async def cancel_workspace_invite_admin(
+    session: AsyncSession, workspace_id: str, actor_id: str, invite_id: str
+) -> dict:
+    await _get_workspace_or_404(session, workspace_id)
+    result = await invite_service.cancel_workspace_invite(
+        session, workspace_id, WorkspaceRole.OWNER, invite_id
+    )
+    _add_audit(
+        session,
+        actor_id,
+        "workspace.invite.cancel",
+        "workspace",
+        workspace_id,
+        {"inviteId": invite_id},
+    )
+    await session.commit()
+    return result
+
+
+async def resend_workspace_invite_admin(
+    session: AsyncSession, workspace_id: str, actor_id: str, invite_id: str
+) -> dict:
+    await _get_workspace_or_404(session, workspace_id)
+    result = await invite_service.resend_workspace_invite(
+        session, workspace_id, WorkspaceRole.OWNER, invite_id
+    )
+    _add_audit(
+        session,
+        actor_id,
+        "workspace.invite.resend",
+        "workspace",
+        workspace_id,
+        {"inviteId": invite_id},
+    )
+    await session.commit()
+    return result
 
 
 async def update_member_role_admin(
@@ -487,6 +595,63 @@ async def update_member_role_admin(
     return {"id": target.id, "userId": target_user_id, "role": target.role.value}
 
 
+async def set_member_status_admin(
+    session: AsyncSession,
+    workspace_id: str,
+    actor_id: str,
+    target_user_id: str,
+    suspended: bool,
+) -> dict:
+    # Workspace-scoped disable, distinct from set_user_disabled (which is
+    # global, account-wide) - flips just this one WorkspaceMember row's
+    # status. Enforcement is already in place for free: get_workspace_member
+    # (deps/workspace.py) 403s on any non-ACTIVE membership status, and
+    # get_me only returns ACTIVE (or, for admin's own view, ACTIVE/SUSPENDED)
+    # memberships - a suspended member simply stops seeing/reaching this one
+    # workspace, everywhere else is untouched.
+    ws = await _get_workspace_or_404(session, workspace_id)
+    target = await session.scalar(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.user_id == target_user_id,
+        )
+    )
+    if not target:
+        raise AppError(404, "NOT_FOUND", "Member not found")
+    if target.role == WorkspaceRole.OWNER:
+        raise AppError(
+            400, "VALIDATION_ERROR", "Transfer ownership before suspending the owner"
+        )
+
+    target_user = await session.get(User, target_user_id)
+    target.status = MemberStatus.SUSPENDED if suspended else MemberStatus.ACTIVE
+    action = "workspace.member.suspend" if suspended else "workspace.member.reactivate"
+    metadata = {
+        "workspaceId": workspace_id,
+        "workspaceName": ws.name,
+        "userId": target_user_id,
+        "userEmail": target_user.email if target_user else None,
+        "userFullName": target_user.full_name if target_user else None,
+    }
+    _add_audit(session, actor_id, action, "workspace", workspace_id, metadata)
+    _add_audit(session, actor_id, action, "user", target_user_id, metadata)
+    await session.commit()
+    if suspended:
+        # Instant kick if they're currently in this workspace - same
+        # reasoning as broadcast_workspace_suspended, just scoped to one
+        # member instead of the whole room.
+        await broadcast_workspace_member_suspended(
+            workspace_id=workspace_id, user_id=target_user_id
+        )
+    else:
+        # Instant un-gray in their workspace switcher instead of waiting
+        # for a reload to notice the membership is ACTIVE again.
+        await broadcast_workspace_member_reactivated(
+            workspace_id=workspace_id, user_id=target_user_id
+        )
+    return {"userId": target_user_id, "status": target.status.value}
+
+
 # --- Users ---------------------------------------------------------------
 
 
@@ -537,11 +702,16 @@ async def list_users(
 
 
 async def list_user_workspaces(session: AsyncSession, user_id: str) -> dict:
-    # get_me already returns exactly {id, name, slug, role, status} per
-    # active membership, sorted oldest-first — reuse rather than
-    # re-querying. include_suspended=True since staff need to see (and
-    # reactivate) suspended workspaces, unlike the regular /auth/me path.
-    me = await auth_service.get_me(session, user_id, include_suspended=True)
+    # get_me already returns exactly {id, name, slug, role, status,
+    # membershipStatus} per membership, sorted oldest-first — reuse rather
+    # than re-querying. include_suspended=True since staff need to see (and
+    # reactivate) suspended *workspaces*; include_suspended_memberships=True
+    # since staff also need to see (and reactivate) a SUSPENDED *membership*
+    # in an otherwise-fine workspace - neither is true for the regular
+    # /auth/me path.
+    me = await auth_service.get_me(
+        session, user_id, include_suspended=True, include_suspended_memberships=True
+    )
     return {"items": me["workspaces"]}
 
 

@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { PageLoader } from "@/components/ui/page-loader";
 import { useAuthReady } from "@/components/providers/AuthProvider";
-import { useAuthStore } from "@/stores/auth-store";
+import { firstSelectableWorkspaceId, useAuthStore } from "@/stores/auth-store";
 
 function WorkspaceLoading({ label }: { label: string }) {
   return (
@@ -26,13 +26,11 @@ function AuthGateInner({ children }: { children: React.ReactNode }) {
   const setActiveWorkspace = useAuthStore((s) => s.setActiveWorkspace);
 
   const effectiveWorkspaceId = useMemo(() => {
-    if (
-      activeWorkspaceId &&
-      workspaces.some((w) => w.id === activeWorkspaceId)
-    ) {
+    const active = workspaces.find((w) => w.id === activeWorkspaceId);
+    if (active && active.membershipStatus !== "SUSPENDED") {
       return activeWorkspaceId;
     }
-    return workspaces[0]?.id ?? null;
+    return firstSelectableWorkspaceId(workspaces);
   }, [activeWorkspaceId, workspaces]);
 
   useEffect(() => {
@@ -51,20 +49,33 @@ function AuthGateInner({ children }: { children: React.ReactNode }) {
     setActiveWorkspace,
   ]);
 
+  const clearSession = useAuthStore((s) => s.clearSession);
+  const noWorkspacesLeft = workspaces.length > 0 && !effectiveWorkspaceId;
+
   useEffect(() => {
     if (!ready) return;
-    if (!accessToken && !authenticated) {
+    if ((!accessToken && !authenticated) || noWorkspacesLeft) {
+      if (noWorkspacesLeft) clearSession();
       const query = searchParams.toString();
       const next = `${pathname}${query ? `?${query}` : ""}`;
       router.replace(`/auth/login?next=${encodeURIComponent(next)}`);
     }
-  }, [ready, accessToken, authenticated, pathname, searchParams, router]);
+  }, [
+    ready,
+    accessToken,
+    authenticated,
+    noWorkspacesLeft,
+    clearSession,
+    pathname,
+    searchParams,
+    router,
+  ]);
 
   if (!ready) {
     return <WorkspaceLoading label="Loading workspace…" />;
   }
 
-  if (!accessToken) {
+  if (!accessToken || noWorkspacesLeft) {
     return <WorkspaceLoading label="Redirecting to log in…" />;
   }
 

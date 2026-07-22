@@ -12,6 +12,7 @@ from app.schemas.admin import (
     AdminTransferOwnershipBody,
     AdminUpdateMemberRoleBody,
 )
+from app.schemas.workspace import CreateInviteBody, CreateWorkspaceBody
 from app.services import admin_service
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -54,6 +55,16 @@ async def admin_logout(
     await admin_service.admin_logout(session, riseup_admin_refresh)
     clear_admin_refresh_cookie(response)
     return {"message": "Logged out"}
+
+
+@router.post("/workspaces", status_code=201)
+async def create_workspace(
+    body: CreateWorkspaceBody,
+    staff: PlatformStaffDep,
+    user: CurrentUserDep,
+    session: DbSession,
+):
+    return await admin_service.create_workspace_admin(session, user.id, body)
 
 
 @router.get("/workspaces")
@@ -141,6 +152,48 @@ async def list_workspace_members(
     return {"items": await admin_service.list_workspace_members_admin(session, workspaceId)}
 
 
+@router.get("/workspaces/{workspaceId}/invites")
+async def list_workspace_invites(
+    workspaceId: str,
+    staff: PlatformStaffDep,
+    session: DbSession,
+):
+    return await admin_service.list_workspace_invites_admin(session, workspaceId)
+
+
+@router.post("/workspaces/{workspaceId}/invites", status_code=201)
+async def create_workspace_invite(
+    workspaceId: str,
+    body: CreateInviteBody,
+    staff: PlatformStaffDep,
+    user: CurrentUserDep,
+    session: DbSession,
+):
+    return await admin_service.create_workspace_invite_admin(session, workspaceId, user.id, body)
+
+
+@router.delete("/workspaces/{workspaceId}/invites/{inviteId}")
+async def cancel_workspace_invite(
+    workspaceId: str,
+    inviteId: str,
+    staff: PlatformStaffDep,
+    user: CurrentUserDep,
+    session: DbSession,
+):
+    return await admin_service.cancel_workspace_invite_admin(session, workspaceId, user.id, inviteId)
+
+
+@router.post("/workspaces/{workspaceId}/invites/{inviteId}/resend")
+async def resend_workspace_invite(
+    workspaceId: str,
+    inviteId: str,
+    staff: PlatformStaffDep,
+    user: CurrentUserDep,
+    session: DbSession,
+):
+    return await admin_service.resend_workspace_invite_admin(session, workspaceId, user.id, inviteId)
+
+
 @router.patch("/workspaces/{workspaceId}/members/{userId}/role")
 async def update_member_role(
     workspaceId: str,
@@ -152,6 +205,32 @@ async def update_member_role(
 ):
     return await admin_service.update_member_role_admin(
         session, workspaceId, user.id, userId, body.role
+    )
+
+
+@router.post("/workspaces/{workspaceId}/members/{userId}/suspend")
+async def suspend_member(
+    workspaceId: str,
+    userId: str,
+    staff: PlatformStaffDep,
+    user: CurrentUserDep,
+    session: DbSession,
+):
+    return await admin_service.set_member_status_admin(
+        session, workspaceId, user.id, userId, True
+    )
+
+
+@router.post("/workspaces/{workspaceId}/members/{userId}/reactivate")
+async def reactivate_member(
+    workspaceId: str,
+    userId: str,
+    staff: PlatformStaffDep,
+    user: CurrentUserDep,
+    session: DbSession,
+):
+    return await admin_service.set_member_status_admin(
+        session, workspaceId, user.id, userId, False
     )
 
 

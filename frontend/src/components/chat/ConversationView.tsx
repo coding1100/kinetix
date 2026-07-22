@@ -1124,6 +1124,9 @@ export function ConversationView({
               <div className="min-w-0">
                 <h2 className="truncate text-sm font-semibold leading-tight">
                   {title}
+                  {!dmMeta?.isGroup && dmMeta?.otherUserIsDisabled ? (
+                    <span className="text-destructive"> (deactivated)</span>
+                  ) : null}
                 </h2>
                 <p className="truncate text-sm text-muted-foreground">
                   {dmMeta?.isGroup

@@ -167,7 +167,10 @@ async def logout(session: AsyncSession, refresh_token: str | None) -> None:
 
 
 async def get_me(
-    session: AsyncSession, user_id: str, include_suspended: bool = False
+    session: AsyncSession,
+    user_id: str,
+    include_suspended: bool = False,
+    include_suspended_memberships: bool = False,
 ) -> dict:
     user = await session.scalar(
         select(User)
@@ -179,13 +182,26 @@ async def get_me(
     if not user:
         raise AppError(404, "NOT_FOUND", "User not found")
 
+    # include_suspended_memberships lets a caller see a SUSPENDED membership
+    # instead of it being silently filtered out - /auth/me passes this so a
+    # suspended member's own workspace switcher can still show the
+    # workspace (disabled) rather than it vanishing; admin's per-user
+    # workspace list needs it too, to reactivate. Separate from
+    # include_suspended, which governs the workspace's own status (a
+    # different axis).
+    allowed_statuses = (
+        {MemberStatus.ACTIVE, MemberStatus.SUSPENDED}
+        if include_suspended_memberships
+        else {MemberStatus.ACTIVE}
+    )
+
     # Relationship order is undefined; sort so workspaces[0] is stable
     # (oldest membership first, matching list_workspaces).
     active = sorted(
         (
             m
             for m in user.memberships
-            if m.status == MemberStatus.ACTIVE
+            if m.status in allowed_statuses
             and (
                 include_suspended
                 or (
@@ -204,6 +220,7 @@ async def get_me(
             "role": m.role.value,
             "status": m.workspace.status.value,
             "isDeleted": m.workspace.is_deleted,
+            "membershipStatus": m.status.value,
         }
         for m in active
     ]
@@ -237,7 +254,7 @@ async def update_profile(
 
     await session.commit()
     await session.refresh(user)
-    return await get_me(session, user_id)
+    return await get_me(session, user_id, include_suspended_memberships=True)
 
 
 async def change_password(

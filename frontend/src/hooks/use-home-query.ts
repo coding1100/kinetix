@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { getMe } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
-import { useAuthStore } from "@/stores/auth-store";
+import { firstSelectableWorkspaceId, useAuthStore } from "@/stores/auth-store";
 
 export function useHomeQuery<T>(
   fetcher: (token: string, workspaceId: string) => Promise<T>,
@@ -105,7 +105,7 @@ export function useHomeQuery<T>(
         ) {
           try {
             const me = await getMe(token);
-            const nextWorkspaceId = me.workspaces[0]?.id;
+            const nextWorkspaceId = firstSelectableWorkspaceId(me.workspaces);
             if (!nextWorkspaceId) {
               setError("No workspace available for your account.");
               return;
