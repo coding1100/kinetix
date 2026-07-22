@@ -128,10 +128,11 @@ import {
   WandSparklesIcon,
 } from "lucide-react";
 
-type Member = { id: string; fullName: string; email: string; avatarUrl?: string | null };
+type Member = { id: string; fullName: string; email: string; avatarUrl?: string | null; isDisabled?: boolean };
 
 function FollowerAvatar({ member }: { member: Member }) {
-  const presence = useUserPresence(member.id);
+  const livePresence = useUserPresence(member.id);
+  const presence = member.isDisabled ? "offline" : livePresence;
   return (
     <UserAvatarWithPresence
       name={member.fullName}
@@ -1685,24 +1686,38 @@ export function TaskDrawer({
                                 Empty
                               </span>
                             ) : (
-                              selectedAssignees.map((m) => (
-                                <span
-                                  key={m.id}
-                                  className="flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium"
-                                >
-                                  <Avatar className="size-5">
-                                    <AvatarFallback
+                              selectedAssignees.map((m) => {
+                                const isDeactivated =
+                                  task?.disabledAssigneeIds?.includes(m.id);
+                                return (
+                                  <span
+                                    key={m.id}
+                                    className="flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium"
+                                  >
+                                    <Avatar
                                       className={cn(
-                                        "text-[10px] text-white",
-                                        avatarColorClassForKey(m.id)
+                                        "size-5",
+                                        isDeactivated && "opacity-50"
                                       )}
                                     >
-                                      {avatarInitialFromName(m.fullName)}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  {m.fullName}
-                                </span>
-                              ))
+                                      <AvatarFallback
+                                        className={cn(
+                                          "text-[10px] text-white",
+                                          avatarColorClassForKey(m.id)
+                                        )}
+                                      >
+                                        {avatarInitialFromName(m.fullName)}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    {m.fullName}
+                                    {isDeactivated && (
+                                      <span className="text-destructive">
+                                        (deactivated)
+                                      </span>
+                                    )}
+                                  </span>
+                                );
+                              })
                             )}
                           </button>
                         }
@@ -1742,6 +1757,9 @@ export function TaskDrawer({
                                   </Avatar>
                                   <span className="flex-1 truncate text-left">
                                     {m.fullName}
+                                    {m.isDisabled ? (
+                                      <span className="text-destructive"> (deactivated)</span>
+                                    ) : null}
                                   </span>
                                 </button>
                               </li>
@@ -2704,6 +2722,9 @@ export function TaskDrawer({
                               <FollowerAvatar member={m} />
                               <span className="flex-1 truncate text-sm">
                                 {m.id === currentUserId ? "Me" : m.fullName}
+                                {m.id !== currentUserId && m.isDisabled ? (
+                                  <span className="text-destructive"> (deactivated)</span>
+                                ) : null}
                               </span>
                               <UserMinusIcon className="size-3.5 shrink-0 text-muted-foreground opacity-0 group-hover/follower:opacity-100" />
                             </button>
@@ -2725,6 +2746,9 @@ export function TaskDrawer({
                                 <FollowerAvatar member={m} />
                                 <span className="flex-1 truncate text-sm">
                                   {m.fullName}
+                                  {m.isDisabled ? (
+                                    <span className="text-destructive"> (deactivated)</span>
+                                  ) : null}
                                 </span>
                                 <UserPlusIcon className="size-3.5 shrink-0 text-muted-foreground" />
                               </button>

@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { AuditList } from "@/components/AuditList";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { CreateWorkspaceDialog } from "@/components/CreateWorkspaceDialog";
 import { PortalNav } from "@/components/PortalNav";
 import { TransferOwnershipDialog } from "@/components/TransferOwnershipDialog";
 import { useAdminSession } from "@/hooks/use-admin-session";
@@ -10,18 +11,25 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { formatRequestError, isAbortError } from "@/lib/api/client";
 import {
   type AdminWorkspace,
+  type AdminWorkspaceInvite,
   type AdminWorkspaceMember,
   type AuditLogEntry,
+  type InviteRole,
   type WorkspaceRole,
+  INVITE_ROLES,
   WORKSPACE_ROLES,
+  cancelWorkspaceInvite,
+  createWorkspaceInvite,
   deleteWorkspace,
-  disableUser,
-  enableUser,
   listAuditLog,
+  listWorkspaceInvites,
   listWorkspaceMembers,
   listWorkspaces,
+  reactivateMember,
   reactivateWorkspace,
+  resendWorkspaceInvite,
   restoreWorkspace,
+  suspendMember,
   suspendWorkspace,
   updateMemberRole,
 } from "@/lib/api/admin";
@@ -41,6 +49,7 @@ interface PendingRoleChange {
 }
 
 interface PendingDisable {
+  workspaceId: string;
   userId: string;
   userName: string;
 }
@@ -69,6 +78,15 @@ export default function WorkspacesPage() {
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [transferFor, setTransferFor] = useState<{ id: string; name: string } | null>(null);
   const [pendingArchive, setPendingArchive] = useState<{ id: string; name: string } | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+
+  const [invites, setInvites] = useState<AdminWorkspaceInvite[]>([]);
+  const [invitesLoading, setInvitesLoading] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<InviteRole>("MEMBER");
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteActionId, setInviteActionId] = useState<string | null>(null);
 
   const listAbortRef = useRef<AbortController | null>(null);
 
@@ -118,16 +136,27 @@ export default function WorkspacesPage() {
     pendingRoleChange !== null ||
     pendingDisable !== null ||
     transferFor !== null ||
-    pendingArchive !== null;
+    pendingArchive !== null ||
+    createOpen ||
+    inviteBusy ||
+    inviteActionId !== null;
 
   useEffect(() => {
     if (!ready || !accessToken) return;
     const interval = setInterval(() => {
       if (pollGuardRef.current) return;
       void load(debouncedQ, statusFilter, showArchived, offset);
+      // Membership changes (e.g. an invite getting accepted) happen
+      // independently of the workspace list itself, so the expanded
+      // row's members/invites need their own refresh on the same tick.
+      if (membersFor) {
+        void loadMembers(membersFor);
+        void loadInvites(membersFor);
+      }
     }, POLL_MS);
     return () => clearInterval(interval);
-  }, [ready, accessToken, debouncedQ, statusFilter, showArchived, offset, load]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, accessToken, debouncedQ, statusFilter, showArchived, offset, load, membersFor]);
 
   const refreshAudit = useCallback(
     async (workspaceId: string) => {
@@ -201,13 +230,85 @@ export default function WorkspacesPage() {
     }
   };
 
+  const loadInvites = async (workspaceId: string) => {
+    if (!accessToken) return;
+    setInvitesLoading(true);
+    try {
+      const result = await listWorkspaceInvites(accessToken, workspaceId);
+      setInvites(result.items);
+    } catch (err) {
+      setInviteError(formatRequestError(err));
+    } finally {
+      setInvitesLoading(false);
+    }
+  };
+
   const toggleMembers = (workspaceId: string) => {
     if (membersFor === workspaceId) {
       setMembersFor(null);
       return;
     }
     setMembersFor(workspaceId);
+    setInviteEmail("");
+    setInviteRole("MEMBER");
+    setInviteError(null);
     void loadMembers(workspaceId);
+    void loadInvites(workspaceId);
+  };
+
+  const handleSendInvite = async (workspaceId: string) => {
+    const email = inviteEmail.trim();
+    if (!email || !accessToken) return;
+    setInviteBusy(true);
+    setInviteError(null);
+    try {
+      await createWorkspaceInvite(accessToken, workspaceId, email, inviteRole);
+      setInviteEmail("");
+      await loadInvites(workspaceId);
+    } catch (err) {
+      setInviteError(formatRequestError(err));
+    } finally {
+      setInviteBusy(false);
+    }
+  };
+
+  const handleResendInvite = async (workspaceId: string, inviteId: string) => {
+    if (!accessToken) return;
+    setInviteActionId(`resend:${inviteId}`);
+    try {
+      await resendWorkspaceInvite(accessToken, workspaceId, inviteId);
+      await loadInvites(workspaceId);
+    } catch (err) {
+      setInviteError(formatRequestError(err));
+    } finally {
+      setInviteActionId(null);
+    }
+  };
+
+  const handleCancelInvite = async (workspaceId: string, inviteId: string) => {
+    if (!accessToken) return;
+    setInviteActionId(`cancel:${inviteId}`);
+    try {
+      await cancelWorkspaceInvite(accessToken, workspaceId, inviteId);
+      await loadInvites(workspaceId);
+    } catch (err) {
+      setInviteError(formatRequestError(err));
+    } finally {
+      setInviteActionId(null);
+    }
+  };
+
+  const handleCopyInviteLink = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // best-effort; clipboard access can be blocked in some contexts
+    }
+  };
+
+  const handleCreatedWorkspace = async () => {
+    setCreateOpen(false);
+    await load(debouncedQ, statusFilter, showArchived, 0);
   };
 
   const requestRoleChange = (member: AdminWorkspaceMember, toRole: WorkspaceRole) => {
@@ -244,12 +345,12 @@ export default function WorkspacesPage() {
   };
 
   const confirmDisableMember = async () => {
-    if (!pendingDisable || !accessToken || !membersFor) return;
+    if (!pendingDisable || !accessToken) return;
     setConfirmBusy(true);
     try {
-      await disableUser(accessToken, pendingDisable.userId);
-      await loadMembers(membersFor);
-      await load(debouncedQ, statusFilter, showArchived, offset);
+      await suspendMember(accessToken, pendingDisable.workspaceId, pendingDisable.userId);
+      await loadMembers(pendingDisable.workspaceId);
+      await refreshAudit(pendingDisable.workspaceId);
       setPendingDisable(null);
     } catch (err) {
       setError(formatRequestError(err));
@@ -262,8 +363,9 @@ export default function WorkspacesPage() {
     if (!accessToken || !membersFor) return;
     setBusyMemberId(member.id);
     try {
-      await enableUser(accessToken, member.id);
+      await reactivateMember(accessToken, membersFor, member.id);
       await loadMembers(membersFor);
+      await refreshAudit(membersFor);
     } catch (err) {
       setError(formatRequestError(err));
     } finally {
@@ -324,6 +426,12 @@ export default function WorkspacesPage() {
           {loading && (
             <span className="self-center text-xs text-[var(--muted-foreground)]">Searching…</span>
           )}
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="ml-auto rounded bg-[var(--primary)] px-3 py-2 text-sm font-medium text-[var(--primary-foreground)]"
+          >
+            Create workspace
+          </button>
         </div>
 
         {error && (
@@ -461,13 +569,18 @@ export default function WorkspacesPage() {
                                   <td className="py-1.5 pr-3">
                                     <span
                                       className={
-                                        m.isDisabled
+                                        m.status === "SUSPENDED"
                                           ? "text-[var(--destructive)]"
                                           : "text-[var(--muted-foreground)]"
                                       }
                                     >
-                                      {m.isDisabled ? "DISABLED" : "ACTIVE"}
+                                      {m.status}
                                     </span>
+                                    {m.isDisabled && (
+                                      <span className="ml-1 text-[var(--muted-foreground)]">
+                                        (account disabled)
+                                      </span>
+                                    )}
                                   </td>
                                   <td className="py-1.5 pr-3">
                                     {m.role === "OWNER" ? (
@@ -497,7 +610,7 @@ export default function WorkspacesPage() {
                                       >
                                         Transfer ownership
                                       </button>
-                                    ) : m.isDisabled ? (
+                                    ) : m.status === "SUSPENDED" ? (
                                       <button
                                         disabled={busyMemberId === m.id}
                                         onClick={() => handleEnableMember(m)}
@@ -509,7 +622,11 @@ export default function WorkspacesPage() {
                                       <button
                                         disabled={busyMemberId === m.id}
                                         onClick={() =>
-                                          setPendingDisable({ userId: m.id, userName: m.fullName })
+                                          setPendingDisable({
+                                            workspaceId: ws.id,
+                                            userId: m.id,
+                                            userName: m.fullName,
+                                          })
                                         }
                                         className="rounded border border-[var(--destructive)] px-2 py-1 text-[var(--destructive)] hover:bg-[var(--destructive)]/10"
                                       >
@@ -522,6 +639,110 @@ export default function WorkspacesPage() {
                             </tbody>
                           </table>
                         )}
+
+                        <div className="mt-4 border-t border-[var(--border)] pt-3">
+                          <p className="mb-2 text-xs font-semibold">Invite people</p>
+                          {inviteError && (
+                            <p className="mb-2 rounded border border-[var(--destructive)] bg-[var(--destructive)]/10 px-2 py-1.5 text-xs text-[var(--destructive)]">
+                              {inviteError}
+                            </p>
+                          )}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <input
+                              value={inviteEmail}
+                              onChange={(e) => setInviteEmail(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") void handleSendInvite(ws.id);
+                              }}
+                              placeholder="person@example.com"
+                              className="min-w-[220px] flex-1 rounded border border-[var(--border)] bg-transparent px-2 py-1.5 text-xs"
+                            />
+                            <select
+                              value={inviteRole}
+                              onChange={(e) => setInviteRole(e.target.value as InviteRole)}
+                              className="rounded border border-[var(--border)] bg-transparent px-2 py-1.5 text-xs"
+                            >
+                              {INVITE_ROLES.map((role) => (
+                                <option key={role} value={role}>
+                                  {role}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              disabled={inviteBusy || !inviteEmail.trim()}
+                              onClick={() => handleSendInvite(ws.id)}
+                              className="rounded bg-[var(--primary)] px-3 py-1.5 text-xs font-medium text-[var(--primary-foreground)] disabled:opacity-50"
+                            >
+                              {inviteBusy ? "Sending…" : "Invite"}
+                            </button>
+                          </div>
+
+                          {invitesLoading ? (
+                            <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+                              Loading invites…
+                            </p>
+                          ) : invites.length > 0 ? (
+                            <table className="mt-3 w-full text-xs">
+                              <thead className="text-left text-[var(--muted-foreground)]">
+                                <tr>
+                                  <th className="py-1 pr-3">Email</th>
+                                  <th className="py-1 pr-3">Role</th>
+                                  <th className="py-1 pr-3">Status</th>
+                                  <th className="py-1 pr-3">Expires</th>
+                                  <th className="py-1 pr-3">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {invites.map((inv) => (
+                                  <tr key={inv.id} className="border-t border-[var(--border)]">
+                                    <td className="py-1.5 pr-3">{inv.email}</td>
+                                    <td className="py-1.5 pr-3">{inv.role}</td>
+                                    <td className="py-1.5 pr-3">
+                                      <span
+                                        className={
+                                          inv.status === "expired"
+                                            ? "text-[var(--destructive)]"
+                                            : "text-[var(--muted-foreground)]"
+                                        }
+                                      >
+                                        {inv.status}
+                                      </span>
+                                    </td>
+                                    <td className="py-1.5 pr-3">
+                                      {new Date(inv.expiresAt).toLocaleDateString()}
+                                    </td>
+                                    <td className="space-x-1.5 py-1.5 pr-3">
+                                      <button
+                                        onClick={() => handleCopyInviteLink(inv.inviteUrl)}
+                                        className="rounded border border-[var(--border)] px-2 py-1 hover:bg-[var(--muted)]"
+                                      >
+                                        Copy link
+                                      </button>
+                                      <button
+                                        disabled={inviteActionId === `resend:${inv.id}`}
+                                        onClick={() => handleResendInvite(ws.id, inv.id)}
+                                        className="rounded border border-[var(--border)] px-2 py-1 hover:bg-[var(--muted)]"
+                                      >
+                                        Resend
+                                      </button>
+                                      <button
+                                        disabled={inviteActionId === `cancel:${inv.id}`}
+                                        onClick={() => handleCancelInvite(ws.id, inv.id)}
+                                        className="rounded border border-[var(--destructive)] px-2 py-1 text-[var(--destructive)] hover:bg-[var(--destructive)]/10"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : (
+                            <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+                              No pending invites.
+                            </p>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )}
@@ -587,17 +808,24 @@ export default function WorkspacesPage() {
 
       <ConfirmDialog
         open={pendingDisable !== null}
-        title="Disable this user?"
+        title="Disable this member?"
         description={
           pendingDisable
-            ? `Disabling ${pendingDisable.userName} blocks their login and revokes all active sessions immediately, across every workspace they belong to — not just this one. This can be undone from the Users page.`
+            ? `Disabling ${pendingDisable.userName} blocks their access to this workspace only — their account and every other workspace they belong to are unaffected. This can be undone with Enable.`
             : undefined
         }
-        confirmLabel="Disable user"
+        confirmLabel="Disable"
         danger
         busy={confirmBusy}
         onConfirm={confirmDisableMember}
         onCancel={() => setPendingDisable(null)}
+      />
+
+      <CreateWorkspaceDialog
+        open={createOpen}
+        token={accessToken}
+        onCancel={() => setCreateOpen(false)}
+        onCreated={handleCreatedWorkspace}
       />
 
       <TransferOwnershipDialog

@@ -116,22 +116,27 @@ _TASK_LOAD = (
 
 async def _assignee_name_map(
     session: AsyncSession, tasks: Task | list[Task]
-) -> dict[str, str]:
-    """Batch-resolve first names for every assignee across one or many tasks.
+) -> dict[str, tuple[str, bool]]:
+    """Batch-resolve first names (+ disabled flag) for every assignee across
+    one or many tasks.
 
     Task.assignee_ids is a plain array column (no join table), so unlike a
     relationship there's nothing for selectinload to batch automatically -
     callers must resolve names themselves. Passing the whole task list here
-    keeps it to one query per request instead of one per task.
+    keeps it to one query per request instead of one per task. Every caller
+    just forwards the result straight into map_task, so the (name,
+    is_disabled) tuple shape only needs to be understood there.
     """
     task_list = tasks if isinstance(tasks, list) else [tasks]
     ids = {uid for t in task_list for uid in (t.assignee_ids or [])}
     if not ids:
         return {}
     rows = (
-        await session.execute(select(User.id, User.full_name).where(User.id.in_(ids)))
+        await session.execute(
+            select(User.id, User.full_name, User.is_disabled).where(User.id.in_(ids))
+        )
     ).all()
-    return {row[0]: row[1] for row in rows}
+    return {row[0]: (row[1], row[2]) for row in rows}
 
 
 async def _user_name_map(session: AsyncSession, ids: set[str]) -> dict[str, str]:
