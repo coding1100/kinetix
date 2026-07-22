@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.errors import AppError
-from app.db.models.enums import MemberStatus, WorkspaceRole
+from app.db.models.enums import MemberStatus, WorkspaceRole, WorkspaceStatus
 from app.db.models.workspace import Workspace, WorkspaceMember
 from app.deps.auth import CurrentUserDep, DbSession
 
@@ -36,6 +36,12 @@ async def get_workspace_member(
         raise AppError(403, "FORBIDDEN", "You are not a member of this workspace")
 
     ws = membership.workspace
+    if ws.status == WorkspaceStatus.SUSPENDED or ws.is_deleted:
+        # Deliberately indistinguishable from a missing workspace rather
+        # than a distinct "suspended"/"archived" error - don't leak that
+        # state to members who've lost access.
+        raise AppError(404, "WORKSPACE_NOT_FOUND", "Workspace not found")
+
     return WorkspaceContext(
         id=ws.id,
         name=ws.name,

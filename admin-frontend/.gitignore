@@ -1,0 +1,7 @@
+# env files (can opt-in for committing if needed)
+.env*
+!.env.local.example
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts

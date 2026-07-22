@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     node_env: str = "development"
     port: int = 4001
     frontend_url: str = "http://localhost:3001"
+    admin_frontend_url: str = "http://localhost:3002"
     database_url: str
     direct_database_url: str = Field(
         default="",
@@ -98,16 +99,18 @@ class Settings(BaseSettings):
     @property
     def browser_cors_origins(self) -> list[str]:
         """Browser Origin header is scheme + host + port only (no path)."""
-        parsed = urlparse(self.frontend_url.strip())
-        if parsed.scheme and parsed.netloc:
-            base = f"{parsed.scheme}://{parsed.netloc}"
-        else:
-            base = self.frontend_url.rstrip("/")
-        origins = {base}
-        if "localhost" in base:
-            origins.add(base.replace("localhost", "127.0.0.1"))
-        if "127.0.0.1" in base:
-            origins.add(base.replace("127.0.0.1", "localhost"))
+        origins: set[str] = set()
+        for url in (self.frontend_url, self.admin_frontend_url):
+            parsed = urlparse(url.strip())
+            if parsed.scheme and parsed.netloc:
+                base = f"{parsed.scheme}://{parsed.netloc}"
+            else:
+                base = url.rstrip("/")
+            origins.add(base)
+            if "localhost" in base:
+                origins.add(base.replace("localhost", "127.0.0.1"))
+            if "127.0.0.1" in base:
+                origins.add(base.replace("127.0.0.1", "localhost"))
         return sorted(origins)
 
 

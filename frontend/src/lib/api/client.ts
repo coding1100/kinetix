@@ -32,6 +32,17 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Fired synchronously whenever any apiFetch call gets a 401, from anywhere
+// in the app — not just the initial-load session bootstrap. Lets
+// AuthProvider force an immediate logout on a non-recoverable code (e.g.
+// ACCOUNT_DISABLED) without waiting for the next hard refresh.
+type UnauthorizedHandler = (code: string) => void;
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
+  unauthorizedHandler = handler;
+}
+
 function parseApiError(
   res: Response,
   data: Record<string, unknown>
@@ -109,6 +120,9 @@ export async function apiFetch<T>(
 
       if (!res.ok) {
         const apiError = parseApiError(res, data);
+        if (apiError.status === 401) {
+          unauthorizedHandler?.(apiError.code);
+        }
         if (shouldRetryRequest(method, attempt, apiError)) {
           lastError = apiError;
           await sleep(retryDelayMs(method, attempt));
