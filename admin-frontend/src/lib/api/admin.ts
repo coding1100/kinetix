@@ -143,6 +143,7 @@ export interface AdminWorkspaceMember {
   email: string;
   fullName: string;
   isDisabled: boolean;
+  status: "ACTIVE" | "SUSPENDED";
   role: WorkspaceRole;
 }
 
@@ -165,6 +166,20 @@ export function updateMemberRole(
   );
 }
 
+export function suspendMember(token: string, workspaceId: string, userId: string) {
+  return apiFetch<{ userId: string; status: string }>(
+    `/admin/workspaces/${workspaceId}/members/${userId}/suspend`,
+    { method: "POST", token }
+  );
+}
+
+export function reactivateMember(token: string, workspaceId: string, userId: string) {
+  return apiFetch<{ userId: string; status: string }>(
+    `/admin/workspaces/${workspaceId}/members/${userId}/reactivate`,
+    { method: "POST", token }
+  );
+}
+
 export interface AdminUserWorkspace {
   id: string;
   name: string;
@@ -172,6 +187,7 @@ export interface AdminUserWorkspace {
   role: WorkspaceRole;
   status: "ACTIVE" | "SUSPENDED";
   isDeleted: boolean;
+  membershipStatus: "ACTIVE" | "SUSPENDED";
 }
 
 export function listUserWorkspaces(token: string, userId: string) {

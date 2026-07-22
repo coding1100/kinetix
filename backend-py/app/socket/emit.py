@@ -351,6 +351,18 @@ async def broadcast_workspace_suspended(*, workspace_id: str) -> None:
     )
 
 
+async def broadcast_workspace_member_suspended(*, workspace_id: str, user_id: str) -> None:
+    # Targets only this one member's sockets (user:{id} room), not the whole
+    # ws:{workspace_id} room - a per-membership suspend shouldn't kick anyone
+    # else out of the workspace.
+    sio = get_sio()
+    await sio.emit(
+        "workspace:member:suspended",
+        {"workspaceId": workspace_id, "userId": user_id},
+        room=f"user:{user_id}",
+    )
+
+
 async def broadcast_workspace_reactivated(*, workspace_id: str) -> None:
     sio = get_sio()
     await sio.emit(

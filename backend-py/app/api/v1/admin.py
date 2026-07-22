@@ -155,6 +155,32 @@ async def update_member_role(
     )
 
 
+@router.post("/workspaces/{workspaceId}/members/{userId}/suspend")
+async def suspend_member(
+    workspaceId: str,
+    userId: str,
+    staff: PlatformStaffDep,
+    user: CurrentUserDep,
+    session: DbSession,
+):
+    return await admin_service.set_member_status_admin(
+        session, workspaceId, user.id, userId, True
+    )
+
+
+@router.post("/workspaces/{workspaceId}/members/{userId}/reactivate")
+async def reactivate_member(
+    workspaceId: str,
+    userId: str,
+    staff: PlatformStaffDep,
+    user: CurrentUserDep,
+    session: DbSession,
+):
+    return await admin_service.set_member_status_admin(
+        session, workspaceId, user.id, userId, False
+    )
+
+
 @router.get("/users")
 async def list_users(
     staff: PlatformStaffDep,

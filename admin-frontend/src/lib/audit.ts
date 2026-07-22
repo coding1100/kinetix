@@ -7,6 +7,8 @@ const ACTION_LABELS: Record<string, string> = {
   "workspace.restore": "Workspace restored",
   "workspace.transfer_ownership": "Ownership transferred",
   "workspace.member.role_change": "Member role changed",
+  "workspace.member.suspend": "Member disabled in workspace",
+  "workspace.member.reactivate": "Member re-enabled in workspace",
   "user.disable": "User disabled",
   "user.enable": "User enabled",
 };
@@ -46,6 +48,12 @@ export function describeAuditEntry(entry: AuditLogEntry): {
       const change = oldRole && newRole ? `${oldRole} → ${newRole}` : null;
       const detail = [who, change].filter(Boolean).join(": ") || null;
       return { title, detail: workspaceName ? `${detail} (${workspaceName})` : detail };
+    }
+    case "workspace.member.suspend":
+    case "workspace.member.reactivate": {
+      const who = str(m.userFullName) ?? str(m.userEmail) ?? str(m.userId);
+      const workspaceName = str(m.workspaceName);
+      return { title, detail: workspaceName && who ? `${who} (${workspaceName})` : who };
     }
     case "user.disable":
     case "user.enable": {

@@ -167,7 +167,10 @@ async def logout(session: AsyncSession, refresh_token: str | None) -> None:
 
 
 async def get_me(
-    session: AsyncSession, user_id: str, include_suspended: bool = False
+    session: AsyncSession,
+    user_id: str,
+    include_suspended: bool = False,
+    include_suspended_memberships: bool = False,
 ) -> dict:
     user = await session.scalar(
         select(User)
@@ -179,13 +182,25 @@ async def get_me(
     if not user:
         raise AppError(404, "NOT_FOUND", "User not found")
 
+    # Regular /auth/me callers only ever see ACTIVE memberships - a member
+    # suspended from one workspace shouldn't see it in their own sidebar.
+    # Admin's per-user workspace list is the one caller that needs to see
+    # (and reactivate) a SUSPENDED membership, hence the separate flag
+    # rather than folding it into include_suspended (which governs the
+    # workspace's own status, a different axis).
+    allowed_statuses = (
+        {MemberStatus.ACTIVE, MemberStatus.SUSPENDED}
+        if include_suspended_memberships
+        else {MemberStatus.ACTIVE}
+    )
+
     # Relationship order is undefined; sort so workspaces[0] is stable
     # (oldest membership first, matching list_workspaces).
     active = sorted(
         (
             m
             for m in user.memberships
-            if m.status == MemberStatus.ACTIVE
+            if m.status in allowed_statuses
             and (
                 include_suspended
                 or (
@@ -204,6 +219,7 @@ async def get_me(
             "role": m.role.value,
             "status": m.workspace.status.value,
             "isDeleted": m.workspace.is_deleted,
+            "membershipStatus": m.status.value,
         }
         for m in active
     ]
