@@ -1269,6 +1269,7 @@ async def send_thread_reply(
         author_user_id=user_id,
         body=message.body,
         channel=mention_channel,
+        conversation_id=conversation_id if not channel_id else None,
     )
     await session.commit()
 
@@ -1623,6 +1624,7 @@ async def send_dm_message(
         author_user_id=user_id,
         body=message.body,
         channel=None,
+        conversation_id=conversation_id,
     )
     dm_notifications = await create_dm_broadcast_notifications(
         session,
