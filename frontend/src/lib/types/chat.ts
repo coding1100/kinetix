@@ -46,6 +46,7 @@ export interface DirectMessage {
   presence?: PresenceStatus;
   starred?: boolean;
   otherUserId?: string;
+  otherUserIsDisabled?: boolean;
 }
 
 export type AttachmentKind = "file" | "video" | "clip" | "doc" | "audio";
@@ -63,6 +64,7 @@ export interface ChatMessage {
   id: string;
   authorId: string;
   authorName: string;
+  authorIsDisabled?: boolean;
   body: string;
   createdAt: string;
   isSelf?: boolean;
@@ -129,6 +131,7 @@ export interface ChannelMember {
   fullName: string;
   email: string;
   avatarUrl?: string | null;
+  isDisabled?: boolean;
   isFollowing: boolean;
   starred: boolean;
   joinedAt: string | null;

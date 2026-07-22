@@ -56,6 +56,14 @@ export interface Paginated<T> {
   offset: number;
 }
 
+export function createWorkspace(token: string, name: string) {
+  return apiFetch<{ id: string; name: string; slug: string }>("/admin/workspaces", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ name }),
+  });
+}
+
 export function listWorkspaces(
   token: string,
   params: {
@@ -143,6 +151,7 @@ export interface AdminWorkspaceMember {
   email: string;
   fullName: string;
   isDisabled: boolean;
+  status: "ACTIVE" | "SUSPENDED";
   role: WorkspaceRole;
 }
 
@@ -150,6 +159,60 @@ export function listWorkspaceMembers(token: string, workspaceId: string) {
   return apiFetch<{ items: AdminWorkspaceMember[] }>(
     `/admin/workspaces/${workspaceId}/members`,
     { token }
+  );
+}
+
+export const INVITE_ROLES = [
+  "MEMBER",
+  "LIMITED_MEMBER",
+  "GUEST",
+  "ADMIN",
+  "SUPER_ADMIN",
+] as const;
+
+export type InviteRole = (typeof INVITE_ROLES)[number];
+
+export interface AdminWorkspaceInvite {
+  id: string;
+  email: string;
+  role: InviteRole;
+  expiresAt: string;
+  createdAt: string | null;
+  status: "pending" | "expired";
+  invitedBy: { id: string; fullName: string } | null;
+  inviteUrl: string;
+}
+
+export function listWorkspaceInvites(token: string, workspaceId: string) {
+  return apiFetch<{ items: AdminWorkspaceInvite[] }>(
+    `/admin/workspaces/${workspaceId}/invites`,
+    { token }
+  );
+}
+
+export function createWorkspaceInvite(
+  token: string,
+  workspaceId: string,
+  email: string,
+  role: InviteRole
+) {
+  return apiFetch<AdminWorkspaceInvite & { emailSent: boolean; token: string }>(
+    `/admin/workspaces/${workspaceId}/invites`,
+    { method: "POST", token, body: JSON.stringify({ email, role }) }
+  );
+}
+
+export function cancelWorkspaceInvite(token: string, workspaceId: string, inviteId: string) {
+  return apiFetch<{ ok: boolean }>(
+    `/admin/workspaces/${workspaceId}/invites/${inviteId}`,
+    { method: "DELETE", token }
+  );
+}
+
+export function resendWorkspaceInvite(token: string, workspaceId: string, inviteId: string) {
+  return apiFetch<AdminWorkspaceInvite & { emailSent: boolean; token: string }>(
+    `/admin/workspaces/${workspaceId}/invites/${inviteId}/resend`,
+    { method: "POST", token }
   );
 }
 
@@ -165,6 +228,20 @@ export function updateMemberRole(
   );
 }
 
+export function suspendMember(token: string, workspaceId: string, userId: string) {
+  return apiFetch<{ userId: string; status: string }>(
+    `/admin/workspaces/${workspaceId}/members/${userId}/suspend`,
+    { method: "POST", token }
+  );
+}
+
+export function reactivateMember(token: string, workspaceId: string, userId: string) {
+  return apiFetch<{ userId: string; status: string }>(
+    `/admin/workspaces/${workspaceId}/members/${userId}/reactivate`,
+    { method: "POST", token }
+  );
+}
+
 export interface AdminUserWorkspace {
   id: string;
   name: string;
@@ -172,6 +249,7 @@ export interface AdminUserWorkspace {
   role: WorkspaceRole;
   status: "ACTIVE" | "SUSPENDED";
   isDeleted: boolean;
+  membershipStatus: "ACTIVE" | "SUSPENDED";
 }
 
 export function listUserWorkspaces(token: string, userId: string) {

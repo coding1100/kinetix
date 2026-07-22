@@ -19,6 +19,8 @@ import {
   listAuditLog,
   listUserWorkspaces,
   listUsers,
+  reactivateMember,
+  suspendMember,
   updateMemberRole,
 } from "@/lib/api/admin";
 
@@ -42,6 +44,13 @@ interface PendingDisable {
   workspaceCount: number;
 }
 
+interface PendingMemberDisable {
+  workspaceId: string;
+  workspaceName: string;
+  userId: string;
+  userName: string;
+}
+
 export default function UsersPage() {
   const { ready, accessToken } = useAdminSession();
   const [items, setItems] = useState<AdminUserRow[]>([]);
@@ -62,6 +71,9 @@ export default function UsersPage() {
   const [busyRoleWorkspaceId, setBusyRoleWorkspaceId] = useState<string | null>(null);
   const [pendingRoleChange, setPendingRoleChange] = useState<PendingRoleChange | null>(null);
   const [pendingDisable, setPendingDisable] = useState<PendingDisable | null>(null);
+  const [pendingMemberDisable, setPendingMemberDisable] = useState<PendingMemberDisable | null>(
+    null
+  );
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [transferFor, setTransferFor] = useState<{ id: string; name: string } | null>(null);
 
@@ -111,6 +123,7 @@ export default function UsersPage() {
     confirmBusy ||
     pendingRoleChange !== null ||
     pendingDisable !== null ||
+    pendingMemberDisable !== null ||
     transferFor !== null;
 
   useEffect(() => {
@@ -247,6 +260,39 @@ export default function UsersPage() {
       setError(formatRequestError(err));
     } finally {
       setConfirmBusy(false);
+    }
+  };
+
+  const confirmDisableMember = async () => {
+    if (!pendingMemberDisable || !accessToken) return;
+    setConfirmBusy(true);
+    try {
+      await suspendMember(
+        accessToken,
+        pendingMemberDisable.workspaceId,
+        pendingMemberDisable.userId
+      );
+      await loadWorkspaces(pendingMemberDisable.userId);
+      await refreshAudit(pendingMemberDisable.userId);
+      setPendingMemberDisable(null);
+    } catch (err) {
+      setError(formatRequestError(err));
+    } finally {
+      setConfirmBusy(false);
+    }
+  };
+
+  const handleEnableMember = async (workspaceId: string, userId: string) => {
+    if (!accessToken) return;
+    setBusyRoleWorkspaceId(workspaceId);
+    try {
+      await reactivateMember(accessToken, workspaceId, userId);
+      await loadWorkspaces(userId);
+      await refreshAudit(userId);
+    } catch (err) {
+      setError(formatRequestError(err));
+    } finally {
+      setBusyRoleWorkspaceId(null);
     }
   };
 
@@ -422,24 +468,23 @@ export default function UsersPage() {
                                       >
                                         Transfer ownership
                                       </button>
-                                    ) : u.isDisabled ? (
+                                    ) : ws.membershipStatus === "SUSPENDED" ? (
                                       <button
-                                        disabled={busyId === u.id}
-                                        onClick={() =>
-                                          runAction(u.id, () => enableUser(accessToken!, u.id))
-                                        }
+                                        disabled={busyRoleWorkspaceId === ws.id}
+                                        onClick={() => handleEnableMember(ws.id, u.id)}
                                         className="rounded border border-[var(--border)] px-2 py-1 hover:bg-[var(--muted)]"
                                       >
                                         Enable
                                       </button>
                                     ) : (
                                       <button
-                                        disabled={busyId === u.id}
+                                        disabled={busyRoleWorkspaceId === ws.id}
                                         onClick={() =>
-                                          setPendingDisable({
+                                          setPendingMemberDisable({
+                                            workspaceId: ws.id,
+                                            workspaceName: ws.name,
                                             userId: u.id,
                                             userName: `${u.fullName} (${u.email})`,
-                                            workspaceCount: u.workspaceCount,
                                           })
                                         }
                                         className="rounded border border-[var(--destructive)] px-2 py-1 text-[var(--destructive)] hover:bg-[var(--destructive)]/10"
@@ -527,6 +572,21 @@ export default function UsersPage() {
         busy={confirmBusy}
         onConfirm={confirmDisableUser}
         onCancel={() => setPendingDisable(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingMemberDisable !== null}
+        title="Disable this member?"
+        description={
+          pendingMemberDisable
+            ? `Disabling ${pendingMemberDisable.userName} blocks their access to "${pendingMemberDisable.workspaceName}" only — their account and every other workspace they belong to are unaffected. This can be undone with Enable.`
+            : undefined
+        }
+        confirmLabel="Disable"
+        danger
+        busy={confirmBusy}
+        onConfirm={confirmDisableMember}
+        onCancel={() => setPendingMemberDisable(null)}
       />
 
       <TransferOwnershipDialog

@@ -522,6 +522,7 @@ export function fetchWorkspaceMembers(token: string, workspaceId: string) {
       email: string;
       fullName: string;
       avatarUrl?: string | null;
+      isDisabled?: boolean;
       role?: string;
     }[];
   }>(`/workspaces/${workspaceId}/members`, { token });

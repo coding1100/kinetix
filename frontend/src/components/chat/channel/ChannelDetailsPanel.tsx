@@ -444,7 +444,12 @@ function FollowersView({ channelId }: { channelId: string }) {
               >
                 <FollowerAvatar name={f.fullName} userId={f.id} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{f.fullName}</p>
+                  <p className="truncate text-sm font-medium">
+                    {f.fullName}
+                    {f.isDisabled ? (
+                      <span className="text-destructive"> (deactivated)</span>
+                    ) : null}
+                  </p>
                 </div>
                 {canChangeFollow(f) ? (
                   <Button
@@ -543,7 +548,12 @@ function FollowersView({ channelId }: { channelId: string }) {
                 >
                   <FollowerAvatar name={user.fullName} userId={user.id} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{user.fullName}</p>
+                    <p className="truncate text-sm font-medium">
+                      {user.fullName}
+                      {user.isDisabled ? (
+                        <span className="text-destructive"> (deactivated)</span>
+                      ) : null}
+                    </p>
                   </div>
                   <Badge
                     variant="outline"
@@ -585,7 +595,12 @@ function FollowersView({ channelId }: { channelId: string }) {
                 >
                   <FollowerAvatar name={user.fullName} userId={user.id} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{user.fullName}</p>
+                    <p className="truncate text-sm font-medium">
+                      {user.fullName}
+                      {user.isDisabled ? (
+                        <span className="text-destructive"> (deactivated)</span>
+                      ) : null}
+                    </p>
                   </div>
                   <Badge
                     variant="outline"
