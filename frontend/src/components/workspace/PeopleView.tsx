@@ -184,7 +184,8 @@ export function PeopleView() {
 
   const manage = canManagePeople(actorRole);
   const canInvite = canInvitePeople(actorRole);
-  const canInviteAdmin = actorRole === "OWNER" || actorRole === "SUPER_ADMIN";
+  const canInviteAdmin =
+    actorRole === "OWNER" || actorRole === "SUPER_ADMIN" || actorRole === "ADMIN";
 
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 
