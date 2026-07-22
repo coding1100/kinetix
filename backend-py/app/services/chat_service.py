@@ -28,13 +28,8 @@ from app.schemas.chat import (
 from app.services.attachment_service import link_attachments_to_message
 from app.services.notification_service import (
     create_channel_access_notifications,
-    create_channel_access_removed_notifications,
-    create_channel_broadcast_notifications,
-    create_channel_deleted_notifications,
-    create_channel_follow_notifications,
     create_dm_broadcast_notifications,
     create_mention_notifications,
-    create_thread_reply_notifications,
     emit_channel_access_notifications,
     emit_home_notifications,
 )
@@ -750,16 +745,6 @@ async def delete_channel(
         ).all()
     )
 
-    delete_notifications: list = []
-    if member_ids:
-        delete_notifications = await create_channel_deleted_notifications(
-            session,
-            workspace_id=workspace_id,
-            member_ids=member_ids,
-            actor_user_id=user_id,
-            channel_name=channel.name,
-        )
-
     # Bulk delete so Postgres ON DELETE CASCADE runs; ORM session.delete()
     # tries to null FK columns on ChatChannelMember PK and raises AssertionError.
     await session.execute(
@@ -775,9 +760,6 @@ async def delete_channel(
             await asyncio.to_thread(delete_objects, list(attachment_keys))
         except Exception:
             pass
-
-    if delete_notifications:
-        await emit_home_notifications(session, workspace_id, delete_notifications)
 
     if member_ids:
         asyncio.create_task(
@@ -1157,14 +1139,6 @@ async def send_channel_message(
         body=message.body,
         channel=member.channel,
     )
-    channel_notifications = await create_channel_broadcast_notifications(
-        session,
-        workspace_id=workspace_id,
-        author_user_id=user_id,
-        channel=member.channel,
-        body=message.body,
-        message_id=message.id,
-    )
     await session.commit()
 
     loaded = await session.scalar(
@@ -1173,7 +1147,7 @@ async def send_channel_message(
         .options(*_MESSAGE_SEND_LOAD)
     )
     payload = map_message(loaded, user_id, thread_count=0)
-    all_notifications = mention_notifications + channel_notifications
+    all_notifications = mention_notifications
     if all_notifications:
         await emit_home_notifications(session, workspace_id, all_notifications)
     asyncio.create_task(
@@ -1296,15 +1270,6 @@ async def send_thread_reply(
         body=message.body,
         channel=mention_channel,
     )
-    thread_notifications = await create_thread_reply_notifications(
-        session,
-        workspace_id=workspace_id,
-        author_user_id=user_id,
-        parent=parent,
-        reply_body=message.body,
-        kind="channel" if channel_id else "dm",
-        conversation_id=channel_id or conversation_id or "",
-    )
     await session.commit()
 
     loaded = await session.scalar(
@@ -1313,7 +1278,7 @@ async def send_thread_reply(
         .options(*_MESSAGE_SEND_LOAD)
     )
     payload = map_message(loaded, user_id, thread_count=0)
-    all_notifications = mention_notifications + thread_notifications
+    all_notifications = mention_notifications
     if all_notifications:
         await emit_home_notifications(session, workspace_id, all_notifications)
     conv_id = channel_id or conversation_id
@@ -2240,24 +2205,8 @@ async def remove_channel_member(
             "Cannot remove the last channel member",
         )
 
-    channel = actor.channel
-    removal_notifications: list = []
-    if channel.is_private:
-        removal_notifications = await create_channel_access_removed_notifications(
-            session,
-            workspace_id=workspace_id,
-            recipient_ids=[target_user_id],
-            actor_user_id=user_id,
-            channel=channel,
-        )
-
     await session.delete(target)
     await session.commit()
-
-    if removal_notifications:
-        await emit_channel_access_notifications(
-            session, workspace_id, removal_notifications
-        )
 
     asyncio.create_task(
         broadcast_channel_removed(
@@ -2358,7 +2307,6 @@ async def update_channel_member_target(
             "Cannot change starred status for other members",
         )
 
-    follow_notifications: list = []
     following_changed = False
     if body.is_following is not None and target.is_following != body.is_following:
         following_changed = True
@@ -2374,16 +2322,6 @@ async def update_channel_member_target(
         if level in ("ALL", "MENTIONS", "NONE"):
             target.notification_level = level
 
-    if following_changed:
-        follow_notifications = await create_channel_follow_notifications(
-            session,
-            workspace_id=workspace_id,
-            actor_user_id=user_id,
-            target_user_id=target_user_id,
-            channel=channel,
-            following=bool(body.is_following),
-        )
-
     await session.commit()
 
     if created_membership:
@@ -2393,10 +2331,6 @@ async def update_channel_member_target(
         await _emit_channel_member_update(
             session, workspace_id, channel_id, target_user_id
         )
-        if follow_notifications:
-            await emit_home_notifications(
-                session, workspace_id, follow_notifications
-            )
 
     return {"ok": True}
 

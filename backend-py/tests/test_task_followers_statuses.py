@@ -104,7 +104,7 @@ async def test_list_statuses_and_status_id_patch(api_client: AsyncClient):
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_task_follow_and_comment_notification(api_client: AsyncClient):
+async def test_task_follow_and_plain_comment_no_notification(api_client: AsyncClient):
     owner_token = await _login(api_client, *OWNER)
     member_token = await _login(api_client, *MEMBER)
     owner_headers = _auth(owner_token)
@@ -134,6 +134,9 @@ async def test_task_follow_and_comment_notification(api_client: AsyncClient):
     assert detail.status_code == 200, detail.text
     assert detail.json()["isFollowing"] is True
 
+    # Plain comments (no @mention) no longer notify followers - only an
+    # explicit @mention or a task assignment does. A follower who wasn't
+    # mentioned should see nothing for this comment in their inbox.
     commented = await api_client.post(
         f"/api/v1/workspaces/{workspace_id}/tasks/{task_id}/comments",
         headers=owner_headers,
@@ -147,7 +150,7 @@ async def test_task_follow_and_comment_notification(api_client: AsyncClient):
     )
     assert inbox.status_code == 200, inbox.text
     items = inbox.json()["data"]
-    assert any(
+    assert not any(
         i.get("type") == "comment" and task_id in (i.get("href") or "")
         for i in items
     )
