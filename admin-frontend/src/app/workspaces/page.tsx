@@ -243,6 +243,14 @@ export default function WorkspacesPage() {
     }
   };
 
+  const hasOwner = (workspaceId: string) => {
+    if (membersFor !== workspaceId) return true;
+    return (
+      members.some((m) => m.role === "OWNER") ||
+      invites.some((inv) => inv.role === "OWNER")
+    );
+  };
+
   const toggleMembers = (workspaceId: string) => {
     if (membersFor === workspaceId) {
       setMembersFor(null);
@@ -662,7 +670,9 @@ export default function WorkspacesPage() {
                               onChange={(e) => setInviteRole(e.target.value as InviteRole)}
                               className="rounded border border-[var(--border)] bg-transparent px-2 py-1.5 text-xs"
                             >
-                              {INVITE_ROLES.map((role) => (
+                              {INVITE_ROLES.filter(
+                                (role) => role !== "OWNER" || !hasOwner(ws.id)
+                              ).map((role) => (
                                 <option key={role} value={role}>
                                   {role}
                                 </option>
