@@ -8,6 +8,7 @@ import {
   CheckIcon,
   SearchIcon,
   SettingsIcon,
+  TriangleAlertIcon,
   UserPlusIcon,
   UsersIcon,
   WandSparklesIcon,
@@ -94,15 +95,24 @@ export function WorkspaceSwitcherPopup({
           ) : null}
           {filteredWorkspaces.map((workspace) => {
             const isActive = workspace.id === current.id;
+            const isSuspended = workspace.membershipStatus === "SUSPENDED";
             return (
               <Button
                 key={workspace.id}
                 variant="ghost"
+                disabled={isSuspended}
                 className={cn(
                   "w-full justify-start gap-2",
-                  isActive && "bg-accent"
+                  isActive && "bg-accent",
+                  isSuspended && "opacity-60"
                 )}
+                title={
+                  isSuspended
+                    ? "Your access to this workspace was suspended"
+                    : undefined
+                }
                 onClick={() => {
+                  if (isSuspended) return;
                   onClose?.();
                   if (workspace.id === current.id) return;
                   resetSessionScopedState();
@@ -116,7 +126,11 @@ export function WorkspaceSwitcherPopup({
                 <span className="flex-1 truncate text-left">
                   {workspace.name}
                 </span>
-                {isActive ? <CheckIcon className="size-4 text-primary" /> : null}
+                {isSuspended ? (
+                  <TriangleAlertIcon className="size-4 text-yellow-500" />
+                ) : isActive ? (
+                  <CheckIcon className="size-4 text-primary" />
+                ) : null}
               </Button>
             );
           })}

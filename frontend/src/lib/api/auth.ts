@@ -12,6 +12,8 @@ export interface WorkspaceSummary {
   name: string;
   slug: string;
   role: string;
+  status?: "ACTIVE" | "SUSPENDED";
+  membershipStatus?: "ACTIVE" | "SUSPENDED";
 }
 
 export interface LoginResponse {

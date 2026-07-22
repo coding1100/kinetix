@@ -266,6 +266,9 @@ function BoardCard({
       {task.assignees.length > 0 ? (
         <p className="mt-1 truncate text-xs text-muted-foreground">
           {task.assignees.join(", ")}
+          {task.disabledAssigneeIds?.length ? (
+            <span className="text-destructive"> · Deactivated</span>
+          ) : null}
         </p>
       ) : null}
       {task.dueDate ? (

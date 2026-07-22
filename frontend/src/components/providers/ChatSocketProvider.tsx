@@ -41,7 +41,7 @@ import {
   applyChannelRenamedToSidebar,
   applyRealtimeMessageToSidebar,
 } from "@/lib/chat/sidebar-realtime";
-import { useAuthStore } from "@/stores/auth-store";
+import { firstSelectableWorkspaceId, useAuthStore } from "@/stores/auth-store";
 import { useChatStore } from "@/stores/chat-store";
 import { usePresenceStore } from "@/stores/presence-store";
 import { useProfileStore } from "@/stores/profile-store";
@@ -189,7 +189,13 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
             },
             workspaces: me.workspaces,
           });
-          router.push(me.workspaces[0] ? "/home/inbox" : "/auth/login");
+          const nextWorkspaceId = firstSelectableWorkspaceId(me.workspaces);
+          if (nextWorkspaceId) {
+            router.push("/home/inbox");
+          } else {
+            clearSession();
+            router.push("/auth/login");
+          }
         });
       };
     socket.on("workspace:suspended", handleWorkspaceGone("suspended"));
@@ -213,7 +219,13 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
             },
             workspaces: me.workspaces,
           });
-          router.push(me.workspaces[0] ? "/home/inbox" : "/auth/login");
+          const nextWorkspaceId = firstSelectableWorkspaceId(me.workspaces);
+          if (nextWorkspaceId) {
+            router.push("/home/inbox");
+          } else {
+            clearSession();
+            router.push("/auth/login");
+          }
         });
       }
     );

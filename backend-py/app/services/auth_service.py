@@ -182,12 +182,13 @@ async def get_me(
     if not user:
         raise AppError(404, "NOT_FOUND", "User not found")
 
-    # Regular /auth/me callers only ever see ACTIVE memberships - a member
-    # suspended from one workspace shouldn't see it in their own sidebar.
-    # Admin's per-user workspace list is the one caller that needs to see
-    # (and reactivate) a SUSPENDED membership, hence the separate flag
-    # rather than folding it into include_suspended (which governs the
-    # workspace's own status, a different axis).
+    # include_suspended_memberships lets a caller see a SUSPENDED membership
+    # instead of it being silently filtered out - /auth/me passes this so a
+    # suspended member's own workspace switcher can still show the
+    # workspace (disabled) rather than it vanishing; admin's per-user
+    # workspace list needs it too, to reactivate. Separate from
+    # include_suspended, which governs the workspace's own status (a
+    # different axis).
     allowed_statuses = (
         {MemberStatus.ACTIVE, MemberStatus.SUSPENDED}
         if include_suspended_memberships
@@ -253,7 +254,7 @@ async def update_profile(
 
     await session.commit()
     await session.refresh(user)
-    return await get_me(session, user_id)
+    return await get_me(session, user_id, include_suspended_memberships=True)
 
 
 async def change_password(

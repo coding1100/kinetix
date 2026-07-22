@@ -63,6 +63,7 @@ export interface ChatMessage {
   id: string;
   authorId: string;
   authorName: string;
+  authorIsDisabled?: boolean;
   body: string;
   createdAt: string;
   isSelf?: boolean;

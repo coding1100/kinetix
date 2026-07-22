@@ -87,7 +87,13 @@ async def logout(
 
 @router.get("/me")
 async def me(session: DbSession, user: CurrentUserDep):
-    return await auth_service.get_me(session, user.id)
+    # include_suspended_memberships=True: a workspace where this user was
+    # suspended should still show up (disabled) in their own workspace
+    # switcher instead of silently vanishing - get_workspace_member still
+    # 403s if they try to actually enter it.
+    return await auth_service.get_me(
+        session, user.id, include_suspended_memberships=True
+    )
 
 
 @router.patch("/me")

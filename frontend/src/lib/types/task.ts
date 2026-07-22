@@ -2,6 +2,7 @@ export interface TaskComment {
   id: string;
   authorId?: string;
   author: string;
+  authorIsDisabled?: boolean;
   body: string;
   at: string;
   createdAt?: string | null;
@@ -79,6 +80,7 @@ export interface Task {
   timeTrackedSeconds?: number;
   timeTracking?: TaskTimeTracking;
   assignees: string[];
+  disabledAssigneeIds?: string[];
   list: string;
   listId?: string;
   space: string;

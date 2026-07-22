@@ -482,6 +482,11 @@ export function PeopleView() {
                             You
                           </Badge>
                         ) : null}
+                        {m.isDisabled ? (
+                          <Badge variant="destructive" className="text-[10px]">
+                            Deactivated
+                          </Badge>
+                        ) : null}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{m.email}</td>
