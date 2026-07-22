@@ -5190,5 +5190,35 @@ step is the user testing this manually before moving to the next item
 in the backlog (auto-showing invite-people after creating a workspace
 was actually bundled into this same change since it's the same modal).
 
+TAG: [FEATURE]
+TITLE: View-password toggle on login password fields
+DESC:
+Second item off the same backlog list as [[Admin no longer joins
+workspaces they create - invite an owner instead]] - user tested and
+confirmed that one worked, moving to the next.
+
+Added a show/hide toggle button inside the password input on both
+login screens:
+- frontend/src/app/auth/login/page.tsx - added showPassword state,
+input type flips between "password"/"text", eye/eye-off icon button
+(lucide-react EyeIcon/EyeOffIcon, already used elsewhere on this page)
+positioned absolute inside the existing relative wrapper that already
+held the LockIcon. tabIndex={-1} so it doesn't steal tab order between
+the field and the submit button.
+- admin-frontend/src/app/login/page.tsx - same pattern but this app
+doesn't pull in an icon library, so used a plain text "Show"/"Hide"
+button instead of an icon, positioned the same way.
+
+Scoped to login only per the literal ask - did not touch signup,
+reset-password, invite-accept, or the settings change-password field,
+which have their own separate password inputs (frontend/src/app/auth/
+signup/page.tsx, reset-password/page.tsx, invite/accept/page.tsx,
+components/account/SettingsView.tsx) - can revisit those the same way
+if asked.
+
+Verified: `npx tsc --noEmit` clean for both frontend and admin-frontend.
+Not yet clicked through in a browser - pending user test like the prior
+item.
+
 ========================================
 DATE_END: 2026-07-22
