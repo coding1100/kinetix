@@ -265,13 +265,25 @@ async def create_space(
                 permission_level=PermissionLevel.EDIT,
             )
         )
+    # Every new Space starts with one default, ordinary List - same shape
+    # as a manually-created one (statuses + chat channel) - so it's never
+    # empty. Not flagged/protected in any way, so the user can rename or
+    # delete it like any other List.
+    default_list = TaskList(space_id=space.id, name="List", sort_order=1)
+    session.add(default_list)
+    await session.flush()
+    await ensure_list_statuses(session, default_list.id)
     await session.commit()
+    # Every list is mandatory 1:1 with its own chat channel - see
+    # chat_service.create_list_channel.
+    await create_list_channel(session, workspace_id, default_list, space, user_id)
     refreshed = await session.scalar(
         select(Space).where(Space.id == space.id).options(*_SPACE_LOAD)
     )
     member_count = await _active_member_count(session, workspace_id)
+    list_count = await _list_count_for_space(session, space.id)
     return await _build_space_payload(
-        session, refreshed, member_count, 0, user_id, role
+        session, refreshed, member_count, list_count, user_id, role
     )
 
 
