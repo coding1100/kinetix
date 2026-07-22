@@ -377,7 +377,7 @@ export function PeopleView() {
             <SheetTitle>Invite people</SheetTitle>
             <SheetDescription>
               Add teammates to {workspace?.name ?? "this workspace"}. They join
-              via email link — same flow as ClickUp workspace invites.
+              via email link.
             </SheetDescription>
           </SheetHeader>
           {ready ? (
