@@ -5130,4 +5130,422 @@ Verified: `uv run python -c "import app.main"` clean, `npx tsc --noEmit`
 and `npx next build` both clean for admin-frontend.
 
 ========================================
+
+TAG: [TASK]
+PARENT: Platform admin portal (workspaces/users, separate app)
+TITLE: Split admin-portal deploy from the main app's prod CI pipeline
+DESC:
+Committed the full admin-portal feature (59 files) on a new admin-portal
+branch cut from develop, so develop itself stays clean/matches origin -
+the feature commit lives only on admin-portal until PR review. Gave the
+user a PR title/description for it (not opened yet - waiting on the CI
+piece below first).
+
+Then worked through where admin's deploy should live. Discovered along
+the way: docker-compose.staging.yml has no admin service at all - the
+only admin container is the one in docker-compose.app.yml (prod-facing),
+and deploy-staging.sh's existing line that touches docker-compose.app.yml
+already runs with no --build flag, i.e. it only ensures the container
+exists/keeps the shared nginx+edge network up for staging to attach to,
+it was never actually redeploying admin with fresh code. Confirmed with
+the user: admin portal is prod-only by design - staging keeps carrying
+the code (same repo, same branch merges through) but gets no running
+admin container and no dedicated GitHub Action of its own. Left
+docker-compose.staging.yml and deploy-staging.sh/deploy-staging-ec2.yml
+completely untouched.
+
+Also hit a second landmine before writing anything: deploy/deploy.sh on
+the `develop`/admin-portal branch was still the old systemd-based script
+(dead on the real server per earlier this-session SSH diagnostics -
+prod actually runs Docker, started manually). Checked origin/main and
+found deploy.sh was already fixed there to be fully Docker-based
+(docker-compose.yml + docker-compose.app.yml, builds api/web, health-
+checks through nginx) - develop just hadn't caught up yet. Pulled
+main's deploy.sh as-is (`git show origin/main:deploy/deploy.sh >
+deploy/deploy.sh`) rather than re-fixing something already fixed, so
+the split builds on the real prod deploy path instead of the dead one.
+
+Built the split on .github/workflows/deploy-ec2.yml (prod, push to
+main - the only checkout admin's container can correctly be built from,
+since docker-compose.app.yml's build context is relative to wherever
+compose runs, and only PROD_ROOT is guaranteed to be on main):
+- New `changes` job (dorny/paths-filter@v3, fetch-depth 0) computes two
+  booleans: `app` (backend-py/**, frontend/**, deploy/**, both compose
+  files, the workflow file itself) and `admin` (admin-frontend/** only).
+- `deploy-app` job runs deploy.sh unchanged, gated on
+  `needs.changes.outputs.app == 'true'` (or workflow_dispatch).
+- New `deploy-admin` job runs a new deploy/deploy-admin.sh, gated on the
+  `admin` output. `needs: [changes, deploy-app]` plus `if: always()`
+  gives app priority (admin's SSH step never starts until deploy-app's
+  job has concluded, whatever its result) while keeping them properly
+  independent - a failed or skipped deploy-app doesn't block or fail
+  deploy-admin, and vice versa, since neither job's `if` depends on the
+  other's outcome, only on ordering + its own path filter. This also
+  sidesteps a git-checkout race that would exist if they ran as two
+  separate workflows hitting the same PROD_ROOT directory concurrently -
+  as sequential jobs in one workflow run, the SSH sessions never overlap.
+- deploy-admin.sh: independent git fetch/reset (can't assume deploy-app
+  ran), `docker compose ... up -d --build admin` (only touches that one
+  service), then an explicit `nginx -t && nginx -s reload` - needed
+  because nginx bind-mounts deploy/nginx/docker.conf read-only, so
+  `compose up -d nginx` alone won't pick up the new /admin-portal/
+  location block on this feature's first deploy. Health-checks through
+  nginx at /admin-portal/login before declaring success.
+
+Verified: YAML parses (`python -c "import yaml; yaml.safe_load(...)"`),
+both shell scripts pass `bash -n`. Not yet run for real - first live
+test happens when this branch's PR merges to main.
+
+========================================
+
+TAG: [TASK]
+PARENT: Platform admin portal (workspaces/users, separate app)
+TITLE: Pre-merge hardening - forced re-login, gated main-app self-serve auth, staff management page
+DESC:
+Six items requested before opening/merging the admin-portal PR into
+develop. Handled all on the same admin-portal branch.
+
+1. Admin portal now always requires a fresh login. Previously
+admin-frontend/src/stores/auth-store.ts persisted accessToken/
+refreshToken to localStorage (zustand persist) and
+use-admin-session.ts silently exchanged the httpOnly refresh cookie
+for a new access token on every mount - so closing the tab and coming
+back later (or even just reloading) logged you straight back in. Since
+this is the most privileged account in the whole app, that's the wrong
+default. Rewrote auth-store.ts as a plain in-memory zustand store (no
+persist middleware at all), and use-admin-session.ts no longer calls
+adminRefresh() - it just reads the in-memory token and router.replace's
+to /login the moment it's missing, i.e. on every fresh mount. Left
+proxy.ts and the riseup_admin_session marker cookie untouched - it
+still fast-paths an SSR redirect for someone with literally no cookie,
+but no longer matters for "already logged in" purposes since the
+client-side hook enforces the real check regardless of cookie state.
+
+2. Main app: self-serve signup, Google sign-in/up, and the demo-
+credentials hint are switched off - not deleted - via three new
+entries in frontend/src/lib/feature-flags.ts (selfSignup, googleAuth,
+demoCredentialsBanner), reusing the existing hard-coded flags file
+instead of building a new mechanism. auth/login/page.tsx: Google
+button, demo-creds banner, and the "Create an account" link are each
+wrapped in their flag check; the description text also switches
+depending on googleAuth. auth/signup/page.tsx: whole page now calls
+redirect("/auth/login") as its first statement when selfSignup is
+false (page code untouched otherwise, still reachable again by
+flipping the flag), and its own Google button is separately gated so
+flipping selfSignup back on wouldn't silently re-expose Google if that
+flag's still off. Confirmed via `npx eslint` that redirect-before-hooks
+here doesn't trip react-hooks/rules-of-hooks (it's an unconditional
+early throw before any hook call, not a hook inside a conditional).
+
+3. Admin portal already had no /signup route to begin with (checked
+admin-frontend/src/app/** - only login/workspaces/users existed) - ask
+was already satisfied, nothing to change.
+
+4/5. Covered by items 1 and 2 above (Google removal is one flag
+gating both apps' relevant surfaces; admin-only-sign-in was already
+true).
+
+6. New admin-management page. Backend: three new endpoints on the
+existing /admin router rather than a new resource - GET /admin/staff
+(list, with each row's granter resolved via a batched User lookup
+since PlatformStaff.granted_by is a bare FK column, no ORM
+relationship), POST /admin/staff (grant by email - reuses the same
+"resolve by email" pattern as transfer_ownership_admin; 404s if no
+such user, 400s if that user is disabled, 409s if already staff),
+DELETE /admin/staff/{userId} (revoke; blocks revoking your own access
+to avoid an accidental self-lockout with no one left to undo it).
+Grant/revoke by email only works for users who already have an
+account - matches the existing transfer-ownership convention, doesn't
+create accounts. Both write to AdminAuditLog (platform_staff.grant /
+.revoke). New admin_service.py functions + AdminGrantStaffBody schema
++ routes in admin.py. Frontend: new admin-frontend/src/app/staff/page.tsx
+(table + inline grant-by-email form + revoke with the existing themed
+ConfirmDialog, no new dialog component needed since it's a single
+email field), new "Admins" tab in PortalNav.tsx, /staff added to
+proxy.ts's protected prefixes and matcher.
+
+Verified: `uv run python -c "import app.main"` clean; `npx tsc --noEmit`
++ `npx next build` clean for both frontend/ and admin-frontend/.
+
+========================================
+
+TAG: [TASK]
+PARENT: Platform admin portal (workspaces/users, separate app)
+TITLE: Staff-search combobox for granting access, self-revoke hidden, workspace-scoped member disable
+DESC:
+Three more asks on the admin portal, on top of PR #12 (admin-portal ->
+develop, merged) and PR #13 (admin-portal -> main, opened by the user;
+migrations + PlatformStaff bootstrap already run on the prod server
+this session). All three land on the same admin-portal branch, not yet
+committed/pushed.
+
+1. Admins page's "grant access" field is now a search-as-you-type
+combobox instead of a raw email box - reuses the existing GET
+/admin/users search endpoint (no backend change), debounced, filters
+out users who are already staff. Selecting a result only fills the
+field; the actual POST /admin/staff only fires on pressing "Grant
+access" - matches the same "selection isn't submission" pattern used
+for TransferOwnershipDialog.
+
+2. Revoke button hidden on the logged-in admin's own row (labeled
+"(you)"). Backend already blocked self-revoke server-side
+(revoke_platform_staff 400s on target_user_id == actor_id) from the
+original build - this was a UX gap, not a security one.
+
+3. Bigger one: the expanded-row Disable/Enable buttons on both
+Workspaces and Users pages were - discovered while implementing -
+actually calling the GLOBAL user-disable endpoint the whole time, even
+though they're rendered per-workspace. Fixed by adding a real
+workspace-scoped suspend, distinct from set_user_disabled:
+- WorkspaceMember already has a status column (MemberStatus:
+  ACTIVE/INVITED/SUSPENDED) that nothing wrote to before. New
+  admin_service.set_member_status_admin flips just that one row's
+  status - refuses to suspend an OWNER (must transfer first, same
+  invariant as update_member_role_admin). New POST .../members/{userId}
+  /suspend and /reactivate routes.
+- Enforcement was already fully in place with zero new code:
+  get_workspace_member (deps/workspace.py) already 403s on any non-
+  ACTIVE membership status, and auth_service.get_me already only
+  returns ACTIVE memberships to a user's own /auth/me - a suspended
+  member simply stops seeing/reaching that one workspace, nothing else
+  touched. Had to add get_me(..., include_suspended_memberships=False)
+  as a new opt-in param though, since admin's own "this user's
+  workspaces" list (list_user_workspaces, wraps get_me) was silently
+  dropping SUSPENDED memberships entirely - staff could suspend a
+  member and then never see that workspace in their row again to
+  reactivate it. Regular /auth/me still defaults to ACTIVE-only,
+  unaffected.
+- list_workspace_members_admin rewritten as its own query (was
+  delegating to workspace_service.list_workspace_members, which
+  hard-filters ACTIVE-only - wrong here for the same reason) - now
+  returns SUSPENDED members too plus a status field.
+- New broadcast_workspace_member_suspended emits to the target user's
+  own user:{id} room (not the whole ws:{id} room - a per-member suspend
+  shouldn't kick anyone else). Wired a new workspace:member:suspended
+  handler into frontend/ChatSocketProvider.tsx, same shape as the
+  existing workspace:suspended/deleted handlers - only acts if it's the
+  workspace the user is currently sitting in.
+- Both pages' modal copy rewritten to say "this workspace only" instead
+  of the old (incorrect) "every workspace" text; the Users page's
+  top-level main-row Disable stays exactly as it already was (global,
+  modal already correctly said "all workspaces" - no change needed
+  there, per explicit instruction to keep that one as-is).
+- Audit: workspace.member.suspend/reactivate dual-logged (workspace +
+  user target) same as every other admin action, descriptions added to
+  admin-frontend/lib/audit.ts.
+
+Verified: `uv run python -c "import app.main"` clean; `npx tsc --noEmit`
++ `npx next build` clean for frontend/ and admin-frontend/.
+
+========================================
+
+TAG: [FEATURE]
+PARENT: Platform admin portal (workspaces/users, separate app)
+TITLE: Show "Deactivated" wherever a disabled user's content still appears in the main app
+DESC:
+Follow-up to workspace-scoped/global user disable: nothing in the
+regular app UI (as opposed to the admin portal) previously indicated
+when a task assignee, comment author, or chat message author had since
+been disabled - they rendered exactly like any other active member.
+Researched how real ClickUp handles this first (web search, since
+ClickUp's own help pages 403'd on direct fetch) before touching
+anything: their pattern is to leave the person's name/avatar in place
+wherever it already appears (assignee cards, comments) and just append
+a "Deactivated" label next to it, plus a dedicated assignee-sidebar
+tool for bulk reassigning their tasks. Confirmed with the user to build
+everything except an assignee-sidebar-style bulk tool and @mentions -
+mentions are baked into message/comment bodies as static "@Name" text
+at write time rather than a live user-id reference, so there's nothing
+to re-check at render time without a much bigger rework of how
+mentions are stored; out of scope for now.
+
+Also ran an Explore agent first to map every place a disabled user's
+name could still render, before writing anything - confirmed
+is_disabled was already fully wired for auth-blocking and the admin
+portal, but completely absent from task, comment, chat-message, and
+mention code paths on both backend and frontend, and technically
+present-but-unused in the in-app People page (backend already sent
+isDisabled in that payload; the frontend type just never declared the
+field).
+
+Backend - all additive, no schema change:
+- home_helpers.py: _map_task_comment now sets authorIsDisabled from the
+  already-loaded comment.user relationship (zero extra query). map_task
+  gained a disabledAssigneeIds output list, computed from a widened
+  assignee_names shape (id -> (name, isDisabled) instead of id -> name).
+- home_service.py: _assignee_name_map (the one and only producer feeding
+  every map_task call site across home_service.py and spaces_service.py
+  - traced all ~10 call sites first, confirmed each just forwards the
+  dict straight into map_task with no other use) now selects
+  User.is_disabled alongside full_name in the same query and returns
+  the tuple. _user_name_map (a different helper, used only for activity-
+  log text strings, not map_task) deliberately left untouched.
+- chat_helpers.py: map_message and map_message_broadcast both gained
+  authorIsDisabled from the already-loaded msg.author relationship -
+  same zero-extra-query shape as the comment fix. map_search_message
+  picks it up for free since it wraps map_message.
+
+Frontend - new authorIsDisabled/disabledAssigneeIds/isDisabled fields
+declared on Task, TaskComment, ChatMessage, and WorkspaceMemberRow
+types, then a small "Deactivated" marker wired into every place that
+renders one of these people: ListTaskRow (dimmed avatar + tooltip),
+BoardView (compact card, dimmed text suffix), TaskDrawer's assignee
+chips (dimmed avatar + inline label), TaskActivityComment and
+ChatMessageRow (destructive-colored "Deactivated" text next to the
+author name, dimmed avatar on the chat row), and PeopleView (reused
+the existing Badge component/pattern already used for the "You" tag).
+
+Verified: `uv run python -c "import app.main"` clean, `npx tsc --noEmit`
++ `npx next build` clean for frontend/. (admin-frontend untouched by
+this change.)
+
+TAG: [TASK]
+PARENT: Platform admin portal (workspaces/users, separate app)
+TITLE: Create-workspace button + per-workspace invite management in admin portal
+DESC:
+Two additions to the admin-frontend Workspaces page, both built by
+reusing existing services per the "reuse before adding new code"
+project rule rather than writing parallel logic:
+
+1. "Create workspace" button + dialog (CreateWorkspaceDialog.tsx, mirrors
+   the existing TransferOwnershipDialog styling/pattern). Calls new
+   POST /admin/workspaces, which is just admin_service.create_workspace_admin
+   wrapping workspace_service.create_workspace verbatim (same function the
+   in-app self-serve workspace creation uses) plus an audit-log write - the
+   staff member submitting the form becomes OWNER of the new workspace,
+   same as any normal workspace creation.
+
+2. Invite people from the workspace expand row, matching the People page's
+   invite flow/options (email + role, same INVITE_ROLES set minus OWNER).
+   New admin_service functions (list/create/cancel/resend_workspace_invite_admin)
+   are thin wrappers around the existing invite_service functions - staff is
+   passed through as WorkspaceRole.OWNER for the internal permission check
+   since they aren't an actual member of the target workspace. Dedup ("can't
+   invite someone already a member or already pending") comes for free from
+   invite_service.create_invite's existing ALREADY_MEMBER/ALREADY_INVITED
+   409 checks - no new dedup logic needed. Every invite action also writes
+   an AdminAuditLog row, consistent with every other admin mutation.
+
+   New routes: GET/POST /admin/workspaces/{id}/invites, DELETE
+   .../invites/{id}, POST .../invites/{id}/resend.
+
+Polling: the page already polled the workspace list every 20s but never
+refreshed an expanded row's members/invites on that same tick - so if an
+invitee accepted while the row was open, nothing would update without a
+manual re-toggle. Extended the poll effect to also call loadMembers +
+loadInvites for whichever workspace is currently expanded (membersFor),
+guarded by the same pollGuardRef pattern (skips while any mutation/dialog
+is in flight) plus new invite-specific busy flags.
+
+Verified: `python -c "from app.api.v1 import admin"` clean (backend-py),
+`npx tsc --noEmit` clean (admin-frontend).
+
+TAG: [BUG]
+TITLE: Admin portal middleware redirects dropped the /admin-portal basePath
+DESC:
+User reported http://3.140.5.67/admin-portal/workspaces redirecting to
+http://3.140.5.67/workspaces (landing on the main app instead of the
+admin portal). Confirmed live via curl before touching anything: hitting
+/admin-portal/workspaces logged out returned a 307 with
+`location: /login?next=%2Fworkspaces` - no /admin-portal prefix, which
+nginx's catch-all location / then routed into the main app instead of
+back into admin-frontend. Also confirmed /admin-portal/login itself
+returned 200 from the admin app, ruling out an nginx/deploy problem
+before assuming a code bug - nginx routing and the admin container were
+both fine.
+
+Root cause: admin-frontend/src/proxy.ts built every redirect target with
+`new URL(path, request.url)`, a plain WHATWG URL that isn't basePath-
+aware. Next.js's own NextURL (request.nextUrl) IS basePath-aware, but
+plain URL() throws that away. Fixed by building all three redirects
+(unauth -> login, post-login-while-authed -> workspaces, root ->) off
+`request.nextUrl.clone()` instead.
+
+Also confirmed via `git log origin/main` that the admin-portal branch
+work (including this session's earlier create-workspace/invite commit)
+was already merged to main via PR #15 and deploy-ec2.yml only triggers
+on push to main - so this was a genuine live bug, not a "never deployed"
+issue as first suspected.
+
+Verified: `npx tsc --noEmit` clean (admin-frontend). Committed
+(336d71f) and pushed to admin-portal directly (gh pr create failed -
+token isn't a repo collaborator - left as a compare-branches link for
+the user to open manually).
+
+TAG: [TASK]
+TITLE: Set up kinetix.infosoftco.com domain + HTTPS across prod/staging/admin-portal
+DESC:
+User bought the domain kinetix.infosoftco.com, wants it to cover all
+three surfaces already living on the box (prod app at root, /staging/,
+/admin-portal/) as one path-routed domain, with HTTPS. Explicitly told
+not to commit or push - changes are staged locally only, pending the
+user's own review/deploy.
+
+deploy/nginx/docker.conf rewritten as two server blocks instead of one:
+- :80 - server_name kinetix.infosoftco.com, serves only the ACME
+  http-01 challenge path (/.well-known/acme-challenge/, webroot
+  /var/www/certbot) and /health, everything else 301s to https.
+- :443 ssl - server_name kinetix.infosoftco.com, ssl_certificate/
+  ssl_certificate_key pointed at the Let's Encrypt live/ path, modern
+  TLS1.2/1.3 settings written inline (not relying on certbot's nginx-
+  plugin-generated options-ssl-nginx.conf/ssl-dhparams.pem snippets,
+  since issuance here is plain `certonly --webroot`, not the nginx
+  plugin, so those files would never get created) - holds every
+  location block the old single server{} had (staging api/socket/web,
+  /admin-portal/, /api/, /socket.io/, /).
+Validated syntax with a throwaway `docker run nginx:1.27-alpine` +
+self-signed dummy cert + `nginx -t` (can't run nginx -t without SOME
+cert present at the path the config references) - passed clean.
+
+docker-compose.app.yml: nginx now also publishes :443 and mounts two
+new named volumes (certbot-etc -> /etc/letsencrypt, certbot-www ->
+/var/www/certbot, both read-only on the nginx side). New `certbot`
+service (image certbot/certbot:latest) running a `certbot renew
+--webroot --quiet` loop every 12h for ongoing renewal - does NOT
+perform first-time issuance itself (chicken-and-egg: nginx's config
+already references the final cert path, so the very first cert has to
+exist before nginx can even start cleanly).
+
+New deploy/setup-ssl.sh - one-off bootstrap script, NOT wired into any
+CI workflow, meant to be run manually once on the EC2 box after DNS
+(A record -> the box's IP) has propagated: generates a throwaway self-
+signed cert at the expected path so nginx can boot at all, starts
+nginx, runs `certbot certonly --webroot` for the real cert, reloads
+nginx, then starts the certbot renewal-loop service. Idempotent - reruns
+just restart/reload if a real cert is already present. Takes
+CERTBOT_EMAIL as a required env var (Let's Encrypt wants a contact
+email for expiry notices).
+
+Updated every hardcoded http://3.140.5.67 default this domain change
+touches: docker-compose.app.yml's PUBLIC_APP_URL fallback (api/web
+build args + runtime env), docker-compose.env.example's PUBLIC_APP_URL
+template, docker-compose.staging.yml's STAGING_PUBLIC_URL/
+STAGING_FRONTEND_ORIGIN fallbacks, deploy/deploy-staging.sh's PUBLIC_HOST
+default, and .github/workflows/deploy-staging-ec2.yml's hardcoded
+STAGING_PUBLIC_URL (now also exports PUBLIC_HOST and
+STAGING_FRONTEND_ORIGIN, which it previously left unset, silently
+falling back to the IP for the staging API's FRONTEND_URL).
+
+Deliberately did NOT touch deploy.sh/deploy-admin.sh/deploy-staging.sh's
+`curl -fsS http://127.0.0.1/...` health checks even though :80 now
+301s everything - confirmed curl's -f only treats HTTP >=400 as
+failure, a bare 3xx still exits 0 without -L, so those checks keep
+working unmodified.
+
+Did NOT touch the legacy host-nginx conf files (kinetix-site.conf,
+kinetix-staging-site.conf) or their setup/fix scripts - per earlier
+research in this project, that whole host-nginx/systemd path is dead
+(masked/failed units), Docker is confirmed the real prod path, so
+editing dead config would be pure scope creep.
+
+Still needs, on the actual server, before this works end to end (none
+of this was run against the live box - no SSH access from this
+session, and user said not to commit/push yet regardless):
+1. DNS: A record kinetix.infosoftco.com -> the EC2 box's IP.
+2. Update the real (uncommitted, secret) docker-compose.env on the
+   server: PUBLIC_APP_URL=https://kinetix.infosoftco.com.
+3. Deploy this branch, then run `CERTBOT_EMAIL=... deploy/setup-ssl.sh`
+   once manually.
+
+========================================
 DATE_END: 2026-07-22
