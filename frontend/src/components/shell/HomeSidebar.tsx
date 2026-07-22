@@ -724,6 +724,7 @@ function DmRow({
   name,
   avatarUrl,
   otherUserId,
+  otherUserIsDisabled,
   participants,
   currentUserId,
   presenceFallback,
@@ -735,6 +736,7 @@ function DmRow({
   name: string;
   avatarUrl?: string;
   otherUserId?: string;
+  otherUserIsDisabled?: boolean;
   participants?: DmParticipant[];
   currentUserId?: string | null;
   presenceFallback?: PresenceStatus;
@@ -750,7 +752,8 @@ function DmRow({
     active,
     unreadBadgeHold
   );
-  const presence = useUserPresence(otherUserId, presenceFallback ?? "offline");
+  const livePresence = useUserPresence(otherUserId, presenceFallback ?? "offline");
+  const presence = otherUserIsDisabled ? "offline" : livePresence;
   const groupParticipants = isGroup
     ? otherGroupParticipants(participants, currentUserId)
     : [];
@@ -784,7 +787,12 @@ function DmRow({
           fallback={avatarInitialFromName(displayName)}
         />
       )}
-      <span className="min-w-0 flex-1 truncate">{displayName}</span>
+      <span className="min-w-0 flex-1 truncate">
+        {displayName}
+        {!isGroup && otherUserIsDisabled ? (
+          <span className="text-destructive"> (deactivated)</span>
+        ) : null}
+      </span>
       {displayUnread > 0 && (
         <Badge className="size-5 min-w-5 shrink-0 justify-center rounded-full px-1 text-[10px]">
           {displayUnread}
@@ -1286,6 +1294,7 @@ export function HomeSidebar() {
                   name={d.name}
                   avatarUrl={d.avatarUrl}
                   otherUserId={d.otherUserId}
+                  otherUserIsDisabled={d.otherUserIsDisabled}
                   participants={d.participants}
                   currentUserId={currentUserId}
                   presenceFallback={d.presence}

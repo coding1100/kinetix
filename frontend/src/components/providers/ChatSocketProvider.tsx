@@ -23,7 +23,9 @@ import type {
   ResourceAccessChangedPayload,
   TaskRealtimePayload,
   AccountDisabledPayload,
+  WorkspaceMemberReactivatedPayload,
   WorkspaceMemberRolePayload,
+  WorkspaceMemberSuspendedPayload,
   WorkspaceStatusPayload,
 } from "@/lib/types/realtime";
 import { ingestTaskEvent } from "@/lib/tasks/realtime";
@@ -32,6 +34,7 @@ import { applyHomeNotification } from "@/lib/notifications/realtime";
 import { clearLiveNotifications } from "@/lib/notifications/live-cache";
 import { bumpWorkspaceMembersRefresh } from "@/lib/workspace/realtime";
 import { getMe } from "@/lib/api/auth";
+import { bumpSidebarRefresh } from "@/lib/chat/sidebar-channel";
 import {
   applyChannelJoinedToSidebar,
   applyChannelMemberUpdate,
@@ -40,7 +43,7 @@ import {
   applyChannelRenamedToSidebar,
   applyRealtimeMessageToSidebar,
 } from "@/lib/chat/sidebar-realtime";
-import { useAuthStore } from "@/stores/auth-store";
+import { firstSelectableWorkspaceId, useAuthStore } from "@/stores/auth-store";
 import { useChatStore } from "@/stores/chat-store";
 import { usePresenceStore } from "@/stores/presence-store";
 import { useProfileStore } from "@/stores/profile-store";
@@ -153,6 +156,13 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
         if (payload.workspaceId !== workspaceId) return;
         bumpWorkspaceMembersRefresh();
         if (payload.userId !== userId) return;
+        // A role change can shift which Spaces/Lists and channels/DMs are
+        // visible - bumping these two shared refresh keys re-fetches both
+        // the Spaces tree and the channel/DM sidebar lists, which Home and
+        // Chat pages both read off of (HomeSidebar and ChatSidebar share
+        // the same spacesRefreshKey/sidebarRefreshKey stores).
+        bumpSpacesRefresh();
+        bumpSidebarRefresh();
         void getMe(accessToken).then((me) => {
           updateSession({
             accessToken,
@@ -188,11 +198,68 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
             },
             workspaces: me.workspaces,
           });
-          router.push(me.workspaces[0] ? "/home/inbox" : "/auth/login");
+          const nextWorkspaceId = firstSelectableWorkspaceId(me.workspaces);
+          if (nextWorkspaceId) {
+            router.push("/home/inbox");
+          } else {
+            clearSession();
+            router.push("/auth/login");
+          }
         });
       };
     socket.on("workspace:suspended", handleWorkspaceGone("suspended"));
     socket.on("workspace:deleted", handleWorkspaceGone("deleted"));
+    socket.on(
+      "workspace:member:suspended",
+      (payload: WorkspaceMemberSuspendedPayload) => {
+        // Targeted at this user's own room by the backend, so it's always
+        // "us" - but only act on it if it's the workspace we're currently
+        // sitting in; otherwise it'll just be missing next time /me loads.
+        if (payload.workspaceId !== workspaceId) return;
+        toast.error("Your access to this workspace was suspended");
+        void getMe(accessToken).then((me) => {
+          updateSession({
+            accessToken,
+            user: {
+              id: me.id,
+              email: me.email,
+              fullName: me.fullName,
+              avatarUrl: me.avatarUrl,
+            },
+            workspaces: me.workspaces,
+          });
+          const nextWorkspaceId = firstSelectableWorkspaceId(me.workspaces);
+          if (nextWorkspaceId) {
+            router.push("/home/inbox");
+          } else {
+            clearSession();
+            router.push("/auth/login");
+          }
+        });
+      }
+    );
+    socket.on(
+      "workspace:member:reactivated",
+      (_payload: WorkspaceMemberReactivatedPayload) => {
+        // Targeted at this user's own room by the backend. Not gated on
+        // the currently-active workspace - unlike suspend, this doesn't
+        // need to kick anyone anywhere, it just needs the workspace
+        // switcher to un-gray the workspace, wherever they're sitting.
+        toast.success("Your access to a workspace was restored");
+        void getMe(accessToken).then((me) => {
+          updateSession({
+            accessToken,
+            user: {
+              id: me.id,
+              email: me.email,
+              fullName: me.fullName,
+              avatarUrl: me.avatarUrl,
+            },
+            workspaces: me.workspaces,
+          });
+        });
+      }
+    );
     socket.on("account:disabled", (payload: AccountDisabledPayload) => {
       if (payload.userId !== userId) return;
       toast.error("Your account has been disabled");
@@ -256,6 +323,8 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       socket.off("workspace:member:role");
       socket.off("workspace:suspended");
       socket.off("workspace:deleted");
+      socket.off("workspace:member:suspended");
+      socket.off("workspace:member:reactivated");
       socket.off("account:disabled");
       socket.off("space:access:removed");
       socket.off("space:access:granted");

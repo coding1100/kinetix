@@ -15,6 +15,7 @@ export interface WorkspaceMemberRow {
   email: string;
   fullName: string;
   avatarUrl?: string | null;
+  isDisabled?: boolean;
   role: string;
   status: string;
   joinedAt: string | null;

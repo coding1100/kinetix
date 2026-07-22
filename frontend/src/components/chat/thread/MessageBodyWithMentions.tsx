@@ -12,7 +12,7 @@ import {
   messageBodyHasHtml,
   sanitizeMessageHtml,
 } from "@/lib/chat/rich-text/sanitize";
-import { useMentionMembers } from "@/hooks/use-mention-members";
+import { useMentionMembers, type MentionMember } from "@/hooks/use-mention-members";
 import { UserProfilePeek } from "@/components/chat/UserProfilePeek";
 import { useAuthStore } from "@/stores/auth-store";
 import type { ConversationType } from "@/lib/types/chat";
@@ -31,22 +31,22 @@ function RichTextPart({ html }: { html: string }) {
 
 function PersonMentionToken({
   part,
-  userId,
+  member,
   channelId,
   isSelf,
 }: {
   part: string;
-  userId?: string;
+  member?: MentionMember;
   channelId?: string;
   isSelf?: boolean;
 }) {
   const label = displayMentionToken(part);
-  if (!userId) {
+  if (!member) {
     return <span className="font-medium text-[#4F8EF7]">{label}</span>;
   }
   return (
     <UserProfilePeek
-      userId={userId}
+      userId={member.id}
       channelId={channelId}
       trigger={
         <button
@@ -57,6 +57,9 @@ function PersonMentionToken({
           )}
         >
           {label}
+          {member.isDisabled && (
+            <span className="text-destructive"> (deactivated)</span>
+          )}
         </button>
       }
     />
@@ -78,14 +81,14 @@ export function MessageBodyWithMentions({
   const channelId = conversationType === "channel" ? conversationId : undefined;
   const currentUserId = useAuthStore((s) => s.user?.id);
 
-  const idByName = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const m of members) map.set(m.fullName.trim().toLowerCase(), m.id);
+  const memberByName = useMemo(() => {
+    const map = new Map<string, MentionMember>();
+    for (const m of members) map.set(m.fullName.trim().toLowerCase(), m);
     return map;
   }, [members]);
 
-  const resolveMentionUserId = (part: string) =>
-    idByName.get(displayMentionToken(part).slice(1).trim().toLowerCase());
+  const resolveMentionMember = (part: string) =>
+    memberByName.get(displayMentionToken(part).slice(1).trim().toLowerCase());
 
   if (!hasHtml) {
     return (
@@ -96,11 +99,11 @@ export function MessageBodyWithMentions({
               <PersonMentionToken
                 key={i}
                 part={part}
-                userId={resolveMentionUserId(part)}
+                member={resolveMentionMember(part)}
                 channelId={channelId}
                 isSelf={
                   !!currentUserId &&
-                  resolveMentionUserId(part) === currentUserId
+                  resolveMentionMember(part)?.id === currentUserId
                 }
               />
             );
@@ -127,10 +130,10 @@ export function MessageBodyWithMentions({
             <PersonMentionToken
               key={i}
               part={part}
-              userId={resolveMentionUserId(part)}
+              member={resolveMentionMember(part)}
               channelId={channelId}
               isSelf={
-                !!currentUserId && resolveMentionUserId(part) === currentUserId
+                !!currentUserId && resolveMentionMember(part)?.id === currentUserId
               }
             />
           );
