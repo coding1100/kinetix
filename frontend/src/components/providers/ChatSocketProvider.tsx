@@ -23,6 +23,7 @@ import type {
   ResourceAccessChangedPayload,
   TaskRealtimePayload,
   AccountDisabledPayload,
+  WorkspaceMemberReactivatedPayload,
   WorkspaceMemberRolePayload,
   WorkspaceMemberSuspendedPayload,
   WorkspaceStatusPayload,
@@ -237,6 +238,28 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
         });
       }
     );
+    socket.on(
+      "workspace:member:reactivated",
+      (_payload: WorkspaceMemberReactivatedPayload) => {
+        // Targeted at this user's own room by the backend. Not gated on
+        // the currently-active workspace - unlike suspend, this doesn't
+        // need to kick anyone anywhere, it just needs the workspace
+        // switcher to un-gray the workspace, wherever they're sitting.
+        toast.success("Your access to a workspace was restored");
+        void getMe(accessToken).then((me) => {
+          updateSession({
+            accessToken,
+            user: {
+              id: me.id,
+              email: me.email,
+              fullName: me.fullName,
+              avatarUrl: me.avatarUrl,
+            },
+            workspaces: me.workspaces,
+          });
+        });
+      }
+    );
     socket.on("account:disabled", (payload: AccountDisabledPayload) => {
       if (payload.userId !== userId) return;
       toast.error("Your account has been disabled");
@@ -301,6 +324,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       socket.off("workspace:suspended");
       socket.off("workspace:deleted");
       socket.off("workspace:member:suspended");
+      socket.off("workspace:member:reactivated");
       socket.off("account:disabled");
       socket.off("space:access:removed");
       socket.off("space:access:granted");

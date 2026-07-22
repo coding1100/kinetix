@@ -14,6 +14,7 @@ export type PersonProfileMember = {
   fullName: string;
   email: string;
   avatarUrl?: string | null;
+  isDisabled?: boolean;
   workspaceRole?: string | null;
   joinedAt?: string | null;
 };
@@ -24,6 +25,7 @@ function toProfileMember(member: ChannelMember): PersonProfileMember {
     fullName: member.fullName,
     email: member.email,
     avatarUrl: member.avatarUrl,
+    isDisabled: member.isDisabled,
     workspaceRole: member.workspaceRole,
     joinedAt: member.joinedAt,
   };
@@ -88,6 +90,7 @@ export function usePersonProfileMember(
                   fullName: row.fullName,
                   email: row.email,
                   avatarUrl: row.avatarUrl,
+                  isDisabled: row.isDisabled,
                   workspaceRole: row.role,
                   joinedAt: row.joinedAt,
                 }

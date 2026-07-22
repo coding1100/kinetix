@@ -6,6 +6,7 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.core.security import verify_access_token
 from app.db.models.enums import MemberStatus
+from app.db.models.user import User
 from app.db.models.workspace import WorkspaceMember
 from app.db.session import get_session_factory
 from app.socket import presence, typing as typing_registry
@@ -48,6 +49,13 @@ def _register_events(sio: socketio.AsyncServer) -> None:
         except PyJWTError:
             return False
         user_id = payload["sub"]
+        factory = get_session_factory()
+        async with factory() as session:
+            is_disabled = await session.scalar(
+                select(User.is_disabled).where(User.id == user_id)
+            )
+        if is_disabled:
+            return False
         await sio.save_session(sid, {"user_id": user_id})
         await sio.enter_room(sid, f"user:{user_id}")
         return True

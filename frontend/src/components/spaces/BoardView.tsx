@@ -265,10 +265,13 @@ function BoardCard({
       <p className="text-sm font-medium leading-snug">{task.name}</p>
       {task.assignees.length > 0 ? (
         <p className="mt-1 truncate text-xs text-muted-foreground">
-          {task.assignees.join(", ")}
-          {task.disabledAssigneeIds?.length ? (
-            <span className="text-destructive"> · Deactivated</span>
-          ) : null}
+          {task.assignees
+            .map((name, i) => {
+              const id = task.assigneeIds?.[i];
+              const isDisabled = id ? task.disabledAssigneeIds?.includes(id) : false;
+              return isDisabled ? `${name} (deactivated)` : name;
+            })
+            .join(", ")}
         </p>
       ) : null}
       {task.dueDate ? (

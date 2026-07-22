@@ -1386,6 +1386,7 @@ def _dm_payload(
         "presence": other_presence,
         "starred": participant.starred,
         "otherUserId": other.user_id if other else None,
+        "otherUserIsDisabled": other.user.is_disabled if other else False,
     }
 
 
@@ -1949,6 +1950,7 @@ def _channel_member_json(
         "fullName": user.full_name,
         "email": user.email,
         "avatarUrl": user.avatar_url,
+        "isDisabled": user.is_disabled,
         "isFollowing": member.is_following,
         "starred": member.starred,
         "joinedAt": member.joined_at.isoformat() if member.joined_at else None,
@@ -1964,6 +1966,7 @@ def _workspace_member_as_channel_json(
         "fullName": user.full_name,
         "email": user.email,
         "avatarUrl": user.avatar_url,
+        "isDisabled": user.is_disabled,
         "isFollowing": is_following,
         "starred": False,
         "joinedAt": None,

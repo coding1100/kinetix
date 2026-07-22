@@ -12,6 +12,7 @@ export type MentionMember = {
   fullName: string;
   email: string;
   avatarUrl?: string | null;
+  isDisabled?: boolean;
 };
 
 export function useMentionMembers(
@@ -47,6 +48,7 @@ export function useMentionMembers(
         fullName: m.fullName,
         email: m.email,
         avatarUrl: m.avatarUrl,
+        isDisabled: m.isDisabled,
       }));
     }
     if (isDm || isWorkspaceFallback) {
@@ -55,6 +57,7 @@ export function useMentionMembers(
         fullName: m.fullName,
         email: m.email,
         avatarUrl: m.avatarUrl,
+        isDisabled: m.isDisabled,
       }));
       if (isWorkspaceFallback) return fromWorkspace;
       if (!dmSidebarEntry?.otherUserId || !dmSidebarEntry.name) {
@@ -70,6 +73,7 @@ export function useMentionMembers(
           fullName: dmSidebarEntry.name,
           email: "",
           avatarUrl: dmSidebarEntry.avatarUrl,
+          isDisabled: dmSidebarEntry.otherUserIsDisabled,
         },
       ];
     }

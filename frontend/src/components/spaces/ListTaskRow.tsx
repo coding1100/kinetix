@@ -82,7 +82,7 @@ export function ListTaskRow({
               )}
               title={
                 task.disabledAssigneeIds?.includes(id)
-                  ? "Deactivated"
+                  ? `${task.assignees[index] ?? "Member"} (deactivated)`
                   : undefined
               }
             >

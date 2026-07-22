@@ -467,6 +467,7 @@ function OrganizedList({
               unread={d.unread}
               avatarUrl={d.avatarUrl}
               otherUserId={d.otherUserId}
+              otherUserIsDisabled={d.otherUserIsDisabled}
               presenceFallback={d.presence}
               isGroup={d.isGroup}
             />
@@ -587,6 +588,7 @@ function DmRow({
   unread,
   avatarUrl,
   otherUserId,
+  otherUserIsDisabled,
   presenceFallback,
   isGroup,
 }: {
@@ -599,6 +601,7 @@ function DmRow({
   unread: number;
   avatarUrl?: string;
   otherUserId?: string;
+  otherUserIsDisabled?: boolean;
   presenceFallback?: PresenceStatus;
   isGroup?: boolean;
 }) {
@@ -610,10 +613,11 @@ function DmRow({
     active,
     unreadBadgeHold
   );
-  const presence = useUserPresence(
+  const livePresence = useUserPresence(
     otherUserId,
     presenceFallback ?? "offline"
   );
+  const presence = otherUserIsDisabled ? "offline" : livePresence;
   const groupParticipants = isGroup
     ? otherGroupParticipants(participants, currentUserId)
     : [];
@@ -643,7 +647,12 @@ function DmRow({
             showPresence={!isGroup}
           />
         )}
-        <span className="truncate text-sm font-medium">{displayName}</span>
+        <span className="truncate text-sm font-medium">
+          {displayName}
+          {!isGroup && otherUserIsDisabled ? (
+            <span className="text-destructive"> (deactivated)</span>
+          ) : null}
+        </span>
       </span>
       {displayUnread > 0 ? (
         <Badge className="size-5 min-w-5 justify-center rounded-full px-1 text-[10px] transition-opacity duration-300">

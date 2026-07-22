@@ -117,12 +117,12 @@ function CommentActivityItem({
             </AvatarFallback>
           </Avatar>
           <div>
-            <span className="text-sm font-semibold">{comment.author}</span>{" "}
-            {comment.authorIsDisabled && (
-              <span className="text-xs font-medium text-destructive">
-                Deactivated
-              </span>
-            )}{" "}
+            <span className="text-sm font-semibold">
+              {comment.author}
+              {comment.authorIsDisabled && (
+                <span className="text-destructive"> (deactivated)</span>
+              )}
+            </span>{" "}
             <span className="text-xs text-muted-foreground">
               {formatCommentTime(comment)}
               {comment.isEdited ? " · edited" : ""}
