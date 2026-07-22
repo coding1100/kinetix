@@ -50,8 +50,6 @@ from app.services.notification_service import (
     create_resource_share_notification,
     create_resource_unshare_notification,
     create_task_comment_mention_notifications,
-    create_task_comment_notifications,
-    create_task_comment_reply_notifications,
     emit_home_notifications,
 )
 from app.services.space_permissions import (
@@ -1007,7 +1005,6 @@ async def add_task_comment(
         session, task.task_list, user_id, role, PermissionLevel.COMMENT
     )
 
-    parent_author_id: str | None = None
     thread_parent_id: str | None = None
     if body.parent_comment_id:
         direct_parent = await session.scalar(
@@ -1018,13 +1015,10 @@ async def add_task_comment(
         )
         if not direct_parent:
             raise AppError(404, "NOT_FOUND", "Parent comment not found")
-        parent_author_id = direct_parent.user_id
         thread_root = await _resolve_comment_thread_root(
             session, body.parent_comment_id
         )
         thread_parent_id = thread_root.id
-
-    follower_ids = list(task.follower_ids)
 
     comment = TaskComment(
         task_id=task_id,
@@ -1047,30 +1041,12 @@ async def add_task_comment(
             .values(comment_id=comment.id)
         )
 
-    comment_preview = body.body.strip() or "📎 Attachment"
+    # Task comments/replies only notify the people @mentioned in them, not
+    # every follower/parent-comment-author by default (see
+    # create_task_comment_notifications / create_task_comment_reply_notifications
+    # in notification_service.py - kept for reference, just not called here).
     comment_notifications: list[tuple[str, object]] = []
     reply_notifications: list[tuple[str, object]] = []
-
-    if thread_parent_id:
-        reply_notifications = await create_task_comment_reply_notifications(
-            session,
-            workspace_id=workspace_id,
-            actor_user_id=user_id,
-            task_name=task.name,
-            task_id=task_id,
-            parent_author_id=parent_author_id or "",
-            comment_preview=comment_preview,
-        )
-    else:
-        comment_notifications = await create_task_comment_notifications(
-            session,
-            workspace_id=workspace_id,
-            actor_user_id=user_id,
-            task_name=task.name,
-            task_id=task_id,
-            comment_preview=comment_preview,
-            follower_ids=follower_ids,
-        )
 
     already_notified = {uid for uid, _ in comment_notifications + reply_notifications}
     mention_notifications = await create_task_comment_mention_notifications(
