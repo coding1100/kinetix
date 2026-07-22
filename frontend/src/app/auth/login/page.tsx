@@ -6,6 +6,8 @@ import { useSearchParams } from "next/navigation";
 import {
   ArrowRightIcon,
   CheckCircle2Icon,
+  EyeIcon,
+  EyeOffIcon,
   LockIcon,
   MailIcon,
   ShieldCheckIcon,
@@ -36,6 +38,7 @@ function LoginForm() {
   const setSession = useAuthStore((s) => s.setSession);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -103,14 +106,27 @@ function LoginForm() {
             <LockIcon className="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground" />
             <Input
               id="login-password"
-              type="password"
+              type={showPassword ? "text" : "password"}
               placeholder="Enter password"
-              className="pl-9"
+              className="pl-9 pr-9"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
               autoComplete="current-password"
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute top-2.5 right-3 text-muted-foreground hover:text-foreground"
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              tabIndex={-1}
+            >
+              {showPassword ? (
+                <EyeOffIcon className="size-4" />
+              ) : (
+                <EyeIcon className="size-4" />
+              )}
+            </button>
           </div>
         </div>
         <Button
