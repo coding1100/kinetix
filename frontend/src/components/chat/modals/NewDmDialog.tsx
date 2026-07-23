@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { XIcon } from "lucide-react";
 import {
   Dialog,
@@ -31,6 +31,7 @@ import { ApiError } from "@/lib/api/client";
 
 export function NewDmDialog() {
   const router = useRouter();
+  const pathname = usePathname();
   const { activeModal, closeModal } = useUiStore();
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const currentUserId = useAuthStore((s) => s.user?.id);
@@ -106,7 +107,13 @@ export function NewDmDialog() {
       upsertDmInSidebar(dm, workspaceId);
       closeModal();
       reset();
-      router.push(`/chat/dm/${dm.id}`);
+      if (pathname?.startsWith("/home")) {
+        toast.success(
+          isGroup ? "Group chat created" : "Conversation started"
+        );
+      } else {
+        router.push(`/chat/dm/${dm.id}`);
+      }
     } catch (err) {
       toast.error(
         err instanceof ApiError ? err.message : "Failed to start conversation"

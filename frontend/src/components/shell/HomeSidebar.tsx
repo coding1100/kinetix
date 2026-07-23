@@ -1337,6 +1337,7 @@ export function HomeSidebar() {
         open={spacesDialogOpen}
         onOpenChange={setSpacesDialogOpen}
         mode={spacesDialogMode}
+        navigateOnCreate={false}
       />
       {shareTarget ? (
         <ShareModal

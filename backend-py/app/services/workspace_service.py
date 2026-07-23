@@ -60,7 +60,7 @@ async def list_workspaces(session: AsyncSession, user_id: str) -> list[dict]:
 
 
 async def create_workspace(
-    session: AsyncSession, user_id: str, body: CreateWorkspaceBody
+    session: AsyncSession, user_id: str, body: CreateWorkspaceBody, *, add_owner: bool = True
 ) -> dict:
     async def slug_exists(slug: str) -> bool:
         return (
@@ -71,14 +71,15 @@ async def create_workspace(
     workspace = Workspace(name=body.name, slug=slug)
     session.add(workspace)
     await session.flush()
-    session.add(
-        WorkspaceMember(
-            workspace_id=workspace.id,
-            user_id=user_id,
-            role=WorkspaceRole.OWNER,
-            status=MemberStatus.ACTIVE,
+    if add_owner:
+        session.add(
+            WorkspaceMember(
+                workspace_id=workspace.id,
+                user_id=user_id,
+                role=WorkspaceRole.OWNER,
+                status=MemberStatus.ACTIVE,
+            )
         )
-    )
     await ensure_personal_space(session, workspace.id)
     await session.commit()
     await session.refresh(workspace)

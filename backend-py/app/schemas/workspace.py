@@ -1,5 +1,6 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from app.core.security import validate_password_strength
 from app.db.models.enums import WorkspaceRole
 
 
@@ -50,3 +51,5 @@ class AcceptInviteSignupBody(BaseModel):
     password: str = Field(min_length=8)
 
     model_config = {"populate_by_name": True}
+
+    _validate_password = field_validator("password")(validate_password_strength)

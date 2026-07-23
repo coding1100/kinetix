@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Cookie, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Cookie, Query, Response
 
 from app.api.cookies import clear_admin_refresh_cookie, set_admin_refresh_cookie
 from app.core.errors import AppError
@@ -168,8 +168,11 @@ async def create_workspace_invite(
     staff: PlatformStaffDep,
     user: CurrentUserDep,
     session: DbSession,
+    background_tasks: BackgroundTasks,
 ):
-    return await admin_service.create_workspace_invite_admin(session, workspaceId, user.id, body)
+    return await admin_service.create_workspace_invite_admin(
+        session, workspaceId, user.id, body, background_tasks
+    )
 
 
 @router.delete("/workspaces/{workspaceId}/invites/{inviteId}")
@@ -190,8 +193,11 @@ async def resend_workspace_invite(
     staff: PlatformStaffDep,
     user: CurrentUserDep,
     session: DbSession,
+    background_tasks: BackgroundTasks,
 ):
-    return await admin_service.resend_workspace_invite_admin(session, workspaceId, user.id, inviteId)
+    return await admin_service.resend_workspace_invite_admin(
+        session, workspaceId, user.id, inviteId, background_tasks
+    )
 
 
 @router.patch("/workspaces/{workspaceId}/members/{userId}/role")

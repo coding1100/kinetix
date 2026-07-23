@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CreateTaskDialog } from "@/components/spaces/CreateTaskDialog";
 import { ingestTaskEvent } from "@/lib/tasks/realtime";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
@@ -9,12 +9,13 @@ import { useUiStore } from "@/stores/ui-store";
 export function GlobalCreateTaskDialog() {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { workspaceId } = useWorkspaceApi();
-  const { activeModal, closeModal } = useUiStore();
+  const { activeModal, modalListId, modalStatusId, closeModal } = useUiStore();
   const open = activeModal === "create-task";
 
   const listMatch = pathname.match(/\/spaces\/l\/([^/?]+)/);
-  const defaultListId = listMatch?.[1];
+  const defaultListId = modalListId ?? listMatch?.[1];
 
   return (
     <CreateTaskDialog
@@ -23,6 +24,7 @@ export function GlobalCreateTaskDialog() {
         if (!next) closeModal();
       }}
       defaultListId={defaultListId}
+      defaultStatusId={modalStatusId ?? undefined}
       onCreated={(task, options) => {
         if (workspaceId) {
           ingestTaskEvent({
@@ -33,8 +35,15 @@ export function GlobalCreateTaskDialog() {
             task,
           });
         }
-        if (options?.open && task.listId) {
-          router.push(`/spaces/l/${task.listId}?task=${task.id}`);
+        if (options?.open) {
+          // Open in place wherever the dialog was opened from (Home,
+          // Space list, list-primary chat channel, ...) instead of
+          // forcing a navigation to the task's own Space page -
+          // TaskDrawer fetches by task id, so it works regardless of
+          // whether the current page's list matches the task's list.
+          const params = new URLSearchParams(searchParams.toString());
+          params.set("task", task.id);
+          router.push(`${pathname}?${params.toString()}`);
         }
       }}
     />
