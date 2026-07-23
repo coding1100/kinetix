@@ -56,8 +56,6 @@ import {
   fetchSpacesTree,
   fetchTaskActivity,
   patchTask,
-  startTaskTimer,
-  stopTaskTimer,
   updateChecklist,
   updateChecklistItem,
   updateTaskComment,
@@ -68,7 +66,6 @@ import { TaskActivityComment } from "@/components/tasks/TaskActivityComment";
 import { CommentAttachmentCard } from "@/components/tasks/CommentAttachmentCard";
 import { TaskDatesField } from "@/components/tasks/TaskDatesField";
 import { TaskTimeEstimateField } from "@/components/tasks/TaskTimeEstimateField";
-import { TaskTimeTrackField } from "@/components/tasks/TaskTimeTrackField";
 import { fetchWorkspaceMembers } from "@/lib/api/chat";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { useAuthStore } from "@/stores/auth-store";
@@ -118,8 +115,6 @@ import {
   Share2Icon,
   SquareCheckBigIcon,
   StarIcon,
-  TagIcon,
-  TimerIcon,
   Trash2Icon,
   Undo2Icon,
   UserMinusIcon,
@@ -319,10 +314,6 @@ export function TaskDrawer({
   const [dueInput, setDueInput] = useState("");
   const [startInput, setStartInput] = useState("");
   const [timeEstimateMinutes, setTimeEstimateMinutes] = useState<number | null>(null);
-  const [timeTrackedSeconds, setTimeTrackedSeconds] = useState(0);
-  const [timeTrackingActive, setTimeTrackingActive] = useState(false);
-  const [timeTrackingStartedAt, setTimeTrackingStartedAt] = useState<string | null>(null);
-  const [timerBusy, setTimerBusy] = useState(false);
   const [description, setDescription] = useState("");
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [listId, setListId] = useState("");
@@ -396,9 +387,6 @@ export function TaskDrawer({
         );
         setTask(updated);
         setTimeEstimateMinutes(updated.timeEstimateMinutes ?? null);
-        setTimeTrackedSeconds(updated.timeTrackedSeconds ?? 0);
-        setTimeTrackingActive(Boolean(updated.timeTracking?.active));
-        setTimeTrackingStartedAt(updated.timeTracking?.startedAt ?? null);
         if (updated.startDateIso !== undefined) {
           setStartInput(updated.startDateIso ? updated.startDateIso.slice(0, 10) : "");
         }
@@ -427,9 +415,6 @@ export function TaskDrawer({
       setAttachments(refreshed.attachments ?? []);
       setChecklists(refreshed.checklists ?? []);
       setTimeEstimateMinutes(refreshed.timeEstimateMinutes ?? null);
-      setTimeTrackedSeconds(refreshed.timeTrackedSeconds ?? 0);
-      setTimeTrackingActive(Boolean(refreshed.timeTracking?.active));
-      setTimeTrackingStartedAt(refreshed.timeTracking?.startedAt ?? null);
       setStartInput(refreshed.startDateIso ? refreshed.startDateIso.slice(0, 10) : "");
       setDueInput(refreshed.dueDateIso ? refreshed.dueDateIso.slice(0, 10) : "");
       setName(refreshed.name);
@@ -475,9 +460,6 @@ export function TaskDrawer({
         setDueInput(t.dueDateIso ? t.dueDateIso.slice(0, 10) : "");
         setStartInput(t.startDateIso ? t.startDateIso.slice(0, 10) : "");
         setTimeEstimateMinutes(t.timeEstimateMinutes ?? null);
-        setTimeTrackedSeconds(t.timeTrackedSeconds ?? 0);
-        setTimeTrackingActive(Boolean(t.timeTracking?.active));
-        setTimeTrackingStartedAt(t.timeTracking?.startedAt ?? null);
         setInLineup(Boolean(t.inLineup));
         setSubtasks(t.subtasks ?? []);
         setAttachments(t.attachments ?? []);
@@ -1166,42 +1148,11 @@ export function TaskDrawer({
       attachments: updated.attachments ?? prev?.attachments ?? [],
     }));
     setTimeEstimateMinutes(updated.timeEstimateMinutes ?? null);
-    setTimeTrackedSeconds(updated.timeTrackedSeconds ?? 0);
-    setTimeTrackingActive(Boolean(updated.timeTracking?.active));
-    setTimeTrackingStartedAt(updated.timeTracking?.startedAt ?? null);
     if (updated.dueDateIso !== undefined) {
       setDueInput(updated.dueDateIso ? updated.dueDateIso.slice(0, 10) : "");
     }
     if (updated.startDateIso !== undefined) {
       setStartInput(updated.startDateIso ? updated.startDateIso.slice(0, 10) : "");
-    }
-  }
-
-  async function handleStartTimer() {
-    if (!taskId || !ready || !accessToken || !workspaceId) return;
-    setTimerBusy(true);
-    try {
-      const updated = await startTaskTimer(accessToken, workspaceId, taskId);
-      applyTaskResponse(updated);
-      await refreshActivity();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not start timer");
-    } finally {
-      setTimerBusy(false);
-    }
-  }
-
-  async function handleStopTimer() {
-    if (!taskId || !ready || !accessToken || !workspaceId) return;
-    setTimerBusy(true);
-    try {
-      const updated = await stopTaskTimer(accessToken, workspaceId, taskId);
-      applyTaskResponse(updated);
-      await refreshActivity();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not stop timer");
-    } finally {
-      setTimerBusy(false);
     }
   }
 
@@ -1824,27 +1775,6 @@ export function TaskDrawer({
                     />
                   </PropertyValue>
 
-                  <PropertyLabel icon={TimerIcon}>Track time</PropertyLabel>
-                  <PropertyValue className="w-full">
-                    <TaskTimeTrackField
-                      trackedSeconds={timeTrackedSeconds}
-                      active={timeTrackingActive}
-                      startedAt={timeTrackingStartedAt}
-                      busy={timerBusy}
-                      onStart={handleStartTimer}
-                      onStop={handleStopTimer}
-                    />
-                  </PropertyValue>
-
-                  <PropertyLabel icon={TagIcon}>Tags</PropertyLabel>
-                  <PropertyValue className="col-span-3 w-full">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-                    >
-                      Empty
-                    </button>
-                  </PropertyValue>
                 </div>
 
                 <div className="mt-8 border-t border-border pt-6">
