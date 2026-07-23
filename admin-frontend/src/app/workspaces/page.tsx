@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { AuditList } from "@/components/AuditList";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CreateWorkspaceDialog } from "@/components/CreateWorkspaceDialog";
@@ -243,6 +244,14 @@ export default function WorkspacesPage() {
     }
   };
 
+  const hasOwner = (workspaceId: string) => {
+    if (membersFor !== workspaceId) return true;
+    return (
+      members.some((m) => m.role === "OWNER") ||
+      invites.some((inv) => inv.role === "OWNER")
+    );
+  };
+
   const toggleMembers = (workspaceId: string) => {
     if (membersFor === workspaceId) {
       setMembersFor(null);
@@ -278,8 +287,11 @@ export default function WorkspacesPage() {
     try {
       await resendWorkspaceInvite(accessToken, workspaceId, inviteId);
       await loadInvites(workspaceId);
+      toast.success("Invite resent");
     } catch (err) {
-      setInviteError(formatRequestError(err));
+      const message = formatRequestError(err);
+      setInviteError(message);
+      toast.error(message);
     } finally {
       setInviteActionId(null);
     }
@@ -301,8 +313,9 @@ export default function WorkspacesPage() {
   const handleCopyInviteLink = async (url: string) => {
     try {
       await navigator.clipboard.writeText(url);
+      toast.success("Invite link copied");
     } catch {
-      // best-effort; clipboard access can be blocked in some contexts
+      toast.error("Couldn't copy link — clipboard access is blocked");
     }
   };
 
@@ -662,7 +675,9 @@ export default function WorkspacesPage() {
                               onChange={(e) => setInviteRole(e.target.value as InviteRole)}
                               className="rounded border border-[var(--border)] bg-transparent px-2 py-1.5 text-xs"
                             >
-                              {INVITE_ROLES.map((role) => (
+                              {INVITE_ROLES.filter(
+                                (role) => role !== "OWNER" || !hasOwner(ws.id)
+                              ).map((role) => (
                                 <option key={role} value={role}>
                                   {role}
                                 </option>

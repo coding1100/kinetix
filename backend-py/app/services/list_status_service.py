@@ -2,21 +2,27 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.enums import StatusGroup, TaskStatus
-from app.db.models.home import ListStatus, Task, TaskList
+from app.db.models.home import DEFAULT_SPACE_STATUS_CONFIG, ListStatus, Space, Task, TaskList
 
-DEFAULT_LIST_STATUSES: list[tuple[str, str, str, StatusGroup, int]] = [
-    ("OPEN", "BACKLOG", "#7A7F87", StatusGroup.NOT_STARTED, 0),
-    ("OPEN", "GROOMING", "#6D5EFC", StatusGroup.NOT_STARTED, 1),
-    ("TODO", "TODO", "#87909E", StatusGroup.NOT_STARTED, 2),
-    ("TODO", "READY FOR DEVELOPMENT", "#2EB67D", StatusGroup.NOT_STARTED, 3),
-    ("IN_PROGRESS", "IN PROGRESS", "#4194F6", StatusGroup.ACTIVE, 4),
-    ("IN_PROGRESS", "IN UI INTEGRATION READY", "#F57C00", StatusGroup.ACTIVE, 5),
-    ("IN_PROGRESS", "IN QA READY", "#EF5350", StatusGroup.ACTIVE, 6),
-    ("IN_PROGRESS", "IN QA", "#1E88E5", StatusGroup.ACTIVE, 7),
-    ("IN_PROGRESS", "IN QA SENT BACK", "#7E57C2", StatusGroup.ACTIVE, 8),
-    ("DONE", "DONE", "#0F766E", StatusGroup.DONE, 9),
-    ("DONE", "CLOSED", "#2F9E44", StatusGroup.CLOSED, 10),
-]
+
+def _status_tuples(
+    config: list[dict] | None,
+) -> list[tuple[str, str, str, StatusGroup, int]]:
+    """Space.status_config (jsonb) -> the tuple shape the rest of this
+    module works with. Falls back to the built-in default set if a space
+    somehow has no config (shouldn't happen - the column is NOT NULL with
+    a default - but keeps this function safe to call defensively)."""
+    rows = config or DEFAULT_SPACE_STATUS_CONFIG
+    return [
+        (
+            row["legacyKey"],
+            row["name"],
+            row["color"],
+            StatusGroup(row["statusGroup"]),
+            row["sortOrder"],
+        )
+        for row in rows
+    ]
 
 
 def map_list_status_row(row: ListStatus) -> dict:
@@ -31,6 +37,13 @@ def map_list_status_row(row: ListStatus) -> dict:
 
 
 async def ensure_list_statuses(session: AsyncSession, list_id: str) -> list[ListStatus]:
+    space_status_config = await session.scalar(
+        select(Space.status_config)
+        .join(TaskList, TaskList.space_id == Space.id)
+        .where(TaskList.id == list_id)
+    )
+    default_statuses = _status_tuples(space_status_config)
+
     existing = (
         await session.scalars(
             select(ListStatus)
@@ -42,7 +55,7 @@ async def ensure_list_statuses(session: AsyncSession, list_id: str) -> list[List
         existing_by_name = {row.name.strip().lower(): row for row in existing if row.name}
         changed = False
         next_order = max((row.sort_order for row in existing), default=-1) + 1
-        for legacy_key, name, color, group, _ in DEFAULT_LIST_STATUSES:
+        for legacy_key, name, color, group, _ in default_statuses:
             row = existing_by_name.get(name.strip().lower())
             if row:
                 desired_legacy = legacy_key
@@ -80,7 +93,7 @@ async def ensure_list_statuses(session: AsyncSession, list_id: str) -> list[List
             ).all()
             desired_order = {
                 name.strip().lower(): order
-                for _, name, _, _, order in DEFAULT_LIST_STATUSES
+                for _, name, _, _, order in default_statuses
             }
             fallback_order = max(desired_order.values(), default=0) + 1
             for row in rows:
@@ -114,7 +127,7 @@ async def ensure_list_statuses(session: AsyncSession, list_id: str) -> list[List
         return list(existing)
 
     created: list[ListStatus] = []
-    for legacy_key, name, color, group, order in DEFAULT_LIST_STATUSES:
+    for legacy_key, name, color, group, order in default_statuses:
         row = ListStatus(
             list_id=list_id,
             name=name,

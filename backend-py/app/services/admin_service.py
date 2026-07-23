@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from fastapi import BackgroundTasks
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -158,9 +159,9 @@ async def admin_logout(session: AsyncSession, refresh_token: str | None) -> None
 async def create_workspace_admin(
     session: AsyncSession, actor_id: str, body: CreateWorkspaceBody
 ) -> dict:
-    # Reuses workspace_service.create_workspace as-is - the staff member
-    # creating it becomes OWNER, same as any self-serve workspace creation.
-    ws = await workspace_service.create_workspace(session, actor_id, body)
+    # Staff creating a workspace from the admin portal isn't added as a
+    # member - they invite someone else as owner afterward instead.
+    ws = await workspace_service.create_workspace(session, actor_id, body, add_owner=False)
     _add_audit(session, actor_id, "workspace.create", "workspace", ws["id"], {"name": ws["name"]})
     await session.commit()
     return ws
@@ -459,7 +460,11 @@ async def list_workspace_invites_admin(session: AsyncSession, workspace_id: str)
 
 
 async def create_workspace_invite_admin(
-    session: AsyncSession, workspace_id: str, actor_id: str, body: CreateInviteBody
+    session: AsyncSession,
+    workspace_id: str,
+    actor_id: str,
+    body: CreateInviteBody,
+    background_tasks: BackgroundTasks,
 ) -> dict:
     await _get_workspace_or_404(session, workspace_id)
     # Reuses invite_service.create_invite verbatim - it already 409s on
@@ -468,7 +473,7 @@ async def create_workspace_invite_admin(
     # this workspace themselves; that's just the permission ceiling passed
     # into can_assign_role, not a real membership.
     result = await invite_service.create_invite(
-        session, workspace_id, actor_id, WorkspaceRole.OWNER, body
+        session, workspace_id, actor_id, WorkspaceRole.OWNER, body, background_tasks
     )
     _add_audit(
         session,
@@ -502,11 +507,15 @@ async def cancel_workspace_invite_admin(
 
 
 async def resend_workspace_invite_admin(
-    session: AsyncSession, workspace_id: str, actor_id: str, invite_id: str
+    session: AsyncSession,
+    workspace_id: str,
+    actor_id: str,
+    invite_id: str,
+    background_tasks: BackgroundTasks,
 ) -> dict:
     await _get_workspace_or_404(session, workspace_id)
     result = await invite_service.resend_workspace_invite(
-        session, workspace_id, WorkspaceRole.OWNER, invite_id
+        session, workspace_id, WorkspaceRole.OWNER, invite_id, background_tasks
     )
     _add_audit(
         session,

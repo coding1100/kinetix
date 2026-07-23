@@ -14,6 +14,8 @@ import { PageLoader } from "@/components/ui/page-loader";
 import { useNavigateWithLoading } from "@/hooks/use-navigate-with-loading";
 import { resetPassword } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
+import { PasswordStrengthMeter } from "@/components/auth/PasswordStrengthMeter";
+import { isPasswordValid } from "@/lib/password";
 
 function ResetPasswordForm() {
   const navigateWithLoading = useNavigateWithLoading();
@@ -25,6 +27,10 @@ function ResetPasswordForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isPasswordValid(password)) {
+      toast.error("Password doesn't meet the requirements below");
+      return;
+    }
     if (password !== confirm) {
       toast.error("Passwords do not match");
       return;
@@ -75,6 +81,7 @@ function ResetPasswordForm() {
               autoComplete="new-password"
             />
           </div>
+          <PasswordStrengthMeter password={password} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="confirm-password">Confirm password</Label>

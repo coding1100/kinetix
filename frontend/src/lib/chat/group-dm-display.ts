@@ -21,14 +21,18 @@ export function resolveGroupDmTitle(
 ): string {
   if (!dm.isGroup) return dm.name;
 
-  const others = otherGroupParticipants(dm.participants, currentUserId);
-  if (others.length) {
-    return others.map((p) => p.fullName).join(", ");
-  }
-
+  // A custom name always wins, matching dm_display_name on the backend -
+  // otherwise every real group (which always has other participants) would
+  // fall straight to the participant list and the custom name could never
+  // show anywhere.
   const custom = dm.name?.trim();
   if (custom && custom.toLowerCase() !== "group chat") {
     return custom;
+  }
+
+  const others = otherGroupParticipants(dm.participants, currentUserId);
+  if (others.length) {
+    return others.map((p) => p.fullName).join(", ");
   }
 
   return dm.name || "Group chat";
