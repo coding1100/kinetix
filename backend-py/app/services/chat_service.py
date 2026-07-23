@@ -25,6 +25,28 @@ from app.schemas.chat import (
     UpdateChannelMemberBody,
 )
 from app.services.attachment_service import link_attachments_to_message
+
+# Curated palette; keep in sync with frontend/src/lib/chat/channel-icon-colors.ts
+CHANNEL_ICON_COLORS = {
+    "bg-red-500",
+    "bg-orange-500",
+    "bg-amber-500",
+    "bg-emerald-500",
+    "bg-teal-500",
+    "bg-blue-500",
+    "bg-indigo-500",
+    "bg-violet-500",
+    "bg-pink-500",
+    "bg-slate-500",
+}
+
+
+def _validate_icon_color(icon_color: str | None) -> str | None:
+    if not icon_color:
+        return None
+    if icon_color not in CHANNEL_ICON_COLORS:
+        raise AppError(400, "VALIDATION_ERROR", "Invalid channel icon color")
+    return icon_color
 from app.services.notification_service import (
     create_channel_access_notifications,
     create_dm_broadcast_notifications,
@@ -588,6 +610,9 @@ async def update_channel(
         topic = body.topic.strip()
         member.channel.topic = topic or None
 
+    if body.iconColor is not None:
+        member.channel.custom_icon_color = _validate_icon_color(body.iconColor)
+
     # A list-primary channel's name IS the list's name (two-way sync) - the
     # reverse direction lives in spaces_service.update_list. Non-primary
     # channels that merely reference a list are left alone.
@@ -760,6 +785,7 @@ async def create_channel(
         is_private=body.isPrivate or False,
         space_label=body.spaceLabel or "in Workspace",
         created_by_id=user_id,
+        custom_icon_color=_validate_icon_color(body.iconColor),
     )
     session.add(channel)
     await session.flush()
