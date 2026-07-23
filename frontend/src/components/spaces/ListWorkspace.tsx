@@ -78,8 +78,8 @@ export function ListWorkspace({
   }, [router, path, searchParams]);
 
   const openCreateTask = useCallback(() => {
-    openModal("create-task");
-  }, [openModal]);
+    openModal("create-task", undefined, listId);
+  }, [openModal, listId]);
 
   return (
     <>
