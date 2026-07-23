@@ -22,7 +22,6 @@ import {
 } from "@/lib/chat/sidebar-channel";
 import { useChatStore } from "@/stores/chat-store";
 import { toast } from "sonner";
-import { ChannelIconPicker } from "@/components/chat/channels/ChannelIconPicker";
 
 export function RenameChannelDialog({
   onRenamed,
@@ -39,24 +38,19 @@ export function RenameChannelDialog({
 
   const open = activeModal === "rename-channel" && Boolean(modalChannelId);
   const [name, setName] = useState("");
-  const [iconColor, setIconColor] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open || !modalChannelId) return;
     if (channelFromCache?.name) {
       setName(channelFromCache.name);
-      setIconColor(channelFromCache.customIconColor ?? null);
       return;
     }
     if (!ready) return;
     let cancelled = false;
     void fetchChannel(accessToken, workspaceId, modalChannelId)
       .then((ch) => {
-        if (!cancelled) {
-          setName(ch.name);
-          setIconColor(ch.customIconColor ?? null);
-        }
+        if (!cancelled) setName(ch.name);
       })
       .catch(() => {
         if (!cancelled) setName("");
@@ -64,12 +58,11 @@ export function RenameChannelDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, modalChannelId, channelFromCache?.name, channelFromCache?.customIconColor, ready, accessToken, workspaceId]);
+  }, [open, modalChannelId, channelFromCache?.name, ready, accessToken, workspaceId]);
 
   const handleClose = () => {
     closeModal();
     setName("");
-    setIconColor(null);
   };
 
   const handleSave = async () => {
@@ -79,10 +72,7 @@ export function RenameChannelDialog({
       toast.error("Channel name is required");
       return;
     }
-    const nameChanged = trimmed !== channelFromCache?.name;
-    const colorChanged =
-      iconColor !== (channelFromCache?.customIconColor ?? null);
-    if (!nameChanged && !colorChanged) {
+    if (trimmed === channelFromCache?.name) {
       handleClose();
       return;
     }
@@ -93,18 +83,12 @@ export function RenameChannelDialog({
         accessToken,
         workspaceId,
         modalChannelId,
-        {
-          name: trimmed,
-          iconColor: colorChanged ? iconColor ?? "" : undefined,
-        }
+        { name: trimmed }
       );
-      patchSidebarChannel(modalChannelId, {
-        name: updated.name,
-        customIconColor: updated.customIconColor,
-      });
+      patchSidebarChannel(modalChannelId, { name: updated.name });
       bumpSidebarRefresh();
       onRenamed?.(modalChannelId, updated.name);
-      toast.success(`Channel updated`);
+      toast.success(`Channel renamed to #${updated.name}`);
       handleClose();
     } catch (err) {
       toast.error(
@@ -140,11 +124,6 @@ export function RenameChannelDialog({
             />
           </div>
         </div>
-        <ChannelIconPicker
-          value={iconColor}
-          onChange={setIconColor}
-          channelInitial={(name.trim() || "#").slice(0, 1).toUpperCase()}
-        />
         <DialogFooter>
           <Button type="button" variant="outline" onClick={handleClose}>
             Cancel

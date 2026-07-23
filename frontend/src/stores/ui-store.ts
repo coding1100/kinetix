@@ -11,6 +11,7 @@ type Modal =
   | "channel-files"
   | "syncup"
   | "rename-channel"
+  | "change-channel-icon"
   | null;
 
 interface UiState {
