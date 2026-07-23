@@ -21,6 +21,8 @@ import {
 import { ApiError } from "@/lib/api/client";
 import { bumpWorkspacePeopleRefresh } from "@/stores/workspace-store";
 import { useAuthStore } from "@/stores/auth-store";
+import { PasswordStrengthMeter } from "@/components/auth/PasswordStrengthMeter";
+import { isPasswordValid } from "@/lib/password";
 
 function inviteLoginHref(token: string) {
   const next = `/invite/accept?token=${encodeURIComponent(token)}`;
@@ -97,6 +99,10 @@ function InviteAcceptForm() {
   const handleSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token) return;
+    if (!isPasswordValid(password)) {
+      toast.error("Password doesn't meet the requirements below");
+      return;
+    }
     setLoading(true);
     try {
       const result = await acceptInviteSignup(token, fullName.trim(), password);
@@ -251,6 +257,7 @@ function InviteAcceptForm() {
               minLength={8}
             />
           </div>
+          <PasswordStrengthMeter password={password} />
         </div>
         <Button
           type="submit"

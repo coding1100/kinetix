@@ -132,14 +132,14 @@ async def test_workspace_invite_list_cancel_and_accept_signup(api_client: AsyncC
 
     accept = await api_client.post(
         f"/api/v1/invites/{invite_token}/accept-signup",
-        json={"fullName": "WS Flow User", "password": "password123"},
+        json={"fullName": "WS Flow User", "password": "Password123!"},
     )
     assert accept.status_code in (200, 201), accept.text
     assert accept.json()["flow"] == "invitee"
 
     member_login = await api_client.post(
         "/api/v1/auth/login",
-        json={"email": test_email, "password": "password123"},
+        json={"email": test_email, "password": "Password123!"},
     )
     assert member_login.status_code == 200
     member_headers = _auth(member_login.json()["accessToken"])
@@ -332,7 +332,7 @@ async def test_workspace_member_role_and_remove(api_client: AsyncClient):
 
     accept = await api_client.post(
         f"/api/v1/invites/{invite_token}/accept-signup",
-        json={"fullName": "Role Test", "password": "password123"},
+        json={"fullName": "Role Test", "password": "Password123!"},
     )
     assert accept.status_code in (200, 201)
     member_user_id = accept.json()["user"]["id"]
@@ -382,7 +382,7 @@ async def test_workspace_delete_and_transfer_ownership(api_client: AsyncClient):
     assert invite.status_code == 201
     accept = await api_client.post(
         f"/api/v1/invites/{invite.json()['token']}/accept-signup",
-        json={"fullName": "Transfer Target", "password": "password123"},
+        json={"fullName": "Transfer Target", "password": "Password123!"},
     )
     assert accept.status_code in (200, 201)
     new_owner_id = accept.json()["user"]["id"]
