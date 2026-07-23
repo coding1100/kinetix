@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { Modals } from "@/components/modals/Modals";
 import { AuthProvider } from "@/components/providers/AuthProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
@@ -18,7 +19,9 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
           <ChatSocketProvider>
             {children}
           </ChatSocketProvider>
-          <Modals />
+          <Suspense fallback={null}>
+            <Modals />
+          </Suspense>
           <GlobalLoader />
           <Toaster position="top-right" richColors />
         </AuthProvider>
