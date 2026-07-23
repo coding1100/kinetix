@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
@@ -18,6 +18,7 @@ import { useUiStore } from "@/stores/ui-store";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
 import { createChannel } from "@/lib/api/chat";
+import { conversationPath } from "@/lib/chat/conversation-path";
 import { useAuthStore } from "@/stores/auth-store";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { CheckIcon } from "lucide-react";
@@ -34,6 +35,7 @@ import { ChannelIconPicker } from "@/components/chat/channels/ChannelIconPicker"
 
 export function CreateChannelDialog() {
   const router = useRouter();
+  const pathname = usePathname();
   const { activeModal, closeModal } = useUiStore();
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const open = activeModal === "new-channel";
@@ -101,7 +103,7 @@ export function CreateChannelDialog() {
       toast.success(`#${trimmed} created`);
       closeModal();
       reset();
-      router.push(`/chat/c/${channel.id}`);
+      router.push(conversationPath("channel", channel.id, pathname));
     } catch (err) {
       toast.error(
         err instanceof ApiError

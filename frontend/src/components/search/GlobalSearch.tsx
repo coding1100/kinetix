@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   SearchIcon,
   HashIcon,
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { matchesQuery } from "@/lib/search/match-query";
+import { conversationPath } from "@/lib/chat/conversation-path";
 import { fetchWorkspaceMembers, searchGlobalMessages } from "@/lib/api/chat";
 import type { ChatSearchHit } from "@/lib/types/chat";
 import { loadSidebarLists } from "@/lib/chat/sidebar-lists-loader";
@@ -43,6 +44,7 @@ const EMPTY: SearchResults = {
 
 export function GlobalSearch() {
   const router = useRouter();
+  const pathname = usePathname();
   const accessToken = useAuthStore((s) => s.accessToken);
   const { workspaceId, ready } = useWorkspaceApi();
   const [query, setQuery] = useState("");
@@ -131,7 +133,7 @@ export function GlobalSearch() {
     const dm = results.allDms.find(
       (d) => !d.isGroup && d.otherUserId === personId
     );
-    return dm ? `/chat/dm/${dm.id}` : "/people";
+    return dm ? conversationPath("dm", dm.id, pathname) : "/people";
   };
 
   return (
@@ -181,7 +183,7 @@ export function GlobalSearch() {
                   icon={<HashIcon className="size-3.5" />}
                   label={c.name}
                   hint={c.topic || c.lastMessage}
-                  onSelect={() => go(`/chat/c/${c.id}`)}
+                  onSelect={() => go(conversationPath("channel", c.id, pathname))}
                 />
               ))}
             </SearchSection>
@@ -192,7 +194,7 @@ export function GlobalSearch() {
                   icon={<MessageCircleIcon className="size-3.5" />}
                   label={d.name}
                   hint={d.lastMessage}
-                  onSelect={() => go(`/chat/dm/${d.id}`)}
+                  onSelect={() => go(conversationPath("dm", d.id, pathname))}
                 />
               ))}
             </SearchSection>
@@ -209,10 +211,17 @@ export function GlobalSearch() {
             </SearchSection>
             <SearchSection title="Messages" show={results.messages.length > 0}>
               {results.messages.map((m) => {
-                const href =
-                  m.kind === "channel"
-                    ? `/chat/c/${m.conversationId}?message=${m.id}`
-                    : `/chat/dm/${m.conversationId}?message=${m.id}`;
+                // A reply isn't a root message, so it's never rendered (or
+                // scrollable-to) in the main list - deep-link to the thread
+                // panel instead via its parent id.
+                const anchor =
+                  m.inThread && m.parentId ? `thread=${m.parentId}` : `message=${m.id}`;
+                const base = conversationPath(
+                  m.kind === "channel" ? "channel" : "dm",
+                  m.conversationId ?? "",
+                  pathname
+                );
+                const href = `${base}?${anchor}`;
                 return (
                   <SearchRow
                     key={`m-${m.id}`}

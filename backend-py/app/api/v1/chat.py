@@ -261,6 +261,7 @@ async def get_channel_messages(
     _member: WorkspaceMemberDep,
     limit: int | None = Query(None, ge=1, le=100),
     before: str | None = Query(None),
+    around: str | None = Query(None),
 ):
     return await chat_service.list_channel_messages(
         session,
@@ -269,6 +270,7 @@ async def get_channel_messages(
         channel_id,
         limit=limit,
         before=before,
+        around=around,
     )
 
 
@@ -504,6 +506,7 @@ async def get_dm_messages(
     _member: WorkspaceMemberDep,
     limit: int | None = Query(None, ge=1, le=100),
     before: str | None = Query(None),
+    around: str | None = Query(None),
 ):
     return await chat_service.list_dm_messages(
         session,
@@ -512,6 +515,7 @@ async def get_dm_messages(
         conversation_id,
         limit=limit,
         before=before,
+        around=around,
     )
 
 
