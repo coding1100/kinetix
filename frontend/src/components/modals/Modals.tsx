@@ -21,6 +21,7 @@ import { ChannelFilesDialog } from "@/components/chat/modals/ChannelFilesDialog"
 import { SyncUpDialog } from "@/components/chat/modals/SyncUpDialog";
 import { NewDmDialog } from "@/components/chat/modals/NewDmDialog";
 import { RenameChannelDialog } from "@/components/chat/modals/RenameChannelDialog";
+import { ChangeChannelIconDialog } from "@/components/chat/modals/ChangeChannelIconDialog";
 import { GlobalCreateTaskDialog } from "@/components/modals/GlobalCreateTaskDialog";
 
 export function Modals() {
@@ -86,6 +87,7 @@ export function Modals() {
       <SyncUpDialog />
       <NewDmDialog />
       <RenameChannelDialog />
+      <ChangeChannelIconDialog />
 
       <Dialog
         open={activeModal === "schedule-message"}
