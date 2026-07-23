@@ -26,6 +26,9 @@ class Invite(Base):
     accepted_at: Mapped[datetime | None] = mapped_column(
         "acceptedAt", DateTime(timezone=True), nullable=True
     )
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        "cancelledAt", DateTime(timezone=True), nullable=True
+    )
     invited_by_id: Mapped[str] = mapped_column(
         "invitedById", String, ForeignKey("User.id", ondelete="CASCADE")
     )

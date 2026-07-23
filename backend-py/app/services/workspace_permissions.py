@@ -66,7 +66,14 @@ def can_assign_role(actor_role: WorkspaceRole, new_role: WorkspaceRole) -> bool:
         return True
     if actor_role == WorkspaceRole.SUPER_ADMIN:
         return new_role not in (WorkspaceRole.OWNER, WorkspaceRole.SUPER_ADMIN)
-    if actor_role in (WorkspaceRole.ADMIN, WorkspaceRole.MEMBER):
+    if actor_role == WorkspaceRole.ADMIN:
+        return new_role in (
+            WorkspaceRole.ADMIN,
+            WorkspaceRole.MEMBER,
+            WorkspaceRole.GUEST,
+            WorkspaceRole.LIMITED_MEMBER,
+        )
+    if actor_role == WorkspaceRole.MEMBER:
         return new_role in (
             WorkspaceRole.MEMBER,
             WorkspaceRole.GUEST,
@@ -84,7 +91,6 @@ def can_edit_member(actor_role: WorkspaceRole, target_role: WorkspaceRole) -> bo
         return target_role not in (
             WorkspaceRole.OWNER,
             WorkspaceRole.SUPER_ADMIN,
-            WorkspaceRole.ADMIN,
         )
     return False
 
@@ -95,13 +101,6 @@ def can_delete_workspace(role: WorkspaceRole | None) -> bool:
 
 def can_transfer_ownership(role: WorkspaceRole | None) -> bool:
     return is_owner(role)
-
-
-async def has_privileged_workspace_access(
-    session: AsyncSession, workspace_id: str, user_id: str
-) -> bool:
-    role = await get_active_workspace_role(session, workspace_id, user_id)
-    return is_privileged(role)
 
 
 async def get_member_time_flags(

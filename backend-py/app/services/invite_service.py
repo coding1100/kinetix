@@ -1,5 +1,7 @@
+import logging
 from datetime import datetime, timedelta, timezone
 
+from fastapi import BackgroundTasks
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -23,6 +25,8 @@ from app.services.notification_service import (
 )
 from app.services.workspace_permissions import can_assign_role
 from app.services.auth_service import issue_refresh_for_user
+
+logger = logging.getLogger(__name__)
 
 _INVITE_ROLES = {
     WorkspaceRole.OWNER,
@@ -48,6 +52,7 @@ async def create_invite(
     invited_by_id: str,
     inviter_role: WorkspaceRole,
     body: CreateInviteBody,
+    background_tasks: BackgroundTasks,
 ) -> dict:
     if inviter_role not in _INVITE_ROLES:
         raise AppError(403, "FORBIDDEN", "You cannot invite users to this workspace")
@@ -70,14 +75,19 @@ async def create_invite(
         if active:
             raise AppError(409, "ALREADY_MEMBER", "User is already in this workspace")
 
-    pending = await session.scalar(
-        select(Invite).where(
-            Invite.workspace_id == workspace_id,
-            Invite.email == email,
-            Invite.accepted_at.is_(None),
-        )
+    # Most recent invite for this email in this workspace, if any - a
+    # canceled one doesn't block a new invite (see below), only a still-
+    # pending one does.
+    existing_invite = await session.scalar(
+        select(Invite)
+        .where(Invite.workspace_id == workspace_id, Invite.email == email)
+        .order_by(Invite.created_at.desc())
     )
-    if pending:
+    if (
+        existing_invite
+        and existing_invite.accepted_at is None
+        and existing_invite.cancelled_at is None
+    ):
         raise AppError(
             409, "ALREADY_INVITED", "This person has already been invited"
         )
@@ -86,15 +96,27 @@ async def create_invite(
     now = _utc_now()
     expires_at = now + timedelta(days=settings.invite_token_expires_days)
     token = generate_token()
-    invite = Invite(
-        workspace_id=workspace_id,
-        email=email,
-        role=body.role,
-        token=token,
-        expires_at=expires_at,
-        invited_by_id=invited_by_id,
-    )
-    session.add(invite)
+
+    if existing_invite and existing_invite.cancelled_at is not None:
+        # Re-inviting someone whose invite was canceled - reuse that row
+        # instead of accumulating a duplicate.
+        invite = existing_invite
+        invite.role = body.role
+        invite.token = token
+        invite.expires_at = expires_at
+        invite.invited_by_id = invited_by_id
+        invite.cancelled_at = None
+        invite.created_at = now
+    else:
+        invite = Invite(
+            workspace_id=workspace_id,
+            email=email,
+            role=body.role,
+            token=token,
+            expires_at=expires_at,
+            invited_by_id=invited_by_id,
+        )
+        session.add(invite)
 
     await session.flush()
     workspace = await session.get(Workspace, workspace_id)
@@ -102,8 +124,8 @@ async def create_invite(
     inviter_name = inviter.full_name if inviter else "A teammate"
     await session.commit()
 
-    return await _invite_payload_with_email(
-        invite, workspace, settings, inviter_name
+    return _invite_payload_with_email(
+        invite, workspace, settings, inviter_name, background_tasks
     )
 
 
@@ -131,31 +153,51 @@ def _invite_payload(
     }
 
 
-async def _invite_payload_with_email(
+async def _send_invite_email_safe(
+    *,
+    to: str,
+    workspace_name: str,
+    inviter_name: str,
+    invite_url: str,
+    role: str,
+) -> None:
+    """Runs after the response has already gone out (see BackgroundTasks in
+    _invite_payload_with_email) - there's no request/response left to report
+    failure through, so log it instead of raising."""
+    try:
+        await email_service.send_workspace_invite_email(
+            to=to,
+            workspace_name=workspace_name,
+            inviter_name=inviter_name,
+            invite_url=invite_url,
+            role=role,
+        )
+    except Exception:
+        logger.exception("Failed to send workspace invite email to %s", to)
+
+
+def _invite_payload_with_email(
     invite: Invite,
     workspace: Workspace,
     settings,
     inviter_name: str,
+    background_tasks: BackgroundTasks,
 ) -> dict:
     invite_url = f"{settings.frontend_url}/invite/accept?token={invite.token}"
-    email_sent = False
-    if email_service.is_smtp_configured():
-        try:
-            await email_service.send_workspace_invite_email(
-                to=invite.email,
-                workspace_name=workspace.name,
-                inviter_name=inviter_name,
-                invite_url=invite_url,
-                role=invite.role.value,
-            )
-            email_sent = True
-        except Exception as exc:
-            raise AppError(
-                502,
-                "EMAIL_DELIVERY_FAILED",
-                f"Invite was saved but the email could not be sent: {exc}",
-            ) from exc
-    return _invite_payload(invite, workspace, settings, email_sent=email_sent)
+    smtp_configured = email_service.is_smtp_configured()
+    if smtp_configured:
+        # Fire-and-forget: don't make the caller wait on SMTP. emailSent is
+        # therefore optimistic ("we attempted it"), not a delivery
+        # confirmation - a failure after this point only shows up in logs.
+        background_tasks.add_task(
+            _send_invite_email_safe,
+            to=invite.email,
+            workspace_name=workspace.name,
+            inviter_name=inviter_name,
+            invite_url=invite_url,
+            role=invite.role.value,
+        )
+    return _invite_payload(invite, workspace, settings, email_sent=smtp_configured)
 
 
 async def list_workspace_invites(
@@ -169,6 +211,7 @@ async def list_workspace_invites(
             .where(
                 Invite.workspace_id == workspace_id,
                 Invite.accepted_at.is_(None),
+                Invite.cancelled_at.is_(None),
             )
             .options(selectinload(Invite.inviter), selectinload(Invite.workspace))
             .order_by(Invite.created_at.desc())
@@ -215,7 +258,7 @@ async def cancel_workspace_invite(
     if invite.accepted_at:
         raise AppError(410, "INVITE_USED", "Invite already accepted")
 
-    await session.delete(invite)
+    invite.cancelled_at = _utc_now()
     await session.commit()
     return {"ok": True}
 
@@ -225,6 +268,7 @@ async def resend_workspace_invite(
     workspace_id: str,
     actor_role: WorkspaceRole,
     invite_id: str,
+    background_tasks: BackgroundTasks,
 ) -> dict:
     if actor_role not in _INVITE_ROLES:
         raise AppError(403, "FORBIDDEN", "You cannot manage invites")
@@ -236,6 +280,8 @@ async def resend_workspace_invite(
     )
     if not invite:
         raise AppError(404, "NOT_FOUND", "Invite not found")
+    if invite.cancelled_at:
+        raise AppError(410, "INVITE_CANCELLED", "This invite has been canceled")
     if invite.accepted_at:
         raise AppError(410, "INVITE_USED", "Invite already accepted")
 
@@ -245,8 +291,8 @@ async def resend_workspace_invite(
     inviter = await session.get(User, invite.invited_by_id)
     inviter_name = inviter.full_name if inviter else "A teammate"
     await session.commit()
-    return await _invite_payload_with_email(
-        invite, invite.workspace, settings, inviter_name
+    return _invite_payload_with_email(
+        invite, invite.workspace, settings, inviter_name, background_tasks
     )
 
 
@@ -258,6 +304,8 @@ async def get_invite_by_token(session: AsyncSession, token: str) -> dict:
     )
     if not invite:
         raise AppError(404, "NOT_FOUND", "Invite not found")
+    if invite.cancelled_at:
+        raise AppError(410, "INVITE_CANCELLED", "This invite has been canceled")
     if invite.accepted_at:
         raise AppError(410, "INVITE_USED", "This invite has already been accepted")
     if _as_utc(invite.expires_at) < _utc_now():
@@ -277,6 +325,8 @@ async def accept_invite_for_user(
     invite = await session.scalar(select(Invite).where(Invite.token == token))
     if not invite:
         raise AppError(404, "NOT_FOUND", "Invite not found")
+    if invite.cancelled_at:
+        raise AppError(410, "INVITE_CANCELLED", "This invite has been canceled")
     if invite.accepted_at:
         raise AppError(410, "INVITE_USED", "Invite already used")
     if _as_utc(invite.expires_at) < _utc_now():
@@ -341,6 +391,8 @@ async def accept_invite_with_signup(
     invite = await session.scalar(select(Invite).where(Invite.token == token))
     if not invite:
         raise AppError(404, "NOT_FOUND", "Invite not found")
+    if invite.cancelled_at:
+        raise AppError(410, "INVITE_CANCELLED", "This invite has been canceled")
     if invite.accepted_at:
         raise AppError(410, "INVITE_USED", "Invite already used")
     if _as_utc(invite.expires_at) < _utc_now():

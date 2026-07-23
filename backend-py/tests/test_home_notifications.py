@@ -196,3 +196,66 @@ async def test_home_notification_flows(api_client: AsyncClient):
         husnain_delete["data"],
         needle="deleted",
     ), husnain_delete["data"][:3]
+
+
+@pytest.mark.asyncio
+async def test_dm_mention_only_notifies_participants(api_client: AsyncClient):
+    client = api_client
+    owner = await _login(client, OWNER_EMAIL)
+    husnain = await _login(client, HUSNAIN_EMAIL)
+
+    members = await client.get(
+        f"/api/v1/workspaces/{owner['workspace_id']}/members",
+        headers=owner["headers"],
+    )
+    assert members.status_code == 200, members.text
+    outsider = next(
+        (
+            m
+            for m in members.json()["data"]
+            if m["id"] not in {owner["user_id"], husnain["user_id"]} and m.get("fullName")
+        ),
+        None,
+    )
+    if not outsider:
+        pytest.skip("Need a third workspace member for outsider mention check")
+
+    dm = await client.post(
+        f"/api/v1/workspaces/{owner['workspace_id']}/chat/dms",
+        headers=owner["headers"],
+        json={"userIds": [husnain["user_id"]]},
+    )
+    assert dm.status_code in (200, 201), dm.text
+    dm_id = dm.json()["id"]
+
+    outsider_name = outsider["fullName"].strip().replace(" ", chr(0xA0))
+    mention_body = f"@{outsider_name} {int(time.time())} not in this dm"
+    sent = await client.post(
+        f"/api/v1/workspaces/{owner['workspace_id']}/chat/dms/{dm_id}/messages",
+        headers=owner["headers"],
+        json={"body": mention_body},
+    )
+    assert sent.status_code == 201, sent.text
+
+    outsider_login = await _login(client, outsider["email"])
+    outsider_notifs = await _notifications(client, outsider_login)
+    assert not _has_notification(
+        outsider_notifs["data"],
+        needle="mentioned you",
+        type_hint="mention",
+    ), outsider_notifs["data"][:3]
+
+    husnain_mention_body = f"@{husnain['full_name'].strip().replace(' ', chr(0xA0))} {int(time.time())} in this dm"
+    sent2 = await client.post(
+        f"/api/v1/workspaces/{owner['workspace_id']}/chat/dms/{dm_id}/messages",
+        headers=owner["headers"],
+        json={"body": husnain_mention_body},
+    )
+    assert sent2.status_code == 201, sent2.text
+
+    husnain_notifs = await _notifications(client, husnain)
+    assert _has_notification(
+        husnain_notifs["data"],
+        needle="mentioned you",
+        type_hint="mention",
+    ), husnain_notifs["data"][:3]

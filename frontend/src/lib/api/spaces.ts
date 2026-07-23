@@ -576,8 +576,8 @@ export interface ShareMemberDto {
   email: string | null;
   permissionLevel: "VIEW" | "COMMENT" | "EDIT";
   status: "ACTIVE" | "INVITED" | "SUSPENDED";
+  /** True for the synthetic creator/owner row - they can't be removed. */
   implicit?: boolean;
-  role?: string;
 }
 
 function shareResourcePath(resourceType: ShareResourceType, resourceId: string) {

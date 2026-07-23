@@ -5,14 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { Task } from "@/lib/types/task";
 import type { ListMetaDto } from "@/lib/api/spaces";
 import { useUiStore } from "@/stores/ui-store";
-import { BoardView } from "@/components/spaces/BoardView";
-import { CalendarView } from "@/components/spaces/CalendarView";
 import { ListViewGrouped } from "@/components/spaces/ListViewGrouped";
 import { SpacesListToolbar } from "@/components/spaces/SpacesListToolbar";
 import { TaskDrawer } from "@/components/spaces/TaskDrawer";
 import { ConversationView } from "@/components/chat/ConversationView";
 
-type ViewMode = "channel" | "list" | "board" | "calendar";
+type ViewMode = "channel" | "list";
 
 type ListWorkspaceProps = {
   listId: string;
@@ -48,12 +46,7 @@ export function ListWorkspace({
   const [statusFilter, setStatusFilter] = useState("all");
   const viewParam = searchParams.get("view");
   const view: ViewMode =
-    viewParam === "board" ||
-    viewParam === "calendar" ||
-    viewParam === "channel" ||
-    viewParam === "list"
-      ? viewParam
-      : defaultView;
+    viewParam === "channel" || viewParam === "list" ? viewParam : defaultView;
   const selectedTaskId = searchParams.get("task");
   const path = basePath ?? `/spaces/l/${listId}`;
 
@@ -84,9 +77,12 @@ export function ListWorkspace({
     router.replace(`${path}${q ? `?${q}` : ""}`);
   }, [router, path, searchParams]);
 
-  const openCreateTask = useCallback(() => {
-    openModal("create-task");
-  }, [openModal]);
+  const openCreateTask = useCallback(
+    (statusId?: string) => {
+      openModal("create-task", undefined, listId, statusId);
+    },
+    [openModal, listId]
+  );
 
   return (
     <>
@@ -114,22 +110,6 @@ export function ListWorkspace({
             No channel linked to this list yet.
           </div>
         )
-      ) : view === "calendar" ? (
-        <CalendarView
-          tasks={tasks}
-          loading={loading}
-          error={error}
-          onTaskSelect={openTask}
-        />
-      ) : view === "board" ? (
-        <BoardView
-          tasks={tasks}
-          statuses={meta.statuses}
-          loading={loading}
-          error={error}
-          onTaskSelect={openTask}
-          onTasksChange={onTasksChange}
-        />
       ) : (
         <ListViewGrouped
           tasks={tasks}

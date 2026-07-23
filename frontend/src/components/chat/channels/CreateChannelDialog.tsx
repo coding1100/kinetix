@@ -30,6 +30,7 @@ import {
 } from "@/lib/user-display";
 import { MessageSquareIcon } from "lucide-react";
 import { upsertChannelInSidebar } from "@/lib/chat/sidebar-channel";
+import { ChannelIconPicker } from "@/components/chat/channels/ChannelIconPicker";
 
 export function CreateChannelDialog() {
   const router = useRouter();
@@ -40,6 +41,7 @@ export function CreateChannelDialog() {
   const [name, setName] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
   const [addList, setAddList] = useState(false);
+  const [iconColor, setIconColor] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [inviteIds, setInviteIds] = useState<Set<string>>(new Set());
   const currentUserId = useAuthStore((s) => s.user?.id);
@@ -64,6 +66,7 @@ export function CreateChannelDialog() {
     setIsPrivate(false);
     setAddList(false);
     setInviteIds(new Set());
+    setIconColor(null);
   };
 
   const handleOpenChange = (next: boolean) => {
@@ -92,6 +95,7 @@ export function CreateChannelDialog() {
         topic: addList ? "Linked list enabled" : undefined,
         memberIds:
           isPrivate && inviteIds.size > 0 ? [...inviteIds] : undefined,
+        iconColor: iconColor ?? undefined,
       });
       upsertChannelInSidebar({ ...channel, starred: false }, workspaceId);
       toast.success(`#${trimmed} created`);
@@ -197,6 +201,12 @@ export function CreateChannelDialog() {
               </ul>
             </div>
           ) : null}
+
+          <ChannelIconPicker
+            value={iconColor}
+            onChange={setIconColor}
+            channelInitial={(name.trim() || "#").slice(0, 1).toUpperCase()}
+          />
 
           <div className="flex items-center justify-between gap-4 py-1 hidden">
             <div className="space-y-0.5">
