@@ -92,6 +92,7 @@ export function createChannel(
     isPrivate?: boolean;
     topic?: string;
     memberIds?: string[];
+    iconColor?: string;
   }
 ) {
   return apiFetch<Channel>(wsPath(workspaceId, "/chat/channels"), {
@@ -105,7 +106,7 @@ export function updateChannel(
   token: string,
   workspaceId: string,
   channelId: string,
-  body: { name?: string; topic?: string }
+  body: { name?: string; topic?: string; iconColor?: string }
 ) {
   return apiFetch<Channel>(
     wsPath(workspaceId, `/chat/channels/${channelId}`),
