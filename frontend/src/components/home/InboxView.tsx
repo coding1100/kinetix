@@ -1,16 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import {
-  ActivityIcon,
-  CheckCheckIcon,
-  ClockIcon,
-  FilterIcon,
-  InboxIcon,
-  SettingsIcon,
-} from "lucide-react";
+import { useRouter } from "next/navigation";
+import { CheckCheckIcon, FilterIcon, SettingsIcon } from "lucide-react";
 import { mergeInboxItems } from "@/lib/notifications/live-cache";
 import { resolveInboxHref } from "@/lib/notifications/inbox-item-utils";
 import { subscribeNotificationsRefresh } from "@/lib/notifications/realtime";
@@ -30,22 +22,13 @@ import {
 import { HomeDataState } from "@/components/home/HomeDataState";
 import { HomePageShell } from "@/components/home/HomePageShell";
 import { InboxFeedDateHeader, InboxFeedRow } from "@/components/home/InboxFeedRow";
-import { UnderlineTabBar } from "@/components/shared/Tabs";
 import { fetchInbox, type InboxItemDto, type InboxItemType } from "@/lib/api/home";
 import { useHomeQuery } from "@/hooks/use-home-query";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 
-export type InboxTab = "primary" | "other" | "later" | "cleared";
-
-const INBOX_TABS: { id: InboxTab; label: string; icon: ReactNode }[] = [
-  { id: "primary", label: "Primary", icon: <InboxIcon className="size-4" /> },
-  { id: "other", label: "Other", icon: <ActivityIcon className="size-4" /> },
-  { id: "later", label: "Later", icon: <ClockIcon className="size-4" /> },
-  { id: "cleared", label: "Cleared", icon: <CheckCheckIcon className="size-4" /> },
-];
-
-// Items that need direct action from the user surface in Primary; lower-signal
-// activity (channel chatter, reactions, your own sent/scheduled/drafts) goes to Other.
+// Inbox only ever shows Primary - items that need direct action from the
+// user (mentions, assignments, comments/replies, reminders). There is no
+// tab switcher anymore; lower-signal activity is simply not surfaced here.
 const PRIMARY_TYPES: InboxItemType[] = [
   "mention",
   "assignment",
@@ -53,7 +36,6 @@ const PRIMARY_TYPES: InboxItemType[] = [
   "reply",
   "reminder",
 ];
-const OTHER_TYPES: InboxItemType[] = ["chat", "reaction", "sent", "draft", "scheduled"];
 
 const TYPE_FILTER_OPTIONS: { id: InboxItemType; label: string }[] = [
   { id: "mention", label: "Mentions" },
@@ -61,22 +43,9 @@ const TYPE_FILTER_OPTIONS: { id: InboxItemType; label: string }[] = [
   { id: "comment", label: "Comments" },
   { id: "reply", label: "Replies" },
   { id: "reminder", label: "Reminders" },
-  { id: "chat", label: "Chat" },
-  { id: "reaction", label: "Reactions" },
-  { id: "sent", label: "Sent" },
-  { id: "draft", label: "Drafts" },
-  { id: "scheduled", label: "Scheduled" },
 ];
 
-function parseInboxTab(value: string | null): InboxTab {
-  if (value === "other" || value === "later" || value === "cleared") return value;
-  return "primary";
-}
-
-function filterByTab(items: InboxItemDto[], tab: InboxTab) {
-  if (tab === "other") return items.filter((i) => OTHER_TYPES.includes(i.type));
-  if (tab === "cleared") return items.filter((i) => !i.unread);
-  if (tab === "later") return items;
+function filterToPrimary(items: InboxItemDto[]) {
   return items.filter((i) => PRIMARY_TYPES.includes(i.type));
 }
 
@@ -113,29 +82,18 @@ const DATE_GROUP_ORDER: DateGroup[] = [
 
 export function InboxView() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
-  const [tab, setTab] = useState<InboxTab>(() =>
-    parseInboxTab(searchParams.get("tab"))
-  );
   const [typeFilter, setTypeFilter] = useState<Set<InboxItemType>>(new Set());
   const [refreshKey, setRefreshKey] = useState(0);
   const [liveTick, setLiveTick] = useState(0);
 
-  const apiTab = tab === "later" ? "later" : "all";
   const load = useCallback(
-    (token: string, ws: string) =>
-      fetchInbox(token, ws, apiTab).then((r) => r.data),
-    [apiTab]
+    (token: string, ws: string) => fetchInbox(token, ws, "all").then((r) => r.data),
+    []
   );
-  const { data: apiItems, loading, error } = useHomeQuery(load, [apiTab], {
+  const { data: apiItems, loading, error } = useHomeQuery(load, [], {
     refreshKey,
   });
-
-  useEffect(() => {
-    const next = parseInboxTab(searchParams.get("tab"));
-    setTab((current) => (current === next ? current : next));
-  }, [searchParams]);
 
   useEffect(
     () =>
@@ -149,19 +107,10 @@ export function InboxView() {
   const items = useMemo(() => {
     const merged = apiItems ? mergeInboxItems(apiItems) : apiItems;
     if (!merged) return merged;
-    return filterByTypes(filterByTab(merged, tab), typeFilter);
-  }, [apiItems, liveTick, tab, typeFilter]);
+    return filterByTypes(filterToPrimary(merged), typeFilter);
+  }, [apiItems, liveTick, typeFilter]);
 
   const hasUnread = (items ?? []).some((item) => item.unread);
-
-  const changeTab = (next: InboxTab) => {
-    setTab(next);
-    const params = new URLSearchParams(searchParams.toString());
-    if (next === "primary") params.delete("tab");
-    else params.set("tab", next);
-    const qs = params.toString();
-    router.replace(`/home/inbox${qs ? `?${qs}` : ""}`, { scroll: false });
-  };
 
   const toggleTypeFilter = (type: InboxItemType) => {
     setTypeFilter((current) => {
@@ -216,30 +165,11 @@ export function InboxView() {
     }));
   }, [items]);
 
-  const emptyMessage = (() => {
-    if (tab === "later") {
-      return "Nothing saved for later. Snooze notifications to review them here.";
-    }
-    if (tab === "cleared") {
-      return "Nothing cleared yet. Items you clear will show up here.";
-    }
-    if (tab === "other") {
-      return "No lower-priority activity right now.";
-    }
-    return "You're all caught up. New notifications will appear here.";
-  })();
+  const emptyMessage = "You're all caught up. New notifications will appear here.";
 
   return (
     <HomePageShell
       title="Inbox"
-      tabs={
-        <UnderlineTabBar
-          className="shrink-0 border-b border-border bg-card px-6"
-          tabs={INBOX_TABS}
-          active={tab}
-          onChange={changeTab}
-        />
-      }
       toolbar={
         <div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-2">
           <DropdownMenu>

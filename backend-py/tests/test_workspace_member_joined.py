@@ -11,6 +11,7 @@ from httpx import ASGITransport, AsyncClient
 from app.main import app
 
 PASSWORD = "password123"
+NEW_MEMBER_PASSWORD = "Password123!"
 OWNER_EMAIL = "owner@demo.com"
 
 
@@ -68,7 +69,7 @@ async def test_accept_invite_adds_member_to_workspace_list(api_client: AsyncClie
         f"/api/v1/invites/{invite_token}/accept-signup",
         json={
             "fullName": "Realtime Member",
-            "password": PASSWORD,
+            "password": NEW_MEMBER_PASSWORD,
         },
     )
     assert accept.status_code == 201, accept.text

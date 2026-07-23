@@ -37,10 +37,16 @@ export function SpacesHierarchyDialog({
   open,
   onOpenChange,
   mode,
+  navigateOnCreate = true,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mode: HierarchyDialogMode | null;
+  /** Whether creating a List should navigate to it afterward - true from
+   * the Spaces tab (you're already browsing spaces, jumping into the new
+   * list is expected), false from the Home tab (creating structure there
+   * shouldn't yank you away from Home). */
+  navigateOnCreate?: boolean;
 }) {
   const router = useRouter();
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
@@ -113,7 +119,7 @@ export function SpacesHierarchyDialog({
           isPrivate,
         });
         toast.success("List created");
-        router.push(`/spaces/l/${list.id}`);
+        if (navigateOnCreate) router.push(`/spaces/l/${list.id}`);
       } else if (mode.type === "edit-space") {
         await patchSpace(accessToken, workspaceId, mode.spaceId, {
           name: trimmed,

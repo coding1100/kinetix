@@ -1,4 +1,4 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, BackgroundTasks, status
 
 from app.deps.auth import CurrentUserDep, DbSession
 from app.deps.workspace import WorkspaceMemberDep
@@ -115,10 +115,11 @@ async def create_invite(
     session: DbSession,
     user: CurrentUserDep,
     ctx: WorkspaceMemberDep,
+    background_tasks: BackgroundTasks,
 ):
     """Invite a user by email."""
     return await invite_service.create_invite(
-        session, workspace_id, user.id, ctx.role, body
+        session, workspace_id, user.id, ctx.role, body, background_tasks
     )
 
 
@@ -141,10 +142,11 @@ async def resend_invite(
     invite_id: str,
     session: DbSession,
     ctx: WorkspaceMemberDep,
+    background_tasks: BackgroundTasks,
 ):
     """Refresh invite link and expiry."""
     return await invite_service.resend_workspace_invite(
-        session, workspace_id, ctx.role, invite_id
+        session, workspace_id, ctx.role, invite_id, background_tasks
     )
 
 

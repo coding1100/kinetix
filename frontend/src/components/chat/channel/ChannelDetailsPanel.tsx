@@ -19,6 +19,7 @@ import {
   PaperclipIcon,
   CircleAlertIcon,
   PenLineIcon,
+  PaletteIcon,
   UserMinusIcon,
   PinIcon,
   Trash2Icon,
@@ -852,8 +853,21 @@ function SettingsView({
     <div className="space-y-3">
       <section className="rounded-xl border border-border bg-card p-3">
         <div className="flex flex-col items-center gap-2 text-center">
-          <span className="flex size-12 items-center justify-center rounded-xl border border-border bg-muted text-muted-foreground">
-            <HashIcon className="size-6" />
+          <span
+            className={cn(
+              "flex size-12 items-center justify-center rounded-xl border border-border text-muted-foreground",
+              channel?.customIconColor
+                ? cn(channel.customIconColor, "border-transparent text-white")
+                : "bg-muted"
+            )}
+          >
+            {channel?.customIconColor ? (
+              <span className="text-lg font-semibold">
+                {(channel?.name ?? "#").slice(0, 1).toUpperCase()}
+              </span>
+            ) : (
+              <HashIcon className="size-6" />
+            )}
           </span>
           <div>
             <p className="text-[22px] font-semibold leading-none">
@@ -991,6 +1005,11 @@ function SettingsView({
           icon={<PenLineIcon className="size-4" />}
           label="Rename"
           onClick={() => openModal("rename-channel", channelId)}
+        />
+        <OptionRow
+          icon={<PaletteIcon className="size-4" />}
+          label="Change icon"
+          onClick={() => openModal("change-channel-icon", channelId)}
         />
         <OptionRow
           icon={<LinkIcon className="size-4" />}
