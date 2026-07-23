@@ -576,9 +576,7 @@ async def list_shared_with_me(
     session: AsyncSession, workspace_id: str, user_id: str, role: WorkspaceRole
 ) -> dict:
     """Folders/Lists the user has an explicit grant on but can't already see
-    via their Space access — i.e. content shared with them individually.
-    Privileged roles see every Space anyway, so this is always empty for them.
-    """
+    via their Space access — i.e. content shared with them individually."""
     visible = await visible_space_ids(session, workspace_id, user_id, role)
     if visible is None:
         return {"data": []}
