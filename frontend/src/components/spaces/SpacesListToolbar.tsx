@@ -25,7 +25,7 @@ import {
 import type { ListStatus } from "@/lib/types/task";
 import { cn } from "@/lib/utils";
 
-type ViewMode = "channel" | "list" | "board";
+type ViewMode = "channel" | "list";
 
 export function SpacesListToolbar({
   listId,
@@ -109,11 +109,6 @@ export function SpacesListToolbar({
               id: "list",
               label: "List",
               icon: <ListIcon className="size-3" />,
-            },
-            {
-              id: "board",
-              label: "Board",
-              icon: <LayoutGridIcon className="size-3" />,
             },
           ]}
           active={view}

@@ -5,13 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { Task } from "@/lib/types/task";
 import type { ListMetaDto } from "@/lib/api/spaces";
 import { useUiStore } from "@/stores/ui-store";
-import { BoardView } from "@/components/spaces/BoardView";
 import { ListViewGrouped } from "@/components/spaces/ListViewGrouped";
 import { SpacesListToolbar } from "@/components/spaces/SpacesListToolbar";
 import { TaskDrawer } from "@/components/spaces/TaskDrawer";
 import { ConversationView } from "@/components/chat/ConversationView";
 
-type ViewMode = "channel" | "list" | "board";
+type ViewMode = "channel" | "list";
 
 type ListWorkspaceProps = {
   listId: string;
@@ -47,9 +46,7 @@ export function ListWorkspace({
   const [statusFilter, setStatusFilter] = useState("all");
   const viewParam = searchParams.get("view");
   const view: ViewMode =
-    viewParam === "board" || viewParam === "channel" || viewParam === "list"
-      ? viewParam
-      : defaultView;
+    viewParam === "channel" || viewParam === "list" ? viewParam : defaultView;
   const selectedTaskId = searchParams.get("task");
   const path = basePath ?? `/spaces/l/${listId}`;
 
@@ -110,15 +107,6 @@ export function ListWorkspace({
             No channel linked to this list yet.
           </div>
         )
-      ) : view === "board" ? (
-        <BoardView
-          tasks={tasks}
-          statuses={meta.statuses}
-          loading={loading}
-          error={error}
-          onTaskSelect={openTask}
-          onTasksChange={onTasksChange}
-        />
       ) : (
         <ListViewGrouped
           tasks={tasks}
