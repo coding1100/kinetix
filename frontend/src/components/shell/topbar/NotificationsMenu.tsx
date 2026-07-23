@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { BellIcon } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,7 @@ function toInboxItem(item: NotificationDto): InboxItemDto {
 
 export function NotificationsMenu() {
   const router = useRouter();
+  const pathname = usePathname();
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const { unreadCount, items, reload } = useNotificationsUnread();
   const [open, setOpen] = useState(false);
@@ -97,7 +98,7 @@ export function NotificationsMenu() {
       await markNotificationReadAndSync(accessToken, workspaceId, item.id);
     }
     setOpen(false);
-    router.push(resolveInboxHref(item));
+    router.push(resolveInboxHref(item, pathname));
   };
 
   return (

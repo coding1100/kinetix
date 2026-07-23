@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { CheckCheckIcon, FilterIcon, SettingsIcon } from "lucide-react";
 import { mergeInboxItems } from "@/lib/notifications/live-cache";
 import { resolveInboxHref } from "@/lib/notifications/inbox-item-utils";
@@ -82,6 +82,7 @@ const DATE_GROUP_ORDER: DateGroup[] = [
 
 export function InboxView() {
   const router = useRouter();
+  const pathname = usePathname();
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const [typeFilter, setTypeFilter] = useState<Set<InboxItemType>>(new Set());
   const [refreshKey, setRefreshKey] = useState(0);
@@ -146,7 +147,7 @@ export function InboxView() {
       await markNotificationReadAndSync(accessToken, workspaceId, item.id);
       setRefreshKey((k) => k + 1);
     }
-    router.push(resolveInboxHref(item));
+    router.push(resolveInboxHref(item, pathname));
   };
 
   const groupedSections = useMemo(() => {

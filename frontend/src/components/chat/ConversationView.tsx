@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type {
   Channel,
   ChatMessage,
@@ -77,6 +77,7 @@ import {
   otherGroupParticipants,
   resolveGroupDmTitle,
 } from "@/lib/chat/group-dm-display";
+import { conversationPath } from "@/lib/chat/conversation-path";
 import { upsertDmInSidebar } from "@/lib/chat/sidebar-dm";
 import { DmGroupMembersPanel } from "@/components/chat/DmGroupMembersPanel";
 import { useAuthStore } from "@/stores/auth-store";
@@ -111,6 +112,10 @@ export function ConversationView({
   hideHeaderTitle?: boolean;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const deepLinkMessageId = searchParams.get("message");
+  const deepLinkThreadId = searchParams.get("thread");
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const currentUserId = useAuthStore((s) => s.user?.id);
   const workspaceRole = useAuthStore((s) =>
@@ -212,6 +217,83 @@ export function ConversationView({
     setHighlightMessageId(messageScrollTarget);
     clearMessageScrollTarget();
   }, [messageScrollTarget, clearMessageScrollTarget]);
+
+  const clearDeepLinkParams = useCallback(() => {
+    router.replace(conversationPath(type, id, pathname));
+  }, [router, type, id, pathname]);
+
+  // ?thread=<parentId> deep link (from a reply notification or search hit) -
+  // ThreadPanel fetches the parent + replies itself by id, so this doesn't
+  // need the root message list loaded at all.
+  useEffect(() => {
+    if (!ready || !deepLinkThreadId) return;
+    setActiveThread(deepLinkThreadId);
+    clearDeepLinkParams();
+  }, [ready, deepLinkThreadId, setActiveThread, clearDeepLinkParams]);
+
+  // ?message=<id> deep link (from a mention/message notification or search
+  // hit). If it's already in the loaded window, just scroll to it; otherwise
+  // fetch a window centered on it (see `around` on the messages endpoint)
+  // since the message could be well outside the normal latest-page load.
+  useEffect(() => {
+    if (!ready || !deepLinkMessageId || deepLinkThreadId || messagesLoading) {
+      return;
+    }
+    if (messages.some((m) => m.id === deepLinkMessageId)) {
+      setScrollToMessageId(deepLinkMessageId);
+      setHighlightMessageId(deepLinkMessageId);
+      clearDeepLinkParams();
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const viewerId = useAuthStore.getState().user?.id;
+        const msgResult =
+          type === "channel"
+            ? await fetchChannelMessages(accessToken, workspaceId, id, {
+                limit: MESSAGE_PAGE_SIZE,
+                around: deepLinkMessageId,
+              })
+            : await fetchDmMessages(accessToken, workspaceId, id, {
+                limit: MESSAGE_PAGE_SIZE,
+                around: deepLinkMessageId,
+              });
+        if (cancelled) return;
+        const fetched = viewerId
+          ? msgResult.data.map((m) => normalizeMessageForViewer(m, viewerId))
+          : msgResult.data;
+        setMessages(fetched);
+        setHasMoreMessages(Boolean(msgResult.hasMore));
+        setNextBefore(msgResult.nextBefore ?? null);
+        setConversationCache(workspaceId, type, id, { messages: fetched });
+        setScrollToMessageId(deepLinkMessageId);
+        setHighlightMessageId(deepLinkMessageId);
+      } catch (err) {
+        if (cancelled) return;
+        toast.error(
+          err instanceof ApiError ? err.message : "Couldn't find that message"
+        );
+      } finally {
+        if (!cancelled) clearDeepLinkParams();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    ready,
+    deepLinkMessageId,
+    deepLinkThreadId,
+    messagesLoading,
+    messages,
+    type,
+    id,
+    accessToken,
+    workspaceId,
+    clearDeepLinkParams,
+  ]);
 
   const resolveCachedMeta = useCallback(() => {
     const cached = getConversationCache(workspaceId, type, id);
@@ -1048,7 +1130,10 @@ export function ConversationView({
 
   const clearSearchHighlight = () => {
     setScrollToMessageId(null);
-    window.setTimeout(() => setHighlightMessageId(null), 2500);
+  };
+
+  const handleHighlightHover = () => {
+    setHighlightMessageId(null);
   };
 
   const handleDeleteChannel = async () => {
@@ -1166,6 +1251,7 @@ export function ConversationView({
               scrollToMessageId={scrollToMessageId}
               highlightMessageId={highlightMessageId}
               onScrollComplete={clearSearchHighlight}
+              onHighlightHover={handleHighlightHover}
               readReceiptMembersById={readReceiptMembersById}
             />
           )}

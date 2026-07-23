@@ -13,7 +13,6 @@ import {
   Smile,
 } from "lucide-react";
 import type { InboxItemDto } from "@/lib/api/home";
-import { resolveInboxHref } from "@/lib/notifications/inbox-item-utils";
 import { cn, formatShortDateTimeUtc } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -82,7 +81,6 @@ export function InboxItemCard({
   variant = "card",
 }: Props) {
   const Icon = itemIcon(item.type);
-  const href = resolveInboxHref(item);
   const flat = variant === "flat";
 
   return (
@@ -201,7 +199,7 @@ export function InboxItemCard({
                   )}
                   onClick={(e) => {
                     e.stopPropagation();
-                    void onOpen({ ...item, href });
+                    void onOpen(item);
                   }}
                 >
                   <ArrowUpRight className={compact ? "size-3" : "size-3.5"} />

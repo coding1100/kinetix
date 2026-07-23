@@ -24,6 +24,7 @@ import {
   avatarColorClassForKey,
   avatarInitialFromName,
 } from "@/lib/user-display";
+import { conversationPath } from "@/lib/chat/conversation-path";
 import { upsertDmInSidebar } from "@/lib/chat/sidebar-dm";
 import { joinDmRoom } from "@/lib/socket/dm-rooms";
 import { cn } from "@/lib/utils";
@@ -107,13 +108,7 @@ export function NewDmDialog() {
       upsertDmInSidebar(dm, workspaceId);
       closeModal();
       reset();
-      if (pathname?.startsWith("/home")) {
-        toast.success(
-          isGroup ? "Group chat created" : "Conversation started"
-        );
-      } else {
-        router.push(`/chat/dm/${dm.id}`);
-      }
+      router.push(conversationPath("dm", dm.id, pathname));
     } catch (err) {
       toast.error(
         err instanceof ApiError ? err.message : "Failed to start conversation"

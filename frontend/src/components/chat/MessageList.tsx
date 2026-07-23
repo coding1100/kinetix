@@ -34,6 +34,7 @@ export function MessageList({
   scrollToMessageId,
   highlightMessageId,
   onScrollComplete,
+  onHighlightHover,
   readReceiptMembersById,
 }: {
   messages: ChatMessage[];
@@ -53,6 +54,7 @@ export function MessageList({
   scrollToMessageId?: string | null;
   highlightMessageId?: string | null;
   onScrollComplete?: () => void;
+  onHighlightHover?: () => void;
   readReceiptMembersById?: Record<string, ReadReceiptMember>;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
@@ -139,6 +141,7 @@ export function MessageList({
                       onPinMessage={onPinMessage}
                       onMarkUnread={onMarkUnread}
                       highlighted={highlightMessageId === msg.id}
+                      onHighlightHover={onHighlightHover}
                       showReadReceipt={msg.id === readReceiptMessageId}
                       readReceiptMembersById={readReceiptMembersById}
                     />

@@ -88,6 +88,7 @@ async def list_paginated_root_messages(
     conversation_id: str | None = None,
     limit: int | None = None,
     before: str | None = None,
+    around: str | None = None,
 ) -> dict:
     if channel_id:
         member = await _assert_channel_member(session, channel_id, user_id)
@@ -106,26 +107,69 @@ async def list_paginated_root_messages(
     else:
         clauses.append(ChatMessage.conversation_id == conversation_id)
 
-    if before:
-        ref = await session.scalar(select(ChatMessage).where(ChatMessage.id == before))
-        if ref:
-            clauses.append(ChatMessage.created_at < ref.created_at)
-
-    q = (
-        select(ChatMessage)
-        .where(*clauses)
-        .options(*_MESSAGE_LIST_LOAD)
-        .order_by(ChatMessage.created_at.desc())
-    )
     page_size = limit if limit and limit > 0 else None
-    if page_size:
-        q = q.limit(page_size + 1)
 
-    rows = list((await session.scalars(q)).all())
-    has_more = bool(page_size and len(rows) > page_size)
-    if has_more:
-        rows = rows[:page_size]
-    rows.reverse()
+    if around:
+        # Deep link (notification/search "jump to message"): the target
+        # might be well outside the normal latest-page window, so fetch a
+        # window centered on it instead of the usual single-cursor page.
+        # Only "load older" from there is supported (matching the rest of
+        # this endpoint) - there's no "load newer" cursor/UI anywhere yet.
+        ref = await session.scalar(
+            select(ChatMessage).where(ChatMessage.id == around, *clauses)
+        )
+        if not ref:
+            raise AppError(404, "NOT_FOUND", "Message not found")
+        half = (page_size or _DEFAULT_PAGE_SIZE) // 2
+
+        older_rows = list(
+            (
+                await session.scalars(
+                    select(ChatMessage)
+                    .where(*clauses, ChatMessage.created_at <= ref.created_at)
+                    .options(*_MESSAGE_LIST_LOAD)
+                    .order_by(ChatMessage.created_at.desc())
+                    .limit(half + 1)
+                )
+            ).all()
+        )
+        has_more = len(older_rows) > half
+        if has_more:
+            older_rows = older_rows[:half]
+        older_rows.reverse()
+
+        newer_rows = list(
+            (
+                await session.scalars(
+                    select(ChatMessage)
+                    .where(*clauses, ChatMessage.created_at > ref.created_at)
+                    .options(*_MESSAGE_LIST_LOAD)
+                    .order_by(ChatMessage.created_at.asc())
+                    .limit(half)
+                )
+            ).all()
+        )
+        rows = [*older_rows, *newer_rows]
+    else:
+        if before:
+            ref = await session.scalar(select(ChatMessage).where(ChatMessage.id == before))
+            if ref:
+                clauses.append(ChatMessage.created_at < ref.created_at)
+
+        q = (
+            select(ChatMessage)
+            .where(*clauses)
+            .options(*_MESSAGE_LIST_LOAD)
+            .order_by(ChatMessage.created_at.desc())
+        )
+        if page_size:
+            q = q.limit(page_size + 1)
+
+        rows = list((await session.scalars(q)).all())
+        has_more = bool(page_size and len(rows) > page_size)
+        if has_more:
+            rows = rows[:page_size]
+        rows.reverse()
 
     thread_summaries = await _thread_counts_for_messages(session, [m.id for m in rows])
     data = []

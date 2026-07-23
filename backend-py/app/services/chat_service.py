@@ -987,8 +987,9 @@ async def list_channel_messages(
     *,
     limit: int | None = None,
     before: str | None = None,
+    around: str | None = None,
 ) -> dict:
-    if limit is not None or before:
+    if limit is not None or before or around:
         from app.services.chat_enhancements import list_paginated_root_messages
 
         return await list_paginated_root_messages(
@@ -998,6 +999,7 @@ async def list_channel_messages(
             channel_id=channel_id,
             limit=limit,
             before=before,
+            around=around,
         )
 
     member = await _assert_channel_member(session, channel_id, user_id)
@@ -1090,6 +1092,7 @@ async def send_channel_message(
         workspace_id=workspace_id,
         author_user_id=user_id,
         body=message.body,
+        message_id=message.id,
         channel=member.channel,
     )
     await session.commit()
@@ -1221,8 +1224,10 @@ async def send_thread_reply(
         workspace_id=workspace_id,
         author_user_id=user_id,
         body=message.body,
+        message_id=message.id,
         channel=mention_channel,
         conversation_id=conversation_id if not channel_id else None,
+        thread_parent_id=parent_id,
     )
     await session.commit()
 
@@ -1461,8 +1466,9 @@ async def list_dm_messages(
     *,
     limit: int | None = None,
     before: str | None = None,
+    around: str | None = None,
 ) -> dict:
-    if limit is not None or before:
+    if limit is not None or before or around:
         from app.services.chat_enhancements import list_paginated_root_messages
 
         return await list_paginated_root_messages(
@@ -1472,6 +1478,7 @@ async def list_dm_messages(
             conversation_id=conversation_id,
             limit=limit,
             before=before,
+            around=around,
         )
 
     participant = await _assert_dm_participant(session, conversation_id, user_id)
@@ -1576,6 +1583,7 @@ async def send_dm_message(
         workspace_id=workspace_id,
         author_user_id=user_id,
         body=message.body,
+        message_id=message.id,
         channel=None,
         conversation_id=conversation_id,
     )
@@ -1586,6 +1594,7 @@ async def send_dm_message(
         conversation_id=conversation_id,
         recipient_ids=[p.user_id for p in participant.conversation.participants],
         body=message.body,
+        message_id=message.id,
     )
     await session.commit()
 

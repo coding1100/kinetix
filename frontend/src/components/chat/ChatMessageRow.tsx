@@ -71,6 +71,7 @@ export function ChatMessageRow({
   onPinMessage,
   onMarkUnread,
   highlighted = false,
+  onHighlightHover,
   showReadReceipt = false,
   readReceiptMembersById = {},
 }: {
@@ -87,6 +88,7 @@ export function ChatMessageRow({
   onPinMessage?: (messageId: string, pinned: boolean) => void | Promise<void>;
   onMarkUnread?: () => void | Promise<void>;
   highlighted?: boolean;
+  onHighlightHover?: () => void;
   showReadReceipt?: boolean;
   readReceiptMembersById?: Record<string, ReadReceiptMember>;
 }) {
@@ -141,6 +143,7 @@ export function ChatMessageRow({
   return (
     <article
       id={`message-${message.id}`}
+      onMouseEnter={highlighted ? onHighlightHover : undefined}
       className={cn(
         "group relative -mx-3 rounded-md px-3 transition-colors",
         showHeader ? "pt-2.5 pb-1" : "py-0.5",

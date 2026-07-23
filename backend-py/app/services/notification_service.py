@@ -298,8 +298,10 @@ async def create_mention_notifications(
     workspace_id: str,
     author_user_id: str,
     body: str,
+    message_id: str,
     channel: ChatChannel | None = None,
     conversation_id: str | None = None,
+    thread_parent_id: str | None = None,
 ) -> list[tuple[str, InboxItem]]:
     labels = parse_person_mention_labels(body)
     recipient_ids = await _resolve_mentioned_user_ids(
@@ -340,15 +342,21 @@ async def create_mention_notifications(
     snippet = _message_snippet(body)
     created: list[tuple[str, InboxItem]] = []
 
+    # A mention inside a thread reply must link to ?thread=<parentId>, not
+    # ?message=<replyId> - replies aren't root messages, so they're never
+    # rendered (and never scrollable-to) in the main channel/DM list, only
+    # inside the open thread panel.
+    anchor = f"thread={thread_parent_id}" if thread_parent_id else f"message={message_id}"
+
     if channel:
         channel_label = channel.name
-        href = _channel_href(channel)
+        href = f"{_channel_href(channel)}?{anchor}"
         title = f"Mentioned in #{channel_label}"
         preview = f"{actor_name} mentioned you in #{channel_label}: {snippet}"
         source = channel_label
         activity_kind = "mention"
     else:
-        href = "/chat"
+        href = f"/chat/dm/{conversation_id}?{anchor}"
         title = "Mentioned you"
         preview = f"{actor_name} mentioned you: {snippet}"
         source = actor_name
@@ -518,6 +526,7 @@ async def create_dm_broadcast_notifications(
     conversation_id: str,
     recipient_ids: list[str],
     body: str,
+    message_id: str,
 ) -> list[tuple[str, InboxItem]]:
     targets = [rid for rid in dict.fromkeys(recipient_ids) if rid != author_user_id]
     if not targets:
@@ -528,7 +537,7 @@ async def create_dm_broadcast_notifications(
         users.get(author_user_id).full_name if users.get(author_user_id) else "Someone"
     )
     snippet = _message_snippet(body)
-    href = f"/chat/dm/{conversation_id}"
+    href = f"/chat/dm/{conversation_id}?message={message_id}"
 
     created: list[tuple[str, InboxItem]] = []
     for recipient_id in targets:
