@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useState } from "react";
 import {
-  CalendarIcon,
   FilterIcon,
   HashIcon,
   LayoutGridIcon,
@@ -26,7 +25,7 @@ import {
 import type { ListStatus } from "@/lib/types/task";
 import { cn } from "@/lib/utils";
 
-type ViewMode = "channel" | "list" | "board" | "calendar";
+type ViewMode = "channel" | "list" | "board";
 
 export function SpacesListToolbar({
   listId,
@@ -115,11 +114,6 @@ export function SpacesListToolbar({
               id: "board",
               label: "Board",
               icon: <LayoutGridIcon className="size-3" />,
-            },
-            {
-              id: "calendar",
-              label: "Calendar",
-              icon: <CalendarIcon className="size-3" />,
             },
           ]}
           active={view}
