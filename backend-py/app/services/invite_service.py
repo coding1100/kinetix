@@ -169,6 +169,7 @@ async def list_workspace_invites(
             .where(
                 Invite.workspace_id == workspace_id,
                 Invite.accepted_at.is_(None),
+                Invite.cancelled_at.is_(None),
             )
             .options(selectinload(Invite.inviter), selectinload(Invite.workspace))
             .order_by(Invite.created_at.desc())
@@ -215,7 +216,7 @@ async def cancel_workspace_invite(
     if invite.accepted_at:
         raise AppError(410, "INVITE_USED", "Invite already accepted")
 
-    await session.delete(invite)
+    invite.cancelled_at = _utc_now()
     await session.commit()
     return {"ok": True}
 
@@ -236,6 +237,8 @@ async def resend_workspace_invite(
     )
     if not invite:
         raise AppError(404, "NOT_FOUND", "Invite not found")
+    if invite.cancelled_at:
+        raise AppError(410, "INVITE_CANCELLED", "This invite has been canceled")
     if invite.accepted_at:
         raise AppError(410, "INVITE_USED", "Invite already accepted")
 
@@ -258,6 +261,8 @@ async def get_invite_by_token(session: AsyncSession, token: str) -> dict:
     )
     if not invite:
         raise AppError(404, "NOT_FOUND", "Invite not found")
+    if invite.cancelled_at:
+        raise AppError(410, "INVITE_CANCELLED", "This invite has been canceled")
     if invite.accepted_at:
         raise AppError(410, "INVITE_USED", "This invite has already been accepted")
     if _as_utc(invite.expires_at) < _utc_now():
@@ -277,6 +282,8 @@ async def accept_invite_for_user(
     invite = await session.scalar(select(Invite).where(Invite.token == token))
     if not invite:
         raise AppError(404, "NOT_FOUND", "Invite not found")
+    if invite.cancelled_at:
+        raise AppError(410, "INVITE_CANCELLED", "This invite has been canceled")
     if invite.accepted_at:
         raise AppError(410, "INVITE_USED", "Invite already used")
     if _as_utc(invite.expires_at) < _utc_now():
@@ -341,6 +348,8 @@ async def accept_invite_with_signup(
     invite = await session.scalar(select(Invite).where(Invite.token == token))
     if not invite:
         raise AppError(404, "NOT_FOUND", "Invite not found")
+    if invite.cancelled_at:
+        raise AppError(410, "INVITE_CANCELLED", "This invite has been canceled")
     if invite.accepted_at:
         raise AppError(410, "INVITE_USED", "Invite already used")
     if _as_utc(invite.expires_at) < _utc_now():
