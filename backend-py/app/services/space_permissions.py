@@ -2,9 +2,11 @@
 
 Workspace roles (workspace_permissions.py) govern people/workspace/team
 management. This module governs access to *content* — Spaces and everything
-under them (Folders, Lists, Tasks) — which workspace roles alone don't
-restrict: every active member gets EDIT by default, private Spaces and
-explicit SpaceMember overrides narrow that.
+under them (Folders, Lists, Tasks). There is no ambient default: a Space,
+public or private, grants access to nobody except through an explicit
+SpaceMember row. "Public" currently has no functional effect on access (no
+browse/join feature exists yet) — it only means the name-uniqueness and
+future-discoverability rules apply to it the same as private Spaces.
 """
 
 from __future__ import annotations
@@ -16,26 +18,12 @@ from app.core.errors import AppError
 from app.db.models.enums import MemberStatus, PermissionLevel, WorkspaceRole
 from app.db.models.home import Space, SpaceMember
 from app.db.models.workspace import WorkspaceMember
-from app.services.workspace_permissions import is_privileged
 
 _LEVEL_RANK = {
     PermissionLevel.VIEW: 1,
     PermissionLevel.COMMENT: 2,
     PermissionLevel.EDIT: 3,
 }
-
-# Default level a role gets on a *public* Space, absent any SpaceMember
-# override. GUEST has no ambient default — a Guest with no explicit grant
-# sees nothing, matching ClickUp's "Guests only access what's shared".
-DEFAULT_LEVEL_BY_ROLE: dict[WorkspaceRole, PermissionLevel | None] = {
-    WorkspaceRole.OWNER: PermissionLevel.EDIT,
-    WorkspaceRole.SUPER_ADMIN: PermissionLevel.EDIT,
-    WorkspaceRole.ADMIN: PermissionLevel.EDIT,
-    WorkspaceRole.MEMBER: PermissionLevel.EDIT,
-    WorkspaceRole.LIMITED_MEMBER: PermissionLevel.VIEW,
-    WorkspaceRole.GUEST: None,
-}
-
 
 def level_at_least(level: PermissionLevel | None, needed: PermissionLevel) -> bool:
     if level is None:
@@ -60,20 +48,17 @@ async def resolve_space_permission(
     user_id: str,
     role: WorkspaceRole,
 ) -> PermissionLevel | None:
-    """The effective permission level `user_id` (with `role`) has on `space`."""
-    if is_privileged(role):
-        # OWNER / SUPER_ADMIN: same bypass chat_service already grants for
-        # private channels — always full access, no override needed.
+    """The effective permission level `user_id` (with `role`) has on `space`.
+
+    The creator always has EDIT, unconditionally. Otherwise, no ambient
+    default for any role, public or private - an explicit SpaceMember row
+    (a "Share") is the only other source of access. `role` is accepted for
+    signature-compatibility with callers/tests but no longer affects the
+    result.
+    """
+    if space.created_by_id and space.created_by_id == user_id:
         return PermissionLevel.EDIT
-
-    override = await _space_member_override(session, space.id, user_id)
-    if override is not None:
-        return override
-
-    if space.is_private:
-        return None
-
-    return DEFAULT_LEVEL_BY_ROLE.get(role)
+    return await _space_member_override(session, space.id, user_id)
 
 
 async def require_space_permission(
@@ -111,11 +96,7 @@ async def visible_space_ids(
     user_id: str,
     role: WorkspaceRole,
 ) -> set[str] | None:
-    """Space ids `user_id` has at least VIEW on. `None` means "all of them"
-    (used for OWNER/SUPER_ADMIN so callers can skip filtering)."""
-    if is_privileged(role):
-        return None
-
+    """Space ids `user_id` has at least VIEW on."""
     spaces = (
         await session.scalars(
             select(Space).where(Space.workspace_id == workspace_id)

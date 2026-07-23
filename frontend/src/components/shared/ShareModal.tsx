@@ -50,11 +50,6 @@ const PERMISSION_LABELS: Record<PermissionLevel, string> = {
   EDIT: "Can edit",
 };
 
-const ROLE_LABELS: Record<string, string> = {
-  OWNER: "Owner",
-  SUPER_ADMIN: "Super Admin",
-};
-
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -407,8 +402,7 @@ export function ShareModal({
                   </span>
                   <span className="block truncate text-xs text-muted-foreground">
                     {m.implicit
-                      ? (m.role ? ROLE_LABELS[m.role] ?? m.role : "Admin") +
-                        " · full access"
+                      ? "Owner"
                       : m.status === "INVITED"
                         ? "Invited · not joined yet"
                         : PERMISSION_LABELS[m.permissionLevel]}

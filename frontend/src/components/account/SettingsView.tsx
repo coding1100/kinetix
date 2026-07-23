@@ -17,6 +17,8 @@ import {
 import { PageHeader } from "@/components/shared/PageHeader";
 import { changePassword, getMe } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
+import { PasswordStrengthMeter } from "@/components/auth/PasswordStrengthMeter";
+import { isPasswordValid } from "@/lib/password";
 import { useAuthStore, selectActiveWorkspace } from "@/stores/auth-store";
 import { useSettingsStore, type ThemePreference } from "@/stores/settings-store";
 import { useShellStore } from "@/stores/shell-store";
@@ -58,8 +60,12 @@ export function SettingsView() {
 
   const handlePasswordChange = async () => {
     if (!accessToken) return;
-    if (!currentPassword || newPassword.length < 8) {
-      toast.error("Enter current password and a new password (8+ characters)");
+    if (!currentPassword) {
+      toast.error("Enter your current password");
+      return;
+    }
+    if (!isPasswordValid(newPassword)) {
+      toast.error("New password doesn't meet the requirements below");
       return;
     }
     setChangingPassword(true);
@@ -199,6 +205,7 @@ export function SettingsView() {
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                   />
+                  <PasswordStrengthMeter password={newPassword} />
                 </div>
                 <Button
                   onClick={handlePasswordChange}
