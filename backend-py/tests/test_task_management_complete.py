@@ -172,6 +172,48 @@ async def test_task_due_date_set_clear_and_overdue_flag(api_client: AsyncClient)
 
 
 @pytest.mark.asyncio(loop_scope="session")
+async def test_task_date_range_validation(api_client: AsyncClient):
+    token = await login(api_client, *OWNER)
+    headers = auth_headers(token)
+    ws_id = await workspace_id(api_client, token)
+    _, list_id = await create_space_list(api_client, token, ws_id)
+    task_id = (await create_task(api_client, token, ws_id, list_id))["id"]
+
+    today = start_of_today()
+    tomorrow = (today + timedelta(days=1)).isoformat()
+    yesterday = (today - timedelta(days=1)).isoformat()
+
+    valid = await api_client.patch(
+        f"/api/v1/workspaces/{ws_id}/tasks/{task_id}",
+        headers=headers,
+        json={"startDate": today.isoformat(), "dueDate": tomorrow},
+    )
+    assert valid.status_code == 200, valid.text
+
+    due_before_start = await api_client.patch(
+        f"/api/v1/workspaces/{ws_id}/tasks/{task_id}",
+        headers=headers,
+        json={"dueDate": yesterday},
+    )
+    assert due_before_start.status_code == 400, due_before_start.text
+
+    start_after_due = await api_client.patch(
+        f"/api/v1/workspaces/{ws_id}/tasks/{task_id}",
+        headers=headers,
+        json={"startDate": (today + timedelta(days=2)).isoformat()},
+    )
+    assert start_after_due.status_code == 400, start_after_due.text
+
+    unchanged = await api_client.get(
+        f"/api/v1/workspaces/{ws_id}/tasks/{task_id}",
+        headers=headers,
+    )
+    assert unchanged.status_code == 200, unchanged.text
+    assert unchanged.json()["dueDateIso"]
+    assert unchanged.json()["startDateIso"]
+
+
+@pytest.mark.asyncio(loop_scope="session")
 async def test_task_filter_today_and_overdue(api_client: AsyncClient):
     token = await login(api_client, *OWNER)
     headers = auth_headers(token)

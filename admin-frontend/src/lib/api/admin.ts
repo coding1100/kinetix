@@ -163,6 +163,7 @@ export function listWorkspaceMembers(token: string, workspaceId: string) {
 }
 
 export const INVITE_ROLES = [
+  "OWNER",
   "MEMBER",
   "LIMITED_MEMBER",
   "GUEST",

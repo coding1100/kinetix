@@ -20,6 +20,7 @@ from app.db.models.home import (
     TaskList,
 )
 from app.db.models.workspace import WorkspaceMember
+from app.db.models.user import User
 from app.db.models.enums import MemberStatus
 from app.schemas.spaces import (
     CreateFolderBody,
@@ -50,14 +51,10 @@ from app.services.notification_service import (
     create_resource_share_notification,
     create_resource_unshare_notification,
     create_task_comment_mention_notifications,
-    create_task_comment_notifications,
-    create_task_comment_reply_notifications,
     emit_home_notifications,
 )
 from app.services.space_permissions import (
-    DEFAULT_LEVEL_BY_ROLE,
     get_space_or_403,
-    level_at_least,
     require_space_permission,
 )
 from app.services.folder_list_permissions import (
@@ -65,7 +62,7 @@ from app.services.folder_list_permissions import (
     require_list_permission,
     resolve_share_target,
 )
-from app.services.workspace_permissions import is_privileged, is_workspace_admin
+from app.services.workspace_permissions import is_workspace_admin
 from app.socket.emit import (
     broadcast_channel_privacy_changed,
     broadcast_channel_renamed,
@@ -85,49 +82,23 @@ def _member_row_payload(row: SpaceMember | FolderMember | ListMember) -> dict:
     }
 
 
-async def _implicit_privileged_members(
-    session: AsyncSession, workspace_id: str, explicit_user_ids: set[str]
-) -> list[dict]:
-    """OWNER/SUPER_ADMIN always get full EDIT on every Space/Folder/List
-    (resolve_space_permission's is_privileged bypass), with no SpaceMember/
-    FolderMember/ListMember row backing it. Surface them in "who has
-    access" instead of letting them show up as inviteable candidates that
-    already secretly have access."""
-    rows = (
-        await session.scalars(
-            select(WorkspaceMember)
-            .where(
-                WorkspaceMember.workspace_id == workspace_id,
-                WorkspaceMember.role.in_(
-                    [WorkspaceRole.OWNER, WorkspaceRole.SUPER_ADMIN]
-                ),
-                WorkspaceMember.status == MemberStatus.ACTIVE,
-                WorkspaceMember.user_id.notin_(explicit_user_ids)
-                if explicit_user_ids
-                else True,
-            )
-            .options(selectinload(WorkspaceMember.user))
-        )
-    ).all()
-    return [
-        {
-            "userId": row.user_id,
-            "name": row.user.full_name if row.user else None,
-            "email": row.user.email if row.user else None,
-            "permissionLevel": PermissionLevel.EDIT.value,
-            "status": MemberStatus.ACTIVE.value,
-            "implicit": True,
-            "role": row.role.value,
-        }
-        for row in rows
-    ]
+def _creator_row_payload(created_by) -> dict:
+    """Synthetic "who has access" row for a Space/Folder/List's creator -
+    they have EDIT unconditionally (see resolve_space_permission) and never
+    get a real SpaceMember/FolderMember/ListMember row, so the real rows
+    alone would never show them in the share list."""
+    return {
+        "userId": created_by.id,
+        "name": created_by.full_name,
+        "email": created_by.email,
+        "permissionLevel": PermissionLevel.EDIT.value,
+        "status": "ACTIVE",
+        "implicit": True,
+    }
 
 
 def _require_can_create_space(role: WorkspaceRole) -> None:
-    if not level_at_least(DEFAULT_LEVEL_BY_ROLE.get(role), PermissionLevel.EDIT) and role not in (
-        WorkspaceRole.OWNER,
-        WorkspaceRole.SUPER_ADMIN,
-    ):
+    if role in (WorkspaceRole.GUEST, WorkspaceRole.LIMITED_MEMBER):
         raise AppError(403, "FORBIDDEN", "You don't have permission to create a Space")
 
 
@@ -168,20 +139,6 @@ async def _target_workspace_role(
             WorkspaceMember.user_id == target_user_id,
         )
     )
-
-
-def _reject_if_privileged_target(target_role: WorkspaceRole | None) -> None:
-    """OWNER/SUPER_ADMIN always have full EDIT on every Space/Folder/List
-    (resolve_space_permission's is_privileged bypass) and can't be narrowed
-    or revoked via an explicit member row - block both sharing an explicit
-    grant with them (pointless) and removing one (would look like it takes
-    access away, but can't - stay explicit instead of silently no-op'ing)."""
-    if target_role in (WorkspaceRole.OWNER, WorkspaceRole.SUPER_ADMIN):
-        raise AppError(
-            400,
-            "VALIDATION_ERROR",
-            "Owner and Super Admin always have full access and can't be shared or removed explicitly",
-        )
 
 
 def _require_can_manage_access(role: WorkspaceRole) -> None:
@@ -246,34 +203,45 @@ async def create_space(
     body: CreateSpaceBody,
 ) -> dict:
     _require_can_create_space(role)
+    trimmed_name = body.name.strip()
+    existing = await session.scalar(
+        select(Space).where(
+            Space.workspace_id == workspace_id, Space.name == trimmed_name
+        )
+    )
+    if existing:
+        raise AppError(409, "CONFLICT", "A Space with this name already exists")
     space = Space(
         workspace_id=workspace_id,
-        name=body.name.strip(),
+        name=trimmed_name,
         color=body.color or "#7B68EE",
         description=body.description,
         is_private=body.is_private,
+        created_by_id=user_id,
     )
     session.add(space)
     await session.flush()
-    if body.is_private and not is_privileged(role):
-        # Creator always keeps explicit EDIT on their own private Space -
-        # unless they're OWNER/SUPER_ADMIN, who already bypass privacy
-        # entirely (resolve_space_permission's is_privileged check) and
-        # would otherwise get a pointless, removable-looking member row.
-        session.add(
-            SpaceMember(
-                space_id=space.id,
-                user_id=user_id,
-                permission_level=PermissionLevel.EDIT,
-            )
-        )
+    # Every new Space starts with one default, ordinary List - same shape
+    # as a manually-created one (statuses + chat channel) - so it's never
+    # empty. Not flagged/protected in any way, so the user can rename or
+    # delete it like any other List.
+    default_list = TaskList(
+        space_id=space.id, name="List", sort_order=1, created_by_id=user_id
+    )
+    session.add(default_list)
+    await session.flush()
+    await ensure_list_statuses(session, default_list.id)
     await session.commit()
+    # Every list is mandatory 1:1 with its own chat channel - see
+    # chat_service.create_list_channel.
+    await create_list_channel(session, workspace_id, default_list, space, user_id)
     refreshed = await session.scalar(
         select(Space).where(Space.id == space.id).options(*_SPACE_LOAD)
     )
     member_count = await _active_member_count(session, workspace_id)
+    list_count = await _list_count_for_space(session, space.id)
     return await _build_space_payload(
-        session, refreshed, member_count, 0, user_id, role
+        session, refreshed, member_count, list_count, user_id, role
     )
 
 
@@ -291,7 +259,18 @@ async def update_space(
     if body.name is not None or body.color is not None or body.description is not None:
         _require_can_edit_structure(role)
     if body.name is not None:
-        space.name = body.name.strip()
+        trimmed_name = body.name.strip()
+        if trimmed_name != space.name:
+            existing = await session.scalar(
+                select(Space).where(
+                    Space.workspace_id == workspace_id,
+                    Space.name == trimmed_name,
+                    Space.id != space.id,
+                )
+            )
+            if existing:
+                raise AppError(409, "CONFLICT", "A Space with this name already exists")
+        space.name = trimmed_name
     if body.color is not None:
         space.color = body.color
     if body.description is not None:
@@ -358,8 +337,10 @@ async def list_space_members(
         )
     ).all()
     data = [_member_row_payload(row) for row in rows]
-    explicit_ids = {row.user_id for row in rows if row.user_id}
-    data.extend(await _implicit_privileged_members(session, workspace_id, explicit_ids))
+    if space.created_by_id:
+        creator = await session.get(User, space.created_by_id)
+        if creator:
+            data.insert(0, _creator_row_payload(creator))
     return {"isPrivate": space.is_private, "data": data}
 
 
@@ -378,7 +359,6 @@ async def add_space_member(
     )
 
     target_role = await _target_workspace_role(session, workspace_id, target_user_id)
-    _reject_if_privileged_target(target_role)
     if target_role == WorkspaceRole.GUEST:
         raise AppError(
             400,
@@ -442,7 +422,6 @@ async def remove_space_member(
     space = await _get_space(session, workspace_id, space_id)
     _require_can_manage_access(role)
     target_role = await _target_workspace_role(session, workspace_id, target)
-    _reject_if_privileged_target(target_role)
     result = await session.execute(
         delete(SpaceMember).where(
             SpaceMember.space_id == space.id,
@@ -494,6 +473,7 @@ async def create_folder(
         name=body.name.strip(),
         sort_order=int(max_order or 0) + 1,
         is_private=bool(body.is_private),
+        created_by_id=user_id,
     )
     session.add(folder)
     await session.commit()
@@ -578,8 +558,10 @@ async def list_folder_members(
         )
     ).all()
     data = [_member_row_payload(row) for row in rows]
-    explicit_ids = {row.user_id for row in rows if row.user_id}
-    data.extend(await _implicit_privileged_members(session, workspace_id, explicit_ids))
+    if folder.created_by_id:
+        creator = await session.get(User, folder.created_by_id)
+        if creator:
+            data.insert(0, _creator_row_payload(creator))
     return {"isPrivate": folder.is_private, "data": data}
 
 
@@ -595,9 +577,6 @@ async def add_folder_member(
     _require_can_manage_access(role)
     target_user_id, target_email, status = await resolve_share_target(
         session, workspace_id, body.user_id, body.email
-    )
-    _reject_if_privileged_target(
-        await _target_workspace_role(session, workspace_id, target_user_id)
     )
 
     existing = await session.scalar(
@@ -656,7 +635,6 @@ async def remove_folder_member(
     folder = await _folder_with_space(session, workspace_id, folder_id)
     _require_can_manage_access(role)
     target_role = await _target_workspace_role(session, workspace_id, target)
-    _reject_if_privileged_target(target_role)
     result = await session.execute(
         delete(FolderMember).where(
             FolderMember.folder_id == folder.id,
@@ -725,6 +703,7 @@ async def create_list(
         name=body.name.strip(),
         sort_order=int(max_order or 0) + 1,
         is_private=bool(body.is_private),
+        created_by_id=user_id,
     )
     session.add(task_list)
     await session.flush()
@@ -862,8 +841,10 @@ async def list_list_members(
         )
     ).all()
     data = [_member_row_payload(row) for row in rows]
-    explicit_ids = {row.user_id for row in rows if row.user_id}
-    data.extend(await _implicit_privileged_members(session, workspace_id, explicit_ids))
+    if task_list.created_by_id:
+        creator = await session.get(User, task_list.created_by_id)
+        if creator:
+            data.insert(0, _creator_row_payload(creator))
     return {"isPrivate": task_list.is_private, "data": data}
 
 
@@ -879,9 +860,6 @@ async def add_list_member(
     _require_can_manage_access(role)
     target_user_id, target_email, status = await resolve_share_target(
         session, workspace_id, body.user_id, body.email
-    )
-    _reject_if_privileged_target(
-        await _target_workspace_role(session, workspace_id, target_user_id)
     )
 
     existing = await session.scalar(
@@ -940,7 +918,6 @@ async def remove_list_member(
     task_list = await _list_with_space(session, workspace_id, list_id)
     _require_can_manage_access(role)
     target_role = await _target_workspace_role(session, workspace_id, target)
-    _reject_if_privileged_target(target_role)
     result = await session.execute(
         delete(ListMember).where(
             ListMember.list_id == task_list.id,
@@ -1007,7 +984,6 @@ async def add_task_comment(
         session, task.task_list, user_id, role, PermissionLevel.COMMENT
     )
 
-    parent_author_id: str | None = None
     thread_parent_id: str | None = None
     if body.parent_comment_id:
         direct_parent = await session.scalar(
@@ -1018,13 +994,10 @@ async def add_task_comment(
         )
         if not direct_parent:
             raise AppError(404, "NOT_FOUND", "Parent comment not found")
-        parent_author_id = direct_parent.user_id
         thread_root = await _resolve_comment_thread_root(
             session, body.parent_comment_id
         )
         thread_parent_id = thread_root.id
-
-    follower_ids = list(task.follower_ids)
 
     comment = TaskComment(
         task_id=task_id,
@@ -1047,30 +1020,12 @@ async def add_task_comment(
             .values(comment_id=comment.id)
         )
 
-    comment_preview = body.body.strip() or "📎 Attachment"
+    # Task comments/replies only notify the people @mentioned in them, not
+    # every follower/parent-comment-author by default (see
+    # create_task_comment_notifications / create_task_comment_reply_notifications
+    # in notification_service.py - kept for reference, just not called here).
     comment_notifications: list[tuple[str, object]] = []
     reply_notifications: list[tuple[str, object]] = []
-
-    if thread_parent_id:
-        reply_notifications = await create_task_comment_reply_notifications(
-            session,
-            workspace_id=workspace_id,
-            actor_user_id=user_id,
-            task_name=task.name,
-            task_id=task_id,
-            parent_author_id=parent_author_id or "",
-            comment_preview=comment_preview,
-        )
-    else:
-        comment_notifications = await create_task_comment_notifications(
-            session,
-            workspace_id=workspace_id,
-            actor_user_id=user_id,
-            task_name=task.name,
-            task_id=task_id,
-            comment_preview=comment_preview,
-            follower_ids=follower_ids,
-        )
 
     already_notified = {uid for uid, _ in comment_notifications + reply_notifications}
     mention_notifications = await create_task_comment_mention_notifications(

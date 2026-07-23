@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useState } from "react";
 import {
-  CalendarIcon,
   FilterIcon,
   HashIcon,
   LayoutGridIcon,
   ListIcon,
+  PlusIcon,
   SearchIcon,
   Share2Icon,
   SlidersHorizontalIcon,
@@ -26,7 +26,7 @@ import {
 import type { ListStatus } from "@/lib/types/task";
 import { cn } from "@/lib/utils";
 
-type ViewMode = "channel" | "list" | "board" | "calendar";
+type ViewMode = "channel" | "list";
 
 export function SpacesListToolbar({
   listId,
@@ -111,31 +111,34 @@ export function SpacesListToolbar({
               label: "List",
               icon: <ListIcon className="size-3" />,
             },
-            {
-              id: "board",
-              label: "Board",
-              icon: <LayoutGridIcon className="size-3" />,
-            },
-            {
-              id: "calendar",
-              label: "Calendar",
-              icon: <CalendarIcon className="size-3" />,
-            },
           ]}
           active={view}
           onChange={onViewChange}
         />
-        {canShare ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 shrink-0 gap-1.5 border-neutral-200 bg-white px-3 text-xs text-black hover:bg-neutral-100 hover:text-black dark:bg-white dark:text-black dark:hover:bg-neutral-100 dark:hover:text-black"
-            onClick={() => setShareOpen(true)}
-          >
-            <Share2Icon className="size-3.5 text-black" />
-            Share
-          </Button>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-2">
+          {view === "list" ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 px-3 text-xs"
+              onClick={onCreateTask}
+            >
+              <PlusIcon className="size-3.5" />
+              Add task
+            </Button>
+          ) : null}
+          {canShare ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 border-neutral-200 bg-white px-3 text-xs text-black hover:bg-neutral-100 hover:text-black dark:bg-white dark:text-black dark:hover:bg-neutral-100 dark:hover:text-black"
+              onClick={() => setShareOpen(true)}
+            >
+              <Share2Icon className="size-3.5 text-black" />
+              Share
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {view === "channel" ? null : (

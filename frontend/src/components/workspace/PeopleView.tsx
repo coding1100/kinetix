@@ -184,7 +184,8 @@ export function PeopleView() {
 
   const manage = canManagePeople(actorRole);
   const canInvite = canInvitePeople(actorRole);
-  const canInviteAdmin = actorRole === "OWNER" || actorRole === "SUPER_ADMIN";
+  const canInviteAdmin =
+    actorRole === "OWNER" || actorRole === "SUPER_ADMIN" || actorRole === "ADMIN";
 
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 
@@ -310,11 +311,11 @@ export function PeopleView() {
     }
   };
 
-  const handleCancel = async (inviteId: string) => {
-    setInviteActionId(`cancel:${inviteId}`);
+  const handleCancel = async (invite: WorkspaceInviteRow) => {
+    setInviteActionId(`cancel:${invite.id}`);
     try {
-      await cancelWorkspaceInvite(accessToken, workspaceId, inviteId);
-      toast.success("Invite cancelled");
+      await cancelWorkspaceInvite(accessToken, workspaceId, invite.id);
+      toast.success(`Invite to ${invite.email} has been canceled`);
       reload();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Cancel failed");
@@ -376,7 +377,7 @@ export function PeopleView() {
             <SheetTitle>Invite people</SheetTitle>
             <SheetDescription>
               Add teammates to {workspace?.name ?? "this workspace"}. They join
-              via email link — same flow as ClickUp workspace invites.
+              via email link.
             </SheetDescription>
           </SheetHeader>
           {ready ? (
@@ -580,6 +581,7 @@ export function PeopleView() {
                       {ROLE_LABELS[inv.role] ?? inv.role}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">—</td>
+                    <td className="px-4 py-3 text-muted-foreground">—</td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">
                       {inv.invitedBy?.fullName ?? "—"}
                     </td>
@@ -629,7 +631,7 @@ export function PeopleView() {
                               <DropdownMenuItem
                                 variant="destructive"
                                 disabled={inviteActionId === `cancel:${inv.id}`}
-                                onClick={() => void handleCancel(inv.id)}
+                                onClick={() => void handleCancel(inv)}
                               >
                                 <XIcon className="size-3.5" />
                                 Cancel invite

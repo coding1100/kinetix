@@ -59,6 +59,7 @@ export function TaskDatesField({
           <Input
             type="date"
             value={toInputDate(startDateIso)}
+            max={toInputDate(dueDateIso) || undefined}
             onChange={(e) => void onStartChange(e.target.value)}
           />
           {startDateIso ? (
@@ -78,6 +79,7 @@ export function TaskDatesField({
           <Input
             type="date"
             value={toInputDate(dueDateIso)}
+            min={toInputDate(startDateIso) || undefined}
             onChange={(e) => void onDueChange(e.target.value)}
           />
           {dueDateIso ? (

@@ -12,7 +12,6 @@ from app.db.models.enums import (
     InboxItemType,
     MemberStatus,
     PermissionLevel,
-    StatusGroup,
     TaskPriority,
     TaskStatus,
     WorkspaceRole,
@@ -80,10 +79,8 @@ from app.schemas.home import (
 )
 from app.services import workspace_service
 from app.services.notification_service import (
-    create_task_activity_notifications,
     create_task_assignment_notifications,
     emit_home_notifications,
-    task_notification_recipients,
 )
 from app.socket.emit import broadcast_task_event
 from app.services.home_helpers import (
@@ -579,9 +576,7 @@ async def list_shared_with_me(
     session: AsyncSession, workspace_id: str, user_id: str, role: WorkspaceRole
 ) -> dict:
     """Folders/Lists the user has an explicit grant on but can't already see
-    via their Space access — i.e. content shared with them individually.
-    Privileged roles see every Space anyway, so this is always empty for them.
-    """
+    via their Space access — i.e. content shared with them individually."""
     visible = await visible_space_ids(session, workspace_id, user_id, role)
     if visible is None:
         return {"data": []}
@@ -895,24 +890,6 @@ async def create_subtask(
         select(Task).where(Task.id == task.id).options(*_TASK_LOAD)
     )
     mapped = map_subtask_summary(refreshed, user_id)
-    parent_recipients = await task_notification_recipients(
-        session, task_id=parent_task_id, exclude_user_id=user_id
-    )
-    subtask_notifications = await create_task_activity_notifications(
-        session,
-        workspace_id=workspace_id,
-        actor_user_id=user_id,
-        task_name=parent.name,
-        task_id=parent_task_id,
-        recipient_ids=parent_recipients,
-        title=f"Subtask added in {parent.name}",
-        preview_template="{actor} added a subtask to {task}",
-        activity_kind="task_subtask_created",
-        item_type=InboxItemType.COMMENT,
-    )
-    if subtask_notifications:
-        await session.commit()
-        await emit_home_notifications(session, workspace_id, subtask_notifications)
     await broadcast_task_event(
         workspace_id=workspace_id,
         action="created",
@@ -970,27 +947,6 @@ async def add_task_dependency(
     )
     await session.commit()
 
-    recipients = await task_notification_recipients(
-        session, task_id=task_id, exclude_user_id=user_id
-    )
-    safe_related_name = related.name.replace("{", "{{").replace("}", "}}")
-    dependency_notifications = await create_task_activity_notifications(
-        session,
-        workspace_id=workspace_id,
-        actor_user_id=user_id,
-        task_name=task.name,
-        task_id=task_id,
-        recipient_ids=recipients,
-        title=f"Dependency added: {task.name}",
-        preview_template=(
-            "{actor} added a dependency on {task} (\"" + safe_related_name + "\")"
-        ),
-        activity_kind="task_dependency_added",
-        item_type=InboxItemType.COMMENT,
-    )
-    if dependency_notifications:
-        await session.commit()
-        await emit_home_notifications(session, workspace_id, dependency_notifications)
     return {
         "id": dependency.id,
         "type": body.type,
@@ -1038,25 +994,6 @@ async def add_checklist(
     await session.commit()
     await session.refresh(checklist, attribute_names=["items"])
 
-    recipients = await task_notification_recipients(
-        session, task_id=task_id, exclude_user_id=user_id
-    )
-    safe_checklist_name = checklist.name.replace("{", "{{").replace("}", "}}")
-    checklist_notifications = await create_task_activity_notifications(
-        session,
-        workspace_id=workspace_id,
-        actor_user_id=user_id,
-        task_name=task.name,
-        task_id=task_id,
-        recipient_ids=recipients,
-        title=f"Checklist added: {task.name}",
-        preview_template=f'{{actor}} added checklist "{safe_checklist_name}" to {{task}}',
-        activity_kind="task_checklist_created",
-        item_type=InboxItemType.COMMENT,
-    )
-    if checklist_notifications:
-        await session.commit()
-        await emit_home_notifications(session, workspace_id, checklist_notifications)
     return map_checklist(checklist)
 
 
@@ -1484,6 +1421,18 @@ async def update_task(
                 parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
             )
 
+    if task.start_date and task.due_date:
+        # DB-loaded datetimes can come back tz-naive (asyncpg quirk on
+        # timestamptz columns) while freshly-parsed ones above are always
+        # forced aware - both already represent UTC instants, so strip
+        # tzinfo before comparing rather than mixing aware/naive.
+        start_cmp = task.start_date.replace(tzinfo=None)
+        due_cmp = task.due_date.replace(tzinfo=None)
+        if start_cmp > due_cmp:
+            raise AppError(
+                400, "VALIDATION_ERROR", "Start date must be on or before the due date"
+            )
+
     if "time_estimate_minutes" in body.model_fields_set:
         can_see_estimate, _ = await get_member_time_flags(session, workspace_id, user_id)
         if not can_see_estimate:
@@ -1550,7 +1499,6 @@ async def update_task(
     task.updated_at = datetime.now(timezone.utc)
 
     assignment_notifications: list = []
-    change_labels: list[str] = []
     if body.assignee_ids is not None:
         added = set(body.assignee_ids) - old_assignee_ids
         if added:
@@ -1562,20 +1510,6 @@ async def update_task(
                 task_id=task_id,
                 assignee_ids=list(added),
             )
-    if task.status_id != original_status_id or task.status != original_status:
-        change_labels.append("status")
-    if task.name != original_name:
-        change_labels.append("name")
-    if task.description != original_description:
-        change_labels.append("description")
-    if task.priority != original_priority:
-        change_labels.append("priority")
-    if task.due_date != original_due_date:
-        change_labels.append("due date")
-    if task.start_date != original_start_date:
-        change_labels.append("start date")
-    if task.list_id != original_list_id:
-        change_labels.append("list")
 
     await session.commit()
     refreshed = await session.scalar(
@@ -1722,71 +1656,6 @@ async def update_task(
         await emit_home_notifications(
             session, workspace_id, assignment_notifications
         )
-    if added_followers:
-        # Auto-follows from assignment already got the "assigned" notification
-        # above; only notify people explicitly added as a watcher, same as
-        # real ClickUp does ("X added you as a watcher").
-        follow_notifications = await create_task_activity_notifications(
-            session,
-            workspace_id=workspace_id,
-            actor_user_id=user_id,
-            task_name=task.name,
-            task_id=task_id,
-            recipient_ids=list(added_followers),
-            title=f"Added as watcher: {task.name}",
-            preview_template="{actor} added you as a watcher on {task}",
-            activity_kind="task_followed",
-            item_type=InboxItemType.CHAT,
-        )
-        if follow_notifications:
-            await session.commit()
-            await emit_home_notifications(session, workspace_id, follow_notifications)
-    if change_labels:
-        recipients = await task_notification_recipients(
-            session, task_id=task_id, exclude_user_id=user_id
-        )
-        archived_status = (
-            (
-                refreshed.list_status is not None
-                and refreshed.list_status.status_group == StatusGroup.CLOSED
-            )
-            or str(mapped.get("status", "")).strip().lower()
-            in {"closed", "archived"}
-        )
-        task_update_notifications = await create_task_activity_notifications(
-            session,
-            workspace_id=workspace_id,
-            actor_user_id=user_id,
-            task_name=task.name,
-            task_id=task_id,
-            recipient_ids=recipients,
-            title=(
-                f"Task archived: {task.name}"
-                if archived_status and "status" in change_labels
-                else f"Task updated: {task.name}"
-            ),
-            preview_template=(
-                "{actor} archived {task}"
-                if archived_status and "status" in change_labels
-                else (
-                    "{actor} updated {task} ("
-                    + ", ".join(change_labels[:3])
-                    + (", …" if len(change_labels) > 3 else "")
-                    + ")"
-                )
-            ),
-            activity_kind=(
-                "task_archived"
-                if archived_status and "status" in change_labels
-                else "task_updated"
-            ),
-            item_type=InboxItemType.COMMENT,
-        )
-        if task_update_notifications:
-            await session.commit()
-            await emit_home_notifications(
-                session, workspace_id, task_update_notifications
-            )
     await broadcast_task_event(
         workspace_id=workspace_id,
         action="updated",
@@ -1821,28 +1690,10 @@ async def delete_task(
     await require_list_permission(
         session, task.task_list, user_id, role, PermissionLevel.EDIT
     )
-    task_name = task.name
     task_id = task.id
     list_id = task.list_id
-    recipients = await task_notification_recipients(
-        session, task_id=task_id, exclude_user_id=user_id
-    )
-    delete_notifications = await create_task_activity_notifications(
-        session,
-        workspace_id=workspace_id,
-        actor_user_id=user_id,
-        task_name=task_name,
-        task_id=task_id,
-        recipient_ids=recipients,
-        title=f"Task deleted: {task_name}",
-        preview_template="{actor} deleted {task}",
-        activity_kind="task_deleted",
-        item_type=InboxItemType.COMMENT,
-    )
     await session.delete(task)
     await session.commit()
-    if delete_notifications:
-        await emit_home_notifications(session, workspace_id, delete_notifications)
     await broadcast_task_event(
         workspace_id=workspace_id,
         action="deleted",
@@ -2290,24 +2141,6 @@ async def follow_task(
     if user_id not in task.follower_ids:
         task.follower_ids = [*task.follower_ids, user_id]
         await session.commit()
-    recipients = await task_notification_recipients(
-        session, task_id=task_id, exclude_user_id=user_id
-    )
-    follow_notifications = await create_task_activity_notifications(
-        session,
-        workspace_id=workspace_id,
-        actor_user_id=user_id,
-        task_name=task.name,
-        task_id=task_id,
-        recipient_ids=recipients,
-        title=f"Following task: {task.name}",
-        preview_template="{actor} is now following {task}",
-        activity_kind="task_followed",
-        item_type=InboxItemType.CHAT,
-    )
-    if follow_notifications:
-        await session.commit()
-        await emit_home_notifications(session, workspace_id, follow_notifications)
     return {"ok": True, "following": True}
 
 
@@ -2321,24 +2154,6 @@ async def unfollow_task(
     if user_id in task.follower_ids:
         task.follower_ids = [uid for uid in task.follower_ids if uid != user_id]
         await session.commit()
-    recipients = await task_notification_recipients(
-        session, task_id=task_id, exclude_user_id=user_id
-    )
-    unfollow_notifications = await create_task_activity_notifications(
-        session,
-        workspace_id=workspace_id,
-        actor_user_id=user_id,
-        task_name=task.name,
-        task_id=task_id,
-        recipient_ids=recipients,
-        title=f"Unfollowed task: {task.name}",
-        preview_template="{actor} stopped following {task}",
-        activity_kind="task_unfollowed",
-        item_type=InboxItemType.CHAT,
-    )
-    if unfollow_notifications:
-        await session.commit()
-        await emit_home_notifications(session, workspace_id, unfollow_notifications)
     return {"ok": True, "following": False}
 
 

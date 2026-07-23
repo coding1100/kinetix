@@ -14,6 +14,13 @@ export const MENTION_NAME_SEP = "\u00a0";
 export const MESSAGE_TOKEN_RE =
   /(@[\w]+(?:\u00a0[\w]+)?|@[\w]+&nbsp;[\w]+|#[\w-]+)(?=\s|$|[.,!?;:])/g;
 
+/** Matches PersonMentionToken's styling in sent messages (MessageBodyWithMentions). */
+export const MENTION_CHIP_PERSON_CLASS =
+  "rounded-sm px-0.5 font-medium text-[#4F8EF7] hover:bg-[#4F8EF7]/15 cursor-default";
+/** Matches the #channel styling in sent messages. */
+export const MENTION_CHIP_CHANNEL_CLASS =
+  "rounded-sm px-0.5 font-medium text-sky-700 hover:bg-sky-700/10 cursor-default";
+
 export function formatPersonMention(label: string) {
   const normalized = label.trim().replace(/\s+/g, MENTION_NAME_SEP);
   return `@${normalized} `;
@@ -62,6 +69,12 @@ export function getDraftMentionQuery(draft: string): string | null {
     query = query.slice(0, newline);
   }
 
+  // A plain space ends the query - either the user finished typing a
+  // one-word filter and moved on to normal text, or this is already an
+  // inserted "@First Last " mention token (nbsp, not a plain space,
+  // joins the two names) rather than one still being typed.
+  if (query.includes(" ")) return null;
+
   if (query.includes("@") || query.includes("#")) return null;
   if (query.length > 0 && /[^\w\s.'-]/.test(query)) return null;
 
@@ -78,6 +91,7 @@ export function stripDraftMentionQuery(draft: string): string {
     query = query.slice(0, newline);
   }
 
+  if (query.includes(" ")) return draft;
   if (query.includes("@") || query.includes("#")) return draft;
   if (query.length > 0 && /[^\w\s.'-]/.test(query)) return draft;
 
