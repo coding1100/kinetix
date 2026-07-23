@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -8,6 +9,22 @@ from app.config import get_settings
 
 def _settings():
     return get_settings()
+
+
+def validate_password_strength(password: str) -> str:
+    """Require lower, upper, digit, and symbol. Raises ValueError with a
+    user-facing message on failure; used from pydantic field_validators."""
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters")
+    if not re.search(r"[a-z]", password):
+        raise ValueError("Password must include a lowercase letter")
+    if not re.search(r"[A-Z]", password):
+        raise ValueError("Password must include an uppercase letter")
+    if not re.search(r"\d", password):
+        raise ValueError("Password must include a number")
+    if not re.search(r"[^\w\s]", password):
+        raise ValueError("Password must include a symbol")
+    return password
 
 
 def _bcrypt_input(value: str) -> bytes:
