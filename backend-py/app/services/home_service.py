@@ -1423,6 +1423,18 @@ async def update_task(
                 parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
             )
 
+    if task.start_date and task.due_date:
+        # DB-loaded datetimes can come back tz-naive (asyncpg quirk on
+        # timestamptz columns) while freshly-parsed ones above are always
+        # forced aware - both already represent UTC instants, so strip
+        # tzinfo before comparing rather than mixing aware/naive.
+        start_cmp = task.start_date.replace(tzinfo=None)
+        due_cmp = task.due_date.replace(tzinfo=None)
+        if start_cmp > due_cmp:
+            raise AppError(
+                400, "VALIDATION_ERROR", "Start date must be on or before the due date"
+            )
+
     if "time_estimate_minutes" in body.model_fields_set:
         can_see_estimate, _ = await get_member_time_flags(session, workspace_id, user_id)
         if not can_see_estimate:
