@@ -202,10 +202,11 @@ export function markDmUnread(
   );
 }
 
-function messagesQuery(limit?: number, before?: string | null) {
+function messagesQuery(limit?: number, before?: string | null, around?: string | null) {
   const params = new URLSearchParams();
   if (limit) params.set("limit", String(limit));
   if (before) params.set("before", before);
+  if (around) params.set("around", around);
   const q = params.toString();
   return q ? `?${q}` : "";
 }
@@ -214,13 +215,13 @@ export function fetchChannelMessages(
   token: string,
   workspaceId: string,
   channelId: string,
-  init?: RequestInit & { limit?: number; before?: string | null }
+  init?: RequestInit & { limit?: number; before?: string | null; around?: string | null }
 ) {
-  const { limit, before, ...rest } = init ?? {};
+  const { limit, before, around, ...rest } = init ?? {};
   return apiFetch<PaginatedMessagesResponse>(
     wsPath(
       workspaceId,
-      `/chat/channels/${channelId}/messages${messagesQuery(limit, before)}`
+      `/chat/channels/${channelId}/messages${messagesQuery(limit, before, around)}`
     ),
     { token, ...rest }
   );
@@ -351,13 +352,13 @@ export function fetchDmMessages(
   token: string,
   workspaceId: string,
   conversationId: string,
-  init?: RequestInit & { limit?: number; before?: string | null }
+  init?: RequestInit & { limit?: number; before?: string | null; around?: string | null }
 ) {
-  const { limit, before, ...rest } = init ?? {};
+  const { limit, before, around, ...rest } = init ?? {};
   return apiFetch<PaginatedMessagesResponse>(
     wsPath(
       workspaceId,
-      `/chat/dms/${conversationId}/messages${messagesQuery(limit, before)}`
+      `/chat/dms/${conversationId}/messages${messagesQuery(limit, before, around)}`
     ),
     { token, ...rest }
   );

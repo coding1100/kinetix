@@ -2,6 +2,7 @@ import type { AppRouterInstance } from "next/dist/shared/lib/app-router-context.
 import { createDm } from "@/lib/api/chat";
 import { ApiError } from "@/lib/api/client";
 import { setConversationCache } from "@/lib/chat/conversation-cache";
+import { conversationPath } from "@/lib/chat/conversation-path";
 import { findDmByUserId, upsertDmInSidebar } from "@/lib/chat/sidebar-dm";
 import { joinDmRoom } from "@/lib/socket/dm-rooms";
 import { useAuthStore } from "@/stores/auth-store";
@@ -14,7 +15,8 @@ function resolveExistingDm(workspaceId: string, userId: string) {
 
 export async function openDirectMessageForUser(
   userId: string,
-  router: AppRouterInstance
+  router: AppRouterInstance,
+  currentPathname?: string | null
 ): Promise<boolean> {
   const accessToken = useAuthStore.getState().accessToken;
   const workspaceId = useAuthStore.getState().activeWorkspaceId;
@@ -35,7 +37,7 @@ export async function openDirectMessageForUser(
     if (existing) {
       setConversationCache(workspaceId, "dm", existing.id, { dm: existing });
       closePersonProfile();
-      router.push(`/chat/dm/${existing.id}`);
+      router.push(conversationPath("dm", existing.id, currentPathname));
       return true;
     }
 
@@ -44,7 +46,7 @@ export async function openDirectMessageForUser(
     upsertDmInSidebar(dm, workspaceId);
     setConversationCache(workspaceId, "dm", dm.id, { dm });
     closePersonProfile();
-    router.push(`/chat/dm/${dm.id}`);
+    router.push(conversationPath("dm", dm.id, currentPathname));
     return true;
   } catch (err) {
     toast.error(
