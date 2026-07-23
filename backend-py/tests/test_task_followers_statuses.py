@@ -61,19 +61,13 @@ async def test_list_statuses_and_status_id_patch(api_client: AsyncClient):
     )
     assert meta.status_code == 200, meta.text
     statuses = meta.json()["statuses"]
-    assert len(statuses) == 11
+    assert len(statuses) == 5
     assert [s["name"] for s in statuses] == [
         "BACKLOG",
-        "GROOMING",
         "TODO",
-        "READY FOR DEVELOPMENT",
         "IN PROGRESS",
-        "IN UI INTEGRATION READY",
-        "IN QA READY",
-        "IN QA",
-        "IN QA SENT BACK",
+        "READY FOR REVIEW",
         "DONE",
-        "CLOSED",
     ]
     assert {"OPEN", "TODO", "IN_PROGRESS", "DONE"} <= {
         s["legacyKey"] for s in statuses

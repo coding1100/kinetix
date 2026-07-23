@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import datetime
 from typing import Any, Optional
@@ -13,6 +14,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSON, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -28,6 +30,17 @@ from app.db.models.enums import (
     TaskPriority,
     TaskStatus,
 )
+
+# Default status set for a new Space's Lists - stored per-Space (not
+# hardcoded globally) so a future settings UI can let a space customize
+# its own set without touching every other space. See Space.status_config.
+DEFAULT_SPACE_STATUS_CONFIG: list[dict[str, Any]] = [
+    {"legacyKey": "OPEN", "name": "BACKLOG", "color": "#7A7F87", "statusGroup": "NOT_STARTED", "sortOrder": 0},
+    {"legacyKey": "TODO", "name": "TODO", "color": "#87909E", "statusGroup": "NOT_STARTED", "sortOrder": 1},
+    {"legacyKey": "IN_PROGRESS", "name": "IN PROGRESS", "color": "#4194F6", "statusGroup": "ACTIVE", "sortOrder": 2},
+    {"legacyKey": "IN_PROGRESS", "name": "READY FOR REVIEW", "color": "#F57C00", "statusGroup": "ACTIVE", "sortOrder": 3},
+    {"legacyKey": "DONE", "name": "DONE", "color": "#0F766E", "statusGroup": "DONE", "sortOrder": 4},
+]
 
 
 class Space(Base):
@@ -47,6 +60,13 @@ class Space(Base):
     )
     is_private: Mapped[bool] = mapped_column(
         "isPrivate", Boolean, default=False, server_default="false"
+    )
+    status_config: Mapped[list[dict[str, Any]]] = mapped_column(
+        "statusConfig",
+        JSONB,
+        nullable=False,
+        default=lambda: [dict(row) for row in DEFAULT_SPACE_STATUS_CONFIG],
+        server_default=text(f"'{json.dumps(DEFAULT_SPACE_STATUS_CONFIG)}'::jsonb"),
     )
     created_at: Mapped[datetime] = mapped_column(
         "createdAt", DateTime(timezone=True), server_default=func.now()
