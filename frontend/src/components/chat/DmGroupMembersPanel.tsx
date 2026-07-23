@@ -1,11 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { XIcon, UserMinusIcon, UserPlusIcon } from "lucide-react";
+import { XIcon, UserMinusIcon } from "lucide-react";
 import type { DirectMessage, DmParticipant } from "@/lib/types/chat";
 import { PanelCardShell } from "@/components/shared/PanelCardShell";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { UserAvatarWithPresence } from "@/components/shared/AvatarWithPresence";
@@ -13,9 +15,9 @@ import { useUserPresence } from "@/stores/presence-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
+import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
 import {
   addDmParticipants,
-  fetchWorkspaceMembers,
   removeDmParticipant,
   renameGroupDm,
 } from "@/lib/api/chat";
@@ -25,6 +27,7 @@ import {
   avatarColorClassForKey,
   avatarInitialFromName,
 } from "@/lib/user-display";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 function MemberRow({
@@ -87,11 +90,27 @@ export function DmGroupMembersPanel({
   const setDmDetailsView = useChatStore((s) => s.setDmDetailsView);
   const currentUserId = useAuthStore((s) => s.user?.id);
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
+  const membersQuery = useWorkspaceMembersQuery();
   const [query, setQuery] = useState("");
   const [groupName, setGroupName] = useState(title);
   const [addQuery, setAddQuery] = useState("");
   const [savingName, setSavingName] = useState(false);
-  const [adding, setAdding] = useState(false);
+  const [addingId, setAddingId] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [justAdded, setJustAdded] = useState<Set<string>>(() => new Set());
+
+  const addCandidates = useMemo(() => {
+    const q = addQuery.trim().toLowerCase();
+    const pool = (membersQuery.data ?? []).filter(
+      (m) => !participants.some((p) => p.id === m.id) && !justAdded.has(m.id)
+    );
+    if (!q) return pool;
+    return pool.filter(
+      (m) =>
+        m.fullName.toLowerCase().includes(q) ||
+        m.email.toLowerCase().includes(q)
+    );
+  }, [membersQuery.data, participants, justAdded, addQuery]);
 
   const members = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -119,29 +138,18 @@ export function DmGroupMembersPanel({
     }
   };
 
-  const handleAddMember = async () => {
-    const term = addQuery.trim().toLowerCase();
-    if (!term || !ready) return;
-    setAdding(true);
+  const handleAddMember = async (member: { id: string; fullName: string }) => {
+    if (!ready) return;
+    setAddingId(member.id);
     try {
-      const membersRes = await fetchWorkspaceMembers(accessToken, workspaceId);
-      const match = membersRes.data.find(
-        (m) =>
-          !participants.some((p) => p.id === m.id) &&
-          (m.fullName.toLowerCase().includes(term) ||
-            m.email.toLowerCase().includes(term))
-      );
-      if (!match) {
-        toast.error("No matching workspace member found");
-        return;
-      }
-      await addDmParticipants(accessToken, workspaceId, dmId, [match.id]);
-      toast.success(`Added ${match.fullName}`);
+      await addDmParticipants(accessToken, workspaceId, dmId, [member.id]);
+      toast.success(`Added ${member.fullName}`);
+      setJustAdded((prev) => new Set(prev).add(member.id));
       setAddQuery("");
     } catch (err) {
       toast.error(formatRequestError(err));
     } finally {
-      setAdding(false);
+      setAddingId(null);
     }
   };
 
@@ -200,21 +208,59 @@ export function DmGroupMembersPanel({
             Save
           </Button>
         </div>
-        <div className="flex gap-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="dm-add-people">Add people</Label>
           <Input
-            placeholder="Add member by name or email"
+            id="dm-add-people"
+            placeholder="Name or email"
             value={addQuery}
             onChange={(e) => setAddQuery(e.target.value)}
-            aria-label="Add member"
+            onFocus={() => setAddOpen(true)}
+            onBlur={() => setTimeout(() => setAddOpen(false), 150)}
           />
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={adding || !addQuery.trim()}
-            onClick={() => void handleAddMember()}
-          >
-            <UserPlusIcon className="size-4" />
-          </Button>
+          {addOpen ? (
+            <ul className="max-h-40 space-y-0.5 overflow-y-auto rounded-lg border border-border p-1">
+              {addCandidates.map((m) => (
+                <li key={m.id}>
+                  <button
+                    type="button"
+                    disabled={addingId !== null}
+                    onClick={() => void handleAddMember(m)}
+                    className={cn(
+                      "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left hover:bg-muted/50",
+                      addingId === m.id && "opacity-50"
+                    )}
+                  >
+                    <Avatar className="size-7">
+                      <AvatarFallback
+                        className={cn(
+                          "text-xs font-semibold",
+                          avatarColorClassForKey(m.id, m.fullName)
+                        )}
+                      >
+                        {avatarInitialFromName(m.fullName)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm">
+                        {m.fullName}
+                      </span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {m.email}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+              {addCandidates.length === 0 ? (
+                <li className="px-2 py-3 text-sm text-muted-foreground">
+                  {addQuery.trim()
+                    ? "No matching workspace member found"
+                    : "Everyone in the workspace is already in this group"}
+                </li>
+              ) : null}
+            </ul>
+          ) : null}
         </div>
         <Input
           placeholder="Search members"
