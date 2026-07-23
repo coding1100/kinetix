@@ -103,13 +103,6 @@ def can_transfer_ownership(role: WorkspaceRole | None) -> bool:
     return is_owner(role)
 
 
-async def has_privileged_workspace_access(
-    session: AsyncSession, workspace_id: str, user_id: str
-) -> bool:
-    role = await get_active_workspace_role(session, workspace_id, user_id)
-    return is_privileged(role)
-
-
 async def get_member_time_flags(
     session: AsyncSession, workspace_id: str, user_id: str
 ) -> tuple[bool, bool]:

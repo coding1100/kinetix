@@ -68,9 +68,16 @@ class Space(Base):
         default=lambda: [dict(row) for row in DEFAULT_SPACE_STATUS_CONFIG],
         server_default=text(f"'{json.dumps(DEFAULT_SPACE_STATUS_CONFIG)}'::jsonb"),
     )
+    created_by_id: Mapped[str | None] = mapped_column(
+        "createdById",
+        String,
+        ForeignKey("User.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         "createdAt", DateTime(timezone=True), server_default=func.now()
     )
+    created_by: Mapped["User | None"] = relationship()
     folders: Mapped[list["Folder"]] = relationship(
         back_populates="space", passive_deletes=True
     )
@@ -83,11 +90,12 @@ class Space(Base):
 
 
 class SpaceMember(Base):
-    """Explicit per-user permission override on a Space.
+    """Explicit per-user access grant on a Space, for anyone but its creator.
 
-    Only meaningful for private Spaces (grants access) or to hand a
-    GUEST/LIMITED_MEMBER a higher level than their role default. Owner/
-    Super Admin always bypass this and don't need a row here.
+    The Space's creator (Space.created_by_id) always has EDIT, unconditionally
+    - no row needed, and none is created for them anymore. Everyone else,
+    regardless of workspace role, needs a row here (a "Share") to see it at
+    all - there is no ambient default access for public or private Spaces.
 
     `user_id` is nullable to support sharing with an email that has a
     pending workspace Invite but hasn't accepted yet: such rows are created
@@ -147,6 +155,13 @@ class Folder(Base):
     is_private: Mapped[bool] = mapped_column(
         "isPrivate", Boolean, default=False, server_default="false"
     )
+    created_by_id: Mapped[str | None] = mapped_column(
+        "createdById",
+        String,
+        ForeignKey("User.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_by: Mapped["User | None"] = relationship()
     space: Mapped["Space"] = relationship(back_populates="folders")
     lists: Mapped[list["TaskList"]] = relationship(
         back_populates="folder", passive_deletes=True
@@ -216,6 +231,13 @@ class TaskList(Base):
     is_private: Mapped[bool] = mapped_column(
         "isPrivate", Boolean, default=False, server_default="false"
     )
+    created_by_id: Mapped[str | None] = mapped_column(
+        "createdById",
+        String,
+        ForeignKey("User.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_by: Mapped["User | None"] = relationship()
     space: Mapped["Space"] = relationship(back_populates="lists")
     folder: Mapped["Folder | None"] = relationship(back_populates="lists")
     tasks: Mapped[list["Task"]] = relationship(
