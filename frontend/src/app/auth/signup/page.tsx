@@ -23,6 +23,8 @@ import { signup, getMe } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import { useAuthStore } from "@/stores/auth-store";
+import { PasswordStrengthMeter } from "@/components/auth/PasswordStrengthMeter";
+import { isPasswordValid } from "@/lib/password";
 
 export default function SignupPage() {
   if (!FEATURE_FLAGS.selfSignup) {
@@ -38,6 +40,10 @@ export default function SignupPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isPasswordValid(password)) {
+      toast.error("Password doesn't meet the requirements below");
+      return;
+    }
     setLoading(true);
     try {
       const result = await signup({
@@ -136,6 +142,7 @@ export default function SignupPage() {
                 autoComplete="new-password"
               />
             </div>
+            <PasswordStrengthMeter password={password} />
           </div>
           <Button
             type="submit"

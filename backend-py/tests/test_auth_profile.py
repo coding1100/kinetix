@@ -50,6 +50,9 @@ async def test_patch_me_updates_profile():
             json={"fullName": me.json()["fullName"]},
         )
 
+        # Weak new password (no uppercase/symbol) must be rejected by the
+        # strength validator without touching the demo account's real
+        # password, which every other test in the suite logs in with.
         pwd = await client.post(
             "/api/v1/auth/me/change-password",
             headers=headers,
@@ -58,4 +61,4 @@ async def test_patch_me_updates_profile():
                 "newPassword": "password123",
             },
         )
-        assert pwd.status_code == 200
+        assert pwd.status_code == 400
