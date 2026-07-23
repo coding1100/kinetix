@@ -206,11 +206,13 @@ export function CreateTaskDialog({
   open,
   onOpenChange,
   defaultListId,
+  defaultStatusId,
   onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultListId?: string;
+  defaultStatusId?: string;
   onCreated: (task: Task, options?: { open?: boolean }) => void;
 }) {
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
@@ -314,7 +316,9 @@ export function CreateTaskDialog({
         );
         setStatuses(rows);
         const defaultStatus =
-          rows.find((s) => s.legacyKey === "TODO") ?? rows[0];
+          rows.find((s) => s.id === defaultStatusId) ??
+          rows.find((s) => s.legacyKey === "TODO") ??
+          rows[0];
         setStatusId(defaultStatus?.id ?? "");
       })
       .catch(() => {
@@ -326,7 +330,7 @@ export function CreateTaskDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, listId, ready, accessToken, workspaceId]);
+  }, [open, listId, ready, accessToken, workspaceId, defaultStatusId]);
 
   const selectedStatus = useMemo(
     () => statuses.find((s) => s.id === statusId) ?? statuses[0],
@@ -661,91 +665,96 @@ export function CreateTaskDialog({
       : created;
   }
 
+  async function attachStagedExtras(task: Task, accessToken: string, workspaceId: string) {
+    for (const { file } of pendingAttachments) {
+      try {
+        await uploadTaskAttachment(accessToken, workspaceId, task.id, file);
+      } catch (e) {
+        toast.error(
+          e instanceof Error
+            ? `Failed to attach ${file.name}: ${e.message}`
+            : `Failed to attach ${file.name}`
+        );
+      }
+    }
+
+    for (const dep of dependencies) {
+      try {
+        await addTaskDependency(accessToken, workspaceId, task.id, {
+          relatedTaskId: dep.task.id,
+          type: dep.type,
+        });
+      } catch (e) {
+        toast.error(
+          e instanceof Error
+            ? `Failed to link ${dep.task.name}: ${e.message}`
+            : `Failed to link ${dep.task.name}`
+        );
+      }
+    }
+
+    for (const subtask of subtasks) {
+      try {
+        await createSubtask(accessToken, workspaceId, task.id, subtask.name);
+      } catch (e) {
+        toast.error(
+          e instanceof Error
+            ? `Failed to add subtask "${subtask.name}": ${e.message}`
+            : `Failed to add subtask "${subtask.name}"`
+        );
+      }
+    }
+
+    for (const checklist of checklists) {
+      try {
+        const createdChecklist = await addChecklist(
+          accessToken,
+          workspaceId,
+          task.id,
+          { name: checklist.name }
+        );
+        for (const item of checklist.items) {
+          try {
+            await addChecklistItem(
+              accessToken,
+              workspaceId,
+              task.id,
+              createdChecklist.id,
+              {
+                text: item.text,
+                assigneeId: item.assigneeId,
+                isChecked: item.checked,
+              }
+            );
+          } catch (e) {
+            toast.error(
+              e instanceof Error
+                ? `Failed to add item "${item.text}": ${e.message}`
+                : `Failed to add item "${item.text}"`
+            );
+          }
+        }
+      } catch (e) {
+        toast.error(
+          e instanceof Error
+            ? `Failed to create checklist "${checklist.name}": ${e.message}`
+            : `Failed to create checklist "${checklist.name}"`
+        );
+      }
+    }
+  }
+
   async function handleCreate(action: CreateAction = "default") {
     if (!canCreate || !ready || !accessToken || !workspaceId) return;
     setSaving(true);
     try {
       const finalTask = await createOneTask();
-
-      for (const { file } of pendingAttachments) {
-        try {
-          await uploadTaskAttachment(accessToken, workspaceId, finalTask.id, file);
-        } catch (e) {
-          toast.error(
-            e instanceof Error
-              ? `Failed to attach ${file.name}: ${e.message}`
-              : `Failed to attach ${file.name}`
-          );
-        }
-      }
-
-      for (const dep of dependencies) {
-        try {
-          await addTaskDependency(accessToken, workspaceId, finalTask.id, {
-            relatedTaskId: dep.task.id,
-            type: dep.type,
-          });
-        } catch (e) {
-          toast.error(
-            e instanceof Error
-              ? `Failed to link ${dep.task.name}: ${e.message}`
-              : `Failed to link ${dep.task.name}`
-          );
-        }
-      }
-
-      for (const subtask of subtasks) {
-        try {
-          await createSubtask(accessToken, workspaceId, finalTask.id, subtask.name);
-        } catch (e) {
-          toast.error(
-            e instanceof Error
-              ? `Failed to add subtask "${subtask.name}": ${e.message}`
-              : `Failed to add subtask "${subtask.name}"`
-          );
-        }
-      }
-
-      for (const checklist of checklists) {
-        try {
-          const createdChecklist = await addChecklist(
-            accessToken,
-            workspaceId,
-            finalTask.id,
-            { name: checklist.name }
-          );
-          for (const item of checklist.items) {
-            try {
-              await addChecklistItem(
-                accessToken,
-                workspaceId,
-                finalTask.id,
-                createdChecklist.id,
-                {
-                  text: item.text,
-                  assigneeId: item.assigneeId,
-                  isChecked: item.checked,
-                }
-              );
-            } catch (e) {
-              toast.error(
-                e instanceof Error
-                  ? `Failed to add item "${item.text}": ${e.message}`
-                  : `Failed to add item "${item.text}"`
-              );
-            }
-          }
-        } catch (e) {
-          toast.error(
-            e instanceof Error
-              ? `Failed to create checklist "${checklist.name}": ${e.message}`
-              : `Failed to create checklist "${checklist.name}"`
-          );
-        }
-      }
+      await attachStagedExtras(finalTask, accessToken, workspaceId);
 
       if (action === "duplicate") {
-        await createOneTask();
+        const duplicateTask = await createOneTask();
+        await attachStagedExtras(duplicateTask, accessToken, workspaceId);
+        onCreated(duplicateTask);
         toast.success("Task created and duplicated");
       } else {
         toast.success("Task created");
@@ -758,6 +767,10 @@ export function CreateTaskDialog({
         const defaultStatus =
           statuses.find((s) => s.legacyKey === "TODO") ?? statuses[0];
         setStatusId(defaultStatus?.id ?? "");
+      } else if (action === "duplicate") {
+        // Keep the modal open with its current fields so another
+        // "Create and duplicate" (or a tweak-then-duplicate) can follow -
+        // unlike the other actions, this one shouldn't clear the form.
       } else {
         onOpenChange(false);
         resetState();
