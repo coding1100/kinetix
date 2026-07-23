@@ -310,11 +310,11 @@ export function PeopleView() {
     }
   };
 
-  const handleCancel = async (inviteId: string) => {
-    setInviteActionId(`cancel:${inviteId}`);
+  const handleCancel = async (invite: WorkspaceInviteRow) => {
+    setInviteActionId(`cancel:${invite.id}`);
     try {
-      await cancelWorkspaceInvite(accessToken, workspaceId, inviteId);
-      toast.success("Invite cancelled");
+      await cancelWorkspaceInvite(accessToken, workspaceId, invite.id);
+      toast.success(`Invite to ${invite.email} has been canceled`);
       reload();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Cancel failed");
@@ -629,7 +629,7 @@ export function PeopleView() {
                               <DropdownMenuItem
                                 variant="destructive"
                                 disabled={inviteActionId === `cancel:${inv.id}`}
-                                onClick={() => void handleCancel(inv.id)}
+                                onClick={() => void handleCancel(inv)}
                               >
                                 <XIcon className="size-3.5" />
                                 Cancel invite
