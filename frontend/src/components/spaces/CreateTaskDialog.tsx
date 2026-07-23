@@ -1652,16 +1652,7 @@ export function CreateTaskDialog({
           onChange={onAttachmentInputChange}
         />
 
-        <DialogFooter className="flex-row items-center justify-between border-t border-border px-4 py-3 sm:justify-between">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground"
-            onClick={() => toast("Templates — coming soon")}
-          >
-            Templates
-          </Button>
+        <DialogFooter className="flex-row items-center justify-end border-t border-border px-4 py-3 sm:justify-end">
           <div className="flex items-center gap-2">
             <Tooltip>
               <TooltipTrigger

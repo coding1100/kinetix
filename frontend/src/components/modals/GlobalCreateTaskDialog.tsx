@@ -10,11 +10,11 @@ export function GlobalCreateTaskDialog() {
   const router = useRouter();
   const pathname = usePathname();
   const { workspaceId } = useWorkspaceApi();
-  const { activeModal, closeModal } = useUiStore();
+  const { activeModal, modalListId, closeModal } = useUiStore();
   const open = activeModal === "create-task";
 
   const listMatch = pathname.match(/\/spaces\/l\/([^/?]+)/);
-  const defaultListId = listMatch?.[1];
+  const defaultListId = modalListId ?? listMatch?.[1];
 
   return (
     <CreateTaskDialog

@@ -7,6 +7,7 @@ import {
   HashIcon,
   LayoutGridIcon,
   ListIcon,
+  PlusIcon,
   SearchIcon,
   Share2Icon,
   SlidersHorizontalIcon,
@@ -114,17 +115,30 @@ export function SpacesListToolbar({
           active={view}
           onChange={onViewChange}
         />
-        {canShare ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 shrink-0 gap-1.5 border-neutral-200 bg-white px-3 text-xs text-black hover:bg-neutral-100 hover:text-black dark:bg-white dark:text-black dark:hover:bg-neutral-100 dark:hover:text-black"
-            onClick={() => setShareOpen(true)}
-          >
-            <Share2Icon className="size-3.5 text-black" />
-            Share
-          </Button>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-2">
+          {view === "list" ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 px-3 text-xs"
+              onClick={onCreateTask}
+            >
+              <PlusIcon className="size-3.5" />
+              Add task
+            </Button>
+          ) : null}
+          {canShare ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 border-neutral-200 bg-white px-3 text-xs text-black hover:bg-neutral-100 hover:text-black dark:bg-white dark:text-black dark:hover:bg-neutral-100 dark:hover:text-black"
+              onClick={() => setShareOpen(true)}
+            >
+              <Share2Icon className="size-3.5 text-black" />
+              Share
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {view === "channel" ? null : (
