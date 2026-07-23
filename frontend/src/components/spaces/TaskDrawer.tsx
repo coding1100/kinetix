@@ -641,15 +641,6 @@ export function TaskDrawer({
     if (updated) toast.success("Description saved");
   }
 
-  async function handleDescriptionKeyDown(
-    e: React.KeyboardEvent<HTMLTextAreaElement>
-  ) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      await handleDescriptionSave();
-    }
-  }
-
   async function handleAddSubtask() {
     const name = subtaskInput.trim();
     if (!taskId || !name || !ready || !accessToken || !workspaceId) return;
@@ -1115,10 +1106,6 @@ export function TaskDrawer({
     const trimmed = name.trim();
     if (!trimmed || trimmed === task?.name) return;
     await persistPatch({ name: trimmed });
-  }
-
-  async function handleDescriptionBlur() {
-    await handleDescriptionSave();
   }
 
   async function handleStatusChange(nextStatusId: string) {
@@ -1868,15 +1855,21 @@ export function TaskDrawer({
                   <textarea
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    onBlur={() => void handleDescriptionBlur()}
-                    onKeyDown={(e) => void handleDescriptionKeyDown(e)}
                     rows={5}
                     placeholder="Add description"
                     className="min-h-[120px] w-full resize-y rounded-lg border border-transparent bg-muted/30 px-4 py-3 text-sm leading-relaxed outline-none focus:border-border"
                   />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Press Enter to save · Shift+Enter for new line
-                  </p>
+                  <div className="mt-2 flex justify-end">
+                    <Button
+                      type="button"
+                      size="sm"
+                      loading={saving}
+                      disabled={description === (task?.description ?? "")}
+                      onClick={() => void handleDescriptionSave()}
+                    >
+                      Save
+                    </Button>
+                  </div>
                 </div>
 
                 {attachments.length > 0 ? (
