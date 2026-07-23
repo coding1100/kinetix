@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { AuditList } from "@/components/AuditList";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CreateWorkspaceDialog } from "@/components/CreateWorkspaceDialog";
@@ -286,8 +287,11 @@ export default function WorkspacesPage() {
     try {
       await resendWorkspaceInvite(accessToken, workspaceId, inviteId);
       await loadInvites(workspaceId);
+      toast.success("Invite resent");
     } catch (err) {
-      setInviteError(formatRequestError(err));
+      const message = formatRequestError(err);
+      setInviteError(message);
+      toast.error(message);
     } finally {
       setInviteActionId(null);
     }
@@ -309,8 +313,9 @@ export default function WorkspacesPage() {
   const handleCopyInviteLink = async (url: string) => {
     try {
       await navigator.clipboard.writeText(url);
+      toast.success("Invite link copied");
     } catch {
-      // best-effort; clipboard access can be blocked in some contexts
+      toast.error("Couldn't copy link — clipboard access is blocked");
     }
   };
 
