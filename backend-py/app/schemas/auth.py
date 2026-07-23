@@ -1,4 +1,6 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from app.core.security import validate_password_strength
 
 
 class SignupBody(BaseModel):
@@ -8,6 +10,8 @@ class SignupBody(BaseModel):
     workspace_name: str | None = Field(default=None, max_length=80, alias="workspaceName")
 
     model_config = {"populate_by_name": True}
+
+    _validate_password = field_validator("password")(validate_password_strength)
 
 
 class LoginBody(BaseModel):
@@ -22,6 +26,8 @@ class ForgotPasswordBody(BaseModel):
 class ResetPasswordBody(BaseModel):
     token: str = Field(min_length=1)
     password: str = Field(min_length=8)
+
+    _validate_password = field_validator("password")(validate_password_strength)
 
 
 class OAuthExchangeBody(BaseModel):
@@ -69,6 +75,8 @@ class ChangePasswordBody(BaseModel):
     new_password: str = Field(min_length=8, alias="newPassword")
 
     model_config = {"populate_by_name": True}
+
+    _validate_password = field_validator("new_password")(validate_password_strength)
 
 
 class MeResponse(BaseModel):
