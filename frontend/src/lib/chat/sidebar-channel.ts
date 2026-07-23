@@ -11,7 +11,12 @@ export function patchSidebarChannel(
   patch: Partial<
     Pick<
       Channel,
-      "name" | "starred" | "pinnedAt" | "notificationLevel" | "isPrivate"
+      | "name"
+      | "starred"
+      | "pinnedAt"
+      | "notificationLevel"
+      | "isPrivate"
+      | "customIconColor"
     >
   >
 ) {
