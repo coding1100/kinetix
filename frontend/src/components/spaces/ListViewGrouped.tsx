@@ -111,7 +111,7 @@ export function ListViewGrouped({
   error: string | null;
   statusFilter: string;
   onTaskSelect: (taskId: string) => void;
-  onAddTask: () => void;
+  onAddTask: (statusId?: string) => void;
 }) {
   const groups = useMemo(() => {
     const rows = tasks ?? [];
@@ -155,7 +155,7 @@ export function ListViewGrouped({
               ) : null}
               <button
                 type="button"
-                onClick={onAddTask}
+                onClick={() => onAddTask(group.id)}
                 className={cn(
                   "flex w-full items-center gap-2 px-4 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground",
                   group.tasks.length === 0 && "border-t border-border/60"

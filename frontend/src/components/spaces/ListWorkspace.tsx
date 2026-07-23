@@ -77,9 +77,12 @@ export function ListWorkspace({
     router.replace(`${path}${q ? `?${q}` : ""}`);
   }, [router, path, searchParams]);
 
-  const openCreateTask = useCallback(() => {
-    openModal("create-task", undefined, listId);
-  }, [openModal, listId]);
+  const openCreateTask = useCallback(
+    (statusId?: string) => {
+      openModal("create-task", undefined, listId, statusId);
+    },
+    [openModal, listId]
+  );
 
   return (
     <>
