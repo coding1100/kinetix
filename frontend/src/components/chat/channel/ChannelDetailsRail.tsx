@@ -1,11 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import {
-  SearchIcon,
-  ReplyIcon,
-  SettingsIcon,
-} from "lucide-react";
+import { SearchIcon, SettingsIcon } from "lucide-react";
 import {
   useChatStore,
   type ChannelDetailsView,
@@ -31,7 +27,6 @@ const RAIL_ACTIONS: {
   icon: typeof SearchIcon;
 }[] = [
   { view: "search", label: "Search Channel", icon: SearchIcon },
-  { view: "replies", label: "Replies", icon: ReplyIcon },
 ];
 
 const AVATAR_RING = "ring-1 ring-card";
