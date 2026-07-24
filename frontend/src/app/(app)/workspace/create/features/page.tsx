@@ -51,9 +51,9 @@ export default function WorkspaceFeaturesPage() {
   return (
     <WorkspaceSetupShell
       title="Which features are you interested in trying?"
-      step={4}
-      totalSteps={6}
-      backHref="/workspace/create/invite"
+      step={3}
+      totalSteps={5}
+      backHref="/workspace/create/manage"
       nextHref="/workspace/create/tools"
       nextDisabled={false}
     >
