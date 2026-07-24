@@ -17,6 +17,7 @@ import {
   PencilIcon,
   PlusIcon,
   SearchIcon,
+  Settings2Icon,
   Share2Icon,
   Trash2Icon,
   UsersIcon,
@@ -293,7 +294,10 @@ export function SpacesSidebar() {
                       >
                         {space.name.slice(0, 1).toUpperCase()}
                       </span>
-                      <span className="truncate">{space.name}</span>
+                      <Tooltip>
+                        <TooltipTrigger render={<span className="truncate">{space.name}</span>} />
+                        <TooltipContent side="bottom">{space.name}</TooltipContent>
+                      </Tooltip>
                       {space.isPrivate ? (
                         <LockIcon className="size-3 shrink-0 opacity-70" />
                       ) : null}
@@ -348,6 +352,14 @@ export function SpacesSidebar() {
                               >
                                 <PencilIcon className="size-4" />
                                 Rename
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                render={
+                                  <Link href={`/home/spaces/${space.id}/settings`} />
+                                }
+                              >
+                                <Settings2Icon className="size-4" />
+                                Settings
                               </DropdownMenuItem>
                             </>
                           ) : null}
@@ -595,6 +607,9 @@ export function SpacesSidebar() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         mode={dialogMode}
+        onSpaceCreated={(spaceId) =>
+          setExpanded((prev) => ({ ...prev, [spaceId]: true }))
+        }
       />
       <ConfirmDialog
         open={deleteTarget !== null}
@@ -704,6 +719,14 @@ function ListNavItem({
                 <DropdownMenuItem onClick={onRename}>
                   <PencilIcon className="size-4" />
                   Rename
+                </DropdownMenuItem>
+              ) : null}
+              {onRename ? (
+                <DropdownMenuItem
+                  render={<Link href={`${listHref(listId)}/settings`} />}
+                >
+                  <Settings2Icon className="size-4" />
+                  Settings
                 </DropdownMenuItem>
               ) : null}
               {canShare ? (

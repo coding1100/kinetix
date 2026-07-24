@@ -19,6 +19,13 @@ export async function markNotificationReadAndSync(
     await markNotificationRead(token, workspaceId, itemId);
   } catch {
     /* local UI already updated; refetch on next refresh */
+  } finally {
+    // A refresh triggered right after the optimistic local update can race
+    // ahead of the write above and refetch a pre-write count, which would
+    // otherwise sit there until some unrelated future refresh happens to
+    // fix it. Bump again now that the write has actually landed (or
+    // failed) so the next fetch is guaranteed to reflect the true state.
+    bumpNotificationsRefresh();
   }
 }
 
@@ -33,5 +40,7 @@ export async function markAllNotificationsReadAndSync(
     await markAllNotificationsRead(token, workspaceId);
   } catch {
     /* local UI already updated; refetch on next refresh */
+  } finally {
+    bumpNotificationsRefresh();
   }
 }

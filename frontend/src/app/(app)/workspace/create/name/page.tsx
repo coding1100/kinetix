@@ -53,9 +53,9 @@ export default function WorkspaceNamePage() {
   return (
     <WorkspaceSetupShell
       title="Lastly, what would you like to name your Workspace?"
-      step={6}
-      totalSteps={6}
-      backHref="/workspace/create/invite"
+      step={5}
+      totalSteps={5}
+      backHref="/workspace/create/tools"
       nextHref="/home/inbox"
       nextLabel="Finish"
       nextDisabled={!canFinish || !accessToken || !user}

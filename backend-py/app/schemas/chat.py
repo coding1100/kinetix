@@ -10,6 +10,7 @@ class CreateChannelBody(BaseModel):
     spaceLabel: str | None = Field(default=None, max_length=120)
     memberIds: list[str] | None = Field(default=None, max_length=50)
     iconColor: str | None = Field(default=None, max_length=40)
+    icon: str | None = Field(default=None, max_length=40)
 
 
 class AddChannelMembersBody(BaseModel):
@@ -72,6 +73,7 @@ class UpdateChannelBody(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=80)
     topic: str | None = Field(default=None, max_length=500)
     iconColor: str | None = Field(default=None, max_length=40)
+    icon: str | None = Field(default=None, max_length=40)
 
 
 class UpdateChannelMemberBody(BaseModel):

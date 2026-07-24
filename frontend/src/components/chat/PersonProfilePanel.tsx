@@ -43,15 +43,16 @@ import {
   avatarInitialFromName,
 } from "@/lib/user-display";
 import { ROLE_LABELS } from "@/components/workspace/WorkspaceInviteForm";
-import { cn } from "@/lib/utils";
+import { cn, PKT_TIME_ZONE } from "@/lib/utils";
 import type { Task } from "@/lib/types/task";
 import { PageLoader } from "@/components/ui/page-loader";
 import { toast } from "sonner";
 
 function formatLocalTime() {
-  return new Date().toLocaleTimeString(undefined, {
+  return new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
+    timeZone: PKT_TIME_ZONE,
   });
 }
 

@@ -32,7 +32,7 @@ export interface WorkspaceInviteRow {
   role: string;
   expiresAt: string;
   createdAt: string | null;
-  status: "pending" | "expired";
+  status: "pending" | "expired" | "failed";
   invitedBy: { id: string; fullName: string } | null;
   inviteUrl: string;
 }

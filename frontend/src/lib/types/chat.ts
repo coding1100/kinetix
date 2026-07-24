@@ -19,6 +19,7 @@ export interface Channel {
   isPrivate?: boolean;
   isFollowing?: boolean;
   customIconColor?: string;
+  icon?: string | null;
   createdById?: string | null;
   canDelete?: boolean;
   listId?: string | null;
@@ -31,6 +32,7 @@ export interface Channel {
 export interface DmParticipant {
   id: string;
   fullName: string;
+  avatarUrl?: string | null;
 }
 
 export interface DirectMessage {

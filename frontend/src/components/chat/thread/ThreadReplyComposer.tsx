@@ -53,7 +53,7 @@ export function ThreadReplyComposer({
   conversationId?: string;
   onSend?: (payload: SendMessagePayload) => Promise<void>;
 }) {
-  const [alsoSend, setAlsoSend] = useState(true);
+  const [alsoSend, setAlsoSend] = useState(false);
   const [sending, setSending] = useState(false);
   const {
     segments,

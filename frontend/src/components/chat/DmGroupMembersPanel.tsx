@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { XIcon, UserMinusIcon } from "lucide-react";
 import type { DirectMessage, DmParticipant } from "@/lib/types/chat";
 import { PanelCardShell } from "@/components/shared/PanelCardShell";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -232,6 +232,9 @@ export function DmGroupMembersPanel({
                     )}
                   >
                     <Avatar className="size-7">
+                      {m.avatarUrl ? (
+                        <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                      ) : null}
                       <AvatarFallback
                         className={cn(
                           "text-xs font-semibold",

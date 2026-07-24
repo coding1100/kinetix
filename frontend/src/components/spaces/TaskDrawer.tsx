@@ -17,16 +17,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -36,11 +36,9 @@ import { Switch } from "@/components/ui/switch";
 import { CreateTaskListPicker } from "@/components/spaces/CreateTaskListPicker";
 import {
   fetchTask,
-  addToLineup,
   createFavorite,
   fetchRecents,
   recordTaskRecent,
-  removeFromLineup,
   type SpaceDto,
 } from "@/lib/api/home";
 import {
@@ -84,7 +82,7 @@ import {
   avatarInitialFromName,
 } from "@/lib/user-display";
 import { toast } from "sonner";
-import { appPath, cn } from "@/lib/utils";
+import { appPath, cn, PKT_TIME_ZONE } from "@/lib/utils";
 import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import {
   ArchiveIcon,
@@ -238,18 +236,23 @@ function formatCreatedLabel(iso: string | null | undefined) {
   if (!iso) return null;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: PKT_TIME_ZONE,
+  });
 }
 
 function formatActivityTime(iso: string | null | undefined) {
   if (!iso) return "";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString([], {
+  return date.toLocaleString("en-US", {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone: PKT_TIME_ZONE,
   });
 }
 
@@ -294,11 +297,8 @@ export function TaskDrawer({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [commenting, setCommenting] = useState(false);
   const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
-  const [inLineup, setInLineup] = useState(false);
-  const [lineupBusy, setLineupBusy] = useState(false);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
   const [followerSearch, setFollowerSearch] = useState("");
-  const [archiveBusy, setArchiveBusy] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareSearch, setShareSearch] = useState("");
   const [publicShareEnabled, setPublicShareEnabled] = useState(false);
@@ -334,6 +334,7 @@ export function TaskDrawer({
   const [subtaskOpen, setSubtaskOpen] = useState(false);
   const [subtaskBusy, setSubtaskBusy] = useState(false);
   const [attachBusy, setAttachBusy] = useState(false);
+  const [uploadingAttachments, setUploadingAttachments] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [checklists, setChecklists] = useState<TaskChecklist[]>([]);
   const [checklistBusy, setChecklistBusy] = useState(false);
@@ -460,7 +461,6 @@ export function TaskDrawer({
         setDueInput(t.dueDateIso ? t.dueDateIso.slice(0, 10) : "");
         setStartInput(t.startDateIso ? t.startDateIso.slice(0, 10) : "");
         setTimeEstimateMinutes(t.timeEstimateMinutes ?? null);
-        setInLineup(Boolean(t.inLineup));
         setSubtasks(t.subtasks ?? []);
         setAttachments(t.attachments ?? []);
         setChecklists(t.checklists ?? []);
@@ -544,10 +544,6 @@ export function TaskDrawer({
 
   const selectedStatus = statusColumns?.find((s) => s.id === statusId);
   const StatusIcon = selectedStatus ? statusIcon(selectedStatus) : CircleIcon;
-  const isArchived = Boolean(
-    selectedStatus?.statusGroup === "CLOSED" ||
-      task?.status?.trim().toLowerCase() === "closed"
-  );
 
   const filteredMembers = useMemo(() => {
     const q = assigneeSearch.trim().toLowerCase();
@@ -697,6 +693,8 @@ export function TaskDrawer({
       return;
     }
     setAttachBusy(true);
+    const names = Array.from(fileList).map((f) => f.name);
+    setUploadingAttachments(names);
     try {
       for (const file of Array.from(fileList)) {
         await uploadTaskAttachment(accessToken, workspaceId, taskId, file);
@@ -710,6 +708,7 @@ export function TaskDrawer({
       toast.error(e instanceof Error ? e.message : "Could not attach file");
     } finally {
       setAttachBusy(false);
+      setUploadingAttachments([]);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
@@ -1265,26 +1264,6 @@ export function TaskDrawer({
     }
   }
 
-  async function handleToggleLineup() {
-    if (!taskId || !ready || !accessToken || !workspaceId) return;
-    setLineupBusy(true);
-    try {
-      if (inLineup) {
-        await removeFromLineup(accessToken, workspaceId, taskId);
-        setInLineup(false);
-        toast.success("Removed from LineUp");
-      } else {
-        await addToLineup(accessToken, workspaceId, taskId);
-        setInLineup(true);
-        toast.success("Added to LineUp");
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not update LineUp");
-    } finally {
-      setLineupBusy(false);
-    }
-  }
-
   async function handleFavorite() {
     if (!task || !ready || !accessToken || !workspaceId) return;
     setFavoriteBusy(true);
@@ -1317,47 +1296,6 @@ export function TaskDrawer({
       toast.success(isFollower ? "Unfollowed task" : "Following task");
     } else {
       toast.success(isFollower ? "Removed follower" : "Added follower");
-    }
-  }
-
-  async function handleToggleArchive() {
-    if (!taskId || !ready || !accessToken || !workspaceId) return;
-    setArchiveBusy(true);
-    try {
-      if (statusColumns?.length) {
-        const archiveStatus = statusColumns.find(
-          (s) =>
-            s.statusGroup === "CLOSED" ||
-            (s.legacyKey ?? "").toUpperCase() === "CLOSED"
-        );
-        const activeStatus =
-          statusColumns.find(
-            (s) =>
-              (s.legacyKey ?? "").toUpperCase() === "TODO" ||
-              (s.legacyKey ?? "").toUpperCase() === "OPEN"
-          ) ??
-          statusColumns.find((s) => s.statusGroup === "ACTIVE") ??
-          statusColumns.find((s) => s.statusGroup !== "CLOSED");
-        const target = isArchived ? activeStatus : archiveStatus;
-        if (!target) {
-          toast.error(
-            isArchived
-              ? "No active status configured for this list"
-              : "No archived/closed status configured for this list"
-          );
-          return;
-        }
-        setStatusId(target.id);
-        if (target.legacyKey) setStatusKey(target.legacyKey as TaskStatusKey);
-        await persistPatch({ statusId: target.id });
-      } else {
-        await persistPatch({ status: isArchived ? "TODO" : "DONE" });
-      }
-      toast.success(isArchived ? "Task unarchived" : "Task archived");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not update archive state");
-    } finally {
-      setArchiveBusy(false);
     }
   }
 
@@ -1451,57 +1389,6 @@ export function TaskDrawer({
                 />
                 <TooltipContent side="bottom">Favorite</TooltipContent>
               </Tooltip>
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label="More actions"
-                          >
-                            <MoreHorizontalIcon className="size-4" />
-                          </Button>
-                        }
-                      />
-                      <TooltipContent side="bottom">More actions</TooltipContent>
-                    </Tooltip>
-                  }
-                />
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>Task actions</DropdownMenuLabel>
-                  <DropdownMenuItem
-                    disabled={archiveBusy || !task}
-                    onClick={() => void handleToggleArchive()}
-                  >
-                    <ArchiveIcon className="mr-2 size-4" />
-                    {isArchived ? "Unarchive task" : "Archive task"}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onClick={() => setDeleteOpen(true)}
-                    disabled={!task}
-                  >
-                    <Trash2Icon className="mr-2 size-4" />
-                    Delete task
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    disabled={lineupBusy || !task}
-                    onClick={() => void handleToggleLineup()}
-                  >
-                    {inLineup ? "Remove from LineUp" : "Add to LineUp"}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={saving || !task || !currentUserId}
-                    onClick={() => void toggleFollower(currentUserId ?? "")}
-                  >
-                    {following ? "Unfollow" : "Follow"}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
             </div>
           </div>
 
@@ -1638,6 +1525,9 @@ export function TaskDrawer({
                                         isDeactivated && "opacity-50"
                                       )}
                                     >
+                                      {m.avatarUrl ? (
+                                        <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                                      ) : null}
                                       <AvatarFallback
                                         className={cn(
                                           "text-[10px] text-white",
@@ -1684,6 +1574,9 @@ export function TaskDrawer({
                                   onClick={() => void toggleAssignee(m.id)}
                                 >
                                   <Avatar className="size-6">
+                                    {m.avatarUrl ? (
+                                      <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                                    ) : null}
                                     <AvatarFallback
                                       className={cn(
                                         "text-[10px] text-white",
@@ -1823,6 +1716,20 @@ export function TaskDrawer({
                         onChange={(e) => void handleAttachFiles(e.target.files)}
                       />
                     </div>
+
+                    {uploadingAttachments.length > 0 ? (
+                      <div className="mb-3 flex flex-col gap-1.5">
+                        {uploadingAttachments.map((name) => (
+                          <div
+                            key={name}
+                            className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground"
+                          >
+                            <Spinner size="sm" label={`Uploading ${name}`} />
+                            <span className="min-w-0 flex-1 truncate">{name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
 
                     {imageAttachments.length > 0 ? (
                       <div className="mb-3">
@@ -2137,6 +2044,9 @@ export function TaskDrawer({
                                           }
                                         >
                                           <Avatar className="size-6">
+                                            {m.avatarUrl ? (
+                                              <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                                            ) : null}
                                             <AvatarFallback
                                               className={cn(
                                                 "text-[10px] font-semibold",
@@ -2260,6 +2170,12 @@ export function TaskDrawer({
                                           >
                                             {assignee ? (
                                               <Avatar className="size-4">
+                                                {assignee.avatarUrl ? (
+                                                  <AvatarImage
+                                                    src={assignee.avatarUrl}
+                                                    alt={assignee.fullName}
+                                                  />
+                                                ) : null}
                                                 <AvatarFallback
                                                   className={cn(
                                                     "text-[8px] font-semibold",
@@ -2316,6 +2232,12 @@ export function TaskDrawer({
                                                     }
                                                   >
                                                     <Avatar className="size-6">
+                                                      {m.avatarUrl ? (
+                                                        <AvatarImage
+                                                          src={m.avatarUrl}
+                                                          alt={m.fullName}
+                                                        />
+                                                      ) : null}
                                                       <AvatarFallback
                                                         className={cn(
                                                           "text-[10px] font-semibold",
@@ -2398,6 +2320,12 @@ export function TaskDrawer({
                                         );
                                         return draftAssignee ? (
                                           <Avatar className="size-3.5">
+                                            {draftAssignee.avatarUrl ? (
+                                              <AvatarImage
+                                                src={draftAssignee.avatarUrl}
+                                                alt={draftAssignee.fullName}
+                                              />
+                                            ) : null}
                                             <AvatarFallback
                                               className={cn(
                                                 "text-[7px] font-semibold",
@@ -2455,6 +2383,9 @@ export function TaskDrawer({
                                             }
                                           >
                                             <Avatar className="size-6">
+                                              {m.avatarUrl ? (
+                                                <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                                              ) : null}
                                               <AvatarFallback
                                                 className={cn(
                                                   "text-[10px] font-semibold",
@@ -2897,6 +2828,9 @@ export function TaskDrawer({
                       className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/60"
                     >
                       <Avatar className="size-7">
+                        {member.avatarUrl ? (
+                          <AvatarImage src={member.avatarUrl} alt={member.fullName} />
+                        ) : null}
                         <AvatarFallback
                           className={cn(
                             "text-[10px] text-white",

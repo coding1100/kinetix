@@ -1,7 +1,7 @@
 "use client";
 
 import type { MentionMember } from "@/hooks/use-mention-members";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import {
   avatarColorClassForKey,
@@ -56,6 +56,9 @@ export function MentionMemberList({
             onClick={() => onSelect(member)}
           >
             <Avatar className="size-8 shrink-0">
+              {member.avatarUrl ? (
+                <AvatarImage src={member.avatarUrl} alt={member.fullName} />
+              ) : null}
               <AvatarFallback
                 className={cn(
                   "text-xs font-semibold",

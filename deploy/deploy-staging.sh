@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Staging deploy — Docker only. Public URL http://HOST/staging via prod nginx.
+# Staging deploy — Docker only. Public URL http://HOST/staging via host nginx
+# (deploy/nginx/host.conf), which proxies to the staging containers'
+# host-published ports (127.0.0.1:4010 api, 127.0.0.1:3010 web).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -10,8 +12,8 @@ STAGING_BASE_PATH="${STAGING_BASE_PATH:-/staging}"
 PUBLIC_HOST="${PUBLIC_HOST:-kinetix.infosoftco.com}"
 STAGING_PUBLIC_URL="${STAGING_PUBLIC_URL:-https://${PUBLIC_HOST}${STAGING_BASE_PATH}}"
 STAGING_FRONTEND_ORIGIN="${STAGING_FRONTEND_ORIGIN:-https://${PUBLIC_HOST}}"
-EDGE_NETWORK="${EDGE_NETWORK:-kinetix_edge}"
-NGINX_CONTAINER="${NGINX_CONTAINER:-kinetix-nginx-1}"
+STAGING_API_PORT="${STAGING_API_PORT:-4010}"
+STAGING_WEB_PORT="${STAGING_WEB_PORT:-3010}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.staging.yml}"
 
 log() { echo "==> $*"; }
@@ -46,48 +48,21 @@ disable_staging_systemd() {
   done
 }
 
-ensure_edge_network() {
-  if ! docker network inspect "$EDGE_NETWORK" >/dev/null 2>&1; then
-    log "Create Docker edge network: $EDGE_NETWORK"
-    docker network create "$EDGE_NETWORK"
-  fi
-}
-
-ensure_nginx_on_edge() {
-  if ! docker ps --format '{{.Names}}' | grep -qx "$NGINX_CONTAINER"; then
-    return 0
-  fi
-  if docker inspect "$NGINX_CONTAINER" --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' \
-    | grep -qw "$EDGE_NETWORK"; then
-    return 0
-  fi
-  log "Attach $NGINX_CONTAINER to $EDGE_NETWORK"
-  docker network connect "$EDGE_NETWORK" "$NGINX_CONTAINER"
-}
-
-reload_prod_nginx() {
-  local nginx_src="$ROOT/deploy/nginx/docker.conf"
-  local nginx_dst="$PROD_ROOT/deploy/nginx/docker.conf"
+reload_host_nginx() {
+  local nginx_src="$ROOT/deploy/nginx/host.conf"
+  local nginx_dst="/etc/nginx/sites-available/kinetix"
   if [ ! -f "$nginx_src" ]; then
     echo "ERROR: missing $nginx_src"
     exit 1
   fi
-  if ! docker ps --format '{{.Names}}' | grep -qx "$NGINX_CONTAINER"; then
-    echo "ERROR: $NGINX_CONTAINER is not running — start production Docker first"
-    exit 1
-  fi
-  mkdir -p "$(dirname "$nginx_dst")"
-  cp "$nginx_src" "$nginx_dst"
-  ensure_nginx_on_edge
-  log "Reload production nginx ($NGINX_CONTAINER)"
-  docker exec "$NGINX_CONTAINER" nginx -t
-  docker exec "$NGINX_CONTAINER" nginx -s reload
-  if docker exec "$NGINX_CONTAINER" wget -q -O- --timeout=5 \
-    http://kinetix-staging-web:3000/staging/auth/login >/dev/null 2>&1; then
-    log "nginx can reach kinetix-staging-web"
+  sudo cp "$nginx_src" "$nginx_dst"
+  log "Reload host nginx"
+  sudo nginx -t
+  sudo systemctl reload nginx
+  if curl -fsS --max-time 5 "http://127.0.0.1:${STAGING_WEB_PORT}/staging/auth/login" >/dev/null 2>&1; then
+    log "nginx can reach staging web on 127.0.0.1:${STAGING_WEB_PORT}"
   else
-    echo "WARN: nginx cannot reach http://kinetix-staging-web:3000/staging/auth/login"
-    docker network inspect "$EDGE_NETWORK" --format '{{range .Containers}}{{.Name}} {{end}}' || true
+    echo "WARN: staging web not responding on 127.0.0.1:${STAGING_WEB_PORT}"
     docker compose -f "$APP_ROOT/$COMPOSE_FILE" ps 2>/dev/null || true
   fi
 }
@@ -103,7 +78,7 @@ log "Deployed commit: $(git rev-parse --short HEAD) — $(git log -1 --format='%
 disable_staging_systemd
 ensure_edge_network
 
-log "Ensure production stack + nginx edge network ($PROD_ROOT)"
+log "Ensure production stack is up ($PROD_ROOT)"
 cd "$PROD_ROOT"
 docker compose --env-file docker-compose.env -f docker-compose.yml -f docker-compose.app.yml up -d
 
@@ -168,12 +143,12 @@ if ! docker exec "$api_id" python -c "import urllib.request; urllib.request.urlo
   exit 1
 fi
 
-reload_prod_nginx
+reload_host_nginx
 
 STAGING_LOGIN_PATH="${STAGING_BASE_PATH}/auth/login"
 if ! wait_for_http "http://127.0.0.1${STAGING_LOGIN_PATH}" "Staging via nginx"; then
-  docker logs "$NGINX_CONTAINER" --tail 30
-  docker logs kinetix-staging-web --tail 30
+  sudo journalctl -u nginx --no-pager --lines 30 2>/dev/null || true
+  docker logs kinetix-staging-web-1 --tail 30 2>/dev/null || true
   echo "TIP: run deploy/diagnose-staging.sh"
   exit 1
 fi

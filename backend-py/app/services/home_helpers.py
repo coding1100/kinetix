@@ -281,6 +281,7 @@ def map_space_row(
         "description": space.description,
         "isPersonal": bool(getattr(space, "is_personal", False)),
         "isPrivate": bool(getattr(space, "is_private", False)),
+        "statusConfig": space.status_config,
         "folders": folder_payload,
         "standaloneLists": standalone_payload,
         "lastActivityAt": (last_activity_at or space.created_at).isoformat(),

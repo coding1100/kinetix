@@ -10,7 +10,6 @@ import {
   EyeOffIcon,
   LockIcon,
   MailIcon,
-  ShieldCheckIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AuthShell } from "@/components/auth/AuthShell";
@@ -83,7 +82,7 @@ function LoginForm() {
             <Input
               id="login-email"
               type="email"
-              placeholder="owner@demo.com"
+              placeholder="you@company.com"
               className="pl-9"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -139,14 +138,6 @@ function LoginForm() {
           <ArrowRightIcon className="size-4" />
         </Button>
       </form>
-      {FEATURE_FLAGS.demoCredentialsBanner && (
-        <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
-          <p className="flex items-center gap-2 text-xs text-muted-foreground">
-            <ShieldCheckIcon className="size-4 text-primary" />
-            Demo: owner@demo.com / password123
-          </p>
-        </div>
-      )}
       <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
           <CheckCircle2Icon className="size-4 text-emerald-600" />

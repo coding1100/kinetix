@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import smtplib
+from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -73,12 +74,14 @@ def _invite_bodies(
     inviter_name: str,
     invite_url: str,
     role: str,
+    expires_at: datetime,
 ) -> tuple[str, str]:
     role_label = ROLE_LABELS.get(role, role.replace("_", " ").title())
+    expires_label = f"{expires_at.strftime('%b')} {expires_at.day}, {expires_at.year} at {expires_at.strftime('%H:%M')} UTC"
     text = (
         f"{inviter_name} invited you to join {workspace_name} on Kinetix as {role_label}.\n\n"
         f"Accept your invite:\n{invite_url}\n\n"
-        "This link expires in a few days. If you did not expect this email, you can ignore it."
+        f"This link expires on {expires_label}. If you did not expect this email, you can ignore it."
     )
     html = f"""<!DOCTYPE html>
 <html>
@@ -87,7 +90,7 @@ def _invite_bodies(
      <strong>{workspace_name}</strong> on Kinetix as <strong>{role_label}</strong>.</p>
   <p><a href="{invite_url}" style="display:inline-block;padding:10px 18px;background:#5a43d6;color:#fff;text-decoration:none;border-radius:6px">Accept invite</a></p>
   <p style="font-size:13px;color:#555">Or copy this link:<br><a href="{invite_url}">{invite_url}</a></p>
-  <p style="font-size:12px;color:#888">This link expires soon. If you did not expect this email, you can ignore it.</p>
+  <p style="font-size:12px;color:#888">This link expires on {expires_label}. If you did not expect this email, you can ignore it.</p>
 </body>
 </html>"""
     return text, html
@@ -100,6 +103,7 @@ async def send_workspace_invite_email(
     inviter_name: str,
     invite_url: str,
     role: str,
+    expires_at: datetime,
 ) -> None:
     subject = f"You're invited to {workspace_name} on Kinetix"
     text_body, html_body = _invite_bodies(
@@ -107,6 +111,7 @@ async def send_workspace_invite_email(
         inviter_name=inviter_name,
         invite_url=invite_url,
         role=role,
+        expires_at=expires_at,
     )
     await asyncio.to_thread(
         _send_sync,
