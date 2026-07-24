@@ -1,6 +1,13 @@
 import { apiFetch } from "./client";
 import type { Task } from "@/lib/types/task";
 
+export type StatusConfigItem = {
+  name: string;
+  color: string;
+  statusGroup: string;
+  legacyKey?: string | null;
+};
+
 export type InboxItemType =
   | "comment"
   | "mention"
@@ -36,6 +43,7 @@ export interface SpaceDto {
   isPrivate?: boolean;
   canShare?: boolean;
   canManageStructure?: boolean;
+  statusConfig?: StatusConfigItem[];
   folders?: {
     id: string;
     name: string;

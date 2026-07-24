@@ -46,7 +46,7 @@ from app.services.chat_service import (
     sync_list_channel_members_for_space,
 )
 from app.services.home_helpers import map_list_entry, map_task
-from app.services.list_status_service import ensure_list_statuses
+from app.services.list_status_service import ensure_list_statuses, serialize_status_config
 from app.services.notification_service import (
     create_resource_share_notification,
     create_resource_unshare_notification,
@@ -256,8 +256,15 @@ async def update_space(
     space = await get_space_or_403(
         session, workspace_id, space_id, user_id, role, PermissionLevel.EDIT
     )
-    if body.name is not None or body.color is not None or body.description is not None:
+    if (
+        body.name is not None
+        or body.color is not None
+        or body.description is not None
+        or body.status_config is not None
+    ):
         _require_can_edit_structure(role)
+    if body.status_config is not None:
+        space.status_config = serialize_status_config(body.status_config)
     if body.name is not None:
         trimmed_name = body.name.strip()
         if trimmed_name != space.name:
@@ -738,12 +745,21 @@ async def update_list(
         _require_can_edit_structure(role)
         task_list.name = body.name.strip()
         renamed = True
+    if body.status_config is not None:
+        _require_can_edit_structure(role)
+        task_list.status_config = serialize_status_config(body.status_config)
+    elif body.inherit_status_config:
+        _require_can_edit_structure(role)
+        task_list.status_config = None
     privacy_changed = (
         body.is_private is not None and body.is_private != task_list.is_private
     )
     if privacy_changed:
         _require_can_manage_access(role)
         task_list.is_private = body.is_private
+    if body.status_config is not None or body.inherit_status_config:
+        await session.flush()
+        await ensure_list_statuses(session, list_id)
     await session.commit()
     if privacy_changed:
         await sync_list_channel_members_for_space(session, workspace_id, task_list.space)

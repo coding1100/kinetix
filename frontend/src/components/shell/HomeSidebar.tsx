@@ -267,7 +267,8 @@ function SpaceListLink({
   onDelete?: () => void;
 }) {
   const canDelete = Boolean(onDelete) && !isPersonal;
-  const hasMenu = Boolean(onRename) || canDelete || (Boolean(canShare) && Boolean(onShare));
+  const hasMenu =
+    Boolean(onRename) || canDelete || (Boolean(canShare) && Boolean(onShare));
   return (
     <div className="group/list flex items-center gap-0.5">
       <Link
@@ -307,6 +308,14 @@ function SpaceListLink({
               <DropdownMenuItem onClick={onRename}>
                 <PencilIcon className="size-4" />
                 Rename
+              </DropdownMenuItem>
+            ) : null}
+            {onRename ? (
+              <DropdownMenuItem
+                render={<Link href={`/home/l/${listId}/settings`} />}
+              >
+                <Settings2Icon className="size-4" />
+                Settings
               </DropdownMenuItem>
             ) : null}
             {canShare && onShare ? (
@@ -469,6 +478,12 @@ function SpaceRow({
                   >
                     <PencilIcon className="size-4" />
                     Rename
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    render={<Link href={`/home/spaces/${space.id}/settings`} />}
+                  >
+                    <Settings2Icon className="size-4" />
+                    Settings
                   </DropdownMenuItem>
                 </>
               ) : null}
