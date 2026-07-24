@@ -16,6 +16,21 @@ import { ROLE_LABELS } from "@/components/workspace/WorkspaceInviteForm";
 import { toast } from "sonner";
 import { avatarColorClassForKey, avatarInitial } from "@/lib/user-display";
 import { cn, PKT_TIME_ZONE } from "@/lib/utils";
+import { bumpWorkspaceMembersRefresh } from "@/lib/workspace/realtime";
+import { bumpWorkspacePeopleRefresh } from "@/stores/workspace-store";
+import { bumpSidebarRefresh } from "@/lib/chat/sidebar-channel";
+
+// Every other place a user's avatar/name shows up (People page, chat
+// sidebar DM rows, mention lists, channel/DM member dialogs) is a snapshot
+// fetched once and cached for the session, not a live subscription. There's
+// no realtime broadcast for profile changes, so this just forces this tab's
+// own caches to refetch immediately instead of staying stale until the next
+// full reload.
+function refreshCachedProfileViews() {
+  bumpWorkspaceMembersRefresh();
+  bumpWorkspacePeopleRefresh();
+  bumpSidebarRefresh();
+}
 
 export function ProfileView() {
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -80,6 +95,7 @@ export function ProfileView() {
         },
         workspaces: me.workspaces,
       });
+      refreshCachedProfileViews();
       toast.success("Profile updated");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to save profile");
@@ -134,6 +150,7 @@ export function ProfileView() {
           },
           workspaces: me.workspaces,
         });
+        refreshCachedProfileViews();
         toast.success("Photo updated", { id: toastId });
       })
       .catch((err) => {

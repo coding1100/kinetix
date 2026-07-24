@@ -126,7 +126,10 @@ async def get_avatar(user_id: str, session: DbSession):
     return Response(
         content=data,
         media_type=content_type,
-        headers={"Cache-Control": "public, max-age=300"},
+        # avatar_url is version-stamped (?v=<upload timestamp>) and never
+        # reused for different bytes, so this exact URL can be cached
+        # indefinitely - a re-upload gets a brand new URL instead.
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
 
 
