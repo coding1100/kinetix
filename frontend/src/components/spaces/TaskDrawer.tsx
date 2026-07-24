@@ -27,7 +27,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -37,11 +36,9 @@ import { Switch } from "@/components/ui/switch";
 import { CreateTaskListPicker } from "@/components/spaces/CreateTaskListPicker";
 import {
   fetchTask,
-  addToLineup,
   createFavorite,
   fetchRecents,
   recordTaskRecent,
-  removeFromLineup,
   type SpaceDto,
 } from "@/lib/api/home";
 import {
@@ -300,11 +297,8 @@ export function TaskDrawer({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [commenting, setCommenting] = useState(false);
   const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
-  const [inLineup, setInLineup] = useState(false);
-  const [lineupBusy, setLineupBusy] = useState(false);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
   const [followerSearch, setFollowerSearch] = useState("");
-  const [archiveBusy, setArchiveBusy] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareSearch, setShareSearch] = useState("");
   const [publicShareEnabled, setPublicShareEnabled] = useState(false);
@@ -467,7 +461,6 @@ export function TaskDrawer({
         setDueInput(t.dueDateIso ? t.dueDateIso.slice(0, 10) : "");
         setStartInput(t.startDateIso ? t.startDateIso.slice(0, 10) : "");
         setTimeEstimateMinutes(t.timeEstimateMinutes ?? null);
-        setInLineup(Boolean(t.inLineup));
         setSubtasks(t.subtasks ?? []);
         setAttachments(t.attachments ?? []);
         setChecklists(t.checklists ?? []);
@@ -551,10 +544,6 @@ export function TaskDrawer({
 
   const selectedStatus = statusColumns?.find((s) => s.id === statusId);
   const StatusIcon = selectedStatus ? statusIcon(selectedStatus) : CircleIcon;
-  const isArchived = Boolean(
-    selectedStatus?.statusGroup === "CLOSED" ||
-      task?.status?.trim().toLowerCase() === "closed"
-  );
 
   const filteredMembers = useMemo(() => {
     const q = assigneeSearch.trim().toLowerCase();
@@ -1275,26 +1264,6 @@ export function TaskDrawer({
     }
   }
 
-  async function handleToggleLineup() {
-    if (!taskId || !ready || !accessToken || !workspaceId) return;
-    setLineupBusy(true);
-    try {
-      if (inLineup) {
-        await removeFromLineup(accessToken, workspaceId, taskId);
-        setInLineup(false);
-        toast.success("Removed from LineUp");
-      } else {
-        await addToLineup(accessToken, workspaceId, taskId);
-        setInLineup(true);
-        toast.success("Added to LineUp");
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not update LineUp");
-    } finally {
-      setLineupBusy(false);
-    }
-  }
-
   async function handleFavorite() {
     if (!task || !ready || !accessToken || !workspaceId) return;
     setFavoriteBusy(true);
@@ -1327,47 +1296,6 @@ export function TaskDrawer({
       toast.success(isFollower ? "Unfollowed task" : "Following task");
     } else {
       toast.success(isFollower ? "Removed follower" : "Added follower");
-    }
-  }
-
-  async function handleToggleArchive() {
-    if (!taskId || !ready || !accessToken || !workspaceId) return;
-    setArchiveBusy(true);
-    try {
-      if (statusColumns?.length) {
-        const archiveStatus = statusColumns.find(
-          (s) =>
-            s.statusGroup === "CLOSED" ||
-            (s.legacyKey ?? "").toUpperCase() === "CLOSED"
-        );
-        const activeStatus =
-          statusColumns.find(
-            (s) =>
-              (s.legacyKey ?? "").toUpperCase() === "TODO" ||
-              (s.legacyKey ?? "").toUpperCase() === "OPEN"
-          ) ??
-          statusColumns.find((s) => s.statusGroup === "ACTIVE") ??
-          statusColumns.find((s) => s.statusGroup !== "CLOSED");
-        const target = isArchived ? activeStatus : archiveStatus;
-        if (!target) {
-          toast.error(
-            isArchived
-              ? "No active status configured for this list"
-              : "No archived/closed status configured for this list"
-          );
-          return;
-        }
-        setStatusId(target.id);
-        if (target.legacyKey) setStatusKey(target.legacyKey as TaskStatusKey);
-        await persistPatch({ statusId: target.id });
-      } else {
-        await persistPatch({ status: isArchived ? "TODO" : "DONE" });
-      }
-      toast.success(isArchived ? "Task unarchived" : "Task archived");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not update archive state");
-    } finally {
-      setArchiveBusy(false);
     }
   }
 
@@ -1461,57 +1389,6 @@ export function TaskDrawer({
                 />
                 <TooltipContent side="bottom">Favorite</TooltipContent>
               </Tooltip>
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label="More actions"
-                          >
-                            <MoreHorizontalIcon className="size-4" />
-                          </Button>
-                        }
-                      />
-                      <TooltipContent side="bottom">More actions</TooltipContent>
-                    </Tooltip>
-                  }
-                />
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>Task actions</DropdownMenuLabel>
-                  <DropdownMenuItem
-                    disabled={archiveBusy || !task}
-                    onClick={() => void handleToggleArchive()}
-                  >
-                    <ArchiveIcon className="mr-2 size-4" />
-                    {isArchived ? "Unarchive task" : "Archive task"}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onClick={() => setDeleteOpen(true)}
-                    disabled={!task}
-                  >
-                    <Trash2Icon className="mr-2 size-4" />
-                    Delete task
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    disabled={lineupBusy || !task}
-                    onClick={() => void handleToggleLineup()}
-                  >
-                    {inLineup ? "Remove from LineUp" : "Add to LineUp"}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={saving || !task || !currentUserId}
-                    onClick={() => void toggleFollower(currentUserId ?? "")}
-                  >
-                    {following ? "Unfollow" : "Follow"}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
             </div>
           </div>
 
