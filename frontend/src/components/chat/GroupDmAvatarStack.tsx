@@ -1,6 +1,6 @@
 "use client";
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import {
   avatarColorClassForKey,
@@ -37,6 +37,9 @@ export function GroupDmAvatarStack({
           )}
           style={{ zIndex: shown.length - index }}
         >
+          {participant.avatarUrl ? (
+            <AvatarImage src={participant.avatarUrl} alt={participant.fullName} />
+          ) : null}
           <AvatarFallback
             className={cn(
               text,

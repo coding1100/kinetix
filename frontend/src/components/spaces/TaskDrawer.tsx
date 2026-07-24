@@ -21,7 +21,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   DropdownMenu,
@@ -1525,6 +1525,9 @@ export function TaskDrawer({
                                         isDeactivated && "opacity-50"
                                       )}
                                     >
+                                      {m.avatarUrl ? (
+                                        <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                                      ) : null}
                                       <AvatarFallback
                                         className={cn(
                                           "text-[10px] text-white",
@@ -1571,6 +1574,9 @@ export function TaskDrawer({
                                   onClick={() => void toggleAssignee(m.id)}
                                 >
                                   <Avatar className="size-6">
+                                    {m.avatarUrl ? (
+                                      <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                                    ) : null}
                                     <AvatarFallback
                                       className={cn(
                                         "text-[10px] text-white",
@@ -2038,6 +2044,9 @@ export function TaskDrawer({
                                           }
                                         >
                                           <Avatar className="size-6">
+                                            {m.avatarUrl ? (
+                                              <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                                            ) : null}
                                             <AvatarFallback
                                               className={cn(
                                                 "text-[10px] font-semibold",
@@ -2161,6 +2170,12 @@ export function TaskDrawer({
                                           >
                                             {assignee ? (
                                               <Avatar className="size-4">
+                                                {assignee.avatarUrl ? (
+                                                  <AvatarImage
+                                                    src={assignee.avatarUrl}
+                                                    alt={assignee.fullName}
+                                                  />
+                                                ) : null}
                                                 <AvatarFallback
                                                   className={cn(
                                                     "text-[8px] font-semibold",
@@ -2217,6 +2232,12 @@ export function TaskDrawer({
                                                     }
                                                   >
                                                     <Avatar className="size-6">
+                                                      {m.avatarUrl ? (
+                                                        <AvatarImage
+                                                          src={m.avatarUrl}
+                                                          alt={m.fullName}
+                                                        />
+                                                      ) : null}
                                                       <AvatarFallback
                                                         className={cn(
                                                           "text-[10px] font-semibold",
@@ -2299,6 +2320,12 @@ export function TaskDrawer({
                                         );
                                         return draftAssignee ? (
                                           <Avatar className="size-3.5">
+                                            {draftAssignee.avatarUrl ? (
+                                              <AvatarImage
+                                                src={draftAssignee.avatarUrl}
+                                                alt={draftAssignee.fullName}
+                                              />
+                                            ) : null}
                                             <AvatarFallback
                                               className={cn(
                                                 "text-[7px] font-semibold",
@@ -2356,6 +2383,9 @@ export function TaskDrawer({
                                             }
                                           >
                                             <Avatar className="size-6">
+                                              {m.avatarUrl ? (
+                                                <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                                              ) : null}
                                               <AvatarFallback
                                                 className={cn(
                                                   "text-[10px] font-semibold",
@@ -2798,6 +2828,9 @@ export function TaskDrawer({
                       className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/60"
                     >
                       <Avatar className="size-7">
+                        {member.avatarUrl ? (
+                          <AvatarImage src={member.avatarUrl} alt={member.fullName} />
+                        ) : null}
                         <AvatarFallback
                           className={cn(
                             "text-[10px] text-white",

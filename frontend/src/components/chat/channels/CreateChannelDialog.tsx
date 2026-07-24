@@ -19,7 +19,7 @@ import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
 import { createChannel } from "@/lib/api/chat";
 import { useAuthStore } from "@/stores/auth-store";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { CheckIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -183,6 +183,9 @@ export function CreateChannelDialog() {
                         ) : null}
                       </span>
                       <Avatar className="size-7">
+                        {m.avatarUrl ? (
+                          <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                        ) : null}
                         <AvatarFallback
                           className={cn(
                             "text-[10px] font-semibold",
