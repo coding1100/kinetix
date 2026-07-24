@@ -1,9 +1,8 @@
 "use client";
 
 import { Suspense, type ReactNode } from "react";
-import { SquareCheckBigIcon } from "lucide-react";
+import { PlusIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MyTasksToolbar } from "@/components/home/MyTasksToolbar";
 import { MyTasksTaskDrawer } from "@/components/home/useMyTasksTaskDrawer";
 import { useUiStore } from "@/stores/ui-store";
@@ -49,23 +48,16 @@ export function MyTasksPageShell({
             <div className="flex shrink-0 items-center gap-2">
               {headerRight}
               {showCreateTask ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        className="h-9 w-9 rounded-full"
-                        aria-label="Create task"
-                        onClick={() => openModal("create-task")}
-                      >
-                        <SquareCheckBigIcon className="size-4" strokeWidth={2} />
-                      </Button>
-                    }
-                  />
-                  <TooltipContent side="bottom">Create task</TooltipContent>
-                </Tooltip>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 gap-1.5 border-neutral-200 bg-white px-3 text-black hover:bg-neutral-100 hover:text-black dark:bg-white dark:text-black dark:hover:bg-neutral-100 dark:hover:text-black"
+                  onClick={() => openModal("create-task")}
+                >
+                  <PlusIcon className="size-4" strokeWidth={2} />
+                  Create task
+                </Button>
               ) : null}
             </div>
           </div>
