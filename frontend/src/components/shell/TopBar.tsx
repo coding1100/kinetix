@@ -1,22 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import {
-  ChevronDownIcon,
-  CalendarIcon,
-  CircleHelpIcon,
-  SparklesIcon,
-  SquareCheckBigIcon,
-} from "lucide-react";
+import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProfileMenu } from "@/components/shell/ProfileMenu";
 import { useUiStore } from "@/stores/ui-store";
 import { GlobalSearch } from "@/components/search/GlobalSearch";
-import { ChatShortcutsMenu } from "@/components/shell/topbar/ChatShortcutsMenu";
 import { NotificationsMenu } from "@/components/shell/topbar/NotificationsMenu";
 import { TopBarSheets } from "@/components/shell/topbar/TopBarSheets";
-import { useTopBarStore } from "@/stores/topbar-store";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,7 +25,6 @@ import { FEATURE_FLAGS } from "@/lib/feature-flags";
 
 export function TopBar() {
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
-  const openSheet = useTopBarStore((s) => s.openSheet);
   const openModal = useUiStore((s) => s.openModal);
   const activeWorkspace = useAuthStore(selectActiveWorkspace);
   const workspaceLabel = activeWorkspace?.name ?? "Workspace";
@@ -77,70 +67,17 @@ export function TopBar() {
         <GlobalSearch />
       </div>
 
-      <div className="flex items-center gap-1">
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Create task"
-                onClick={() => openModal("create-task")}
-              >
-                <SquareCheckBigIcon className="size-4" strokeWidth={2} />
-              </Button>
-            }
-          />
-          <TooltipContent side="bottom">Create task</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Calendar"
-                onClick={() => openSheet("calendar")}
-              >
-                <CalendarIcon className="size-4" />
-              </Button>
-            }
-          />
-          <TooltipContent side="bottom">Calendar</TooltipContent>
-        </Tooltip>
-        <ChatShortcutsMenu />
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Help"
-                onClick={() => openSheet("help")}
-              >
-                <CircleHelpIcon className="size-4" />
-              </Button>
-            }
-          />
-          <TooltipContent side="bottom">Help</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="AI"
-                onClick={() => openSheet("ai")}
-              >
-                <SparklesIcon className="size-4" />
-              </Button>
-            }
-          />
-          <TooltipContent side="bottom">AI</TooltipContent>
-        </Tooltip>
-        
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1 border-neutral-200 bg-white px-2 text-xs text-black hover:bg-neutral-100 hover:text-black dark:bg-white dark:text-black dark:hover:bg-neutral-100 dark:hover:text-black"
+          onClick={() => openModal("create-task")}
+        >
+          <PlusIcon className="size-3.5" strokeWidth={2} />
+          Create task
+        </Button>
         {FEATURE_FLAGS.topBarNotifications ? <NotificationsMenu /> : null}
         <Separator orientation="vertical" className="mx-1 h-5" />
         <ProfileMenu />

@@ -5,14 +5,11 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   PlusIcon,
-  SearchIcon,
-  FilterIcon,
   Settings2Icon,
   PanelLeftCloseIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   FolderPlusIcon,
-  HashIcon,
   ListIcon,
   ListPlusIcon,
   LockIcon,
@@ -29,6 +26,8 @@ import {
   otherGroupParticipants,
   resolveGroupDmTitle,
 } from "@/lib/chat/group-dm-display";
+import { toast } from "sonner";
+import { ChannelGlyph } from "@/lib/chat/channel-icons";
 import { GroupDmAvatarStack } from "@/components/chat/GroupDmAvatarStack";
 import { useUserPresence } from "@/stores/presence-store";
 import { type PresenceStatus } from "@/stores/profile-store";
@@ -55,7 +54,6 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
-import { toast } from "sonner";
 import { useShellStore } from "@/stores/shell-store";
 import { SidebarNavIcon } from "@/components/icons/SidebarNavIcon";
 import { useNotificationsUnread } from "@/hooks/use-notifications-unread";
@@ -267,7 +265,8 @@ function SpaceListLink({
   onDelete?: () => void;
 }) {
   const canDelete = Boolean(onDelete) && !isPersonal;
-  const hasMenu = Boolean(onRename) || canDelete || (Boolean(canShare) && Boolean(onShare));
+  const hasMenu =
+    Boolean(onRename) || canDelete || (Boolean(canShare) && Boolean(onShare));
   return (
     <div className="group/list flex items-center gap-0.5">
       <Link
@@ -307,6 +306,14 @@ function SpaceListLink({
               <DropdownMenuItem onClick={onRename}>
                 <PencilIcon className="size-4" />
                 Rename
+              </DropdownMenuItem>
+            ) : null}
+            {onRename ? (
+              <DropdownMenuItem
+                render={<Link href={`/home/l/${listId}/settings`} />}
+              >
+                <Settings2Icon className="size-4" />
+                Settings
               </DropdownMenuItem>
             ) : null}
             {canShare && onShare ? (
@@ -421,7 +428,12 @@ function SpaceRow({
               )}
             </span>
           </span>
-          <span className="min-w-0 flex-1 truncate">{space.name}</span>
+          <Tooltip>
+            <TooltipTrigger
+              render={<span className="min-w-0 flex-1 truncate">{space.name}</span>}
+            />
+            <TooltipContent side="bottom">{space.name}</TooltipContent>
+          </Tooltip>
           {space.isPrivate ? (
             <LockIcon className="size-3 shrink-0 text-muted-foreground" />
           ) : null}
@@ -464,6 +476,12 @@ function SpaceRow({
                   >
                     <PencilIcon className="size-4" />
                     Rename
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    render={<Link href={`/home/spaces/${space.id}/settings`} />}
+                  >
+                    <Settings2Icon className="size-4" />
+                    Settings
                   </DropdownMenuItem>
                 </>
               ) : null}
@@ -675,6 +693,7 @@ function ChannelRow({
   listChannel,
   unread,
   active,
+  icon,
 }: {
   id: string;
   name: string;
@@ -682,6 +701,7 @@ function ChannelRow({
   listChannel?: boolean;
   unread: number;
   active: boolean;
+  icon?: string | null;
 }) {
   const unreadBadgeHold = useChatStore((s) => s.unreadBadgeHold);
   const displayUnread = useSidebarUnread(
@@ -693,29 +713,41 @@ function ChannelRow({
   );
 
   return (
-    <Link
-      href={`/home/c/${id}`}
-      className={cn(
-        "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/80",
-        active && "bg-sidebar-accent font-medium"
-      )}
-    >
-      {listChannel ? (
-        <span className="flex shrink-0 items-center gap-0.5">
-          <HashIcon className="size-3.5 text-muted-foreground" />
-          <ListIcon className="size-3.5 text-muted-foreground" />
-        </span>
-      ) : (
-        <HashIcon className="size-3.5 shrink-0 text-muted-foreground" />
-      )}
-      <span className="min-w-0 flex-1 truncate">{name}</span>
-      {isPrivate ? <LockIcon className="size-3 shrink-0 text-muted-foreground" /> : null}
-      {displayUnread > 0 && (
-        <Badge className="size-5 min-w-5 shrink-0 justify-center rounded-full px-1 text-[10px]">
-          {displayUnread}
-        </Badge>
-      )}
-    </Link>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Link
+            href={`/home/c/${id}`}
+            className={cn(
+              "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/80",
+              active && "bg-sidebar-accent font-medium"
+            )}
+          >
+            {listChannel ? (
+              <span className="flex shrink-0 items-center gap-0.5">
+                <ChannelGlyph icon={icon} className="size-3.5 text-muted-foreground" />
+                <ListIcon className="size-3.5 text-muted-foreground" />
+              </span>
+            ) : (
+              <ChannelGlyph
+                icon={icon}
+                className="size-3.5 shrink-0 text-muted-foreground"
+              />
+            )}
+            <span className="min-w-0 flex-1 truncate">{name}</span>
+            {isPrivate ? (
+              <LockIcon className="size-3 shrink-0 text-muted-foreground" />
+            ) : null}
+            {displayUnread > 0 && (
+              <Badge className="size-5 min-w-5 shrink-0 justify-center rounded-full px-1 text-[10px]">
+                {displayUnread}
+              </Badge>
+            )}
+          </Link>
+        }
+      />
+      <TooltipContent side="right">{name}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -762,43 +794,53 @@ function DmRow({
     : name;
 
   return (
-    <Link
-      href={`/home/dm/${id}`}
-      className={cn(
-        "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/80",
-        active && "bg-sidebar-accent font-medium"
-      )}
-    >
-      {isGroup && groupParticipants.length > 0 ? (
-        <GroupDmAvatarStack participants={groupParticipants} />
-      ) : (
-        <UserAvatarWithPresence
-          name={displayName}
-          avatarUrl={avatarUrl}
-          presence={presence}
-          showPresence={!isGroup}
-          avatarClassName="size-6"
-          dotSize="sm"
-          borderClass="border-white"
-          fallbackClassName={cn(
-            "text-[10px] font-semibold",
-            avatarColorClassForKey(otherUserId, displayName)
-          )}
-          fallback={avatarInitialFromName(displayName)}
-        />
-      )}
-      <span className="min-w-0 flex-1 truncate">
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Link
+            href={`/home/dm/${id}`}
+            className={cn(
+              "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/80",
+              active && "bg-sidebar-accent font-medium"
+            )}
+          >
+            {isGroup && groupParticipants.length > 0 ? (
+              <GroupDmAvatarStack participants={groupParticipants} />
+            ) : (
+              <UserAvatarWithPresence
+                name={displayName}
+                avatarUrl={avatarUrl}
+                presence={presence}
+                showPresence={!isGroup}
+                avatarClassName="size-6"
+                dotSize="sm"
+                borderClass="border-sidebar"
+                fallbackClassName={cn(
+                  "text-[10px] font-semibold",
+                  avatarColorClassForKey(otherUserId, displayName)
+                )}
+                fallback={avatarInitialFromName(displayName)}
+              />
+            )}
+            <span className="min-w-0 flex-1 truncate">
+              {displayName}
+              {!isGroup && otherUserIsDisabled ? (
+                <span className="text-destructive"> (deactivated)</span>
+              ) : null}
+            </span>
+            {displayUnread > 0 && (
+              <Badge className="size-5 min-w-5 shrink-0 justify-center rounded-full px-1 text-[10px]">
+                {displayUnread}
+              </Badge>
+            )}
+          </Link>
+        }
+      />
+      <TooltipContent side="right">
         {displayName}
-        {!isGroup && otherUserIsDisabled ? (
-          <span className="text-destructive"> (deactivated)</span>
-        ) : null}
-      </span>
-      {displayUnread > 0 && (
-        <Badge className="size-5 min-w-5 shrink-0 justify-center rounded-full px-1 text-[10px]">
-          {displayUnread}
-        </Badge>
-      )}
-    </Link>
+        {!isGroup && otherUserIsDisabled ? " (deactivated)" : ""}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -816,8 +858,6 @@ export function HomeSidebar() {
   const sidebarRefreshKey = useChatStore((s) => s.sidebarRefreshKey);
   const {
     items,
-    filter,
-    setFilter,
     myTasksExpanded,
     setMyTasksExpanded,
     collapsedSections,
@@ -981,34 +1021,6 @@ export function HomeSidebar() {
           <Tooltip>
             <TooltipTrigger
               render={
-                <Button variant="ghost" size="icon-sm" className="size-7" aria-label="Search">
-                  <SearchIcon className="size-3.5" />
-                </Button>
-              }
-            />
-            <TooltipContent side="bottom">Search</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className={cn("size-7", filter === "unread" && "text-primary")}
-                  aria-label="Filter unread"
-                  onClick={() =>
-                    setFilter(filter === "unread" ? "none" : "unread")
-                  }
-                >
-                  <FilterIcon className="size-3.5" />
-                </Button>
-              }
-            />
-            <TooltipContent side="bottom">Filter unread</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -1022,38 +1034,6 @@ export function HomeSidebar() {
             />
             <TooltipContent side="bottom">Customize</TooltipContent>
           </Tooltip>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button variant="ghost" size="icon-sm" className="size-7" aria-label="Create">
-                        <PlusIcon className="size-3.5" />
-                      </Button>
-                    }
-                  />
-                  <TooltipContent side="bottom">Create</TooltipContent>
-                </Tooltip>
-              }
-            />
-            <DropdownMenuContent align="end" className="w-44">
-              {["Task", "Message", "Channel", "Doc"].map((item) => (
-                <DropdownMenuItem
-                  key={item}
-                  onClick={() => {
-                    if (item === "Channel") openModalDeferred("new-channel");
-                    else if (item === "Message") openModalDeferred("new-dm");
-                    else if (item === "Task") {
-                      window.location.href = "/home/all-tasks";
-                    } else toast(`${item} — coming soon`);
-                  }}
-                >
-                  {item}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
           <Tooltip>
             <TooltipTrigger
               render={
@@ -1072,23 +1052,14 @@ export function HomeSidebar() {
           </Tooltip>
         </div>
       </div>
-      {filter === "unread" && (
-        <div className="px-3 py-2">
-          <Badge variant="secondary" className="text-xs">
-            Unread only
-          </Badge>
-        </div>
-      )}
       <ScrollArea className="min-h-0 flex-1 px-2 pt-1">
         <nav className="flex flex-col gap-px pb-2">
           {mainItems.map((item) => {
             const active =
               item.id === "inbox"
                 ? pathname === "/home/inbox" && inboxTab !== "replies"
-                : item.id === "replies"
-                  ? pathname === "/home/inbox" && inboxTab === "replies"
-                  : pathname === item.href ||
-                    (item.id === "my-tasks" && onMyTasksRoute);
+                : pathname === item.href ||
+                  (item.id === "my-tasks" && onMyTasksRoute);
             const isMyTasks = item.id === "my-tasks";
 
             return (
@@ -1262,6 +1233,7 @@ export function HomeSidebar() {
                   listChannel={c.isListPrimary}
                   unread={c.unread}
                   active={pathname === `/home/c/${c.id}`}
+                  icon={c.icon}
                 />
               ))}
               {!restricted ? (
@@ -1338,6 +1310,9 @@ export function HomeSidebar() {
         onOpenChange={setSpacesDialogOpen}
         mode={spacesDialogMode}
         navigateOnCreate={false}
+        onSpaceCreated={(spaceId) =>
+          setExpandedSpaces((s) => ({ ...s, [spaceId]: true }))
+        }
       />
       {shareTarget ? (
         <ShareModal

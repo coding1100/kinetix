@@ -17,6 +17,7 @@ export function patchSidebarChannel(
       | "notificationLevel"
       | "isPrivate"
       | "customIconColor"
+      | "icon"
     >
   >
 ) {

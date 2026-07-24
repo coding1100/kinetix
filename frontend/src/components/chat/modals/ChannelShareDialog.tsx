@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useUiStore } from "@/stores/ui-store";
 import { useChatStore } from "@/stores/chat-store";
@@ -82,6 +82,9 @@ export function ChannelShareDialog() {
                 className="flex items-center gap-2 rounded-md px-1 py-1.5"
               >
                 <Avatar className="size-7">
+                  {u.avatarUrl ? (
+                    <AvatarImage src={u.avatarUrl} alt={u.fullName} />
+                  ) : null}
                   <AvatarFallback
                     className={cn(
                       "text-[10px] font-semibold",

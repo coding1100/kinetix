@@ -2,24 +2,30 @@
 
 import { StarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ChannelGlyph } from "@/lib/chat/channel-icons";
 
 export function ChannelNameLabel({
   name,
   starred,
   prefix = "#",
+  icon,
   className,
   nameClassName,
 }: {
   name: string;
   starred?: boolean;
   prefix?: string | false;
+  /** Channel's chosen icon key - when set, renders as the glyph instead of the plain "#" prefix text. */
+  icon?: string | null;
   className?: string;
   nameClassName?: string;
 }) {
   return (
     <span className={cn("inline-flex min-w-0 items-center gap-1.5", className)}>
-      
-      {prefix ? (
+
+      {icon !== undefined ? (
+        <ChannelGlyph icon={icon} className="size-3.5 shrink-0 text-muted-foreground" />
+      ) : prefix ? (
         <span className="shrink-0 font-normal text-muted-foreground">{prefix}</span>
       ) : null}
       {starred ? (

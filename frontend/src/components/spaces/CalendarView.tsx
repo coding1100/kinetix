@@ -5,7 +5,7 @@ import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import type { Task } from "@/lib/types/task";
 import { HomeDataState } from "@/components/home/HomeDataState";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, PKT_TIME_ZONE } from "@/lib/utils";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -82,9 +82,10 @@ export function CalendarView({
     return cells;
   }, [cursor]);
 
-  const monthLabel = cursor.toLocaleString(undefined, {
+  const monthLabel = cursor.toLocaleString("en-US", {
     month: "long",
     year: "numeric",
+    timeZone: PKT_TIME_ZONE,
   });
 
   return (

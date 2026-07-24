@@ -19,7 +19,7 @@ import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
 import { createChannel } from "@/lib/api/chat";
 import { useAuthStore } from "@/stores/auth-store";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { CheckIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -42,6 +42,7 @@ export function CreateChannelDialog() {
   const [isPrivate, setIsPrivate] = useState(false);
   const [addList, setAddList] = useState(false);
   const [iconColor, setIconColor] = useState<string | null>(null);
+  const [icon, setIcon] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [inviteIds, setInviteIds] = useState<Set<string>>(new Set());
   const currentUserId = useAuthStore((s) => s.user?.id);
@@ -67,6 +68,7 @@ export function CreateChannelDialog() {
     setAddList(false);
     setInviteIds(new Set());
     setIconColor(null);
+    setIcon(null);
   };
 
   const handleOpenChange = (next: boolean) => {
@@ -96,6 +98,7 @@ export function CreateChannelDialog() {
         memberIds:
           isPrivate && inviteIds.size > 0 ? [...inviteIds] : undefined,
         iconColor: iconColor ?? undefined,
+        icon: icon ?? undefined,
       });
       upsertChannelInSidebar({ ...channel, starred: false }, workspaceId);
       toast.success(`#${trimmed} created`);
@@ -183,6 +186,9 @@ export function CreateChannelDialog() {
                         ) : null}
                       </span>
                       <Avatar className="size-7">
+                        {m.avatarUrl ? (
+                          <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                        ) : null}
                         <AvatarFallback
                           className={cn(
                             "text-[10px] font-semibold",
@@ -205,6 +211,8 @@ export function CreateChannelDialog() {
           <ChannelIconPicker
             value={iconColor}
             onChange={setIconColor}
+            icon={icon}
+            onIconChange={setIcon}
             channelInitial={(name.trim() || "#").slice(0, 1).toUpperCase()}
           />
 

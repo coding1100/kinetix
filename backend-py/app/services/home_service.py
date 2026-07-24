@@ -748,8 +748,10 @@ async def get_list(
             "accessible": has_space_access,
         },
         "statuses": statuses,
+        "hasOwnStatusConfig": task_list.status_config is not None,
         "channelId": channel_id,
         "canShare": is_workspace_admin(role),
+        "canManageStructure": _can_manage_structure(level, role),
         "isPrivate": task_list.is_private,
     }
 

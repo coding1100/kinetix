@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { HashIcon, LockIcon, SearchIcon } from "lucide-react";
+import { LockIcon, SearchIcon } from "lucide-react";
+import { ChannelGlyph } from "@/lib/chat/channel-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { HomePageShell } from "@/components/home/HomePageShell";
@@ -158,14 +159,17 @@ function ChannelNameCell({ channel }: { channel: Channel }) {
       {channel.customIconColor ? (
         <span
           className={cn(
-            "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white",
+            "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-white",
             channel.customIconColor
           )}
         >
-          {channel.name.slice(0, 1).toUpperCase()}
+          <ChannelGlyph icon={channel.icon} className="size-3.5" />
         </span>
       ) : (
-        <HashIcon className="mt-1 size-4 shrink-0 text-muted-foreground group-hover:text-foreground" />
+        <ChannelGlyph
+          icon={channel.icon}
+          className="mt-1 size-4 shrink-0 text-muted-foreground group-hover:text-foreground"
+        />
       )}
       <span className="min-w-0">
         <span className="flex items-center gap-1.5">

@@ -18,7 +18,7 @@ export default function WorkspaceUseCasePage() {
       title="What will you use this Workspace for?"
       rightHeaderText="Welcome, Husnain!"
       step={1}
-      totalSteps={6}
+      totalSteps={5}
       backHref="/home/inbox"
       nextHref="/workspace/create/manage"
       nextDisabled={!selected}
