@@ -23,7 +23,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
             <Modals />
           </Suspense>
           <GlobalLoader />
-          <Toaster position="top-right" richColors />
+          <Toaster position="top-right" />
         </AuthProvider>
       </TooltipProvider>
     </ThemeProvider>
