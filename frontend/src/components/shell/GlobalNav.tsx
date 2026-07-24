@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useShellStore } from "@/stores/shell-store";
+import { useChatStore } from "@/stores/chat-store";
 import { useNotificationsUnread } from "@/hooks/use-notifications-unread";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -37,7 +38,7 @@ type NavItem = {
 
 const BASE_NAV_ITEMS: NavItem[] = [
   { label: "Home", icon: HomeIcon, href: "/home/inbox" },
-  { label: "Chat", icon: MessageSquareIcon, href: "/chat", badge: "dot" },
+  { label: "Chat", icon: MessageSquareIcon, href: "/chat" },
   { label: "Spaces", icon: BoxesIcon, href: "/spaces" },
   { label: "Teams", icon: UsersRoundIcon, href: "/teams" },
   { label: "Planner", icon: CalendarIcon, disabled: true, hidden: true },
@@ -55,13 +56,26 @@ export function GlobalNav() {
   const { secondaryPanelOpen, setSecondaryPanelOpen } = useShellStore();
   const { unreadCount } = useNotificationsUnread();
   const homeUnread = unreadCount > 0 ? unreadCount : undefined;
+  // Chat dot lights up only when there's an actual unread channel/group-DM/DM,
+  // rather than showing permanently.
+  const chatHasUnread = useChatStore((s) => {
+    const cache = s.sidebarListsCache;
+    if (!cache) return false;
+    return (
+      cache.channels.some((c) => c.unread > 0) ||
+      cache.dms.some((d) => d.unread > 0)
+    );
+  });
 
   const navItems = useMemo<NavItem[]>(
     () =>
-      BASE_NAV_ITEMS.filter((item) => !item.hidden).map((item) =>
-        item.label === "Home" ? { ...item, badge: homeUnread } : item
-      ),
-    [homeUnread]
+      BASE_NAV_ITEMS.filter((item) => !item.hidden).map((item) => {
+        if (item.label === "Home") return { ...item, badge: homeUnread };
+        if (item.label === "Chat")
+          return { ...item, badge: chatHasUnread ? ("dot" as const) : undefined };
+        return item;
+      }),
+    [homeUnread, chatHasUnread]
   );
 
   const isActive = (item: NavItem) => {
