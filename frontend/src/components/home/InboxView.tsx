@@ -15,6 +15,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -188,18 +189,20 @@ export function InboxView() {
               }
             />
             <DropdownMenuContent align="start" className="w-56">
-              <DropdownMenuLabel>Notification type</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {TYPE_FILTER_OPTIONS.map((option) => (
-                <DropdownMenuCheckboxItem
-                  key={option.id}
-                  checked={typeFilter.has(option.id)}
-                  onCheckedChange={() => toggleTypeFilter(option.id)}
-                  onSelect={(e) => e.preventDefault()}
-                >
-                  {option.label}
-                </DropdownMenuCheckboxItem>
-              ))}
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Notification type</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {TYPE_FILTER_OPTIONS.map((option) => (
+                  <DropdownMenuCheckboxItem
+                    key={option.id}
+                    checked={typeFilter.has(option.id)}
+                    onCheckedChange={() => toggleTypeFilter(option.id)}
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    {option.label}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
 
