@@ -257,6 +257,53 @@ async def update_profile(
     return await get_me(session, user_id, include_suspended_memberships=True)
 
 
+_AVATAR_MAX_BYTES = 3 * 1024 * 1024  # 3 MB; client sends a resized JPEG
+
+
+def _avatar_storage_key(user_id: str) -> str:
+    return f"avatars/{user_id}.jpg"
+
+
+async def set_avatar(
+    session: AsyncSession, user_id: str, data: bytes, content_type: str
+) -> dict:
+    from app.services import s3_service
+
+    settings = get_settings()
+    if not settings.s3_configured:
+        raise AppError(503, "SERVICE_UNAVAILABLE", "File storage is not configured")
+    if not content_type.startswith("image/"):
+        raise AppError(400, "VALIDATION_ERROR", "Avatar must be an image")
+    if len(data) > _AVATAR_MAX_BYTES:
+        raise AppError(400, "VALIDATION_ERROR", "Avatar image is too large")
+
+    user = await session.get(User, user_id)
+    if not user:
+        raise AppError(404, "NOT_FOUND", "User not found")
+
+    # Client normalizes to JPEG before upload, so we always store/serve as JPEG.
+    s3_service.put_object(_avatar_storage_key(user_id), data, "image/jpeg")
+
+    # Stable, non-expiring URL served by GET /auth/users/{id}/avatar. The ?v
+    # cache-buster forces browsers/next-image to refetch after a re-upload.
+    base = settings.api_public_url.rstrip("/")
+    version = int(datetime.now(timezone.utc).timestamp())
+    user.avatar_url = f"{base}/api/v1/auth/users/{user_id}/avatar?v={version}"
+
+    await session.commit()
+    await session.refresh(user)
+    return await get_me(session, user_id, include_suspended_memberships=True)
+
+
+async def get_avatar_bytes(session: AsyncSession, user_id: str) -> tuple[bytes, str]:
+    from app.services import s3_service
+
+    try:
+        return s3_service.get_object(_avatar_storage_key(user_id))
+    except Exception:
+        raise AppError(404, "NOT_FOUND", "Avatar not found")
+
+
 async def change_password(
     session: AsyncSession, user_id: str, body: ChangePasswordBody
 ) -> dict:
