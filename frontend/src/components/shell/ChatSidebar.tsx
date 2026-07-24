@@ -9,11 +9,11 @@ import {
   PanelLeftCloseIcon,
   LayoutListIcon,
   ListIcon,
-  HashIcon,
   LockIcon,
   StarIcon,
 } from "lucide-react";
 import type { Channel, DirectMessage, DmParticipant } from "@/lib/types/chat";
+import { ChannelGlyph } from "@/lib/chat/channel-icons";
 import { GroupDmAvatarStack } from "@/components/chat/GroupDmAvatarStack";
 import {
   enrichGroupDms,
@@ -414,6 +414,7 @@ function OrganizedList({
                 unread={c.unread}
                 privateChannel={c.isPrivate}
                 listChannel={c.isListPrimary}
+                icon={c.icon}
                 starred
               />
             ))}
@@ -436,6 +437,7 @@ function OrganizedList({
               unread={c.unread}
               privateChannel={c.isPrivate}
               listChannel={c.isListPrimary}
+              icon={c.icon}
             />
           ))}
           <Button
@@ -523,6 +525,7 @@ function ChannelRow({
   privateChannel,
   listChannel,
   starred,
+  icon,
 }: {
   channelId: string;
   href: string;
@@ -532,6 +535,7 @@ function ChannelRow({
   privateChannel?: boolean;
   listChannel?: boolean;
   starred?: boolean;
+  icon?: string | null;
 }) {
   const unreadBadgeHold = useChatStore((s) => s.unreadBadgeHold);
   const displayUnread = useSidebarUnread(
@@ -558,11 +562,14 @@ function ChannelRow({
             <span className="flex min-w-0 items-center gap-2 text-sm">
               {listChannel ? (
                 <span className="flex shrink-0 items-center gap-0.5">
-                  <HashIcon className="size-3.5 text-muted-foreground" />
+                  <ChannelGlyph icon={icon} className="size-3.5 text-muted-foreground" />
                   <ListIcon className="size-3.5 text-muted-foreground" />
                 </span>
               ) : (
-                <HashIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                <ChannelGlyph
+                  icon={icon}
+                  className="size-3.5 shrink-0 text-muted-foreground"
+                />
               )}
               {starred ? (
                 <StarIcon className="size-3 shrink-0 fill-amber-400 text-amber-400" />

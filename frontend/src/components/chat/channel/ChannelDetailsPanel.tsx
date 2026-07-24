@@ -12,7 +12,6 @@ import {
   LockIcon,
   Share2Icon,
   UsersIcon,
-  HashIcon,
   Link2Icon,
   BellOffIcon,
   ChevronRightIcon,
@@ -37,6 +36,7 @@ import {
   updateChannelMemberById,
 } from "@/lib/api/chat";
 import { filterWorkspaceMembersToAdd } from "@/lib/chat/channel-access-search";
+import { ChannelGlyph } from "@/lib/chat/channel-icons";
 import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
 import type { Channel, ChannelMember, ChatSearchHit } from "@/lib/types/chat";
 import { ConversationMessageSearch } from "@/components/chat/search/ConversationMessageSearch";
@@ -861,13 +861,7 @@ function SettingsView({
                 : "bg-muted"
             )}
           >
-            {channel?.customIconColor ? (
-              <span className="text-lg font-semibold">
-                {(channel?.name ?? "#").slice(0, 1).toUpperCase()}
-              </span>
-            ) : (
-              <HashIcon className="size-6" />
-            )}
+            <ChannelGlyph icon={channel?.icon} className="size-6" />
           </span>
           <div>
             <p className="text-[22px] font-semibold leading-none">
