@@ -259,6 +259,12 @@ async def update_profile(
 
 _AVATAR_MAX_BYTES = 3 * 1024 * 1024  # 3 MB; client sends a resized JPEG
 
+# Avatar bytes for the currently-live version of each user's photo, keyed by
+# storage key. The public avatar_url is version-stamped (?v=<timestamp>), so
+# a cache hit is always the right bytes; set_avatar() overwrites the entry
+# in place when a new photo is uploaded, so it can never go stale.
+_avatar_cache: dict[str, tuple[bytes, str]] = {}
+
 
 def _avatar_storage_key(user_id: str) -> str:
     return f"avatars/{user_id}.jpg"
@@ -282,7 +288,9 @@ async def set_avatar(
         raise AppError(404, "NOT_FOUND", "User not found")
 
     # Client normalizes to JPEG before upload, so we always store/serve as JPEG.
-    s3_service.put_object(_avatar_storage_key(user_id), data, "image/jpeg")
+    storage_key = _avatar_storage_key(user_id)
+    s3_service.put_object(storage_key, data, "image/jpeg")
+    _avatar_cache[storage_key] = (data, "image/jpeg")
 
     # Stable, non-expiring URL served by GET /auth/users/{id}/avatar. The ?v
     # cache-buster forces browsers/next-image to refetch after a re-upload.
@@ -298,10 +306,17 @@ async def set_avatar(
 async def get_avatar_bytes(session: AsyncSession, user_id: str) -> tuple[bytes, str]:
     from app.services import s3_service
 
+    storage_key = _avatar_storage_key(user_id)
+    cached = _avatar_cache.get(storage_key)
+    if cached:
+        return cached
+
     try:
-        return s3_service.get_object(_avatar_storage_key(user_id))
+        result = s3_service.get_object(storage_key)
     except Exception:
         raise AppError(404, "NOT_FOUND", "Avatar not found")
+    _avatar_cache[storage_key] = result
+    return result
 
 
 async def change_password(
