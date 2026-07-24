@@ -5733,4 +5733,13 @@ DESC: Removed the "Super admin" SelectItem from the invite role dropdown in
 WorkspaceInviteForm (People page). Members can no longer invite at SUPER_ADMIN
 level; Admin remains gated behind canInviteAdmin. canInviteSuperAdmin prop left
 in place (harmless, still passed by callers).
+
+TAG: [CHORE]
+TITLE: Remove Super admin from admin portal role dropdowns
+DESC: Dropped SUPER_ADMIN from WORKSPACE_ROLES and INVITE_ROLES in
+admin-frontend/src/lib/api/admin.ts - the arrays that feed all admin-portal
+role dropdowns (role change on workspaces/page.tsx + users/page.tsx, invite on
+workspaces/page.tsx + CreateWorkspaceDialog). Kept SUPER_ADMIN in the
+WorkspaceRole/InviteRole type unions so existing super-admin records still
+type-check and display.
 DATE_END: 2026-07-24
