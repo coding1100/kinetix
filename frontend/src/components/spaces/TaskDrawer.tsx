@@ -85,7 +85,7 @@ import {
   avatarInitialFromName,
 } from "@/lib/user-display";
 import { toast } from "sonner";
-import { appPath, cn } from "@/lib/utils";
+import { appPath, cn, PKT_TIME_ZONE } from "@/lib/utils";
 import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import {
   ArchiveIcon,
@@ -239,18 +239,23 @@ function formatCreatedLabel(iso: string | null | undefined) {
   if (!iso) return null;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: PKT_TIME_ZONE,
+  });
 }
 
 function formatActivityTime(iso: string | null | undefined) {
   if (!iso) return "";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString([], {
+  return date.toLocaleString("en-US", {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone: PKT_TIME_ZONE,
   });
 }
 

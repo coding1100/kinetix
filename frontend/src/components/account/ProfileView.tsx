@@ -15,7 +15,7 @@ import { useAuthStore } from "@/stores/auth-store";
 import { ROLE_LABELS } from "@/components/workspace/WorkspaceInviteForm";
 import { toast } from "sonner";
 import { avatarColorClassForKey, avatarInitial } from "@/lib/user-display";
-import { cn } from "@/lib/utils";
+import { cn, PKT_TIME_ZONE } from "@/lib/utils";
 
 export function ProfileView() {
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -133,10 +133,11 @@ export function ProfileView() {
   };
 
   const joinedLabel = createdAt
-    ? new Date(createdAt).toLocaleDateString(undefined, {
+    ? new Date(createdAt).toLocaleDateString("en-US", {
         month: "long",
         day: "numeric",
         year: "numeric",
+        timeZone: PKT_TIME_ZONE,
       })
     : null;
 

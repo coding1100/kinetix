@@ -58,6 +58,7 @@ import {
 } from "@/components/workspace/WorkspaceInviteForm";
 import { ApiError } from "@/lib/api/client";
 import { FEATURE_FLAGS } from "@/lib/feature-flags";
+import { PKT_TIME_ZONE } from "@/lib/utils";
 import {
   avatarColorClassForKey,
   avatarInitialFromName,
@@ -102,10 +103,11 @@ function canEditMemberRole(
 function formatJoined(iso: string | null) {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleDateString(undefined, {
+    return new Date(iso).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
       year: "numeric",
+      timeZone: PKT_TIME_ZONE,
     });
   } catch {
     return "—";
@@ -468,6 +470,7 @@ export function PeopleView() {
                   {FEATURE_FLAGS.teams ? (
                     <th className="min-w-[200px] px-4 py-2.5 font-medium">Teams</th>
                   ) : null}
+                  <th className="px-4 py-2.5 font-medium">Timezone</th>
                   <th className="px-4 py-2.5 font-medium">Joined</th>
                   <th className="px-4 py-2.5 font-medium">Invited by</th>
                   <th className="px-4 py-2.5 font-medium">Status</th>
@@ -533,6 +536,7 @@ export function PeopleView() {
                         <MemberTeamBadges teams={m.teams ?? []} />
                       </td>
                     ) : null}
+                    <td className="px-4 py-3 text-muted-foreground">PKT</td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {formatJoined(m.joinedAt)}
                     </td>

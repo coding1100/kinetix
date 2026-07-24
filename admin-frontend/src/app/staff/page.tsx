@@ -6,6 +6,7 @@ import { PortalNav } from "@/components/PortalNav";
 import { useAdminSession } from "@/hooks/use-admin-session";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { formatRequestError, isAbortError } from "@/lib/api/client";
+import { PKT_TIME_ZONE } from "@/lib/audit";
 import {
   type AdminUserRow,
   type PlatformStaffMember,
@@ -215,7 +216,9 @@ export default function StaffPage() {
                       {s.grantedBy ? `${s.grantedBy.fullName} (${s.grantedBy.email})` : "—"}
                     </td>
                     <td className="px-3 py-2 text-[var(--muted-foreground)]">
-                      {new Date(s.createdAt).toLocaleDateString()}
+                      {new Date(s.createdAt).toLocaleDateString("en-US", {
+                        timeZone: PKT_TIME_ZONE,
+                      })}
                     </td>
                     <td className="px-3 py-2">
                       {!isSelf && (

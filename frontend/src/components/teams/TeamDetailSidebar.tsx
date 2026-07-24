@@ -12,14 +12,16 @@ import {
 } from "@/lib/user-display";
 import type { TeamDetailTab } from "@/components/teams/team-utils";
 import { toast } from "sonner";
+import { PKT_TIME_ZONE } from "@/lib/utils";
 
 function formatCreated(iso: string | null) {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleDateString(undefined, {
+    return new Date(iso).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
       year: "numeric",
+      timeZone: PKT_TIME_ZONE,
     });
   } catch {
     return "—";

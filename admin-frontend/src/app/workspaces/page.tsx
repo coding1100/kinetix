@@ -10,6 +10,7 @@ import { TransferOwnershipDialog } from "@/components/TransferOwnershipDialog";
 import { useAdminSession } from "@/hooks/use-admin-session";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { formatRequestError, isAbortError } from "@/lib/api/client";
+import { PKT_TIME_ZONE } from "@/lib/audit";
 import {
   type AdminWorkspace,
   type AdminWorkspaceInvite,
@@ -724,7 +725,9 @@ export default function WorkspacesPage() {
                                       </span>
                                     </td>
                                     <td className="py-1.5 pr-3">
-                                      {new Date(inv.expiresAt).toLocaleDateString()}
+                                      {new Date(inv.expiresAt).toLocaleDateString("en-US", {
+                                        timeZone: PKT_TIME_ZONE,
+                                      })}
                                     </td>
                                     <td className="space-x-1.5 py-1.5 pr-3">
                                       <button
