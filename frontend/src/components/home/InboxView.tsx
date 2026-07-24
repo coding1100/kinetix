@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCheckIcon, FilterIcon, SettingsIcon } from "lucide-react";
+import { CheckCheckIcon, FilterIcon } from "lucide-react";
 import { mergeInboxItems } from "@/lib/notifications/live-cache";
 import { resolveInboxHref } from "@/lib/notifications/inbox-item-utils";
 import { subscribeNotificationsRefresh } from "@/lib/notifications/realtime";
@@ -204,16 +204,6 @@ export function InboxView() {
           </DropdownMenu>
 
           <div className="flex items-center gap-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Notification settings"
-              title="Notification settings"
-              onClick={() => router.push("/settings")}
-            >
-              <SettingsIcon className="size-4" />
-            </Button>
             <Button
               type="button"
               variant="ghost"
