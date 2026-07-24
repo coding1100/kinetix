@@ -5685,4 +5685,45 @@ when emailStatus == "failed" (expired still takes precedence). resend clears
 emailStatus back to null (pending) until the new send resolves. Frontend:
 WorkspaceInvite.status type gained "failed"; PeopleView renders a destructive
 "Invitation failed" badge.
+
+TAG: [CHORE]
+TITLE: Remove demo credentials from login form
+DESC: Changed the login email placeholder from owner@demo.com to a generic
+you@company.com and deleted the hardcoded "Demo: owner@demo.com / password123"
+banner (and its now-unused ShieldCheckIcon import). Remaining owner@demo.com
+strings are only in backend test fixtures / seed scripts, left untouched.
+
+TAG: [CHORE]
+TITLE: Remove settings icon from Inbox header
+DESC: Dropped the Notification-settings gear button (and SettingsIcon import)
+from the Inbox toolbar in InboxView; router still used for row navigation.
+
+TAG: [FEATURE]
+TITLE: Remove invite-people step from workspace creation
+DESC: Deleted the step 3 "Invite people" page from the create-workspace wizard
+and rewired the flow use-case(1) -> manage(2) -> features(3) -> tools(4) ->
+name(5); totalSteps 6 -> 5 across all pages, manage.nextHref and features/name
+backHref repointed to skip invite.
+
+TAG: [BUG]
+TITLE: Chat nav dot only on unread activity
+DESC: The Chat item in GlobalNav had a permanently-on "dot" badge. Now the dot
+only shows when a channel, group DM, or DM has unread > 0, computed from the
+chat-store sidebarListsCache. Home landing already correct (root redirect,
+post-login safeNextPath, onboarding all target /home/inbox; Home is first nav
+item) so no change needed for the "Home primary / Chat secondary" ask.
+
+TAG: [FEATURE]
+TITLE: Upload profile avatar from desktop with crop dialog
+DESC: Replaced the Avatar URL text field in profile settings with a desktop
+image picker + confirmation modal (AvatarCropDialog) that lets the user
+zoom/frame a square crop and exports a normalized 256px JPEG via canvas.
+User approved storage approach "Option 2 - serve via API endpoint" (repo
+already has working S3 setup: s3_service + s3_configured, used by chat/task
+attachments). Backend: POST /auth/me/avatar stores bytes at avatars/<userId>.jpg
+in the private bucket and saves a permanent URL (api_public_url +
+/auth/users/<id>/avatar?v=<ts>) in avatar_url (no DB change, fits 500 chars);
+new PUBLIC GET /auth/users/{id}/avatar streams the bytes since <img> src can't
+send a bearer token. Added s3_service.get_object. No Pillow dependency - resize
+is client-side. All six requested tasks committed separately.
 DATE_END: 2026-07-24
