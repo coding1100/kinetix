@@ -337,6 +337,18 @@ export const useChatStore = create<ChatState>()(
     }),
     {
       name: "riseup-chat",
+      // v2: sidebarListsCache entries from before member avatarUrl was wired
+      // through the sidebar (group DM participants, etc.) would otherwise
+      // sit in localStorage forever and keep masking fresh data - see
+      // mergeSidebarDms/mergeSidebarChannels, and loadSidebarLists() only
+      // hits the API at all when no cache is present. Drop old caches once
+      // so the next load re-fetches for real.
+      version: 2,
+      migrate: (persisted) => {
+        const state = persisted as { sidebarListsCache?: unknown } | undefined;
+        if (state) state.sidebarListsCache = null;
+        return state;
+      },
       partialize: (s) => ({
         layout: s.layout,
         sidebarListsCache: s.sidebarListsCache

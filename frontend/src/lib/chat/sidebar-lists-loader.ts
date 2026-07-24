@@ -41,8 +41,8 @@ export function mergeSidebarChannels(
       const existing = merged.get(channel.id);
       if (!existing) continue;
       merged.set(channel.id, {
-        ...existing,
         ...channel,
+        ...existing,
         canDelete: channel.canDelete ?? existing.canDelete,
         createdById: channel.createdById ?? existing.createdById,
         unread: mergeConversationUnread(channel.unread, existing.unread, {
@@ -70,8 +70,8 @@ export function mergeSidebarDms(
         dm.id,
         existing
           ? {
-              ...existing,
               ...dm,
+              ...existing,
               unread: mergeConversationUnread(dm.unread, existing.unread, {
                 isActive: activeDmId() === dm.id,
               }),
