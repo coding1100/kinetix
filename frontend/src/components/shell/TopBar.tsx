@@ -1,15 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDownIcon, CircleHelpIcon, PlusIcon } from "lucide-react";
+import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProfileMenu } from "@/components/shell/ProfileMenu";
 import { useUiStore } from "@/stores/ui-store";
 import { GlobalSearch } from "@/components/search/GlobalSearch";
 import { NotificationsMenu } from "@/components/shell/topbar/NotificationsMenu";
 import { TopBarSheets } from "@/components/shell/topbar/TopBarSheets";
-import { useTopBarStore } from "@/stores/topbar-store";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,7 +25,6 @@ import { FEATURE_FLAGS } from "@/lib/feature-flags";
 
 export function TopBar() {
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
-  const openSheet = useTopBarStore((s) => s.openSheet);
   const openModal = useUiStore((s) => s.openModal);
   const activeWorkspace = useAuthStore(selectActiveWorkspace);
   const workspaceLabel = activeWorkspace?.name ?? "Workspace";
@@ -75,27 +72,12 @@ export function TopBar() {
           type="button"
           variant="ghost"
           size="sm"
-          className="h-8 gap-1.5 border-neutral-200 bg-white px-3 text-black hover:bg-neutral-100 hover:text-black dark:bg-white dark:text-black dark:hover:bg-neutral-100 dark:hover:text-black"
+          className="h-7 gap-1 border-neutral-200 bg-white px-2 text-xs text-black hover:bg-neutral-100 hover:text-black dark:bg-white dark:text-black dark:hover:bg-neutral-100 dark:hover:text-black"
           onClick={() => openModal("create-task")}
         >
-          <PlusIcon className="size-4" strokeWidth={2} />
+          <PlusIcon className="size-3.5" strokeWidth={2} />
           Create task
         </Button>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Help"
-                onClick={() => openSheet("help")}
-              >
-                <CircleHelpIcon className="size-4" />
-              </Button>
-            }
-          />
-          <TooltipContent side="bottom">Help</TooltipContent>
-        </Tooltip>
         {FEATURE_FLAGS.topBarNotifications ? <NotificationsMenu /> : null}
         <Separator orientation="vertical" className="mx-1 h-5" />
         <ProfileMenu />
