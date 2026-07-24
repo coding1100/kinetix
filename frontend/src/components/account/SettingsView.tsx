@@ -6,7 +6,6 @@ import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -21,16 +20,13 @@ import { PasswordStrengthMeter } from "@/components/auth/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password";
 import { useAuthStore, selectActiveWorkspace } from "@/stores/auth-store";
 import { useSettingsStore, type ThemePreference } from "@/stores/settings-store";
-import { useShellStore } from "@/stores/shell-store";
 import { toast } from "sonner";
 
 export function SettingsView() {
   const accessToken = useAuthStore((s) => s.accessToken);
   const user = useAuthStore((s) => s.user);
   const workspace = useAuthStore(selectActiveWorkspace);
-  const { theme, setTheme, emailNotifications, setEmailNotifications, desktopNotifications, setDesktopNotifications } =
-    useSettingsStore();
-  const { secondaryPanelOpen, setSecondaryPanelOpen } = useShellStore();
+  const { theme, setTheme } = useSettingsStore();
   const { setTheme: applyTheme, resolvedTheme } = useTheme();
 
   const [currentPassword, setCurrentPassword] = useState("");
@@ -115,51 +111,6 @@ export function SettingsView() {
                   Active: {resolvedTheme ?? theme}
                 </p>
               ) : null}
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium">Show Home sidebar</p>
-                <p className="text-xs text-muted-foreground">
-                  Inbox / Replies panel beside navigation
-                </p>
-              </div>
-              <Switch
-                checked={secondaryPanelOpen}
-                onCheckedChange={setSecondaryPanelOpen}
-              />
-            </div>
-          </section>
-
-          <section className="space-y-3 rounded-xl border border-border bg-card p-4">
-            <h2 className="text-sm font-semibold">Notifications</h2>
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium">Email notifications</p>
-                <p className="text-xs text-muted-foreground">
-                  Workspace invites and digests (when enabled on server)
-                </p>
-              </div>
-              <Switch
-                checked={emailNotifications}
-                onCheckedChange={setEmailNotifications}
-              />
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium">Desktop notifications</p>
-                <p className="text-xs text-muted-foreground">
-                  Browser alerts for mentions and DMs
-                </p>
-              </div>
-              <Switch
-                checked={desktopNotifications}
-                onCheckedChange={(v) => {
-                  setDesktopNotifications(v);
-                  if (v && typeof Notification !== "undefined") {
-                    void Notification.requestPermission();
-                  }
-                }}
-              />
             </div>
           </section>
 
