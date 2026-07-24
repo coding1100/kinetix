@@ -1,11 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import {
-  ChevronDownIcon,
-  CircleHelpIcon,
-  SquareCheckBigIcon,
-} from "lucide-react";
+import { ChevronDownIcon, CircleHelpIcon, PlusIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProfileMenu } from "@/components/shell/ProfileMenu";
@@ -74,23 +70,17 @@ export function TopBar() {
         <GlobalSearch />
       </div>
 
-      <div className="flex items-center gap-1">
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Create task"
-                onClick={() => openModal("create-task")}
-              >
-                <SquareCheckBigIcon className="size-4" strokeWidth={2} />
-              </Button>
-            }
-          />
-          <TooltipContent side="bottom">Create task</TooltipContent>
-        </Tooltip>
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1.5 border-neutral-200 bg-white px-3 text-black hover:bg-neutral-100 hover:text-black dark:bg-white dark:text-black dark:hover:bg-neutral-100 dark:hover:text-black"
+          onClick={() => openModal("create-task")}
+        >
+          <PlusIcon className="size-4" strokeWidth={2} />
+          Create task
+        </Button>
         <Tooltip>
           <TooltipTrigger
             render={
