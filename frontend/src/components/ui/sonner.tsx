@@ -26,7 +26,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
           <OctagonXIcon className="size-4" />
         ),
         loading: <Spinner size="sm" label="Loading" />,
-        close: <XIcon className="size-3.5" />,
+        close: <XIcon className="size-2.5" />,
       }}
       closeButton
       style={
