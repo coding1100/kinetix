@@ -314,7 +314,7 @@ export default function UsersPage() {
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
             className="rounded border border-[var(--border)] bg-transparent px-3 py-2 text-sm"
           >
-            <option value="">All statuses</option>
+            <option value="">All status</option>
             <option value="ACTIVE">Active</option>
             <option value="DISABLED">Disabled</option>
           </select>

@@ -425,7 +425,7 @@ export default function WorkspacesPage() {
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
             className="rounded border border-[var(--border)] bg-transparent px-3 py-2 text-sm disabled:opacity-50"
           >
-            <option value="">All statuses</option>
+            <option value="">All status</option>
             <option value="ACTIVE">Active</option>
             <option value="SUSPENDED">Suspended</option>
           </select>

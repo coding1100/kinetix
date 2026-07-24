@@ -152,7 +152,7 @@ export function SpacesListToolbar({
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="all">All status</SelectItem>
               {(statuses ?? []).map((status) => (
                 <SelectItem key={status.id} value={status.id}>
                   {status.name}
