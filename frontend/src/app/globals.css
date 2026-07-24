@@ -262,14 +262,13 @@ body {
   left: unset !important;
   right: 0 !important;
   transform: translate(35%, -35%) !important;
-  color: #ef4444 !important;
-  border-color: #ef4444 !important;
-  background: #000000 !important;
+  color: #ffffff !important;
+  background: #ef4444 !important;
+  border: none !important;
 }
 
 [data-sonner-toaster] [data-sonner-toast] [data-close-button]:hover {
-  background: #1a1a1a !important;
-  border-color: #ef4444 !important;
+  background: #dc2626 !important;
 }
 
 [data-sonner-toaster] [data-sonner-toast][data-type="default"] [data-icon] {
