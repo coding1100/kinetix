@@ -6,7 +6,54 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-const Select = SelectPrimitive.Root
+// Collect a { value: label } map from any <SelectItem> descendants that have a
+// plain-string label. base-ui's <Select.Value> shows the raw selected *value*
+// unless the Root is given an `items` map to resolve the label from — without
+// this the trigger would render e.g. "member" instead of "Member". Items with
+// non-string children (icons, elements) are skipped and fall back to base-ui's
+// default, and an explicit `items` prop always wins.
+function collectSelectItems(
+  node: React.ReactNode,
+  acc: Record<string, string>
+) {
+  React.Children.forEach(node, (child) => {
+    if (!React.isValidElement(child)) return
+    const props = child.props as {
+      value?: unknown
+      children?: React.ReactNode
+    }
+    if (
+      child.type === SelectItem &&
+      typeof props.value === "string" &&
+      typeof props.children === "string"
+    ) {
+      acc[props.value] = props.children
+    }
+    if (props.children != null) collectSelectItems(props.children, acc)
+  })
+}
+
+function Select<
+  Value,
+  Multiple extends boolean | undefined = false,
+>({
+  items,
+  children,
+  ...props
+}: SelectPrimitive.Root.Props<Value, Multiple>) {
+  const derivedItems = React.useMemo(() => {
+    if (items != null) return items
+    const acc: Record<string, string> = {}
+    collectSelectItems(children, acc)
+    return Object.keys(acc).length > 0 ? acc : undefined
+  }, [items, children])
+
+  return (
+    <SelectPrimitive.Root items={derivedItems} {...props}>
+      {children}
+    </SelectPrimitive.Root>
+  )
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (
