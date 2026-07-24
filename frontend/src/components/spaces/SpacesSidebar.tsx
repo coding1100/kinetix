@@ -293,7 +293,10 @@ export function SpacesSidebar() {
                       >
                         {space.name.slice(0, 1).toUpperCase()}
                       </span>
-                      <span className="truncate">{space.name}</span>
+                      <Tooltip>
+                        <TooltipTrigger render={<span className="truncate">{space.name}</span>} />
+                        <TooltipContent side="bottom">{space.name}</TooltipContent>
+                      </Tooltip>
                       {space.isPrivate ? (
                         <LockIcon className="size-3 shrink-0 opacity-70" />
                       ) : null}
