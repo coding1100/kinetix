@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { SearchIcon, ReplyIcon, SettingsIcon } from "lucide-react";
+import { SearchIcon, SettingsIcon } from "lucide-react";
 import type { DirectMessage } from "@/lib/types/chat";
 import { useChatStore, type DmDetailsView } from "@/stores/chat-store";
 import { cn } from "@/lib/utils";
@@ -26,7 +26,6 @@ const RAIL_ACTIONS: {
   icon: typeof SearchIcon;
 }[] = [
   { view: "search", label: "Search messages", icon: SearchIcon },
-  { view: "replies", label: "Replies", icon: ReplyIcon },
 ];
 
 const AVATAR_RING = "ring-1 ring-card";
