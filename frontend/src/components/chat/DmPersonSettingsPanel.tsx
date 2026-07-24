@@ -33,14 +33,15 @@ import { updateDmParticipant } from "@/lib/api/chat";
 import { formatRequestError } from "@/lib/api/client";
 import { patchSidebarDm, removeDmFromSidebar } from "@/lib/chat/sidebar-dm";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
-import { cn } from "@/lib/utils";
+import { cn, PKT_TIME_ZONE } from "@/lib/utils";
 import { toast } from "sonner";
 import { PageLoader } from "@/components/ui/page-loader";
 
 function formatLocalTime() {
-  return new Date().toLocaleTimeString(undefined, {
+  return new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
+    timeZone: PKT_TIME_ZONE,
   });
 }
 

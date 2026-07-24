@@ -87,7 +87,7 @@ import {
   avatarColorClassForKey,
   avatarInitialFromName,
 } from "@/lib/user-display";
-import { cn } from "@/lib/utils";
+import { cn, PKT_TIME_ZONE } from "@/lib/utils";
 
 type Member = { id: string; fullName: string };
 
@@ -191,9 +191,10 @@ function priorityFlagClass(value: TaskPriority | typeof NO_PRIORITY) {
 function formatDueChip(value: string) {
   if (!value) return "Due date";
   const date = new Date(`${value}T12:00:00.000Z`);
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
+    timeZone: PKT_TIME_ZONE,
   });
 }
 
