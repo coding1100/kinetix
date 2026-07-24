@@ -176,6 +176,7 @@ async def _send_invite_email_safe(
     inviter_name: str,
     invite_url: str,
     role: str,
+    expires_at: datetime,
 ) -> None:
     """Runs after the response has already gone out (see BackgroundTasks in
     _invite_payload_with_email) - there's no request/response left to report
@@ -187,6 +188,7 @@ async def _send_invite_email_safe(
             inviter_name=inviter_name,
             invite_url=invite_url,
             role=role,
+            expires_at=expires_at,
         )
     except Exception:
         logger.exception("Failed to send workspace invite email to %s", to)
@@ -216,6 +218,7 @@ def _invite_payload_with_email(
             inviter_name=inviter_name,
             invite_url=invite_url,
             role=invite.role.value,
+            expires_at=invite.expires_at,
         )
     return _invite_payload(invite, workspace, settings, email_sent=smtp_configured)
 
