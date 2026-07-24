@@ -17,6 +17,7 @@ import {
   PencilIcon,
   PlusIcon,
   SearchIcon,
+  Settings2Icon,
   Share2Icon,
   Trash2Icon,
   UsersIcon,
@@ -351,6 +352,14 @@ export function SpacesSidebar() {
                               >
                                 <PencilIcon className="size-4" />
                                 Rename
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                render={
+                                  <Link href={`/home/spaces/${space.id}/settings`} />
+                                }
+                              >
+                                <Settings2Icon className="size-4" />
+                                Settings
                               </DropdownMenuItem>
                             </>
                           ) : null}
@@ -710,6 +719,14 @@ function ListNavItem({
                 <DropdownMenuItem onClick={onRename}>
                   <PencilIcon className="size-4" />
                   Rename
+                </DropdownMenuItem>
+              ) : null}
+              {onRename ? (
+                <DropdownMenuItem
+                  render={<Link href={`${listHref(listId)}/settings`} />}
+                >
+                  <Settings2Icon className="size-4" />
+                  Settings
                 </DropdownMenuItem>
               ) : null}
               {canShare ? (
