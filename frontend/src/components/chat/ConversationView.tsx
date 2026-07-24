@@ -1089,6 +1089,7 @@ export function ConversationView({
                 <ChannelNameLabel
                   name={title}
                   starred={starred}
+                  icon={channel?.icon}
                   nameClassName="font-semibold text-foreground"
                 />
               </h2>

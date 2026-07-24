@@ -10,7 +10,6 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   FolderPlusIcon,
-  HashIcon,
   ListIcon,
   ListPlusIcon,
   LockIcon,
@@ -28,6 +27,7 @@ import {
   resolveGroupDmTitle,
 } from "@/lib/chat/group-dm-display";
 import { toast } from "sonner";
+import { ChannelGlyph } from "@/lib/chat/channel-icons";
 import { GroupDmAvatarStack } from "@/components/chat/GroupDmAvatarStack";
 import { useUserPresence } from "@/stores/presence-store";
 import { type PresenceStatus } from "@/stores/profile-store";
@@ -693,6 +693,7 @@ function ChannelRow({
   listChannel,
   unread,
   active,
+  icon,
 }: {
   id: string;
   name: string;
@@ -700,6 +701,7 @@ function ChannelRow({
   listChannel?: boolean;
   unread: number;
   active: boolean;
+  icon?: string | null;
 }) {
   const unreadBadgeHold = useChatStore((s) => s.unreadBadgeHold);
   const displayUnread = useSidebarUnread(
@@ -723,11 +725,14 @@ function ChannelRow({
           >
             {listChannel ? (
               <span className="flex shrink-0 items-center gap-0.5">
-                <HashIcon className="size-3.5 text-muted-foreground" />
+                <ChannelGlyph icon={icon} className="size-3.5 text-muted-foreground" />
                 <ListIcon className="size-3.5 text-muted-foreground" />
               </span>
             ) : (
-              <HashIcon className="size-3.5 shrink-0 text-muted-foreground" />
+              <ChannelGlyph
+                icon={icon}
+                className="size-3.5 shrink-0 text-muted-foreground"
+              />
             )}
             <span className="min-w-0 flex-1 truncate">{name}</span>
             {isPrivate ? (
@@ -1228,6 +1233,7 @@ export function HomeSidebar() {
                   listChannel={c.isListPrimary}
                   unread={c.unread}
                   active={pathname === `/home/c/${c.id}`}
+                  icon={c.icon}
                 />
               ))}
               {!restricted ? (
