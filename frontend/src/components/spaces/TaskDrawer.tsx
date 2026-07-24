@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -334,6 +335,7 @@ export function TaskDrawer({
   const [subtaskOpen, setSubtaskOpen] = useState(false);
   const [subtaskBusy, setSubtaskBusy] = useState(false);
   const [attachBusy, setAttachBusy] = useState(false);
+  const [uploadingAttachments, setUploadingAttachments] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [checklists, setChecklists] = useState<TaskChecklist[]>([]);
   const [checklistBusy, setChecklistBusy] = useState(false);
@@ -697,6 +699,8 @@ export function TaskDrawer({
       return;
     }
     setAttachBusy(true);
+    const names = Array.from(fileList).map((f) => f.name);
+    setUploadingAttachments(names);
     try {
       for (const file of Array.from(fileList)) {
         await uploadTaskAttachment(accessToken, workspaceId, taskId, file);
@@ -710,6 +714,7 @@ export function TaskDrawer({
       toast.error(e instanceof Error ? e.message : "Could not attach file");
     } finally {
       setAttachBusy(false);
+      setUploadingAttachments([]);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
@@ -1823,6 +1828,20 @@ export function TaskDrawer({
                         onChange={(e) => void handleAttachFiles(e.target.files)}
                       />
                     </div>
+
+                    {uploadingAttachments.length > 0 ? (
+                      <div className="mb-3 flex flex-col gap-1.5">
+                        {uploadingAttachments.map((name) => (
+                          <div
+                            key={name}
+                            className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground"
+                          >
+                            <Spinner size="sm" label={`Uploading ${name}`} />
+                            <span className="min-w-0 flex-1 truncate">{name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
 
                     {imageAttachments.length > 0 ? (
                       <div className="mb-3">

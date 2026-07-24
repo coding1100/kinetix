@@ -39,6 +39,7 @@ import {
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -1632,14 +1633,18 @@ export function CreateTaskDialog({
                     <span className="shrink-0 text-xs text-muted-foreground">
                       {formatBytes(file.size)}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => removeAttachment(id)}
-                      className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      aria-label={`Remove ${file.name}`}
-                    >
-                      <XIcon className="size-3.5" />
-                    </button>
+                    {saving ? (
+                      <Spinner size="sm" label={`Uploading ${file.name}`} />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => removeAttachment(id)}
+                        className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        aria-label={`Remove ${file.name}`}
+                      >
+                        <XIcon className="size-3.5" />
+                      </button>
+                    )}
                   </div>
                 ))}
                 <button
