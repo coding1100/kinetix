@@ -3,9 +3,7 @@
 import { useState } from "react";
 import {
   ChevronDownIcon,
-  CalendarIcon,
   CircleHelpIcon,
-  SparklesIcon,
   SquareCheckBigIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,7 +11,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ProfileMenu } from "@/components/shell/ProfileMenu";
 import { useUiStore } from "@/stores/ui-store";
 import { GlobalSearch } from "@/components/search/GlobalSearch";
-import { ChatShortcutsMenu } from "@/components/shell/topbar/ChatShortcutsMenu";
 import { NotificationsMenu } from "@/components/shell/topbar/NotificationsMenu";
 import { TopBarSheets } from "@/components/shell/topbar/TopBarSheets";
 import { useTopBarStore } from "@/stores/topbar-store";
@@ -100,22 +97,6 @@ export function TopBar() {
               <Button
                 variant="ghost"
                 size="icon-sm"
-                aria-label="Calendar"
-                onClick={() => openSheet("calendar")}
-              >
-                <CalendarIcon className="size-4" />
-              </Button>
-            }
-          />
-          <TooltipContent side="bottom">Calendar</TooltipContent>
-        </Tooltip>
-        <ChatShortcutsMenu />
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
                 aria-label="Help"
                 onClick={() => openSheet("help")}
               >
@@ -125,22 +106,6 @@ export function TopBar() {
           />
           <TooltipContent side="bottom">Help</TooltipContent>
         </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="AI"
-                onClick={() => openSheet("ai")}
-              >
-                <SparklesIcon className="size-4" />
-              </Button>
-            }
-          />
-          <TooltipContent side="bottom">AI</TooltipContent>
-        </Tooltip>
-        
         {FEATURE_FLAGS.topBarNotifications ? <NotificationsMenu /> : null}
         <Separator orientation="vertical" className="mx-1 h-5" />
         <ProfileMenu />
