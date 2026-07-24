@@ -543,38 +543,47 @@ function ChannelRow({
   );
 
   return (
-    <Button
-      variant="ghost"
-      nativeButton={false}
-      render={<Link href={href} />}
-      className={cn(
-        "h-8 w-full justify-between rounded-md px-2",
-        active && "bg-sidebar-accent"
-      )}
-    >
-      <span className="flex min-w-0 items-center gap-2 text-sm">
-        {listChannel ? (
-          <span className="flex shrink-0 items-center gap-0.5">
-            <HashIcon className="size-3.5 text-muted-foreground" />
-            <ListIcon className="size-3.5 text-muted-foreground" />
-          </span>
-        ) : (
-          <HashIcon className="size-3.5 shrink-0 text-muted-foreground" />
-        )}
-        {starred ? (
-          <StarIcon className="size-3 shrink-0 fill-amber-400 text-amber-400" />
-        ) : null}
-        <span className="truncate font-medium">{name}</span>
-        {privateChannel ? <LockIcon className="size-3 text-muted-foreground" /> : null}
-      </span>
-      <span className="flex items-center gap-1">
-        {displayUnread > 0 && (
-          <Badge className="size-5 min-w-5 justify-center rounded-full px-1 text-[10px] transition-opacity duration-300">
-            {displayUnread}
-          </Badge>
-        )}
-      </span>
-    </Button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="ghost"
+            nativeButton={false}
+            render={<Link href={href} />}
+            className={cn(
+              "h-8 w-full justify-between rounded-md px-2",
+              active && "bg-sidebar-accent"
+            )}
+          >
+            <span className="flex min-w-0 items-center gap-2 text-sm">
+              {listChannel ? (
+                <span className="flex shrink-0 items-center gap-0.5">
+                  <HashIcon className="size-3.5 text-muted-foreground" />
+                  <ListIcon className="size-3.5 text-muted-foreground" />
+                </span>
+              ) : (
+                <HashIcon className="size-3.5 shrink-0 text-muted-foreground" />
+              )}
+              {starred ? (
+                <StarIcon className="size-3 shrink-0 fill-amber-400 text-amber-400" />
+              ) : null}
+              <span className="truncate font-medium">{name}</span>
+              {privateChannel ? (
+                <LockIcon className="size-3 text-muted-foreground" />
+              ) : null}
+            </span>
+            <span className="flex items-center gap-1">
+              {displayUnread > 0 && (
+                <Badge className="size-5 min-w-5 justify-center rounded-full px-1 text-[10px] transition-opacity duration-300">
+                  {displayUnread}
+                </Badge>
+              )}
+            </span>
+          </Button>
+        }
+      />
+      <TooltipContent side="right">{name}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -626,39 +635,49 @@ function DmRow({
     : name;
 
   return (
-    <Button
-      variant="ghost"
-      nativeButton={false}
-      render={<Link href={href} />}
-      className={cn(
-        "h-9 w-full justify-between rounded-md px-2",
-        active && "bg-sidebar-accent text-sidebar-accent-foreground"
-      )}
-    >
-      <span className="flex min-w-0 items-center gap-2">
-        {isGroup && groupParticipants.length > 0 ? (
-          <GroupDmAvatarStack participants={groupParticipants} />
-        ) : (
-          <DmAvatar
-            name={displayName}
-            userId={otherUserId}
-            avatarUrl={avatarUrl}
-            presence={presence}
-            showPresence={!isGroup}
-          />
-        )}
-        <span className="truncate text-sm font-medium">
-          {displayName}
-          {!isGroup && otherUserIsDisabled ? (
-            <span className="text-destructive"> (deactivated)</span>
-          ) : null}
-        </span>
-      </span>
-      {displayUnread > 0 ? (
-        <Badge className="size-5 min-w-5 justify-center rounded-full px-1 text-[10px] transition-opacity duration-300">
-          {displayUnread}
-        </Badge>
-      ) : null}
-    </Button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="ghost"
+            nativeButton={false}
+            render={<Link href={href} />}
+            className={cn(
+              "h-9 w-full justify-between rounded-md px-2",
+              active && "bg-sidebar-accent text-sidebar-accent-foreground"
+            )}
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              {isGroup && groupParticipants.length > 0 ? (
+                <GroupDmAvatarStack participants={groupParticipants} />
+              ) : (
+                <DmAvatar
+                  name={displayName}
+                  userId={otherUserId}
+                  avatarUrl={avatarUrl}
+                  presence={presence}
+                  showPresence={!isGroup}
+                />
+              )}
+              <span className="truncate text-sm font-medium">
+                {displayName}
+                {!isGroup && otherUserIsDisabled ? (
+                  <span className="text-destructive"> (deactivated)</span>
+                ) : null}
+              </span>
+            </span>
+            {displayUnread > 0 ? (
+              <Badge className="size-5 min-w-5 justify-center rounded-full px-1 text-[10px] transition-opacity duration-300">
+                {displayUnread}
+              </Badge>
+            ) : null}
+          </Button>
+        }
+      />
+      <TooltipContent side="right">
+        {displayName}
+        {!isGroup && otherUserIsDisabled ? " (deactivated)" : ""}
+      </TooltipContent>
+    </Tooltip>
   );
 }
