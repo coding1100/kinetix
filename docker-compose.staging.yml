@@ -1,5 +1,6 @@
-# Staging stack — Docker only (no systemd, no host ports).
-# Public URL: http://HOST/staging via production nginx (kinetix-nginx-1).
+# Staging stack — Docker only. Public URL: http://HOST/staging via host nginx
+# (see deploy/nginx/host.conf) — api/web publish to 127.0.0.1 so host nginx
+# can proxy_pass to them directly, no shared Docker network needed for routing.
 #
 # Deploy:
 #   ./deploy/reset-staging-docker.sh
@@ -7,19 +8,10 @@
 
 name: kinetix-staging
 
-networks:
-  internal:
-    driver: bridge
-  edge:
-    external: true
-    name: kinetix_edge
-
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
-    networks:
-      - internal
     env_file:
       - docker-compose.env
     volumes:
@@ -35,11 +27,6 @@ services:
     build: ./backend-py
     image: kinetix-staging-api
     restart: unless-stopped
-    networks:
-      internal:
-      edge:
-        aliases:
-          - kinetix-staging-api
     env_file:
       - docker-compose.env
     environment:
@@ -56,8 +43,8 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
-    expose:
-      - "4000"
+    ports:
+      - "127.0.0.1:4010:4000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,10 +65,6 @@ services:
         NEXT_PUBLIC_SOCKET_URL: ${STAGING_PUBLIC_URL:-https://kinetix.infosoftco.com/staging}
     image: kinetix-staging-web
     restart: unless-stopped
-    networks:
-      edge:
-        aliases:
-          - kinetix-staging-web
     environment:
       NODE_ENV: production
       PORT: "3000"
@@ -90,8 +73,8 @@ services:
       NEXT_PUBLIC_API_URL: /staging/api/v1
       NEXT_PUBLIC_APP_URL: ${STAGING_PUBLIC_URL:-https://kinetix.infosoftco.com/staging}
       NEXT_PUBLIC_SOCKET_URL: ${STAGING_PUBLIC_URL:-https://kinetix.infosoftco.com/staging}
-    expose:
-      - "3000"
+    ports:
+      - "127.0.0.1:3010:3000"
     depends_on:
       api:
         condition: service_started
