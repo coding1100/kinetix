@@ -1,10 +1,23 @@
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { TeamsSidebar } from "@/components/teams/TeamsSidebar";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 
 export default function TeamsLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!FEATURE_FLAGS.teams) router.replace("/home/inbox");
+  }, [router]);
+
+  if (!FEATURE_FLAGS.teams) return null;
+
   return (
     <>
       <TeamsSidebar />
