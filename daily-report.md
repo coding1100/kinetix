@@ -5726,4 +5726,11 @@ in the private bucket and saves a permanent URL (api_public_url +
 new PUBLIC GET /auth/users/{id}/avatar streams the bytes since <img> src can't
 send a bearer token. Added s3_service.get_object. No Pillow dependency - resize
 is client-side. All six requested tasks committed separately.
+
+TAG: [CHORE]
+TITLE: Remove Super admin from invite role dropdown
+DESC: Removed the "Super admin" SelectItem from the invite role dropdown in
+WorkspaceInviteForm (People page). Members can no longer invite at SUPER_ADMIN
+level; Admin remains gated behind canInviteAdmin. canInviteSuperAdmin prop left
+in place (harmless, still passed by callers).
 DATE_END: 2026-07-24
