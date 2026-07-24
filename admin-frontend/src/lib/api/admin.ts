@@ -136,14 +136,18 @@ export function transferOwnership(
 }
 
 export const WORKSPACE_ROLES = [
-  "SUPER_ADMIN",
   "ADMIN",
   "MEMBER",
   "LIMITED_MEMBER",
   "GUEST",
 ] as const;
 
-export type WorkspaceRole = "OWNER" | (typeof WORKSPACE_ROLES)[number];
+// SUPER_ADMIN is intentionally absent from the selectable roles above but kept
+// in the type so existing super-admin records still display correctly.
+export type WorkspaceRole =
+  | "OWNER"
+  | "SUPER_ADMIN"
+  | (typeof WORKSPACE_ROLES)[number];
 
 export interface AdminWorkspaceMember {
   id: string; // user id
@@ -168,10 +172,9 @@ export const INVITE_ROLES = [
   "LIMITED_MEMBER",
   "GUEST",
   "ADMIN",
-  "SUPER_ADMIN",
 ] as const;
 
-export type InviteRole = (typeof INVITE_ROLES)[number];
+export type InviteRole = "SUPER_ADMIN" | (typeof INVITE_ROLES)[number];
 
 export interface AdminWorkspaceInvite {
   id: string;

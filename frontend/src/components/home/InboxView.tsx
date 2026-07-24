@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCheckIcon, FilterIcon, SettingsIcon } from "lucide-react";
+import { CheckCheckIcon, FilterIcon } from "lucide-react";
 import { mergeInboxItems } from "@/lib/notifications/live-cache";
 import { resolveInboxHref } from "@/lib/notifications/inbox-item-utils";
 import { subscribeNotificationsRefresh } from "@/lib/notifications/realtime";
@@ -15,6 +15,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -188,32 +189,24 @@ export function InboxView() {
               }
             />
             <DropdownMenuContent align="start" className="w-56">
-              <DropdownMenuLabel>Notification type</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {TYPE_FILTER_OPTIONS.map((option) => (
-                <DropdownMenuCheckboxItem
-                  key={option.id}
-                  checked={typeFilter.has(option.id)}
-                  onCheckedChange={() => toggleTypeFilter(option.id)}
-                  onSelect={(e) => e.preventDefault()}
-                >
-                  {option.label}
-                </DropdownMenuCheckboxItem>
-              ))}
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Notification type</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {TYPE_FILTER_OPTIONS.map((option) => (
+                  <DropdownMenuCheckboxItem
+                    key={option.id}
+                    checked={typeFilter.has(option.id)}
+                    onCheckedChange={() => toggleTypeFilter(option.id)}
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    {option.label}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
 
           <div className="flex items-center gap-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Notification settings"
-              title="Notification settings"
-              onClick={() => router.push("/settings")}
-            >
-              <SettingsIcon className="size-4" />
-            </Button>
             <Button
               type="button"
               variant="ghost"

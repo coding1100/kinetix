@@ -26,7 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { avatarColorClassForKey, avatarInitialFromName } from "@/lib/user-display";
-import { cn } from "@/lib/utils";
+import { cn, PKT_TIME_ZONE } from "@/lib/utils";
 
 function formatCommentTime(c: TaskComment) {
   if (c.createdAt) {
@@ -36,13 +36,18 @@ function formatCommentTime(c: TaskComment) {
       d.getFullYear() === now.getFullYear() &&
       d.getMonth() === now.getMonth() &&
       d.getDate() === now.getDate();
-    const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    const time = d.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: PKT_TIME_ZONE,
+    });
     if (sameDay) return `Today at ${time}`;
-    return d.toLocaleString([], {
+    return d.toLocaleString("en-US", {
       month: "short",
       day: "numeric",
       hour: "numeric",
       minute: "2-digit",
+      timeZone: PKT_TIME_ZONE,
     });
   }
   return c.at;

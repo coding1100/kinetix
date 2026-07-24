@@ -44,9 +44,9 @@ export default function WorkspaceManagePage() {
     <WorkspaceSetupShell
       title="What would you like to manage?"
       step={2}
-      totalSteps={6}
+      totalSteps={5}
       backHref="/workspace/create/use-case"
-      nextHref="/workspace/create/invite"
+      nextHref="/workspace/create/features"
       nextDisabled={!selected}
     >
       <div className="flex flex-wrap gap-3">

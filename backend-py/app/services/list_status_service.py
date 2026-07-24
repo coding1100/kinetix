@@ -1,8 +1,27 @@
-from sqlalchemy import select
+from typing import Any
+
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.enums import StatusGroup, TaskStatus
 from app.db.models.home import DEFAULT_SPACE_STATUS_CONFIG, ListStatus, Space, Task, TaskList
+
+
+def serialize_status_config(items: list) -> list[dict[str, Any]]:
+    """Editable status-config items (from an UpdateSpaceBody/UpdateListBody)
+    -> the jsonb shape stored on Space.status_config / TaskList.status_config.
+    sortOrder is always re-derived from array position - callers send the
+    desired final order, not a sortOrder field."""
+    return [
+        {
+            "legacyKey": item.legacy_key,
+            "name": item.name.strip(),
+            "color": item.color,
+            "statusGroup": item.status_group.value,
+            "sortOrder": index,
+        }
+        for index, item in enumerate(items)
+    ]
 
 
 def _status_tuples(
@@ -37,12 +56,15 @@ def map_list_status_row(row: ListStatus) -> dict:
 
 
 async def ensure_list_statuses(session: AsyncSession, list_id: str) -> list[ListStatus]:
-    space_status_config = await session.scalar(
-        select(Space.status_config)
-        .join(TaskList, TaskList.space_id == Space.id)
-        .where(TaskList.id == list_id)
-    )
-    default_statuses = _status_tuples(space_status_config)
+    row = (
+        await session.execute(
+            select(TaskList.status_config, Space.status_config)
+            .join(Space, TaskList.space_id == Space.id)
+            .where(TaskList.id == list_id)
+        )
+    ).one_or_none()
+    list_status_config, space_status_config = row if row else (None, None)
+    default_statuses = _status_tuples(list_status_config or space_status_config)
 
     existing = (
         await session.scalars(
@@ -84,6 +106,17 @@ async def ensure_list_statuses(session: AsyncSession, list_id: str) -> list[List
             )
             next_order += 1
             changed = True
+        # A status explicitly edited off the desired config (renamed away or
+        # removed) no longer belongs - drop it. Tasks pointing at it fall
+        # back to TODO-equivalent via the tasks_without_status pass below.
+        desired_names = {name.strip().lower() for _, name, _, _, _ in default_statuses}
+        stale = [row for row in existing if row.name.strip().lower() not in desired_names]
+        for row in stale:
+            await session.execute(
+                update(Task).where(Task.status_id == row.id).values(status_id=None)
+            )
+            await session.delete(row)
+            changed = True
         if changed:
             await session.flush()
             rows = (
@@ -124,6 +157,16 @@ async def ensure_list_statuses(session: AsyncSession, list_id: str) -> list[List
                 if match:
                     task.status_id = match.id
                     task.status_color = match.color
+        if changed:
+            return list(
+                (
+                    await session.scalars(
+                        select(ListStatus)
+                        .where(ListStatus.list_id == list_id)
+                        .order_by(ListStatus.sort_order.asc())
+                    )
+                ).all()
+            )
         return list(existing)
 
     created: list[ListStatus] = []

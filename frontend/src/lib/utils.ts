@@ -16,6 +16,10 @@ export function appPath(path: string): string {
   return `${base}${normalized}`;
 }
 
+// App-wide display timezone. Every date/time shown to the user should be in
+// this zone (except where a value is explicitly labeled UTC).
+export const PKT_TIME_ZONE = "Asia/Karachi";
+
 export function formatRelativeTime(date: Date): string {
   const diff = Date.now() - date.getTime();
   const mins = Math.floor(diff / 60000);

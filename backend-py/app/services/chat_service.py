@@ -47,6 +47,31 @@ def _validate_icon_color(icon_color: str | None) -> str | None:
     if icon_color not in CHANNEL_ICON_COLORS:
         raise AppError(400, "VALIDATION_ERROR", "Invalid channel icon color")
     return icon_color
+
+
+# Curated glyph keys; keep in sync with frontend/src/lib/chat/channel-icons.ts
+CHANNEL_ICONS = {
+    "hash",
+    "message-square",
+    "megaphone",
+    "star",
+    "bell",
+    "users",
+    "calendar",
+    "briefcase",
+    "rocket",
+    "heart",
+    "flag",
+    "book-open",
+}
+
+
+def _validate_icon(icon: str | None) -> str | None:
+    if not icon:
+        return None
+    if icon not in CHANNEL_ICONS:
+        raise AppError(400, "VALIDATION_ERROR", "Invalid channel icon")
+    return icon
 from app.services.notification_service import (
     create_channel_access_notifications,
     create_dm_broadcast_notifications,
@@ -338,6 +363,7 @@ def _channel_payload(
         "isPrivate": is_private,
         "isFollowing": member.is_following,
         "customIconColor": channel.custom_icon_color,
+        "icon": channel.icon,
         "createdById": channel.created_by_id,
         "listId": channel.list_id,
         "isListPrimary": channel.is_list_primary,
@@ -613,6 +639,9 @@ async def update_channel(
     if body.iconColor is not None:
         member.channel.custom_icon_color = _validate_icon_color(body.iconColor)
 
+    if body.icon is not None:
+        member.channel.icon = _validate_icon(body.icon)
+
     # A list-primary channel's name IS the list's name (two-way sync) - the
     # reverse direction lives in spaces_service.update_list. Non-primary
     # channels that merely reference a list are left alone.
@@ -786,6 +815,7 @@ async def create_channel(
         space_label=body.spaceLabel or "in Workspace",
         created_by_id=user_id,
         custom_icon_color=_validate_icon_color(body.iconColor),
+        icon=_validate_icon(body.icon),
     )
     session.add(channel)
     await session.flush()
@@ -1284,7 +1314,11 @@ def _dm_payload(
         others = [p for p in conv.participants if p.user_id != user_id]
         members = [p.user.full_name.split(" ")[0] for p in others]
         participants = [
-            {"id": p.user_id, "fullName": p.user.full_name}
+            {
+                "id": p.user_id,
+                "fullName": p.user.full_name,
+                "avatarUrl": p.user.avatar_url,
+            }
             for p in conv.participants
         ]
     other_presence = (

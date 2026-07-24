@@ -1,3 +1,5 @@
+import { PKT_TIME_ZONE } from "@/lib/utils";
+
 export function formatTaskMinutes(totalMinutes: number | null | undefined): string {
   if (totalMinutes == null || totalMinutes <= 0) return "Empty";
   const hours = Math.floor(totalMinutes / 60);
@@ -21,5 +23,9 @@ export function formatShortDate(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: PKT_TIME_ZONE,
+  });
 }

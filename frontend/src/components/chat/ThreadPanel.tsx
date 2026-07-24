@@ -47,6 +47,8 @@ import { buildMessageRuns } from "@/lib/chat/message-groups";
 import { useAuthStore } from "@/stores/auth-store";
 import { createTaskFromThreadMessage } from "@/lib/spaces/create-task-from-thread";
 import { fetchSpacesTree, flattenListsFromSpaces } from "@/lib/api/spaces";
+import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
+import type { ReadReceiptMember } from "@/components/chat/MessageReadReceipts";
 
 function getThreadTitle(
   parent: ChatMessage,
@@ -80,6 +82,18 @@ export function ThreadPanel({
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const currentUserId = useAuthStore((s) => s.user?.id);
   const currentUserFullName = useAuthStore((s) => s.user?.fullName);
+  const workspaceMembersQuery = useWorkspaceMembersQuery();
+  const membersById = useMemo(() => {
+    const map: Record<string, ReadReceiptMember> = {};
+    for (const member of workspaceMembersQuery.data ?? []) {
+      map[member.id] = {
+        id: member.id,
+        fullName: member.fullName,
+        avatarUrl: member.avatarUrl,
+      };
+    }
+    return map;
+  }, [workspaceMembersQuery.data]);
   const setActiveThread = useChatStore((s) => s.setActiveThread);
   const clearComposerEdit = useChatStore((s) => s.clearComposerEdit);
   const realtimeEvent = useChatStore((s) => s.realtimeEvent);
@@ -594,6 +608,7 @@ export function ThreadPanel({
             onToggleReaction={onToggleReaction}
             onEditMessage={handleEditMessage}
             onDeleteMessage={handleDeleteMessage}
+            membersById={membersById}
           />
 
           {replies.length > 0 && (
@@ -627,6 +642,7 @@ export function ThreadPanel({
                     onToggleReaction={onToggleReaction}
                     onEditMessage={handleEditMessage}
                     onDeleteMessage={handleDeleteMessage}
+                    membersById={membersById}
                   />
                 ))}
               </div>

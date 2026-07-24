@@ -38,6 +38,7 @@ export function SpacesHierarchyDialog({
   onOpenChange,
   mode,
   navigateOnCreate = true,
+  onSpaceCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -47,6 +48,10 @@ export function SpacesHierarchyDialog({
    * list is expected), false from the Home tab (creating structure there
    * shouldn't yank you away from Home). */
   navigateOnCreate?: boolean;
+  /** Called with the new space's id right after creation, so the caller can
+   * "open" it (navigate to it, expand it in a tree, etc.) in whatever way
+   * makes sense for that page. */
+  onSpaceCreated?: (spaceId: string) => void;
 }) {
   const router = useRouter();
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
@@ -101,11 +106,12 @@ export function SpacesHierarchyDialog({
     setSaving(true);
     try {
       if (mode.type === "space") {
-        await createSpace(accessToken, workspaceId, {
+        const space = await createSpace(accessToken, workspaceId, {
           name: trimmed,
           isPrivate,
         });
         toast.success("Space created");
+        onSpaceCreated?.(space.id);
       } else if (mode.type === "folder") {
         await createFolder(accessToken, workspaceId, mode.spaceId, {
           name: trimmed,

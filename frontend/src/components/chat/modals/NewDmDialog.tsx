@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useUiStore } from "@/stores/ui-store";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
@@ -146,6 +146,9 @@ export function NewDmDialog() {
                 className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-muted/40 py-0.5 pl-1 pr-1.5 text-xs"
               >
                 <Avatar className="size-5">
+                  {m.avatarUrl ? (
+                    <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                  ) : null}
                   <AvatarFallback
                     className={cn(
                       "text-[10px] font-semibold",
@@ -222,6 +225,9 @@ export function NewDmDialog() {
                     aria-label={`Select ${m.fullName}`}
                   />
                   <Avatar className="size-8 shrink-0">
+                    {m.avatarUrl ? (
+                      <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                    ) : null}
                     <AvatarFallback
                       className={cn(
                         "text-xs font-semibold",

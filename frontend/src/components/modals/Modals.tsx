@@ -34,7 +34,7 @@ export function Modals() {
       router.push("/people?invite=1");
     }
   }, [activeModal, closeModal, router]);
-  const { items, togglePin, addSection } = useHomeSidebarStore();
+  const { items, togglePin } = useHomeSidebarStore();
 
   return (
     <>
@@ -67,16 +67,6 @@ export function Modals() {
               </li>
             ))}
           </ul>
-          <Button
-            variant="link"
-            className="px-0"
-            onClick={() => {
-              addSection("New section");
-              toast.success("Section added");
-            }}
-          >
-            + Add section
-          </Button>
         </DialogContent>
       </Dialog>
 

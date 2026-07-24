@@ -37,11 +37,13 @@ docker compose -f docker-compose.staging.yml ps
 curl -fsS http://127.0.0.1/staging/auth/login -o /dev/null -w "%{http_code}\n"
 ```
 If containers are up and that curl returns 200, the deploy landed even if the
-Action reported failure — just double check nginx picked it up:
+Action reported failure — just double check host nginx picked it up:
 ```
-docker exec kinetix-nginx-1 nginx -t
-docker exec kinetix-nginx-1 nginx -s reload
+sudo nginx -t
+sudo systemctl reload nginx
 ```
+(nginx runs on the host now, not as a container — see
+`deploy/NGINX_HOST_MIGRATION.md`.)
 
 ## 4. Get any new/updated scripts onto the box
 

@@ -1,5 +1,6 @@
 """SMTP invite email helpers."""
 
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -39,6 +40,7 @@ async def test_send_workspace_invite_calls_smtp(monkeypatch):
         inviter_name="Owner",
         invite_url="http://localhost:3001/invite/accept?token=abc",
         role="MEMBER",
+        expires_at=datetime(2026, 1, 8, tzinfo=timezone.utc),
     )
     assert sent == ["invitee@example.com"]
 

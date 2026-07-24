@@ -26,6 +26,9 @@ class ChatChannel(Base):
     custom_icon_color: Mapped[str | None] = mapped_column(
         "customIconColor", String, nullable=True
     )
+    # Fixed key into the frontend's glyph registry (e.g. "hash", "megaphone").
+    # NULL = default hash "#" glyph.
+    icon: Mapped[str | None] = mapped_column("icon", String, nullable=True)
     created_by_id: Mapped[str | None] = mapped_column(
         "createdById",
         String,
