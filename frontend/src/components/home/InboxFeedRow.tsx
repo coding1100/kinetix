@@ -183,9 +183,9 @@ export function InboxFeedRow({
   return (
     <div
       className={cn(
-        "group grid w-full grid-cols-[minmax(0,1.1fr)_minmax(0,1.6fr)_150px] items-center gap-4 px-4 py-2.5 transition-colors",
-        "hover:bg-muted/50",
-        item.unread ? "bg-muted/20" : "bg-transparent"
+        "group grid w-full grid-cols-[minmax(0,1.1fr)_minmax(0,1.6fr)_150px] items-center gap-4 px-4 py-2.5 transition-all",
+        "hover:bg-muted/50 hover:opacity-100",
+        item.unread ? "bg-muted/20" : "bg-transparent opacity-55 grayscale-[35%]"
       )}
     >
       {/* Column A: type glyph + item (task / channel / list) name */}
@@ -194,13 +194,18 @@ export function InboxFeedRow({
         onClick={() => void onOpen(item)}
         className="flex min-w-0 items-center gap-2.5 text-left"
       >
-        <span className={cn("shrink-0", itemIconTone(item.type))}>
+        <span
+          className={cn(
+            "shrink-0",
+            item.unread ? itemIconTone(item.type) : "text-muted-foreground"
+          )}
+        >
           {renderItemIcon(item.type, "size-4")}
         </span>
         <span
           className={cn(
             "truncate text-sm",
-            item.unread ? "font-medium text-foreground" : "text-foreground/85"
+            item.unread ? "font-medium text-foreground" : "text-muted-foreground"
           )}
         >
           {heading}
