@@ -31,9 +31,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
       closeButton
       style={
         {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
+          "--normal-bg": "#000000",
+          "--normal-text": "#ffffff",
+          "--normal-border": "#000000",
           "--border-radius": "var(--radius)",
         } as React.CSSProperties
       }

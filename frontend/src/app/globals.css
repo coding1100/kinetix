@@ -251,3 +251,38 @@ body {
     animation-duration: 4.5s;
   }
 }
+
+/* Toast notifications: uniform black, close button on the right in red,
+   and a fallback icon for toasts fired without an explicit variant
+   (e.g. plain toast("...") calls), which sonner renders with an empty
+   [data-icon] slot. */
+[data-sonner-toaster] [data-sonner-toast] [data-close-button] {
+  left: unset !important;
+  right: 0 !important;
+  transform: translate(35%, -35%) !important;
+  color: #ef4444 !important;
+  border-color: #ef4444 !important;
+  background: #000000 !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-close-button]:hover {
+  background: #1a1a1a !important;
+  border-color: #ef4444 !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-type="default"] [data-icon] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-type="default"] [data-icon]::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 16v-4'/%3E%3Cpath d='M12 8h.01'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: contain;
+}
