@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
+from app.db.session import get_session_factory
 from app.core.errors import AppError
 from app.services.chat_service import sync_list_channel_members_for_workspace
 from app.services.folder_list_permissions import resolve_pending_shares
@@ -153,8 +154,23 @@ def _invite_payload(
     }
 
 
+async def _set_invite_email_status(invite_id: str, status: str) -> None:
+    """Persist the delivery outcome on its own session - the request's session
+    is long gone by the time the background send finishes."""
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            invite = await session.get(Invite, invite_id)
+            if invite is not None:
+                invite.email_status = status
+                await session.commit()
+    except Exception:
+        logger.exception("Failed to record invite emailStatus for %s", invite_id)
+
+
 async def _send_invite_email_safe(
     *,
+    invite_id: str,
     to: str,
     workspace_name: str,
     inviter_name: str,
@@ -163,7 +179,7 @@ async def _send_invite_email_safe(
 ) -> None:
     """Runs after the response has already gone out (see BackgroundTasks in
     _invite_payload_with_email) - there's no request/response left to report
-    failure through, so log it instead of raising."""
+    failure through, so log it and record the outcome on the invite instead."""
     try:
         await email_service.send_workspace_invite_email(
             to=to,
@@ -174,6 +190,9 @@ async def _send_invite_email_safe(
         )
     except Exception:
         logger.exception("Failed to send workspace invite email to %s", to)
+        await _set_invite_email_status(invite_id, "failed")
+    else:
+        await _set_invite_email_status(invite_id, "sent")
 
 
 def _invite_payload_with_email(
@@ -191,6 +210,7 @@ def _invite_payload_with_email(
         # confirmation - a failure after this point only shows up in logs.
         background_tasks.add_task(
             _send_invite_email_safe,
+            invite_id=invite.id,
             to=invite.email,
             workspace_name=workspace.name,
             inviter_name=inviter_name,
@@ -225,7 +245,13 @@ async def list_workspace_invites(
             "role": inv.role.value,
             "expiresAt": inv.expires_at.isoformat(),
             "createdAt": inv.created_at.isoformat() if inv.created_at else None,
-            "status": "expired" if _as_utc(inv.expires_at) < now else "pending",
+            "status": (
+                "expired"
+                if _as_utc(inv.expires_at) < now
+                else "failed"
+                if inv.email_status == "failed"
+                else "pending"
+            ),
             "invitedBy": {
                 "id": inv.inviter.id,
                 "fullName": inv.inviter.full_name,
@@ -288,6 +314,8 @@ async def resend_workspace_invite(
     settings = get_settings()
     invite.token = generate_token()
     invite.expires_at = _utc_now() + timedelta(days=settings.invite_token_expires_days)
+    # Back to "pending" until the fresh background send resolves the outcome.
+    invite.email_status = None
     inviter = await session.get(User, invite.invited_by_id)
     inviter_name = inviter.full_name if inviter else "A teammate"
     await session.commit()
