@@ -5,8 +5,6 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   PlusIcon,
-  SearchIcon,
-  FilterIcon,
   Settings2Icon,
   PanelLeftCloseIcon,
   ChevronDownIcon,
@@ -29,6 +27,7 @@ import {
   otherGroupParticipants,
   resolveGroupDmTitle,
 } from "@/lib/chat/group-dm-display";
+import { toast } from "sonner";
 import { GroupDmAvatarStack } from "@/components/chat/GroupDmAvatarStack";
 import { useUserPresence } from "@/stores/presence-store";
 import { type PresenceStatus } from "@/stores/profile-store";
@@ -55,7 +54,6 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
-import { toast } from "sonner";
 import { useShellStore } from "@/stores/shell-store";
 import { SidebarNavIcon } from "@/components/icons/SidebarNavIcon";
 import { useNotificationsUnread } from "@/hooks/use-notifications-unread";
@@ -836,8 +834,6 @@ export function HomeSidebar() {
   const sidebarRefreshKey = useChatStore((s) => s.sidebarRefreshKey);
   const {
     items,
-    filter,
-    setFilter,
     myTasksExpanded,
     setMyTasksExpanded,
     collapsedSections,
@@ -1001,34 +997,6 @@ export function HomeSidebar() {
           <Tooltip>
             <TooltipTrigger
               render={
-                <Button variant="ghost" size="icon-sm" className="size-7" aria-label="Search">
-                  <SearchIcon className="size-3.5" />
-                </Button>
-              }
-            />
-            <TooltipContent side="bottom">Search</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className={cn("size-7", filter === "unread" && "text-primary")}
-                  aria-label="Filter unread"
-                  onClick={() =>
-                    setFilter(filter === "unread" ? "none" : "unread")
-                  }
-                >
-                  <FilterIcon className="size-3.5" />
-                </Button>
-              }
-            />
-            <TooltipContent side="bottom">Filter unread</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -1042,38 +1010,6 @@ export function HomeSidebar() {
             />
             <TooltipContent side="bottom">Customize</TooltipContent>
           </Tooltip>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button variant="ghost" size="icon-sm" className="size-7" aria-label="Create">
-                        <PlusIcon className="size-3.5" />
-                      </Button>
-                    }
-                  />
-                  <TooltipContent side="bottom">Create</TooltipContent>
-                </Tooltip>
-              }
-            />
-            <DropdownMenuContent align="end" className="w-44">
-              {["Task", "Message", "Channel", "Doc"].map((item) => (
-                <DropdownMenuItem
-                  key={item}
-                  onClick={() => {
-                    if (item === "Channel") openModalDeferred("new-channel");
-                    else if (item === "Message") openModalDeferred("new-dm");
-                    else if (item === "Task") {
-                      window.location.href = "/home/all-tasks";
-                    } else toast(`${item} — coming soon`);
-                  }}
-                >
-                  {item}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
           <Tooltip>
             <TooltipTrigger
               render={
@@ -1092,13 +1028,6 @@ export function HomeSidebar() {
           </Tooltip>
         </div>
       </div>
-      {filter === "unread" && (
-        <div className="px-3 py-2">
-          <Badge variant="secondary" className="text-xs">
-            Unread only
-          </Badge>
-        </div>
-      )}
       <ScrollArea className="min-h-0 flex-1 px-2 pt-1">
         <nav className="flex flex-col gap-px pb-2">
           {mainItems.map((item) => {
