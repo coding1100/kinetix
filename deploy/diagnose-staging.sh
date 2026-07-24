@@ -4,8 +4,8 @@ set -euo pipefail
 
 STAGING_ROOT="${STAGING_ROOT:-/opt/clickup/kinetix-staging}"
 STAGING_BASE_PATH="${STAGING_BASE_PATH:-/staging}"
-NGINX_CONTAINER="${NGINX_CONTAINER:-kinetix-nginx-1}"
-EDGE_NETWORK="${EDGE_NETWORK:-kinetix_edge}"
+STAGING_API_PORT="${STAGING_API_PORT:-4010}"
+STAGING_WEB_PORT="${STAGING_WEB_PORT:-3010}"
 
 echo "=== git (staging app) ==="
 if [ -d "$STAGING_ROOT/.git" ]; then
@@ -21,8 +21,8 @@ echo "=== staging docker containers ==="
 docker compose -f "$STAGING_ROOT/docker-compose.staging.yml" ps 2>/dev/null || \
   docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}" | grep -E "staging|NAMES" || true
 
-echo "=== edge network ==="
-docker network inspect "$EDGE_NETWORK" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || echo "WARN: $EDGE_NETWORK missing"
+echo "=== host nginx ==="
+systemctl is-active nginx 2>/dev/null || echo "WARN: host nginx not active"
 
 echo "=== staging health (inside containers) ==="
 API_ID=$(docker compose -f "$STAGING_ROOT/docker-compose.staging.yml" ps -q api 2>/dev/null || true)
@@ -44,13 +44,11 @@ echo "=== nginx routing ==="
 curl -s -o /dev/null -w "nginx_staging=%{http_code}\n" "http://127.0.0.1${STAGING_BASE_PATH}/auth/login" || echo "nginx_staging=000"
 curl -s -o /dev/null -w "prod_login=%{http_code}\n" "http://127.0.0.1/auth/login" || echo "prod_login=000"
 
-if docker ps --format '{{.Names}}' | grep -qx "$NGINX_CONTAINER"; then
-  echo "=== nginx can reach staging upstreams ==="
-  docker exec "$NGINX_CONTAINER" wget -q -O- --timeout=3 http://kinetix-staging-api:4000/health >/dev/null 2>&1 \
-    && echo "nginx->staging-api=ok" || echo "nginx->staging-api=fail"
-  docker exec "$NGINX_CONTAINER" wget -q -O- --timeout=3 http://kinetix-staging-web:3000/staging/auth/login >/dev/null 2>&1 \
-    && echo "nginx->staging-web=ok" || echo "nginx->staging-web=fail"
-fi
+echo "=== nginx can reach staging upstreams (host-published ports) ==="
+curl -fsS --max-time 3 "http://127.0.0.1:${STAGING_API_PORT}/health" >/dev/null 2>&1 \
+  && echo "nginx->staging-api=ok" || echo "nginx->staging-api=fail"
+curl -fsS --max-time 3 "http://127.0.0.1:${STAGING_WEB_PORT}/staging/auth/login" >/dev/null 2>&1 \
+  && echo "nginx->staging-web=ok" || echo "nginx->staging-web=fail"
 
 echo "=== recent staging logs ==="
 docker compose -f "$STAGING_ROOT/docker-compose.staging.yml" logs --tail 10 2>/dev/null || true

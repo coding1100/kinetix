@@ -3,10 +3,12 @@
 Repeatable steps for merging into `main` and deploying to prod, plus running
 DB migrations afterward (deploy.sh does not run them automatically).
 
-Prod runs fully as Docker containers (`postgres`, `api`, `web`, `nginx`, built
-from `docker-compose.yml` + `docker-compose.app.yml`) — not systemd. nginx
-routes `location /` → `web:3000` and `location /api/` → `api:4000` (see
-`deploy/nginx/docker.conf`).
+Prod runs `postgres`, `api`, `web`, `admin` as Docker containers (built from
+`docker-compose.yml` + `docker-compose.app.yml`), each publishing to
+`127.0.0.1`. nginx itself runs on the **host** (apt), not in Docker — it
+routes `location /` → `127.0.0.1:3000` and `location /api/` → `127.0.0.1:4000`
+(see `deploy/nginx/host.conf`). See `deploy/NGINX_HOST_MIGRATION.md` for how
+this was cut over from the old Docker-nginx setup.
 
 ## 1. Merge into `main`
 
@@ -16,7 +18,7 @@ gh pr merge <pr-number> --merge
 ```
 Push to `main` auto-triggers `.github/workflows/deploy-ec2.yml`, which runs
 `deploy/deploy.sh` on the EC2 box: pulls `main`, builds and restarts the
-`postgres` → `api` → `web` → `nginx` containers in order, health-checking
+`postgres` → `api` → `web` containers in order, health-checking
 each before moving to the next.
 
 ## 2. Watch the deploy
@@ -117,14 +119,14 @@ from the step-3 backup rather than guessing.
   `kinetix-web`; `deploy.sh` stops and disables those systemd units on every
   run since they're superseded and would otherwise silently coexist with the
   real containers nginx routes to.
-- nginx runs as a Docker container (`kinetix-nginx-1`, config at
-  `deploy/nginx/docker.conf`) — never `systemctl reload nginx`, use
-  `docker exec kinetix-nginx-1 nginx -s reload`. Host `nginx.service` is
-  deliberately masked.
-- `kinetix_edge` is an `external: true` Docker network (shared with staging,
-  not Compose-managed) — `deploy.sh` creates it if missing, but if you ever
-  see containers up yet unreachable via nginx, check
-  `docker network inspect kinetix_edge` for a name/label mismatch first.
+- nginx runs on the **host** (apt-installed, config at `deploy/nginx/host.conf`,
+  installed to `/etc/nginx/sites-available/kinetix`) — use `sudo nginx -t &&
+  sudo systemctl reload nginx`, not `docker exec`.
+- `api`/`web`/`admin` publish to `127.0.0.1:<port>` so host nginx can
+  `proxy_pass` to them directly — no shared Docker network needed for
+  routing anymore (see `deploy/NGINX_HOST_MIGRATION.md`). If you ever see
+  containers up yet unreachable via nginx, `curl 127.0.0.1:<port>` directly
+  first to rule out the container before touching nginx config.
 - `NEXT_PUBLIC_*` vars are baked into the `web` image at *build* time, not
   read at runtime — changing them requires `docker compose ... build web`,
   not just a restart. Build args live in `docker-compose.app.yml`'s `web.build.args`.

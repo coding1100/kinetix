@@ -32,7 +32,6 @@ git reset --hard origin/develop
 
 log "Rebuild and restart production Docker stack"
 cd "$PROD_ROOT"
-docker network create kinetix_edge 2>/dev/null || true
 docker compose --env-file docker-compose.env -f docker-compose.yml -f docker-compose.app.yml build api web
 docker compose --env-file docker-compose.env -f docker-compose.yml -f docker-compose.app.yml up -d --remove-orphans
 

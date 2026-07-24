@@ -8,7 +8,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_ROOT="${APP_ROOT:-$ROOT}"
 COMPOSE_FILES="-f $APP_ROOT/docker-compose.yml -f $APP_ROOT/docker-compose.app.yml"
-NGINX_CONTAINER="${NGINX_CONTAINER:-kinetix-nginx-1}"
 
 log() { echo "==> $*"; }
 
@@ -43,19 +42,19 @@ if ! container_running admin; then
   exit 1
 fi
 
-# nginx bind-mounts deploy/nginx/docker.conf read-only - `compose up -d nginx`
-# alone won't pick up a changed file in an already-running container, and the
-# /admin-portal/ location block is new on this container's first deploy.
-if docker ps --format '{{.Names}}' | grep -qx "$NGINX_CONTAINER"; then
-  log "Reload nginx (picks up /admin-portal/ route)"
-  docker exec "$NGINX_CONTAINER" nginx -t
-  docker exec "$NGINX_CONTAINER" nginx -s reload
+# nginx runs on the host (apt), not as a container — reload picks up any
+# /admin-portal/ route changes in deploy/nginx/host.conf.
+if [ -f "$APP_ROOT/deploy/nginx/host.conf" ]; then
+  sudo cp "$APP_ROOT/deploy/nginx/host.conf" /etc/nginx/sites-available/kinetix
+  log "Reload host nginx (picks up /admin-portal/ route)"
+  sudo nginx -t
+  sudo systemctl reload nginx
 fi
 
 log "Health check via nginx"
 if ! curl -fsS http://127.0.0.1/admin-portal/login >/dev/null 2>&1; then
   echo "ERROR: admin portal not responding via nginx"
-  docker logs "$NGINX_CONTAINER" --tail 30 2>/dev/null || true
+  sudo journalctl -u nginx --no-pager --lines 30 2>/dev/null || true
   compose logs admin --tail 40
   exit 1
 fi
