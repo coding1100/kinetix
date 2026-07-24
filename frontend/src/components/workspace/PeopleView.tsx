@@ -57,6 +57,7 @@ import {
   WorkspaceInviteForm,
 } from "@/components/workspace/WorkspaceInviteForm";
 import { ApiError } from "@/lib/api/client";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import {
   avatarColorClassForKey,
   avatarInitialFromName,
@@ -195,15 +196,17 @@ export function PeopleView() {
     try {
       const peopleRes = await fetchWorkspacePeople(accessToken, workspaceId);
       setMembers(peopleRes.data);
-      const teamsRes = await fetchTeams(accessToken, workspaceId);
-      setTeams(
-        teamsRes.data.map((t) => ({
-          id: t.id,
-          name: t.name,
-          color: t.color,
-          icon: t.icon,
-        }))
-      );
+      if (FEATURE_FLAGS.teams) {
+        const teamsRes = await fetchTeams(accessToken, workspaceId);
+        setTeams(
+          teamsRes.data.map((t) => ({
+            id: t.id,
+            name: t.name,
+            color: t.color,
+            icon: t.icon,
+          }))
+        );
+      }
       if (canInvite || manage) {
         const invitesRes = await fetchWorkspaceInvites(accessToken, workspaceId);
         setInvites(invitesRes.data);
@@ -429,25 +432,27 @@ export function PeopleView() {
               onChange={(e) => setQuery(e.target.value)}
             />
           </div>
-          <Select value={teamFilter} onValueChange={(v) => v && setTeamFilter(v)}>
-            <SelectTrigger className="h-9 w-[200px]">
-              <SelectValue placeholder="All teams">
-                {teamFilter === "all" ? (
-                  "All teams"
-                ) : selectedFilterTeam ? (
-                  <TeamFilterLabel team={selectedFilterTeam} />
-                ) : null}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All teams</SelectItem>
-              {teams.map((t) => (
-                <SelectItem key={t.id} value={t.id} label={t.name}>
-                  <TeamFilterLabel team={t} />
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {FEATURE_FLAGS.teams ? (
+            <Select value={teamFilter} onValueChange={(v) => v && setTeamFilter(v)}>
+              <SelectTrigger className="h-9 w-[200px]">
+                <SelectValue placeholder="All teams">
+                  {teamFilter === "all" ? (
+                    "All teams"
+                  ) : selectedFilterTeam ? (
+                    <TeamFilterLabel team={selectedFilterTeam} />
+                  ) : null}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All teams</SelectItem>
+                {teams.map((t) => (
+                  <SelectItem key={t.id} value={t.id} label={t.name}>
+                    <TeamFilterLabel team={t} />
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
         </div>
 
         {loading ? (
@@ -460,7 +465,9 @@ export function PeopleView() {
                   <th className="px-4 py-2.5 font-medium">Name</th>
                   <th className="px-4 py-2.5 font-medium">Email</th>
                   <th className="px-4 py-2.5 font-medium">Role</th>
-                  <th className="min-w-[200px] px-4 py-2.5 font-medium">Teams</th>
+                  {FEATURE_FLAGS.teams ? (
+                    <th className="min-w-[200px] px-4 py-2.5 font-medium">Teams</th>
+                  ) : null}
                   <th className="px-4 py-2.5 font-medium">Joined</th>
                   <th className="px-4 py-2.5 font-medium">Invited by</th>
                   <th className="px-4 py-2.5 font-medium">Status</th>
@@ -521,9 +528,11 @@ export function PeopleView() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
-                      <MemberTeamBadges teams={m.teams ?? []} />
-                    </td>
+                    {FEATURE_FLAGS.teams ? (
+                      <td className="px-4 py-3">
+                        <MemberTeamBadges teams={m.teams ?? []} />
+                      </td>
+                    ) : null}
                     <td className="px-4 py-3 text-muted-foreground">
                       {formatJoined(m.joinedAt)}
                     </td>

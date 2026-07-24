@@ -19,6 +19,7 @@ import {
   ChevronsRightIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import { useShellStore } from "@/stores/shell-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useNotificationsUnread } from "@/hooks/use-notifications-unread";
@@ -40,7 +41,7 @@ const BASE_NAV_ITEMS: NavItem[] = [
   { label: "Home", icon: HomeIcon, href: "/home/inbox" },
   { label: "Chat", icon: MessageSquareIcon, href: "/chat" },
   { label: "Spaces", icon: BoxesIcon, href: "/spaces" },
-  { label: "Teams", icon: UsersRoundIcon, href: "/teams" },
+  { label: "Teams", icon: UsersRoundIcon, href: "/teams", hidden: !FEATURE_FLAGS.teams },
   { label: "Planner", icon: CalendarIcon, disabled: true, hidden: true },
   { label: "People", icon: UsersIcon, href: "/people" },
   { label: "Docs", icon: FileTextIcon, disabled: true, hidden: true },
