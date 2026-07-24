@@ -262,9 +262,17 @@ body {
   left: unset !important;
   right: 0 !important;
   transform: translate(35%, -35%) !important;
+  width: 16px !important;
+  height: 16px !important;
   color: #ffffff !important;
   background: #ef4444 !important;
   border: none !important;
+  box-shadow: none !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-close-button] svg {
+  width: 10px !important;
+  height: 10px !important;
 }
 
 [data-sonner-toaster] [data-sonner-toast] [data-close-button]:hover {
