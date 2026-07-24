@@ -54,6 +54,17 @@ def put_object(storage_key: str, body: bytes, content_type: str) -> None:
     )
 
 
+def get_object(storage_key: str) -> tuple[bytes, str]:
+    """Fetch an object's bytes and content type (for serving through the API)."""
+    settings = get_settings()
+    obj = _s3_client().get_object(
+        Bucket=settings.s3_attachments_bucket,
+        Key=storage_key,
+    )
+    content_type = obj.get("ContentType") or "application/octet-stream"
+    return obj["Body"].read(), content_type
+
+
 def object_exists(storage_key: str) -> bool:
     settings = get_settings()
     try:
