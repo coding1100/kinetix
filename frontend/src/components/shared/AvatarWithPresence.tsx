@@ -36,12 +36,20 @@ export function PresenceDot({
   className?: string;
   inline?: boolean;
 }) {
-  const dim = DOT_SIZE[size];
-  const border = DOT_BORDER[size];
+  const isOffline = presence === "offline";
+  // Both dots render one size down from the requested box so the small,
+  // subtle presence indicator matches across online/offline states.
+  const STEP_DOWN: Record<DotSize, DotSize> = {
+    xs: "xs",
+    sm: "xs",
+    md: "sm",
+  };
+  const effectiveSize = STEP_DOWN[size];
+  const dim = DOT_SIZE[effectiveSize];
+  const border = DOT_BORDER[effectiveSize];
   const position = inline
     ? "relative inline-block shrink-0"
     : "absolute -bottom-px -right-px z-10";
-  const isOffline = presence === "offline";
 
   return (
     <span

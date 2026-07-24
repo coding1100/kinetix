@@ -1,4 +1,5 @@
 import type { ChatMessage } from "@/lib/types/chat";
+import { PKT_TIME_ZONE } from "@/lib/utils";
 
 export function startOfDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -32,6 +33,7 @@ export function formatChatDayLabel(date: Date, now = new Date()): string {
     weekday: "long",
     month: "long",
     day: "numeric",
+    timeZone: PKT_TIME_ZONE,
   });
 }
 
@@ -40,6 +42,7 @@ export function formatChatMessageTime(date: Date, now = new Date()): string {
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
+    timeZone: PKT_TIME_ZONE,
   });
   const day = startOfDay(date);
   const today = startOfDay(now);
@@ -47,12 +50,16 @@ export function formatChatMessageTime(date: Date, now = new Date()): string {
   if (diffDays === 0) return timePart;
   if (diffDays === 1) return `Yesterday at ${timePart}`;
   if (diffDays < 7) {
-    const dayName = date.toLocaleDateString("en-US", { weekday: "long" });
+    const dayName = date.toLocaleDateString("en-US", {
+      weekday: "long",
+      timeZone: PKT_TIME_ZONE,
+    });
     return `${dayName} at ${timePart}`;
   }
   const datePart = date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
+    timeZone: PKT_TIME_ZONE,
   });
   return `${datePart} at ${timePart}`;
 }
@@ -85,6 +92,7 @@ export function formatThreadReplyTime(date: Date, now = new Date()): string {
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
+      timeZone: PKT_TIME_ZONE,
     });
   }
   if (diffDays < 30) {

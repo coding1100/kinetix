@@ -39,10 +39,11 @@ import {
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Select,
   SelectContent,
@@ -86,9 +87,9 @@ import {
   avatarColorClassForKey,
   avatarInitialFromName,
 } from "@/lib/user-display";
-import { cn } from "@/lib/utils";
+import { cn, PKT_TIME_ZONE } from "@/lib/utils";
 
-type Member = { id: string; fullName: string };
+type Member = { id: string; fullName: string; avatarUrl?: string | null };
 
 type StagedAttachment = { id: string; file: File };
 
@@ -190,9 +191,10 @@ function priorityFlagClass(value: TaskPriority | typeof NO_PRIORITY) {
 function formatDueChip(value: string) {
   if (!value) return "Due date";
   const date = new Date(`${value}T12:00:00.000Z`);
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
+    timeZone: PKT_TIME_ZONE,
   });
 }
 
@@ -907,6 +909,9 @@ export function CreateTaskDialog({
                       <span className="flex items-center gap-1">
                         {selectedAssignees.slice(0, 2).map((m) => (
                           <Avatar key={m.id} className="size-4">
+                            {m.avatarUrl ? (
+                              <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                            ) : null}
                             <AvatarFallback
                               className={cn(
                                 "text-[8px] font-semibold",
@@ -965,6 +970,9 @@ export function CreateTaskDialog({
                             onClick={() => toggleAssignee(m.id)}
                           >
                             <Avatar className="size-6">
+                              {m.avatarUrl ? (
+                                <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                              ) : null}
                               <AvatarFallback
                                 className={cn(
                                   "text-[10px] font-semibold",
@@ -1298,6 +1306,9 @@ export function CreateTaskDialog({
                                         }}
                                       >
                                         <Avatar className="size-6">
+                                          {m.avatarUrl ? (
+                                            <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                                          ) : null}
                                           <AvatarFallback
                                             className={cn(
                                               "text-[10px] font-semibold",
@@ -1356,6 +1367,12 @@ export function CreateTaskDialog({
                             </span>
                             {assignee && (
                               <Avatar className="size-5 shrink-0">
+                                {assignee.avatarUrl ? (
+                                  <AvatarImage
+                                    src={assignee.avatarUrl}
+                                    alt={assignee.fullName}
+                                  />
+                                ) : null}
                                 <AvatarFallback
                                   className={cn(
                                     "text-[9px] font-semibold",
@@ -1472,6 +1489,12 @@ export function CreateTaskDialog({
                                     );
                                     return draftAssignee ? (
                                       <Avatar className="size-5">
+                                        {draftAssignee.avatarUrl ? (
+                                          <AvatarImage
+                                            src={draftAssignee.avatarUrl}
+                                            alt={draftAssignee.fullName}
+                                          />
+                                        ) : null}
                                         <AvatarFallback
                                           className={cn(
                                             "text-[9px] font-semibold",
@@ -1534,6 +1557,9 @@ export function CreateTaskDialog({
                                         }}
                                       >
                                         <Avatar className="size-6">
+                                          {m.avatarUrl ? (
+                                            <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                                          ) : null}
                                           <AvatarFallback
                                             className={cn(
                                               "text-[10px] font-semibold",
@@ -1632,14 +1658,18 @@ export function CreateTaskDialog({
                     <span className="shrink-0 text-xs text-muted-foreground">
                       {formatBytes(file.size)}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => removeAttachment(id)}
-                      className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      aria-label={`Remove ${file.name}`}
-                    >
-                      <XIcon className="size-3.5" />
-                    </button>
+                    {saving ? (
+                      <Spinner size="sm" label={`Uploading ${file.name}`} />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => removeAttachment(id)}
+                        className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        aria-label={`Remove ${file.name}`}
+                      >
+                        <XIcon className="size-3.5" />
+                      </button>
+                    )}
                   </div>
                 ))}
                 <button
@@ -1748,6 +1778,9 @@ export function CreateTaskDialog({
                             onClick={() => toggleFollower(m.id)}
                           >
                             <Avatar className="size-6">
+                              {m.avatarUrl ? (
+                                <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                              ) : null}
                               <AvatarFallback
                                 className={cn(
                                   "text-[10px] font-semibold",

@@ -2,7 +2,7 @@
 
 import { useTheme } from "@/lib/theme"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
-import { CircleCheckIcon, CircleXIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon } from "lucide-react"
+import { CircleCheckIcon, XIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon } from "lucide-react"
 import { Spinner } from "@/components/ui/spinner"
 
 const Toaster = ({ ...props }: ToasterProps) => {
@@ -26,14 +26,14 @@ const Toaster = ({ ...props }: ToasterProps) => {
           <OctagonXIcon className="size-4" />
         ),
         loading: <Spinner size="sm" label="Loading" />,
-        close: <CircleXIcon className="size-4" />,
+        close: <XIcon className="size-2.5" />,
       }}
       closeButton
       style={
         {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
+          "--normal-bg": "#000000",
+          "--normal-text": "#ffffff",
+          "--normal-border": "#000000",
           "--border-radius": "var(--radius)",
         } as React.CSSProperties
       }

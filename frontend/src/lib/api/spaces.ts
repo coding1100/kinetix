@@ -8,7 +8,9 @@ import type {
   TaskDependency,
   TaskDependencyType,
 } from "@/lib/types/task";
-import type { SpaceDto } from "./home";
+import type { SpaceDto, StatusConfigItem } from "./home";
+
+export type { StatusConfigItem };
 
 function wsPath(workspaceId: string, path: string) {
   return `/workspaces/${workspaceId}${path}`;
@@ -21,8 +23,10 @@ export interface ListMetaDto {
   name: string;
   space: { id: string; name: string; color: string; accessible?: boolean };
   statuses?: ListStatus[];
+  hasOwnStatusConfig?: boolean;
   channelId: string | null;
   canShare?: boolean;
+  canManageStructure?: boolean;
   isPrivate?: boolean;
 }
 
@@ -265,6 +269,7 @@ export function patchSpace(
     color?: string;
     description?: string;
     isPrivate?: boolean;
+    statusConfig?: StatusConfigItem[];
   }
 ) {
   return apiFetch<SpaceDto>(wsPath(workspaceId, `/spaces/${spaceId}`), {
@@ -312,7 +317,12 @@ export function patchList(
   token: string,
   workspaceId: string,
   listId: string,
-  input: { name?: string; isPrivate?: boolean }
+  input: {
+    name?: string;
+    isPrivate?: boolean;
+    statusConfig?: StatusConfigItem[];
+    inheritStatusConfig?: boolean;
+  }
 ) {
   return apiFetch<{ id: string; name: string; isPrivate?: boolean }>(
     wsPath(workspaceId, `/lists/${listId}`),

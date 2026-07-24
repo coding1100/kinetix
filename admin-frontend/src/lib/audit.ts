@@ -65,12 +65,16 @@ export function describeAuditEntry(entry: AuditLogEntry): {
   }
 }
 
+// App-wide display timezone for the admin portal.
+export const PKT_TIME_ZONE = "Asia/Karachi";
+
 export function formatAuditTimestamp(iso: string): string {
   const date = new Date(iso);
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString("en-US", {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone: PKT_TIME_ZONE,
   });
 }

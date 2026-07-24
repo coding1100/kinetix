@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Cookie, Query, Response
+from fastapi import APIRouter, Cookie, File, Query, Response, UploadFile
 from fastapi.responses import RedirectResponse
 from urllib.parse import quote
 
@@ -103,6 +103,34 @@ async def patch_me(
     user: CurrentUserDep,
 ):
     return await auth_service.update_profile(session, user.id, body)
+
+
+@router.post("/me/avatar")
+async def upload_avatar(
+    session: DbSession,
+    user: CurrentUserDep,
+    file: UploadFile = File(...),
+):
+    data = await file.read()
+    return await auth_service.set_avatar(
+        session, user.id, data, file.content_type or "application/octet-stream"
+    )
+
+
+# Public (no auth): rendered directly as an <img> src across the app, which
+# can't attach a bearer token. Avatars aren't sensitive; bytes are streamed
+# from the private bucket through the API.
+@router.get("/users/{user_id}/avatar")
+async def get_avatar(user_id: str, session: DbSession):
+    data, content_type = await auth_service.get_avatar_bytes(session, user_id)
+    return Response(
+        content=data,
+        media_type=content_type,
+        # avatar_url is version-stamped (?v=<upload timestamp>) and never
+        # reused for different bytes, so this exact URL can be cached
+        # indefinitely - a re-upload gets a brand new URL instead.
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @router.post("/me/change-password")

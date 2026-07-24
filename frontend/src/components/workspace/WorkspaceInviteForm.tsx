@@ -219,9 +219,6 @@ export function WorkspaceInviteForm({
                 {canInviteAdmin ? (
                   <SelectItem value="admin">Admin</SelectItem>
                 ) : null}
-                {canInviteSuperAdmin ? (
-                  <SelectItem value="super-admin">Super admin</SelectItem>
-                ) : null}
               </>
             ) : null}
           </SelectContent>

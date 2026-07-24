@@ -50,7 +50,7 @@ import { ChannelDetailsRail } from "./channel/ChannelDetailsRail";
 import { ChannelDetailsPanel } from "./channel/ChannelDetailsPanel";
 import { useChatStore } from "@/stores/chat-store";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   avatarColorClassForKey,
   avatarInitialFromName,
@@ -968,7 +968,7 @@ export function ConversationView({
         map[participant.id] = {
           id: participant.id,
           fullName: participant.fullName,
-          avatarUrl: null,
+          avatarUrl: participant.avatarUrl,
         };
       }
     }
@@ -1089,6 +1089,7 @@ export function ConversationView({
                 <ChannelNameLabel
                   name={title}
                   starred={starred}
+                  icon={channel?.icon}
                   nameClassName="font-semibold text-foreground"
                 />
               </h2>
@@ -1111,6 +1112,9 @@ export function ConversationView({
                 />
               ) : (
                 <Avatar className="size-9 shrink-0">
+                  {dmMeta?.avatarUrl ? (
+                    <AvatarImage src={dmMeta.avatarUrl} alt={title} />
+                  ) : null}
                   <AvatarFallback
                     className={cn(
                       "text-sm font-semibold",

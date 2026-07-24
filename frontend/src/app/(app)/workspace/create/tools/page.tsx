@@ -51,8 +51,8 @@ export default function WorkspaceToolsPage() {
   return (
     <WorkspaceSetupShell
       title="Do you use any of these tools?"
-      step={5}
-      totalSteps={6}
+      step={4}
+      totalSteps={5}
       backHref="/workspace/create/features"
       nextHref="/workspace/create/name"
       nextDisabled={false}

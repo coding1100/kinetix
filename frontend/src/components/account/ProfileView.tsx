@@ -1,19 +1,36 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { UploadIcon } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { getMe, updateProfile } from "@/lib/api/auth";
+import { AvatarCropDialog } from "@/components/account/AvatarCropDialog";
+import { getMe, updateProfile, uploadAvatar } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { useAuthStore } from "@/stores/auth-store";
 import { ROLE_LABELS } from "@/components/workspace/WorkspaceInviteForm";
 import { toast } from "sonner";
 import { avatarColorClassForKey, avatarInitial } from "@/lib/user-display";
-import { cn } from "@/lib/utils";
+import { cn, PKT_TIME_ZONE } from "@/lib/utils";
+import { bumpWorkspaceMembersRefresh } from "@/lib/workspace/realtime";
+import { bumpWorkspacePeopleRefresh } from "@/stores/workspace-store";
+import { bumpSidebarRefresh } from "@/lib/chat/sidebar-channel";
+
+// Every other place a user's avatar/name shows up (People page, chat
+// sidebar DM rows, mention lists, channel/DM member dialogs) is a snapshot
+// fetched once and cached for the session, not a live subscription. There's
+// no realtime broadcast for profile changes, so this just forces this tab's
+// own caches to refetch immediately instead of staying stale until the next
+// full reload.
+function refreshCachedProfileViews() {
+  bumpWorkspaceMembersRefresh();
+  bumpWorkspacePeopleRefresh();
+  bumpSidebarRefresh();
+}
 
 export function ProfileView() {
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -30,6 +47,8 @@ export function ProfileView() {
   >([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -59,7 +78,6 @@ export function ProfileView() {
     try {
       const me = await updateProfile(accessToken, {
         fullName: trimmed,
-        avatarUrl: avatarUrl.trim() || null,
       });
       updateUser({
         id: me.id,
@@ -77,6 +95,7 @@ export function ProfileView() {
         },
         workspaces: me.workspaces,
       });
+      refreshCachedProfileViews();
       toast.success("Profile updated");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to save profile");
@@ -85,11 +104,70 @@ export function ProfileView() {
     }
   };
 
+  const handleAvatarSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset the input so picking the same file again still fires onChange.
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please choose an image file");
+      return;
+    }
+    setPendingFile(file);
+  };
+
+  const handleCropConfirm = (blob: Blob) => {
+    if (!accessToken) return;
+    const previousAvatarUrl = avatarUrl;
+    // Show the cropped image immediately and close the dialog rather than
+    // blocking on the upload round-trip; the real URL swaps in once the
+    // request resolves, so every avatarUrl reader (ProfileMenu, sidebar,
+    // etc.) reflects the new photo without a page refresh either way.
+    const previewUrl = URL.createObjectURL(blob);
+    setAvatarUrl(previewUrl);
+    setPendingFile(null);
+    const toastId = toast.loading("Uploading photo…");
+
+    uploadAvatar(accessToken, blob)
+      .then((me) => {
+        setAvatarUrl((current) => {
+          if (current === previewUrl) URL.revokeObjectURL(previewUrl);
+          return me.avatarUrl ?? "";
+        });
+        updateUser({
+          id: me.id,
+          email: me.email,
+          fullName: me.fullName,
+          avatarUrl: me.avatarUrl,
+        });
+        updateSession({
+          accessToken,
+          user: {
+            id: me.id,
+            email: me.email,
+            fullName: me.fullName,
+            avatarUrl: me.avatarUrl,
+          },
+          workspaces: me.workspaces,
+        });
+        refreshCachedProfileViews();
+        toast.success("Photo updated", { id: toastId });
+      })
+      .catch((err) => {
+        URL.revokeObjectURL(previewUrl);
+        setAvatarUrl(previousAvatarUrl);
+        toast.error(err instanceof ApiError ? err.message : "Failed to upload photo", {
+          id: toastId,
+        });
+      });
+  };
+
   const joinedLabel = createdAt
-    ? new Date(createdAt).toLocaleDateString(undefined, {
+    ? new Date(createdAt).toLocaleDateString("en-US", {
         month: "long",
         day: "numeric",
         year: "numeric",
+        timeZone: PKT_TIME_ZONE,
       })
     : null;
 
@@ -124,7 +202,24 @@ export function ProfileView() {
                       Member since {joinedLabel}
                     </p>
                   ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-2 gap-1.5"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <UploadIcon className="size-3.5" />
+                    Upload photo
+                  </Button>
                 </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarSelected}
+                />
               </div>
 
               <div className="space-y-4 rounded-xl border border-border bg-card p-4">
@@ -139,18 +234,6 @@ export function ProfileView() {
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="profile-avatar">Avatar URL</Label>
-                  <Input
-                    id="profile-avatar"
-                    placeholder="https://…"
-                    value={avatarUrl}
-                    onChange={(e) => setAvatarUrl(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Optional image URL shown in the app header and profile.
-                  </p>
                 </div>
                 <Button
                   onClick={handleSave}
@@ -181,6 +264,12 @@ export function ProfileView() {
           )}
         </div>
       </div>
+      <AvatarCropDialog
+        file={pendingFile}
+        open={pendingFile !== null}
+        onCancel={() => setPendingFile(null)}
+        onConfirm={handleCropConfirm}
+      />
     </div>
   );
 }

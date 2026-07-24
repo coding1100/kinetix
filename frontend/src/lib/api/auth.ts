@@ -83,6 +83,16 @@ export function updateProfile(
   });
 }
 
+export function uploadAvatar(token: string, file: Blob, fileName = "avatar.jpg") {
+  const form = new FormData();
+  form.append("file", file, fileName);
+  return apiFetch<MeResponse>("/auth/me/avatar", {
+    method: "POST",
+    token,
+    body: form,
+  });
+}
+
 export function changePassword(
   token: string,
   body: { currentPassword: string; newPassword: string }

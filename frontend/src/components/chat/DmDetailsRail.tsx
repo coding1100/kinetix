@@ -1,12 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
-import { SearchIcon, ReplyIcon, SettingsIcon } from "lucide-react";
+import { SearchIcon, SettingsIcon } from "lucide-react";
 import type { DirectMessage } from "@/lib/types/chat";
 import { useChatStore, type DmDetailsView } from "@/stores/chat-store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import {
   Tooltip,
@@ -26,7 +26,6 @@ const RAIL_ACTIONS: {
   icon: typeof SearchIcon;
 }[] = [
   { view: "search", label: "Search messages", icon: SearchIcon },
-  { view: "replies", label: "Replies", icon: ReplyIcon },
 ];
 
 const AVATAR_RING = "ring-1 ring-card";
@@ -79,6 +78,7 @@ export function DmDetailsRail({ dm }: { dm?: DirectMessage | null }) {
     const preview = others.slice(0, VISIBLE_MEMBER_AVATARS).map((m) => ({
       id: m.id,
       name: m.fullName,
+      avatarUrl: m.avatarUrl,
     }));
     const showCountBadge = displayCount > VISIBLE_MEMBER_AVATARS;
     return { preview, showCountBadge, displayCount };
@@ -119,6 +119,9 @@ export function DmDetailsRail({ dm }: { dm?: DirectMessage | null }) {
                             i > 0 && "-mt-1.5"
                           )}
                         >
+                          {member.avatarUrl ? (
+                            <AvatarImage src={member.avatarUrl} alt={member.name} />
+                          ) : null}
                           <AvatarFallback
                             className={cn(
                               "text-[9px] font-semibold",
