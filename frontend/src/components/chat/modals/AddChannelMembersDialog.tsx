@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { CheckIcon } from "lucide-react";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
@@ -165,6 +165,9 @@ export function AddChannelMembersDialog({
                   ) : null}
                 </span>
                 <Avatar className="size-8">
+                  {m.avatarUrl ? (
+                    <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                  ) : null}
                   <AvatarFallback
                     className={cn(
                       "text-xs font-semibold",

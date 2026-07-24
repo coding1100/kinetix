@@ -6,7 +6,7 @@ import type { DirectMessage } from "@/lib/types/chat";
 import { useChatStore, type DmDetailsView } from "@/stores/chat-store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import {
   Tooltip,
@@ -79,6 +79,7 @@ export function DmDetailsRail({ dm }: { dm?: DirectMessage | null }) {
     const preview = others.slice(0, VISIBLE_MEMBER_AVATARS).map((m) => ({
       id: m.id,
       name: m.fullName,
+      avatarUrl: m.avatarUrl,
     }));
     const showCountBadge = displayCount > VISIBLE_MEMBER_AVATARS;
     return { preview, showCountBadge, displayCount };
@@ -119,6 +120,9 @@ export function DmDetailsRail({ dm }: { dm?: DirectMessage | null }) {
                             i > 0 && "-mt-1.5"
                           )}
                         >
+                          {member.avatarUrl ? (
+                            <AvatarImage src={member.avatarUrl} alt={member.name} />
+                          ) : null}
                           <AvatarFallback
                             className={cn(
                               "text-[9px] font-semibold",

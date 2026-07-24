@@ -11,7 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -296,6 +296,9 @@ export function ShareModal({
                 className="flex items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-muted/50"
               >
                 <Avatar className="size-7">
+                  {m.avatarUrl ? (
+                    <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                  ) : null}
                   <AvatarFallback
                     className={cn(
                       "text-xs font-semibold",

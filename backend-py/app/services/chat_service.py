@@ -1284,7 +1284,11 @@ def _dm_payload(
         others = [p for p in conv.participants if p.user_id != user_id]
         members = [p.user.full_name.split(" ")[0] for p in others]
         participants = [
-            {"id": p.user_id, "fullName": p.user.full_name}
+            {
+                "id": p.user_id,
+                "fullName": p.user.full_name,
+                "avatarUrl": p.user.avatar_url,
+            }
             for p in conv.participants
         ]
     other_presence = (

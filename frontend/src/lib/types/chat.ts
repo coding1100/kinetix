@@ -31,6 +31,7 @@ export interface Channel {
 export interface DmParticipant {
   id: string;
   fullName: string;
+  avatarUrl?: string | null;
 }
 
 export interface DirectMessage {
