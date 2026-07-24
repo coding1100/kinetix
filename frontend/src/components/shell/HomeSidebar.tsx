@@ -779,7 +779,7 @@ function DmRow({
           showPresence={!isGroup}
           avatarClassName="size-6"
           dotSize="sm"
-          borderClass="border-white"
+          borderClass="border-sidebar"
           fallbackClassName={cn(
             "text-[10px] font-semibold",
             avatarColorClassForKey(otherUserId, displayName)
@@ -1085,10 +1085,8 @@ export function HomeSidebar() {
             const active =
               item.id === "inbox"
                 ? pathname === "/home/inbox" && inboxTab !== "replies"
-                : item.id === "replies"
-                  ? pathname === "/home/inbox" && inboxTab === "replies"
-                  : pathname === item.href ||
-                    (item.id === "my-tasks" && onMyTasksRoute);
+                : pathname === item.href ||
+                  (item.id === "my-tasks" && onMyTasksRoute);
             const isMyTasks = item.id === "my-tasks";
 
             return (

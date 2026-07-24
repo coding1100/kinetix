@@ -588,11 +588,17 @@ export function PeopleView() {
                     <td className="px-4 py-3">
                       <Badge
                         variant={
-                          inv.status === "expired" ? "destructive" : "outline"
+                          inv.status === "expired" || inv.status === "failed"
+                            ? "destructive"
+                            : "outline"
                         }
                         className="capitalize"
                       >
-                        {inv.status === "expired" ? "Expired" : "Pending"}
+                        {inv.status === "expired"
+                          ? "Expired"
+                          : inv.status === "failed"
+                            ? "Invitation failed"
+                            : "Pending"}
                       </Badge>
                     </td>
                     {manage ? (

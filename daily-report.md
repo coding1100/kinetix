@@ -5640,3 +5640,49 @@ session, and user said not to commit/push yet regardless):
 
 ========================================
 DATE_END: 2026-07-22
+
+========================================
+DATE_START: 2026-07-24
+
+TAG: [BUG]
+TITLE: Remove Replies from Home sidebar
+DESC: Removed the "Replies" nav item from the Home sidebar. Dropped it from
+DEFAULT_ITEMS and HOME_SIDEBAR_VISIBLE_IDS in home-sidebar-store.ts (persisted
+config filters out the now-unknown id automatically via itemsFromConfig). Also
+removed the dead "replies" active-state branch in HomeSidebar.tsx. The
+/home/inbox?tab=replies route itself is untouched, only the sidebar entry is
+gone.
+
+TAG: [BUG]
+TITLE: Shrink offline presence dot in 1:1 DM rows
+DESC: Offline presence dot read visually bigger than the online dot because it
+is a hollow circle with a visible gray ring, while the online dot's white ring
+blends into the background. In AvatarWithPresence.tsx PresenceDot now steps the
+offline dot down one size (sm -> xs, md -> sm) so it matches the online dot's
+visual weight. Online/away/busy unchanged.
+
+TAG: [SUBTASK]
+PARENT: Shrink offline presence dot in 1:1 DM rows
+TITLE: Match online dot size and ring to offline
+DESC: Follow-up: after shrinking offline, online read too big. Applied the
+one-size step-down to ALL presence states (STEP_DOWN, not offline-only) so
+online and offline dots are identical size. Also the online dot's ring was
+border-white on the non-white bg-sidebar, making it stand out / mismatch the
+avatar; changed DmRow borderClass to border-sidebar so the ring blends like
+the offline dot's.
+
+TAG: [FEATURE]
+TITLE: Invitation failed tag on pending invites
+DESC: Added an "Invitation failed" status tag alongside Pending/Expired in
+PeopleView. Invite emails are fire-and-forget background sends, so failures
+previously only hit the logs and nothing was persisted. User approved a DB
+change: added Invite.emailStatus column ("emailStatus" TEXT, nullable) via
+migrate_invite_email_status.sql + run_invite_email_status_migration.py (applied
+to DB). invite_service._send_invite_email_safe now records "sent"/"failed" on
+its own AsyncSession (request session is gone by then) via new
+_set_invite_email_status helper. list_workspace_invites reports status "failed"
+when emailStatus == "failed" (expired still takes precedence). resend clears
+emailStatus back to null (pending) until the new send resolves. Frontend:
+WorkspaceInvite.status type gained "failed"; PeopleView renders a destructive
+"Invitation failed" badge.
+DATE_END: 2026-07-24

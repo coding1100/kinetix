@@ -35,6 +35,12 @@ class Invite(Base):
     created_at: Mapped[datetime] = mapped_column(
         "createdAt", DateTime(timezone=True), server_default=func.now()
     )
+    # Delivery outcome of the (fire-and-forget) invite email: "sent" when the
+    # background send succeeded, "failed" when it raised. NULL when no email was
+    # attempted (SMTP not configured). Surfaced to admins as an "Failed" tag.
+    email_status: Mapped[str | None] = mapped_column(
+        "emailStatus", String, nullable=True
+    )
 
     workspace: Mapped["Workspace"] = relationship(back_populates="invites")
     inviter: Mapped["User"] = relationship(foreign_keys=[invited_by_id])

@@ -11,7 +11,6 @@ export interface SidebarItem {
 
 export const HOME_SIDEBAR_VISIBLE_IDS = [
   "inbox",
-  "replies",
   "assigned-comments",
   "my-tasks",
   "all-tasks",
@@ -21,7 +20,6 @@ export const HOME_SIDEBAR_VISIBLE_IDS = [
 
 const DEFAULT_ITEMS: SidebarItem[] = [
   { id: "inbox", label: "Inbox", href: "/home/inbox", pinned: true },
-  { id: "replies", label: "Replies", href: "/home/inbox?tab=replies", pinned: true },
   {
     id: "assigned-comments",
     label: "Assigned Comments",
