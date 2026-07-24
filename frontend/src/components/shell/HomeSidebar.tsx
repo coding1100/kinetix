@@ -421,7 +421,12 @@ function SpaceRow({
               )}
             </span>
           </span>
-          <span className="min-w-0 flex-1 truncate">{space.name}</span>
+          <Tooltip>
+            <TooltipTrigger
+              render={<span className="min-w-0 flex-1 truncate">{space.name}</span>}
+            />
+            <TooltipContent side="bottom">{space.name}</TooltipContent>
+          </Tooltip>
           {space.isPrivate ? (
             <LockIcon className="size-3 shrink-0 text-muted-foreground" />
           ) : null}
