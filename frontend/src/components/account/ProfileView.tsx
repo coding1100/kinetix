@@ -33,7 +33,6 @@ export function ProfileView() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -101,35 +100,49 @@ export function ProfileView() {
     setPendingFile(file);
   };
 
-  const handleCropConfirm = async (blob: Blob) => {
+  const handleCropConfirm = (blob: Blob) => {
     if (!accessToken) return;
-    setUploadingAvatar(true);
-    try {
-      const me = await uploadAvatar(accessToken, blob);
-      setAvatarUrl(me.avatarUrl ?? "");
-      updateUser({
-        id: me.id,
-        email: me.email,
-        fullName: me.fullName,
-        avatarUrl: me.avatarUrl,
-      });
-      updateSession({
-        accessToken,
-        user: {
+    const previousAvatarUrl = avatarUrl;
+    // Show the cropped image immediately and close the dialog rather than
+    // blocking on the upload round-trip; the real URL swaps in once the
+    // request resolves, so every avatarUrl reader (ProfileMenu, sidebar,
+    // etc.) reflects the new photo without a page refresh either way.
+    const previewUrl = URL.createObjectURL(blob);
+    setAvatarUrl(previewUrl);
+    setPendingFile(null);
+    const toastId = toast.loading("Uploading photo…");
+
+    uploadAvatar(accessToken, blob)
+      .then((me) => {
+        setAvatarUrl((current) => {
+          if (current === previewUrl) URL.revokeObjectURL(previewUrl);
+          return me.avatarUrl ?? "";
+        });
+        updateUser({
           id: me.id,
           email: me.email,
           fullName: me.fullName,
           avatarUrl: me.avatarUrl,
-        },
-        workspaces: me.workspaces,
+        });
+        updateSession({
+          accessToken,
+          user: {
+            id: me.id,
+            email: me.email,
+            fullName: me.fullName,
+            avatarUrl: me.avatarUrl,
+          },
+          workspaces: me.workspaces,
+        });
+        toast.success("Photo updated", { id: toastId });
+      })
+      .catch((err) => {
+        URL.revokeObjectURL(previewUrl);
+        setAvatarUrl(previousAvatarUrl);
+        toast.error(err instanceof ApiError ? err.message : "Failed to upload photo", {
+          id: toastId,
+        });
       });
-      toast.success("Photo updated");
-      setPendingFile(null);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to upload photo");
-    } finally {
-      setUploadingAvatar(false);
-    }
   };
 
   const joinedLabel = createdAt
@@ -237,8 +250,7 @@ export function ProfileView() {
       <AvatarCropDialog
         file={pendingFile}
         open={pendingFile !== null}
-        saving={uploadingAvatar}
-        onCancel={() => (uploadingAvatar ? undefined : setPendingFile(null))}
+        onCancel={() => setPendingFile(null)}
         onConfirm={handleCropConfirm}
       />
     </div>
