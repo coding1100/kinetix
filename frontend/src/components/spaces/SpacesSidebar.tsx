@@ -595,6 +595,9 @@ export function SpacesSidebar() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         mode={dialogMode}
+        onSpaceCreated={(spaceId) =>
+          setExpanded((prev) => ({ ...prev, [spaceId]: true }))
+        }
       />
       <ConfirmDialog
         open={deleteTarget !== null}

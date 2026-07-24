@@ -1336,6 +1336,7 @@ export function HomeSidebar() {
         onOpenChange={setSpacesDialogOpen}
         mode={spacesDialogMode}
         navigateOnCreate={false}
+        onSpaceCreated={(spaceId) => router.push(`/home/spaces/${spaceId}`)}
       />
       {shareTarget ? (
         <ShareModal
