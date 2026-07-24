@@ -45,6 +45,75 @@ async def test_send_workspace_invite_calls_smtp(monkeypatch):
     assert sent == ["invitee@example.com"]
 
 
+@pytest.mark.asyncio
+async def test_send_workspace_invite_prefers_resend(monkeypatch):
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.setenv("RESEND_FROM", "invites@example.com")
+
+    calls: list[dict] = []
+
+    async def fake_send_via_resend(**kwargs):
+        calls.append(kwargs)
+
+    def fail_send_sync(**kwargs):
+        raise AssertionError("SMTP should not be used when Resend is configured")
+
+    monkeypatch.setattr(email_service, "_send_via_resend", fake_send_via_resend)
+    monkeypatch.setattr(email_service, "_send_sync", fail_send_sync)
+
+    await email_service.send_workspace_invite_email(
+        to="invitee@example.com",
+        workspace_name="Acme",
+        inviter_name="Owner",
+        invite_url="http://localhost:3001/invite/accept?token=abc",
+        role="MEMBER",
+        expires_at=datetime(2026, 1, 8, tzinfo=timezone.utc),
+    )
+    assert calls[0]["to"] == "invitee@example.com"
+
+
+@pytest.mark.asyncio
+async def test_send_via_resend_calls_api(monkeypatch):
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.setenv("RESEND_FROM", "invites@example.com")
+
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, headers=None, json=None):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["json"] = json
+            return FakeResponse()
+
+    monkeypatch.setattr(email_service.httpx, "AsyncClient", FakeAsyncClient)
+
+    await email_service._send_via_resend(
+        to="a@b.com",
+        subject="Hi",
+        text_body="text",
+        html_body="<p>html</p>",
+    )
+
+    assert captured["url"] == email_service.RESEND_API_URL
+    assert captured["headers"]["Authorization"] == "Bearer re_test_key"
+    assert captured["json"]["from"] == "invites@example.com"
+    assert captured["json"]["to"] == ["a@b.com"]
+
+
 def test_send_sync_uses_starttls(monkeypatch):
     monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
     monkeypatch.setenv("SMTP_PORT", "587")
