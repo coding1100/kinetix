@@ -257,6 +257,8 @@ body {
    (e.g. plain toast("...") calls), which sonner renders with an empty
    [data-icon] slot. */
 [data-sonner-toaster] [data-sonner-toast] [data-close-button] {
+  position: absolute !important;
+  top: 0 !important;
   left: unset !important;
   right: 0 !important;
   transform: translate(35%, -35%) !important;
