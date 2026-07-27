@@ -38,7 +38,7 @@ export function MyTasksToolbar({
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="all">All status</SelectItem>
             {(statusOptions ?? []).map((option) => (
               <SelectItem key={option.id} value={option.id}>
                 {option.name}

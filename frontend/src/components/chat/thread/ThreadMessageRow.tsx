@@ -6,7 +6,8 @@ import { formatChatMessageTime } from "@/lib/chat/dates";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 import { useChatStore } from "@/stores/chat-store";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import type { ReadReceiptMember } from "@/components/chat/MessageReadReceipts";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -48,6 +49,7 @@ export function ThreadMessageRow({
   onToggleReaction,
   onEditMessage,
   onDeleteMessage,
+  membersById = {},
 }: {
   message: ChatMessage;
   showHeader?: boolean;
@@ -59,6 +61,7 @@ export function ThreadMessageRow({
     payload: UpdateMessagePayload
   ) => Promise<void>;
   onDeleteMessage?: (messageId: string) => Promise<void>;
+  membersById?: Record<string, ReadReceiptMember>;
 }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -176,6 +179,12 @@ export function ThreadMessageRow({
             className="shrink-0 self-start rounded-full"
           >
             <Avatar className="size-8">
+              {membersById[message.authorId]?.avatarUrl ? (
+                <AvatarImage
+                  src={membersById[message.authorId]!.avatarUrl!}
+                  alt={displayName}
+                />
+              ) : null}
               <AvatarFallback
                 className={cn(
                   "text-xs font-semibold",

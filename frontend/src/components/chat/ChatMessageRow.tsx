@@ -10,7 +10,7 @@ import { formatChatMessageTime, formatThreadReplyTime } from "@/lib/chat/dates";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 import { useChatStore } from "@/stores/chat-store";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -269,6 +269,12 @@ export function ChatMessageRow({
               <Avatar
                 className={cn("size-9", message.authorIsDisabled && "opacity-50")}
               >
+                {readReceiptMembersById[message.authorId]?.avatarUrl ? (
+                  <AvatarImage
+                    src={readReceiptMembersById[message.authorId]!.avatarUrl!}
+                    alt={displayName}
+                  />
+                ) : null}
                 <AvatarFallback
                   className={cn(
                     "text-sm font-semibold",
@@ -367,6 +373,13 @@ export function ChatMessageRow({
               onClick={() => setActiveThread(threadOpen ? null : message.id)}
             >
               <Avatar className="size-5 shrink-0">
+                {message.lastReplyAuthorId &&
+                readReceiptMembersById[message.lastReplyAuthorId]?.avatarUrl ? (
+                  <AvatarImage
+                    src={readReceiptMembersById[message.lastReplyAuthorId]!.avatarUrl!}
+                    alt={message.lastReplyAuthorName ?? ""}
+                  />
+                ) : null}
                 <AvatarFallback
                   className={cn(
                     "text-[10px] font-semibold",

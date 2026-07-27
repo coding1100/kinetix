@@ -1,18 +1,14 @@
 "use client";
 
 import { useMemo } from "react";
-import {
-  SearchIcon,
-  ReplyIcon,
-  SettingsIcon,
-} from "lucide-react";
+import { SearchIcon, SettingsIcon } from "lucide-react";
 import {
   useChatStore,
   type ChannelDetailsView,
 } from "@/stores/chat-store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import {
   Tooltip,
@@ -31,7 +27,6 @@ const RAIL_ACTIONS: {
   icon: typeof SearchIcon;
 }[] = [
   { view: "search", label: "Search Channel", icon: SearchIcon },
-  { view: "replies", label: "Replies", icon: ReplyIcon },
 ];
 
 const AVATAR_RING = "ring-1 ring-card";
@@ -85,6 +80,7 @@ export function ChannelDetailsRail({ channelId }: { channelId: string }) {
     const preview = source.slice(0, VISIBLE_FOLLOWER_AVATARS).map((m) => ({
       id: m.id,
       name: m.fullName,
+      avatarUrl: m.avatarUrl,
     }));
     // ClickUp: up to 3 avatars; total count badge only when more than 3 people
     const showCountBadge = displayCount > VISIBLE_FOLLOWER_AVATARS;
@@ -124,6 +120,9 @@ export function ChannelDetailsRail({ channelId }: { channelId: string }) {
                         i > 0 && "-mt-1.5"
                       )}
                     >
+                      {f.avatarUrl ? (
+                        <AvatarImage src={f.avatarUrl} alt={f.name} />
+                      ) : null}
                       <AvatarFallback
                         className={cn(
                           "text-[9px] font-semibold",
