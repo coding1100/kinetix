@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True
     smtp_use_ssl: bool = False
     smtp_timeout_seconds: int = 30
+    resend_api_key: str = ""
+    resend_from: str = ""
     aws_region: str = "us-east-1"
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
@@ -58,6 +60,10 @@ class Settings(BaseSettings):
     @property
     def smtp_configured(self) -> bool:
         return bool(self.smtp_host.strip() and (self.smtp_from.strip() or self.smtp_user.strip()))
+
+    @property
+    def resend_configured(self) -> bool:
+        return bool(self.resend_api_key.strip() and (self.resend_from.strip() or self.smtp_from.strip()))
 
     @property
     def is_production(self) -> bool:
