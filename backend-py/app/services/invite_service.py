@@ -205,7 +205,7 @@ def _invite_payload_with_email(
     background_tasks: BackgroundTasks,
 ) -> dict:
     invite_url = f"{settings.frontend_url}/invite/accept?token={invite.token}"
-    smtp_configured = email_service.is_smtp_configured()
+    smtp_configured = email_service.is_email_configured()
     if smtp_configured:
         # Fire-and-forget: don't make the caller wait on SMTP. emailSent is
         # therefore optimistic ("we attempted it"), not a delivery

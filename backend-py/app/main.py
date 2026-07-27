@@ -245,6 +245,9 @@ async def health():
             "configured": email_service.is_smtp_configured(),
             "host": get_settings().smtp_host or None,
         },
+        "resend": {
+            "configured": email_service.is_resend_configured(),
+        },
         "googleOAuth": {
             "routesRegistered": all(google_routes.values()),
             "configured": get_settings().google_oauth_enabled,
