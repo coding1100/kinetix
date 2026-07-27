@@ -1,62 +1,41 @@
 #!/usr/bin/env bash
 # One-time SSL bootstrap for kinetix.infosoftco.com — run manually on the
-# EC2 box, once, after DNS (A record -> this server's IP) has propagated.
-# Idempotent: safe to re-run, skips issuance if a real cert already exists.
+# EC2 box, once, after DNS (A record -> this server's IP) has propagated
+# and host nginx is installed and serving deploy/nginx/host.conf over :80.
+# Idempotent: safe to re-run, certbot skips issuance if a valid cert exists.
+#
+# Requires: apt install nginx certbot python3-certbot-nginx
 #
 # What it does:
-#   1. Generates a throwaway self-signed cert at the path nginx expects, so
-#      nginx can start at all (the shipped docker.conf already references
-#      the final cert path — nginx won't boot without *something* there).
-#   2. Starts nginx (serves the ACME http-01 challenge over :80).
-#   3. Requests the real cert from Let's Encrypt via certbot, webroot mode.
-#   4. Reloads nginx so it picks up the real cert.
-#   5. Starts the certbot renewal loop (see docker-compose.app.yml).
+#   1. Confirms host nginx is running and serving the ACME webroot path.
+#   2. Requests the cert from Let's Encrypt via the certbot nginx plugin
+#      (edits the ssl_certificate paths in place, reloads nginx).
+#   3. Confirms the certbot systemd timer is enabled for auto-renewal.
 set -euo pipefail
 
 DOMAIN="kinetix.infosoftco.com"
 EMAIL="${CERTBOT_EMAIL:?Set CERTBOT_EMAIL=you@example.com and re-run}"
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_ROOT="${APP_ROOT:-$ROOT}"
-COMPOSE_FILES="-f $APP_ROOT/docker-compose.yml -f $APP_ROOT/docker-compose.app.yml"
-
 log() { echo "==> $*"; }
-compose() { docker compose $COMPOSE_FILES "$@"; }
 
-cd "$APP_ROOT"
-
-if compose run --rm --entrypoint sh certbot -c "[ -f /etc/letsencrypt/live/$DOMAIN/fullchain.pem ]" >/dev/null 2>&1; then
-  log "Certificate for $DOMAIN already exists — skipping issuance, just starting/reloading."
-  compose up -d nginx certbot
-  docker exec kinetix-nginx-1 nginx -t
-  docker exec kinetix-nginx-1 nginx -s reload
-  log "Done."
-  exit 0
+if ! systemctl is-active --quiet nginx; then
+  echo "ERROR: host nginx is not running — install/start it first (see deploy/NGINX_HOST_MIGRATION.md)"
+  exit 1
 fi
 
-log "No certificate yet — generating a throwaway self-signed cert so nginx can boot"
-compose run --rm --entrypoint sh certbot -c "
-  set -e
-  apk add --no-cache openssl >/dev/null 2>&1 || true
-  mkdir -p /etc/letsencrypt/live/$DOMAIN
-  openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
-    -keyout /etc/letsencrypt/live/$DOMAIN/privkey.pem \
-    -out /etc/letsencrypt/live/$DOMAIN/fullchain.pem \
-    -subj '/CN=$DOMAIN'
-"
+if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+  log "Certificate for $DOMAIN already exists — skipping issuance."
+else
+  log "Requesting certificate from Let's Encrypt via certbot nginx plugin"
+  sudo certbot --nginx -d "$DOMAIN" --email "$EMAIL" --agree-tos --no-eff-email --redirect
+fi
 
-log "Starting nginx with the throwaway cert"
-compose up -d nginx
+log "Verifying nginx config and reloading"
+sudo nginx -t
+sudo systemctl reload nginx
 
-log "Requesting the real certificate from Let's Encrypt (webroot http-01 challenge)"
-compose run --rm certbot certonly --webroot -w /var/www/certbot \
-  -d "$DOMAIN" --email "$EMAIL" --agree-tos --no-eff-email --force-renewal
-
-log "Reloading nginx with the real certificate"
-docker exec kinetix-nginx-1 nginx -t
-docker exec kinetix-nginx-1 nginx -s reload
-
-log "Starting certbot auto-renew loop"
-compose up -d certbot
+log "Confirming certbot renewal timer is enabled"
+sudo systemctl enable --now certbot.timer 2>/dev/null || sudo systemctl enable --now snap.certbot.renew.timer 2>/dev/null || \
+  echo "WARN: could not confirm a certbot renewal timer — check 'systemctl list-timers | grep certbot' manually"
 
 log "Done — https://$DOMAIN should now serve a trusted certificate."

@@ -1,18 +1,12 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   UserIcon,
   SettingsIcon,
-  BellIcon,
   PaletteIcon,
-  CommandIcon,
-  DownloadIcon,
-  CircleHelpIcon,
-  BugIcon,
   VolumeXIcon,
-  SmileIcon,
   ListPlusIcon,
   BriefcaseIcon,
   TimerIcon,
@@ -27,11 +21,9 @@ import {
   Trash2Icon,
   LogOutIcon,
   PinIcon,
-  ExternalLinkIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -153,19 +145,12 @@ export function ProfileMenu() {
     (s) => s.setDesktopNotifications
   );
 
-  const statusText = useProfileStore((s) => s.statusText);
-  const setStatusText = useProfileStore((s) => s.setStatusText);
   const presence = useProfileStore((s) => s.presence);
   const setPresence = useProfileStore((s) => s.setPresence);
   const setMutedUntil = useProfileStore((s) => s.setMutedUntil);
   const pinnedToolIds = useProfileStore((s) => s.pinnedToolIds);
   const togglePinnedTool = useProfileStore((s) => s.togglePinnedTool);
   const [open, setOpen] = useState(false);
-  const [statusDraft, setStatusDraft] = useState(statusText);
-
-  useEffect(() => {
-    if (open) setStatusDraft(statusText);
-  }, [open, statusText]);
 
   const name = displayName(user);
 
@@ -334,27 +319,6 @@ export function ProfileMenu() {
               </DropdownMenuSub>
             </div>
           </div>
-          <div className="relative mt-3">
-            <SmileIcon className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="h-9 pl-9 text-sm"
-              placeholder="Set status"
-              value={statusDraft}
-              onChange={(e) => setStatusDraft(e.target.value)}
-              onBlur={() => setStatusText(statusDraft.trim())}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  setStatusText(statusDraft.trim());
-                  (e.target as HTMLInputElement).blur();
-                }
-              }}
-            />
-          </div>
-          {statusText ? (
-            <p className="mt-1.5 truncate text-xs text-muted-foreground">
-              {statusText}
-            </p>
-          ) : null}
           <DropdownMenuSub>
             <DropdownMenuSubTrigger className="mt-2 w-full gap-2.5 py-2">
               <VolumeXIcon className="size-4 text-muted-foreground" />
@@ -392,11 +356,6 @@ export function ProfileMenu() {
             label="Settings"
             onClick={closeAnd(() => router.push("/settings"))}
           />
-          <MenuRow
-            icon={<BellIcon className="size-4" />}
-            label="Notifications"
-            onClick={closeAnd(() => router.push("/settings"))}
-          />
           {PROFILE_MENU_VISIBILITY.themes ? (
             <MenuRow
               icon={<PaletteIcon className="size-4" />}
@@ -404,36 +363,6 @@ export function ProfileMenu() {
               onClick={closeAnd(() => router.push("/settings"))}
             />
           ) : null}
-          <MenuRow
-            icon={<CommandIcon className="size-4" />}
-            label="Keyboard shortcuts"
-            onClick={closeAnd(() => openSheet("help"))}
-          />
-          <MenuRow
-            icon={<DownloadIcon className="size-4" />}
-            label="Download Kinetix"
-            onClick={() => toast("Desktop app — coming soon")}
-            trailing={<ExternalLinkIcon className="size-3.5 text-muted-foreground" />}
-          />
-          <DropdownMenuItem
-            className="gap-2.5 py-2"
-            onClick={closeAnd(() => openSheet("help"))}
-          >
-            <CircleHelpIcon className="size-4 text-muted-foreground" />
-            <span className="flex-1">Help</span>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="size-7 text-muted-foreground"
-              onClick={(e) => {
-                e.stopPropagation();
-                toast("Thanks — feedback noted");
-              }}
-              aria-label="Report a bug"
-            >
-              <BugIcon className="size-4" />
-            </Button>
-          </DropdownMenuItem>
         </div>
 
         {PROFILE_MENU_VISIBILITY.personalTools ? (

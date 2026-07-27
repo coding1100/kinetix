@@ -231,6 +231,12 @@ class TaskList(Base):
     is_private: Mapped[bool] = mapped_column(
         "isPrivate", Boolean, default=False, server_default="false"
     )
+    # NULL = inherit the owning Space's statusConfig. Non-null = this List's
+    # own override, same shape as Space.status_config. See list_status_service
+    # .ensure_list_statuses for how the two are resolved into ListStatus rows.
+    status_config: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        "statusConfig", JSONB, nullable=True, default=None
+    )
     created_by_id: Mapped[str | None] = mapped_column(
         "createdById",
         String,

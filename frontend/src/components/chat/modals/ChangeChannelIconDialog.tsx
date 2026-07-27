@@ -31,6 +31,8 @@ export function ChangeChannelIconDialog() {
   const [channelName, setChannelName] = useState("");
   const [iconColor, setIconColor] = useState<string | null>(null);
   const [initialColor, setInitialColor] = useState<string | null>(null);
+  const [icon, setIcon] = useState<string | null>(null);
+  const [initialIcon, setInitialIcon] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -39,6 +41,8 @@ export function ChangeChannelIconDialog() {
       setChannelName(channelFromCache.name);
       setIconColor(channelFromCache.customIconColor ?? null);
       setInitialColor(channelFromCache.customIconColor ?? null);
+      setIcon(channelFromCache.icon ?? null);
+      setInitialIcon(channelFromCache.icon ?? null);
       return;
     }
     if (!ready) return;
@@ -48,6 +52,8 @@ export function ChangeChannelIconDialog() {
       setChannelName(ch.name);
       setIconColor(ch.customIconColor ?? null);
       setInitialColor(ch.customIconColor ?? null);
+      setIcon(ch.icon ?? null);
+      setInitialIcon(ch.icon ?? null);
     });
     return () => {
       cancelled = true;
@@ -59,11 +65,13 @@ export function ChangeChannelIconDialog() {
     setChannelName("");
     setIconColor(null);
     setInitialColor(null);
+    setIcon(null);
+    setInitialIcon(null);
   };
 
   const handleSave = async () => {
     if (!ready || !modalChannelId) return;
-    if (iconColor === initialColor) {
+    if (iconColor === initialColor && icon === initialIcon) {
       handleClose();
       return;
     }
@@ -71,9 +79,11 @@ export function ChangeChannelIconDialog() {
     try {
       const updated = await updateChannel(accessToken, workspaceId, modalChannelId, {
         iconColor: iconColor ?? "",
+        icon: icon ?? "",
       });
       patchSidebarChannel(modalChannelId, {
         customIconColor: updated.customIconColor,
+        icon: updated.icon,
       });
       bumpSidebarRefresh();
       toast.success("Channel icon updated");
@@ -96,6 +106,8 @@ export function ChangeChannelIconDialog() {
         <ChannelIconPicker
           value={iconColor}
           onChange={setIconColor}
+          icon={icon}
+          onIconChange={setIcon}
           channelInitial={(channelName.trim() || "#").slice(0, 1).toUpperCase()}
         />
         <DialogFooter>

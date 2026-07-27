@@ -16,6 +16,21 @@ import { ROLE_LABELS } from "@/components/workspace/WorkspaceInviteForm";
 import { toast } from "sonner";
 import { avatarColorClassForKey, avatarInitial } from "@/lib/user-display";
 import { cn, PKT_TIME_ZONE } from "@/lib/utils";
+import { bumpWorkspaceMembersRefresh } from "@/lib/workspace/realtime";
+import { bumpWorkspacePeopleRefresh } from "@/stores/workspace-store";
+import { bumpSidebarRefresh } from "@/lib/chat/sidebar-channel";
+
+// Every other place a user's avatar/name shows up (People page, chat
+// sidebar DM rows, mention lists, channel/DM member dialogs) is a snapshot
+// fetched once and cached for the session, not a live subscription. There's
+// no realtime broadcast for profile changes, so this just forces this tab's
+// own caches to refetch immediately instead of staying stale until the next
+// full reload.
+function refreshCachedProfileViews() {
+  bumpWorkspaceMembersRefresh();
+  bumpWorkspacePeopleRefresh();
+  bumpSidebarRefresh();
+}
 
 export function ProfileView() {
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -33,7 +48,6 @@ export function ProfileView() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -81,6 +95,7 @@ export function ProfileView() {
         },
         workspaces: me.workspaces,
       });
+      refreshCachedProfileViews();
       toast.success("Profile updated");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to save profile");
@@ -101,35 +116,50 @@ export function ProfileView() {
     setPendingFile(file);
   };
 
-  const handleCropConfirm = async (blob: Blob) => {
+  const handleCropConfirm = (blob: Blob) => {
     if (!accessToken) return;
-    setUploadingAvatar(true);
-    try {
-      const me = await uploadAvatar(accessToken, blob);
-      setAvatarUrl(me.avatarUrl ?? "");
-      updateUser({
-        id: me.id,
-        email: me.email,
-        fullName: me.fullName,
-        avatarUrl: me.avatarUrl,
-      });
-      updateSession({
-        accessToken,
-        user: {
+    const previousAvatarUrl = avatarUrl;
+    // Show the cropped image immediately and close the dialog rather than
+    // blocking on the upload round-trip; the real URL swaps in once the
+    // request resolves, so every avatarUrl reader (ProfileMenu, sidebar,
+    // etc.) reflects the new photo without a page refresh either way.
+    const previewUrl = URL.createObjectURL(blob);
+    setAvatarUrl(previewUrl);
+    setPendingFile(null);
+    const toastId = toast.loading("Uploading photo…");
+
+    uploadAvatar(accessToken, blob)
+      .then((me) => {
+        setAvatarUrl((current) => {
+          if (current === previewUrl) URL.revokeObjectURL(previewUrl);
+          return me.avatarUrl ?? "";
+        });
+        updateUser({
           id: me.id,
           email: me.email,
           fullName: me.fullName,
           avatarUrl: me.avatarUrl,
-        },
-        workspaces: me.workspaces,
+        });
+        updateSession({
+          accessToken,
+          user: {
+            id: me.id,
+            email: me.email,
+            fullName: me.fullName,
+            avatarUrl: me.avatarUrl,
+          },
+          workspaces: me.workspaces,
+        });
+        refreshCachedProfileViews();
+        toast.success("Photo updated", { id: toastId });
+      })
+      .catch((err) => {
+        URL.revokeObjectURL(previewUrl);
+        setAvatarUrl(previousAvatarUrl);
+        toast.error(err instanceof ApiError ? err.message : "Failed to upload photo", {
+          id: toastId,
+        });
       });
-      toast.success("Photo updated");
-      setPendingFile(null);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to upload photo");
-    } finally {
-      setUploadingAvatar(false);
-    }
   };
 
   const joinedLabel = createdAt
@@ -237,8 +267,7 @@ export function ProfileView() {
       <AvatarCropDialog
         file={pendingFile}
         open={pendingFile !== null}
-        saving={uploadingAvatar}
-        onCancel={() => (uploadingAvatar ? undefined : setPendingFile(null))}
+        onCancel={() => setPendingFile(null)}
         onConfirm={handleCropConfirm}
       />
     </div>

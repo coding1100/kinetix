@@ -43,7 +43,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Select,
   SelectContent,
@@ -89,7 +89,7 @@ import {
 } from "@/lib/user-display";
 import { cn, PKT_TIME_ZONE } from "@/lib/utils";
 
-type Member = { id: string; fullName: string };
+type Member = { id: string; fullName: string; avatarUrl?: string | null };
 
 type StagedAttachment = { id: string; file: File };
 
@@ -909,6 +909,9 @@ export function CreateTaskDialog({
                       <span className="flex items-center gap-1">
                         {selectedAssignees.slice(0, 2).map((m) => (
                           <Avatar key={m.id} className="size-4">
+                            {m.avatarUrl ? (
+                              <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                            ) : null}
                             <AvatarFallback
                               className={cn(
                                 "text-[8px] font-semibold",
@@ -967,6 +970,9 @@ export function CreateTaskDialog({
                             onClick={() => toggleAssignee(m.id)}
                           >
                             <Avatar className="size-6">
+                              {m.avatarUrl ? (
+                                <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                              ) : null}
                               <AvatarFallback
                                 className={cn(
                                   "text-[10px] font-semibold",
@@ -1300,6 +1306,9 @@ export function CreateTaskDialog({
                                         }}
                                       >
                                         <Avatar className="size-6">
+                                          {m.avatarUrl ? (
+                                            <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                                          ) : null}
                                           <AvatarFallback
                                             className={cn(
                                               "text-[10px] font-semibold",
@@ -1358,6 +1367,12 @@ export function CreateTaskDialog({
                             </span>
                             {assignee && (
                               <Avatar className="size-5 shrink-0">
+                                {assignee.avatarUrl ? (
+                                  <AvatarImage
+                                    src={assignee.avatarUrl}
+                                    alt={assignee.fullName}
+                                  />
+                                ) : null}
                                 <AvatarFallback
                                   className={cn(
                                     "text-[9px] font-semibold",
@@ -1474,6 +1489,12 @@ export function CreateTaskDialog({
                                     );
                                     return draftAssignee ? (
                                       <Avatar className="size-5">
+                                        {draftAssignee.avatarUrl ? (
+                                          <AvatarImage
+                                            src={draftAssignee.avatarUrl}
+                                            alt={draftAssignee.fullName}
+                                          />
+                                        ) : null}
                                         <AvatarFallback
                                           className={cn(
                                             "text-[9px] font-semibold",
@@ -1536,6 +1557,9 @@ export function CreateTaskDialog({
                                         }}
                                       >
                                         <Avatar className="size-6">
+                                          {m.avatarUrl ? (
+                                            <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                                          ) : null}
                                           <AvatarFallback
                                             className={cn(
                                               "text-[10px] font-semibold",
@@ -1754,6 +1778,9 @@ export function CreateTaskDialog({
                             onClick={() => toggleFollower(m.id)}
                           >
                             <Avatar className="size-6">
+                              {m.avatarUrl ? (
+                                <AvatarImage src={m.avatarUrl} alt={m.fullName} />
+                              ) : null}
                               <AvatarFallback
                                 className={cn(
                                   "text-[10px] font-semibold",

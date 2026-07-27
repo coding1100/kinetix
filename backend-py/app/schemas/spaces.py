@@ -1,6 +1,25 @@
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
-from app.db.models.enums import PermissionLevel
+from app.db.models.enums import PermissionLevel, StatusGroup
+
+
+class StatusConfigItemBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(min_length=1, max_length=60)
+    color: str = Field(min_length=1, max_length=32)
+    status_group: StatusGroup = Field(alias="statusGroup")
+    legacy_key: str | None = Field(default=None, alias="legacyKey", max_length=32)
+
+
+def _validate_status_config(items: list[StatusConfigItemBody] | None) -> None:
+    if items is None:
+        return
+    if not items:
+        raise ValueError("statusConfig must include at least one status")
+    names = [item.name.strip().lower() for item in items]
+    if len(names) != len(set(names)):
+        raise ValueError("statusConfig has duplicate status names")
 
 
 class CreateSpaceBody(BaseModel):
@@ -19,6 +38,14 @@ class UpdateSpaceBody(BaseModel):
     color: str | None = Field(default=None, max_length=32)
     description: str | None = Field(default=None, max_length=500)
     is_private: bool | None = Field(default=None, alias="isPrivate")
+    status_config: list[StatusConfigItemBody] | None = Field(
+        default=None, alias="statusConfig"
+    )
+
+    @model_validator(mode="after")
+    def _check_status_config(self) -> "UpdateSpaceBody":
+        _validate_status_config(self.status_config)
+        return self
 
 
 class ShareMemberBody(BaseModel):
@@ -70,6 +97,19 @@ class UpdateListBody(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=120)
     is_private: bool | None = Field(default=None, alias="isPrivate")
+    status_config: list[StatusConfigItemBody] | None = Field(
+        default=None, alias="statusConfig"
+    )
+    # True reverts this List back to inheriting its Space's statusConfig
+    # (clears the override). Ignored if status_config is also set.
+    inherit_status_config: bool | None = Field(
+        default=None, alias="inheritStatusConfig"
+    )
+
+    @model_validator(mode="after")
+    def _check_status_config(self) -> "UpdateListBody":
+        _validate_status_config(self.status_config)
+        return self
 
 
 class CreateTaskCommentBody(BaseModel):

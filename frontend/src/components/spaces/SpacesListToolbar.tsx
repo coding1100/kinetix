@@ -2,18 +2,8 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import {
-  FilterIcon,
-  HashIcon,
-  LayoutGridIcon,
-  ListIcon,
-  PlusIcon,
-  SearchIcon,
-  Share2Icon,
-  SlidersHorizontalIcon,
-} from "lucide-react";
+import { HashIcon, ListIcon, PlusIcon, Share2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ShareModal } from "@/components/shared/ShareModal";
 import { UnderlineTabBar } from "@/components/shared/Tabs";
 import {
@@ -152,7 +142,7 @@ export function SpacesListToolbar({
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="all">All status</SelectItem>
               {(statuses ?? []).map((status) => (
                 <SelectItem key={status.id} value={status.id}>
                   {status.name}
@@ -160,53 +150,6 @@ export function SpacesListToolbar({
               ))}
             </SelectContent>
           </Select>
-        </div>
-        <div className="flex items-center gap-0">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button variant="ghost" size="icon-sm" className="h-6 w-6" aria-label="Filter">
-                  <FilterIcon className="size-3" />
-                </Button>
-              }
-            />
-            <TooltipContent side="bottom">Filter</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button variant="ghost" size="icon-sm" className="h-6 w-6" aria-label="Group">
-                  <LayoutGridIcon className="size-3" />
-                </Button>
-              }
-            />
-            <TooltipContent side="bottom">Group</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button variant="ghost" size="icon-sm" className="h-6 w-6" aria-label="Search">
-                  <SearchIcon className="size-3" />
-                </Button>
-              }
-            />
-            <TooltipContent side="bottom">Search</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="h-6 w-6"
-                  aria-label="Display settings"
-                >
-                  <SlidersHorizontalIcon className="size-3" />
-                </Button>
-              }
-            />
-            <TooltipContent side="bottom">Display</TooltipContent>
-          </Tooltip>
         </div>
       </div>
       )}

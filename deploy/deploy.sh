@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Production deploy for EC2 — run manually or via GitHub Actions.
 #
-# Prod actually runs as Docker containers (nginx routes `location /` to
-# http://web:3000 and `location /api/` to http://api:4000 — see
-# deploy/nginx/docker.conf), built from docker-compose.yml +
-# docker-compose.app.yml. Rebuild/restart those, not systemd services.
+# api/web/admin run as Docker containers (postgres/api/web/admin, built from
+# docker-compose.yml + docker-compose.app.yml). nginx runs on the host (apt),
+# not as a container — see deploy/nginx/host.conf and
+# deploy/NGINX_HOST_MIGRATION.md. Host nginx proxies `location /` to
+# 127.0.0.1:3000 and `location /api/` to 127.0.0.1:4000.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -73,14 +74,6 @@ done
 log "Build and start web"
 compose up -d --build web
 
-log "Ensure edge network exists (kinetix_edge is external - shared with staging, not compose-managed)"
-if ! docker network inspect kinetix_edge >/dev/null 2>&1; then
-  docker network create kinetix_edge
-fi
-
-log "Ensure nginx running"
-compose up -d nginx
-
 log "Wait for containers"
 sleep 8
 compose ps
@@ -96,10 +89,14 @@ if ! container_running api; then
   exit 1
 fi
 
+log "Reload host nginx (picks up any container restarts behind it)"
+sudo nginx -t
+sudo systemctl reload nginx
+
 log "Health check via nginx"
 if ! curl -fsS http://127.0.0.1/auth/login >/dev/null 2>&1; then
   echo "ERROR: prod site not responding via nginx"
-  docker logs kinetix-nginx-1 --tail 30 2>/dev/null || true
+  sudo journalctl -u nginx --no-pager --lines 30 2>/dev/null || true
   compose logs web --tail 40
   exit 1
 fi
