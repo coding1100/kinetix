@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time SSL bootstrap for kinetix.infosoftco.com — run manually on the
+# One-time SSL bootstrap for kinetix.mindrind.com — run manually on the
 # EC2 box, once, after DNS (A record -> this server's IP) has propagated
 # and host nginx is installed and serving deploy/nginx/host.conf over :80.
 # Idempotent: safe to re-run, certbot skips issuance if a valid cert exists.
@@ -13,7 +13,7 @@
 #   3. Confirms the certbot systemd timer is enabled for auto-renewal.
 set -euo pipefail
 
-DOMAIN="kinetix.infosoftco.com"
+DOMAIN="kinetix.mindrind.com"
 EMAIL="${CERTBOT_EMAIL:?Set CERTBOT_EMAIL=you@example.com and re-run}"
 
 log() { echo "==> $*"; }

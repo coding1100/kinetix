@@ -34,8 +34,8 @@ services:
       PORT: "4000"
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-staging-jwt-access-secret-min-32-chars-long}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-staging-jwt-refresh-secret-min-32-chars-long}
-      API_PUBLIC_URL: ${STAGING_PUBLIC_URL:-https://kinetix.infosoftco.com/staging}
-      FRONTEND_URL: ${STAGING_FRONTEND_ORIGIN:-https://kinetix.infosoftco.com}
+      API_PUBLIC_URL: ${STAGING_PUBLIC_URL:-https://kinetix.mindrind.com/staging}
+      FRONTEND_URL: ${STAGING_FRONTEND_ORIGIN:-https://kinetix.mindrind.com}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -61,8 +61,8 @@ services:
       args:
         NEXT_PUBLIC_BASE_PATH: /staging
         NEXT_PUBLIC_API_URL: /staging/api/v1
-        NEXT_PUBLIC_APP_URL: ${STAGING_PUBLIC_URL:-https://kinetix.infosoftco.com/staging}
-        NEXT_PUBLIC_SOCKET_URL: ${STAGING_PUBLIC_URL:-https://kinetix.infosoftco.com/staging}
+        NEXT_PUBLIC_APP_URL: ${STAGING_PUBLIC_URL:-https://kinetix.mindrind.com/staging}
+        NEXT_PUBLIC_SOCKET_URL: ${STAGING_PUBLIC_URL:-https://kinetix.mindrind.com/staging}
     image: kinetix-staging-web
     restart: unless-stopped
     environment:
@@ -71,8 +71,8 @@ services:
       HOSTNAME: "0.0.0.0"
       NEXT_PUBLIC_BASE_PATH: /staging
       NEXT_PUBLIC_API_URL: /staging/api/v1
-      NEXT_PUBLIC_APP_URL: ${STAGING_PUBLIC_URL:-https://kinetix.infosoftco.com/staging}
-      NEXT_PUBLIC_SOCKET_URL: ${STAGING_PUBLIC_URL:-https://kinetix.infosoftco.com/staging}
+      NEXT_PUBLIC_APP_URL: ${STAGING_PUBLIC_URL:-https://kinetix.mindrind.com/staging}
+      NEXT_PUBLIC_SOCKET_URL: ${STAGING_PUBLIC_URL:-https://kinetix.mindrind.com/staging}
     ports:
       - "127.0.0.1:3010:3000"
     depends_on:
