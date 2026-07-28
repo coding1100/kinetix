@@ -736,6 +736,7 @@ class UserHomeSidebar(Base):
         "updatedAt",
         DateTime(timezone=True),
         server_default=func.now(),
+        default=func.now(),
         onupdate=func.now(),
     )
 
