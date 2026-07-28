@@ -1,4 +1,4 @@
-"""SMTP email delivery for workspace invites."""
+"""Email delivery for workspace invites (Resend primary, SMTP fallback)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,11 @@ from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+import httpx
+
 from app.config import get_settings
+
+RESEND_API_URL = "https://api.resend.com/emails"
 
 ROLE_LABELS = {
     "OWNER": "Owner",
@@ -32,9 +36,42 @@ def is_smtp_configured() -> bool:
     )
 
 
+def is_resend_configured() -> bool:
+    return get_settings().resend_configured
+
+
+def is_email_configured() -> bool:
+    return is_resend_configured() or is_smtp_configured()
+
+
 def _from_address() -> str:
     settings = get_settings()
     return settings.smtp_from.strip() or settings.smtp_user.strip()
+
+
+def _resend_from_address() -> str:
+    settings = get_settings()
+    return settings.resend_from.strip() or settings.smtp_from.strip()
+
+
+async def _send_via_resend(*, to: str, subject: str, text_body: str, html_body: str) -> None:
+    settings = get_settings()
+    if not is_resend_configured():
+        raise EmailNotConfiguredError("Resend is not configured")
+
+    async with httpx.AsyncClient(timeout=settings.smtp_timeout_seconds) as client:
+        response = await client.post(
+            RESEND_API_URL,
+            headers={"Authorization": f"Bearer {settings.resend_api_key}"},
+            json={
+                "from": _resend_from_address(),
+                "to": [to],
+                "subject": subject,
+                "text": text_body,
+                "html": html_body,
+            },
+        )
+        response.raise_for_status()
 
 
 def _send_sync(*, to: str, subject: str, text_body: str, html_body: str) -> None:
@@ -113,6 +150,59 @@ async def send_workspace_invite_email(
         role=role,
         expires_at=expires_at,
     )
+    if is_resend_configured():
+        await _send_via_resend(
+            to=to,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+        )
+        return
+    await asyncio.to_thread(
+        _send_sync,
+        to=to,
+        subject=subject,
+        text_body=text_body,
+        html_body=html_body,
+    )
+
+
+def _password_reset_bodies(*, reset_url: str, expires_hours: int) -> tuple[str, str]:
+    text = (
+        f"Reset your Kinetix password:\n{reset_url}\n\n"
+        f"This link expires in {expires_hours} hour(s). "
+        f"If you did not request this, you can ignore this email."
+    )
+    html = f"""<!DOCTYPE html>
+<html>
+<body style="font-family:system-ui,sans-serif;line-height:1.5;color:#111">
+  <p>We received a request to reset your Kinetix password.</p>
+  <p><a href="{reset_url}" style="display:inline-block;padding:10px 18px;background:#5a43d6;color:#fff;text-decoration:none;border-radius:6px">Reset password</a></p>
+  <p style="font-size:13px;color:#555">Or copy this link:<br><a href="{reset_url}">{reset_url}</a></p>
+  <p style="font-size:12px;color:#888">This link expires in {expires_hours} hour(s). If you did not request this, you can ignore this email.</p>
+</body>
+</html>"""
+    return text, html
+
+
+async def send_password_reset_email(
+    *,
+    to: str,
+    reset_url: str,
+    expires_hours: int,
+) -> None:
+    subject = "Reset your Kinetix password"
+    text_body, html_body = _password_reset_bodies(
+        reset_url=reset_url, expires_hours=expires_hours
+    )
+    if is_resend_configured():
+        await _send_via_resend(
+            to=to,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+        )
+        return
     await asyncio.to_thread(
         _send_sync,
         to=to,

@@ -24,8 +24,8 @@ services:
       NODE_ENV: production
       PORT: "4000"
       DATABASE_URL: postgresql://${POSTGRES_USER:-riseup}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-riseup}
-      API_PUBLIC_URL: ${PUBLIC_APP_URL:-https://kinetix.infosoftco.com}
-      FRONTEND_URL: ${PUBLIC_APP_URL:-https://kinetix.infosoftco.com}
+      API_PUBLIC_URL: ${PUBLIC_APP_URL:-https://kinetix.mindrind.com}
+      FRONTEND_URL: ${PUBLIC_APP_URL:-https://kinetix.mindrind.com}
     ports:
       - "127.0.0.1:4000:4000"
     depends_on:
@@ -43,8 +43,8 @@ services:
       context: ./frontend
       args:
         NEXT_PUBLIC_API_URL: /api/v1
-        NEXT_PUBLIC_APP_URL: ${PUBLIC_APP_URL:-https://kinetix.infosoftco.com}
-        NEXT_PUBLIC_SOCKET_URL: ${PUBLIC_APP_URL:-https://kinetix.infosoftco.com}
+        NEXT_PUBLIC_APP_URL: ${PUBLIC_APP_URL:-https://kinetix.mindrind.com}
+        NEXT_PUBLIC_SOCKET_URL: ${PUBLIC_APP_URL:-https://kinetix.mindrind.com}
     image: kinetix-web
     restart: unless-stopped
     environment:
