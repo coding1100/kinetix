@@ -165,3 +165,48 @@ async def send_workspace_invite_email(
         text_body=text_body,
         html_body=html_body,
     )
+
+
+def _password_reset_bodies(*, reset_url: str, expires_hours: int) -> tuple[str, str]:
+    text = (
+        f"Reset your Kinetix password:\n{reset_url}\n\n"
+        f"This link expires in {expires_hours} hour(s). "
+        f"If you did not request this, you can ignore this email."
+    )
+    html = f"""<!DOCTYPE html>
+<html>
+<body style="font-family:system-ui,sans-serif;line-height:1.5;color:#111">
+  <p>We received a request to reset your Kinetix password.</p>
+  <p><a href="{reset_url}" style="display:inline-block;padding:10px 18px;background:#5a43d6;color:#fff;text-decoration:none;border-radius:6px">Reset password</a></p>
+  <p style="font-size:13px;color:#555">Or copy this link:<br><a href="{reset_url}">{reset_url}</a></p>
+  <p style="font-size:12px;color:#888">This link expires in {expires_hours} hour(s). If you did not request this, you can ignore this email.</p>
+</body>
+</html>"""
+    return text, html
+
+
+async def send_password_reset_email(
+    *,
+    to: str,
+    reset_url: str,
+    expires_hours: int,
+) -> None:
+    subject = "Reset your Kinetix password"
+    text_body, html_body = _password_reset_bodies(
+        reset_url=reset_url, expires_hours=expires_hours
+    )
+    if is_resend_configured():
+        await _send_via_resend(
+            to=to,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+        )
+        return
+    await asyncio.to_thread(
+        _send_sync,
+        to=to,
+        subject=subject,
+        text_body=text_body,
+        html_body=html_body,
+    )
