@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Cookie, File, Query, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Cookie, File, Query, Response, UploadFile
 from fastapi.responses import RedirectResponse
 from urllib.parse import quote
 
@@ -143,8 +143,12 @@ async def post_change_password(
 
 
 @router.post("/forgot-password")
-async def forgot_password(body: ForgotPasswordBody, session: DbSession):
-    result = await auth_service.request_password_reset(session, body.email)
+async def forgot_password(
+    body: ForgotPasswordBody, session: DbSession, background_tasks: BackgroundTasks
+):
+    result = await auth_service.request_password_reset(
+        session, body.email, background_tasks
+    )
     from app.config import get_settings
 
     settings = get_settings()
