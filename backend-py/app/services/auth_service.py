@@ -1,6 +1,8 @@
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from fastapi import BackgroundTasks
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -22,6 +24,9 @@ from app.db.models.enums import MemberStatus, WorkspaceRole, WorkspaceStatus
 from app.db.models.user import PasswordResetToken, RefreshToken, User
 from app.db.models.workspace import Workspace, WorkspaceMember
 from app.schemas.auth import ChangePasswordBody, LoginBody, SignupBody, UpdateProfileBody
+from app.services import email_service
+
+logger = logging.getLogger(__name__)
 
 
 def _user_out(user: User) -> dict:
@@ -340,7 +345,22 @@ async def change_password(
     return {"message": "Password updated successfully"}
 
 
-async def request_password_reset(session: AsyncSession, email: str) -> dict:
+async def _send_password_reset_email_safe(*, to: str, reset_url: str, expires_hours: int) -> None:
+    """Fire-and-forget: runs in the background after the response has
+    already gone out, so failures only surface in logs."""
+    try:
+        await email_service.send_password_reset_email(
+            to=to, reset_url=reset_url, expires_hours=expires_hours
+        )
+    except Exception:
+        logger.exception("Failed to send password reset email to %s", to)
+
+
+async def request_password_reset(
+    session: AsyncSession,
+    email: str,
+    background_tasks: BackgroundTasks | None = None,
+) -> dict:
     user = await session.scalar(select(User).where(User.email == email))
     if not user:
         return {"message": "If that email exists, a reset link was sent."}
@@ -356,10 +376,23 @@ async def request_password_reset(session: AsyncSession, email: str) -> dict:
     )
     await session.commit()
 
-    return {
-        "message": "If that email exists, a reset link was sent.",
-        "resetToken": raw,
-    }
+    email_configured = email_service.is_email_configured()
+    if email_configured and background_tasks is not None:
+        reset_url = f"{settings.frontend_url.rstrip('/')}/auth/reset-password?token={raw}"
+        background_tasks.add_task(
+            _send_password_reset_email_safe,
+            to=user.email,
+            reset_url=reset_url,
+            expires_hours=settings.reset_token_expires_hours,
+        )
+
+    result = {"message": "If that email exists, a reset link was sent."}
+    # Only expose the raw token directly when there's no email delivery to
+    # fall back on (e.g. local dev without SMTP/Resend configured) - the
+    # router still strips this in production regardless.
+    if not email_configured:
+        result["resetToken"] = raw
+    return result
 
 
 async def reset_password(session: AsyncSession, token: str, password: str) -> dict:

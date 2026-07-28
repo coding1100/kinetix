@@ -1,5 +1,49 @@
+import { useAdminAuthStore } from "@/stores/auth-store";
+import type { AdminUser } from "@/lib/api/admin";
+
 /** Same-origin path in dev (proxied by Next.js); absolute URL also supported. */
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
+
+/** Paths that must never trigger refresh-on-401 (they ARE the auth flow). */
+const AUTH_PATH_PREFIX = "/admin/auth/";
+
+let refreshPromise: Promise<boolean> | null = null;
+
+/** Raw fetch (bypasses apiFetch) so a failed refresh can't recurse into itself. */
+async function doRefresh(): Promise<boolean> {
+  const { refreshToken, setSession } = useAdminAuthStore.getState();
+  try {
+    const res = await fetch(`${API_BASE}/admin/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: refreshToken ? JSON.stringify({ refreshToken }) : undefined,
+    });
+    if (!res.ok) return false;
+    const data = (await res.json().catch(() => null)) as {
+      accessToken?: string;
+      refreshToken?: string;
+      user?: AdminUser;
+    } | null;
+    if (!data?.accessToken || !data.user) return false;
+    setSession({
+      accessToken: data.accessToken,
+      refreshToken: data.refreshToken,
+      user: data.user,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function redirectToLogin() {
+  useAdminAuthStore.getState().clearSession();
+  if (typeof window !== "undefined") {
+    const next = encodeURIComponent(window.location.pathname);
+    window.location.href = `/login?next=${next}`;
+  }
+}
 
 export class ApiError extends Error {
   constructor(
@@ -52,7 +96,8 @@ function parseApiError(
 
 export async function apiFetch<T>(
   path: string,
-  init?: RequestInit & { token?: string }
+  init?: RequestInit & { token?: string },
+  _isRetry = false
 ): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -69,6 +114,18 @@ export async function apiFetch<T>(
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
 
   if (!res.ok) {
+    const isAuthCall = path.startsWith(AUTH_PATH_PREFIX);
+    if (res.status === 401 && !isAuthCall && !_isRetry) {
+      refreshPromise ??= doRefresh().finally(() => {
+        refreshPromise = null;
+      });
+      const refreshed = await refreshPromise;
+      if (refreshed) {
+        const freshToken = useAdminAuthStore.getState().accessToken;
+        return apiFetch<T>(path, { ...init, token: freshToken ?? undefined }, true);
+      }
+      redirectToLogin();
+    }
     throw parseApiError(res, data);
   }
 
