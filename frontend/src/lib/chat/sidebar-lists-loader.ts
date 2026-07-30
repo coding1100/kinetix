@@ -58,31 +58,27 @@ export function mergeSidebarDms(
   queryDms: DirectMessage[] | undefined,
   cacheDms: DirectMessage[] | undefined
 ): DirectMessage[] {
+  if (queryDms === undefined) {
+    return sortByLastAt([...(cacheDms ?? [])]);
+  }
   const merged = new Map<string, DirectMessage>();
-  for (const dm of queryDms ?? []) {
+  for (const dm of queryDms) {
     merged.set(dm.id, dm);
   }
   if (cacheDms !== undefined) {
-    const cacheIds = new Set(cacheDms.map((d) => d.id));
     for (const dm of cacheDms) {
       const existing = merged.get(dm.id);
-      merged.set(
-        dm.id,
-        existing
-          ? {
-              ...dm,
-              ...existing,
-              unread: mergeConversationUnread(dm.unread, existing.unread, {
-                isActive: activeDmId() === dm.id,
-              }),
-            }
-          : dm
-      );
-    }
-    for (const id of [...merged.keys()]) {
-      if (!cacheIds.has(id)) {
-        merged.delete(id);
-      }
+      // The API response owns set membership: a DM the server returns but the
+      // cache has never seen is a conversation someone just started with us,
+      // and closing a DM persists as hidden server-side, so it stays gone.
+      if (!existing) continue;
+      merged.set(dm.id, {
+        ...dm,
+        ...existing,
+        unread: mergeConversationUnread(dm.unread, existing.unread, {
+          isActive: activeDmId() === dm.id,
+        }),
+      });
     }
   }
   return sortByLastAt([...merged.values()]);

@@ -174,15 +174,12 @@ export function applyRealtimeMessageToSidebar(
     pendingDmFetches.add(conversationId);
     void fetchDm(accessToken, workspaceId, conversationId)
       .then((dm) => {
-        upsertDmInSidebar(
-          {
-            ...dm,
-            lastMessage,
-            lastAt,
-            unread: bumpUnread ? Math.max(dm.unread, 0) + 1 : dm.unread,
-          },
-          workspaceId
-        );
+        // fetchDm's unread is server-computed and already counts the message
+        // this event carries, so it is used as-is rather than incremented.
+        // The floor of 1 only covers the race where the recipient's read
+        // marker lands between the broadcast and this fetch.
+        const unread = bumpUnread ? Math.max(dm.unread, 1) : dm.unread;
+        upsertDmInSidebar({ ...dm, lastMessage, lastAt, unread }, workspaceId);
       })
       .catch(() => undefined)
       .finally(() => {
