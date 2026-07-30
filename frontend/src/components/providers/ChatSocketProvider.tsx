@@ -114,6 +114,13 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     };
 
     socket.on("connect", joinWorkspace);
+    // A failed handshake is otherwise completely silent, which makes "realtime
+    // stopped working" impossible to tell apart from "nothing was sent".
+    socket.on("connect_error", (err: Error) => {
+      console.warn(
+        `[chat socket] could not connect to ${url}${path}: ${err.message}`
+      );
+    });
     socket.on("chat:message", (payload: ChatRealtimePayload) => {
       applyRealtimeMessageToSidebar(payload, userId, accessToken);
       ingestRealtimeEvent(payload);
@@ -313,6 +320,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     return () => {
       joinedWorkspaceRef.current = null;
       socket.off("connect", joinWorkspace);
+      socket.off("connect_error");
       socket.off("chat:message");
       socket.off("chat:channel:joined");
       socket.off("chat:channel:removed");

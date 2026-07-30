@@ -55,6 +55,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useShellStore } from "@/stores/shell-store";
+import { SidebarResizeHandle } from "@/components/shell/SidebarResizeHandle";
 import { SidebarNavIcon } from "@/components/icons/SidebarNavIcon";
 import { useNotificationsUnread } from "@/hooks/use-notifications-unread";
 import { useHomeQuery } from "@/hooks/use-home-query";
@@ -868,7 +869,8 @@ export function HomeSidebar() {
   const hiddenItems = items.filter((i) => !i.pinned);
   const openModal = useUiStore((s) => s.openModal);
   const openModalDeferred = useUiStore((s) => s.openModalDeferred);
-  const { secondaryPanelOpen, setSecondaryPanelOpen } = useShellStore();
+  const { secondaryPanelOpen, setSecondaryPanelOpen, secondaryPanelWidth } =
+    useShellStore();
   const { unreadCount } = useNotificationsUnread();
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const role = useAuthStore(selectActiveWorkspace)?.role;
@@ -1012,7 +1014,10 @@ export function HomeSidebar() {
   );
 
   return (
-    <aside className="flex min-h-0 w-[260px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
+    <aside
+      className="relative flex min-h-0 shrink-0 flex-col border-r border-sidebar-border bg-sidebar"
+      style={{ width: secondaryPanelWidth }}
+    >
       <div className="flex items-center justify-between border-b border-sidebar-border px-3 py-2.5">
         <span className="text-[13px] font-semibold tracking-tight text-sidebar-foreground">
           Home
@@ -1348,6 +1353,7 @@ export function HomeSidebar() {
         loading={deletingSpacesItem}
         onConfirm={() => void handleDeleteSpacesItem()}
       />
+      <SidebarResizeHandle />
     </aside>
   );
 }

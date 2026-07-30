@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.db.models.chat import ChatChannel, ChatChannelMember, ChatMessage, DirectParticipant
+from app.db.models.chat import ChatChannel, ChatChannelMember, ChatMessage
 from app.db.models.enums import InboxBucket, InboxItemType, InboxTimeGroup, MemberStatus
 from app.db.models.home import InboxItem, Task
 from app.db.models.user import User
@@ -311,22 +311,18 @@ async def create_mention_notifications(
     if channel:
         members = await _channel_members_for_notify(session, channel.id)
         level_by_user = {m.user_id: _notification_level(m) for m in members}
+        # Anyone in the workspace can be @mentioned, but only mentioned people
+        # who actually have channel access get notified - no ChatChannelMember
+        # row means no notification, same rule the DM branch below applies.
         recipient_ids = [
             rid
             for rid in recipient_ids
-            if level_by_user.get(rid, "MENTIONS") != "NONE"
+            if rid in level_by_user and level_by_user[rid] != "NONE"
         ]
     elif conversation_id:
-        participant_ids = set(
-            await session.scalars(
-                select(DirectParticipant.user_id).where(
-                    DirectParticipant.conversation_id == conversation_id
-                )
-            )
-        )
-        recipient_ids = [
-            rid for rid in recipient_ids if rid in participant_ids
-        ]
+        # DMs never reach the inbox - not the message, not an @mention inside
+        # it. The conversation's own unread count is the whole notification.
+        return []
 
     if not recipient_ids:
         return []
@@ -508,48 +504,6 @@ async def create_resource_unshare_notification(
     session.add(item)
     await session.flush()
     return [(recipient_id, item)]
-
-
-async def create_dm_broadcast_notifications(
-    session: AsyncSession,
-    *,
-    workspace_id: str,
-    author_user_id: str,
-    conversation_id: str,
-    recipient_ids: list[str],
-    body: str,
-) -> list[tuple[str, InboxItem]]:
-    targets = [rid for rid in dict.fromkeys(recipient_ids) if rid != author_user_id]
-    if not targets:
-        return []
-
-    users = await _load_users(session, [author_user_id, *targets])
-    actor_name = (
-        users.get(author_user_id).full_name if users.get(author_user_id) else "Someone"
-    )
-    snippet = _message_snippet(body)
-    href = f"/chat/dm/{conversation_id}"
-
-    created: list[tuple[str, InboxItem]] = []
-    for recipient_id in targets:
-        item = InboxItem(
-            workspace_id=workspace_id,
-            user_id=recipient_id,
-            type=InboxItemType.CHAT,
-            title=f"New message from {actor_name}",
-            preview=f"{actor_name}: {snippet}",
-            source=actor_name,
-            unread=True,
-            bucket=InboxBucket.ALL,
-            time_group=InboxTimeGroup.TODAY,
-            href=href,
-            activity_kind="dm_message",
-        )
-        session.add(item)
-        created.append((recipient_id, item))
-
-    await session.flush()
-    return created
 
 
 async def create_thread_reply_notifications(
