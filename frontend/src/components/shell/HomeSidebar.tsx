@@ -988,7 +988,7 @@ export function HomeSidebar() {
   );
 
   const chatListsQuery = useHomeQuery(
-    (token, ws) => loadSidebarLists(token, ws, { force: sidebarRefreshKey > 0 }),
+    (token, ws) => loadSidebarLists(token, ws),
     [sidebarRefreshKey]
   );
 
