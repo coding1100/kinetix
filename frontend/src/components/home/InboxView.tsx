@@ -27,17 +27,11 @@ import { fetchInbox, type InboxItemDto, type InboxItemType } from "@/lib/api/hom
 import { useHomeQuery } from "@/hooks/use-home-query";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 
-// Inbox only ever shows Primary - items that need direct action from the
-// user (mentions, assignments, comments/replies, reminders). There is no
-// tab switcher anymore; lower-signal activity is simply not surfaced here.
-const PRIMARY_TYPES: InboxItemType[] = [
-  "mention",
-  "assignment",
-  "comment",
-  "reply",
-  "reminder",
-];
-
+// Which items belong in the Inbox is decided server-side, by
+// app/services/inbox_visibility.py - the same rule that produces the unread
+// badge count, so the two can no longer disagree. Filtering again here would
+// re-open that gap, so this view renders whatever the API returns and only
+// applies the user's own type filter on top.
 const TYPE_FILTER_OPTIONS: { id: InboxItemType; label: string }[] = [
   { id: "mention", label: "Mentions" },
   { id: "assignment", label: "Assignments" },
@@ -45,10 +39,6 @@ const TYPE_FILTER_OPTIONS: { id: InboxItemType; label: string }[] = [
   { id: "reply", label: "Replies" },
   { id: "reminder", label: "Reminders" },
 ];
-
-function filterToPrimary(items: InboxItemDto[]) {
-  return items.filter((i) => PRIMARY_TYPES.includes(i.type));
-}
 
 function filterByTypes(items: InboxItemDto[], types: Set<InboxItemType>) {
   if (types.size === 0) return items;
@@ -108,7 +98,7 @@ export function InboxView() {
   const items = useMemo(() => {
     const merged = apiItems ? mergeInboxItems(apiItems) : apiItems;
     if (!merged) return merged;
-    return filterByTypes(filterToPrimary(merged), typeFilter);
+    return filterByTypes(merged, typeFilter);
   }, [apiItems, liveTick, typeFilter]);
 
   const hasUnread = (items ?? []).some((item) => item.unread);

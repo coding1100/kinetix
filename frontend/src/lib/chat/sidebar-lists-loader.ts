@@ -106,25 +106,24 @@ export function getSidebarListsFromStore(
   return null;
 }
 
-/** One shared loader for channels + DMs — deduped and sequential to protect the API/DB pool. */
+/** One shared loader for channels + DMs — deduped to protect the API/DB pool. */
 export function loadSidebarLists(
   token: string,
-  workspaceId: string,
-  options?: { force?: boolean }
+  workspaceId: string
 ): Promise<ChatSidebarLists> {
   const userId = useAuthStore.getState().user?.id;
   if (!userId) {
     return Promise.reject(new Error("No authenticated user"));
   }
 
-  const force = options?.force ?? false;
   const key = inflightKey(userId, workspaceId);
 
-  if (!force) {
-    const cached = getSidebarListsFromStore(workspaceId, userId);
-    if (cached) return Promise.resolve(cached);
-  }
-
+  // The cache is persisted to localStorage, so serving it without revalidating
+  // meant anything that changed while the tab was closed - a channel someone
+  // added you to, for instance - stayed invisible until some unrelated event
+  // bumped the refresh key. Callers still pass the cache as initialData for an
+  // instant first paint; this always goes to the API behind that, deduped per
+  // user+workspace by the inflight map below.
   const existing = inflight.get(key);
   if (existing) return existing;
 
