@@ -34,6 +34,7 @@ import { ShareModal } from "@/components/shared/ShareModal";
 import { useHomeQuery } from "@/hooks/use-home-query";
 import { HomeDataState } from "@/components/home/HomeDataState";
 import { useShellStore } from "@/stores/shell-store";
+import { SidebarResizeHandle } from "@/components/shell/SidebarResizeHandle";
 import { useSpacesStore } from "@/stores/spaces-store";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { cn } from "@/lib/utils";
@@ -78,7 +79,8 @@ export function SpacesSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
-  const { secondaryPanelOpen, setSecondaryPanelOpen } = useShellStore();
+  const { secondaryPanelOpen, setSecondaryPanelOpen, secondaryPanelWidth } =
+    useShellStore();
   const refreshKey = useSpacesStore((s) => s.refreshKey);
   const bumpRefresh = useSpacesStore((s) => s.bumpRefresh);
   const { data: spaces, loading, error } = useHomeQuery(
@@ -141,7 +143,10 @@ export function SpacesSidebar() {
 
   return (
     <>
-      <aside className="flex min-h-0 w-[280px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
+      <aside
+        className="relative flex min-h-0 shrink-0 flex-col border-r border-sidebar-border bg-sidebar"
+        style={{ width: secondaryPanelWidth }}
+      >
         <div className="flex items-center justify-between border-b border-sidebar-border px-4 py-3">
           <span className="text-sm font-semibold tracking-tight">Spaces</span>
           <div className="flex gap-0.5">
@@ -602,6 +607,7 @@ export function SpacesSidebar() {
             New Space
           </Button>
         </div>
+        <SidebarResizeHandle />
       </aside>
       <SpacesHierarchyDialog
         open={dialogOpen}

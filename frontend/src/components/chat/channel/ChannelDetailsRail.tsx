@@ -16,6 +16,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useChannelMembers } from "@/hooks/use-channel-members";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import {
   avatarColorClassForKey,
   avatarInitialFromName,
@@ -73,7 +74,9 @@ export function ChannelDetailsRail({ channelId }: { channelId: string }) {
   const { members } = useChannelMembers(channelId);
 
   const { preview, showCountBadge, displayCount, usingFollowers } = useMemo(() => {
-    const following = members.filter((m) => m.isFollowing);
+    const following = FEATURE_FLAGS.channelFollowers
+      ? members.filter((m) => m.isFollowing)
+      : [];
     const useFollowers = following.length > 0;
     const source = useFollowers ? following : members;
     const displayCount = source.length;
@@ -106,7 +109,9 @@ export function ChannelDetailsRail({ channelId }: { channelId: string }) {
                   followersActive && ""
                 )}
                 onClick={() => toggleChannelDetailsView("followers")}
-                aria-label="Followers"
+                aria-label={
+                  FEATURE_FLAGS.channelFollowers ? "Followers" : "Members"
+                }
                 aria-pressed={followersActive}
               >
                 <div className="flex flex-col items-center">
@@ -149,7 +154,9 @@ export function ChannelDetailsRail({ channelId }: { channelId: string }) {
               ? `${displayCount} follower${displayCount === 1 ? "" : "s"}`
               : displayCount > 0
                 ? `${displayCount} with access`
-                : "Followers"}
+                : FEATURE_FLAGS.channelFollowers
+                  ? "Followers"
+                  : "Members"}
           </TooltipContent>
         </Tooltip>
 

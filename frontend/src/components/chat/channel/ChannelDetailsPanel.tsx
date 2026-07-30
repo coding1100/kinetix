@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   XIcon,
   PlusIcon,
@@ -36,6 +43,7 @@ import {
   updateChannelMemberById,
 } from "@/lib/api/chat";
 import { filterWorkspaceMembersToAdd } from "@/lib/chat/channel-access-search";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import { ChannelGlyph } from "@/lib/chat/channel-icons";
 import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
 import type { Channel, ChannelMember, ChatSearchHit } from "@/lib/types/chat";
@@ -50,7 +58,6 @@ import {
   patchCachedChannelMembers,
 } from "@/lib/chat/channel-members-cache";
 import { useAuthStore } from "@/stores/auth-store";
-import { AddChannelMembersDialog } from "@/components/chat/modals/AddChannelMembersDialog";
 import {
   useChatStore,
   type ChannelDetailsView,
@@ -78,7 +85,7 @@ import { ChannelNameLabel } from "@/components/chat/ChannelNameLabel";
 import { useChannelFavorite } from "@/hooks/use-channel-favorite";
 
 const TITLES: Record<ChannelDetailsView, string> = {
-  followers: "Followers",
+  followers: FEATURE_FLAGS.channelFollowers ? "Followers" : "Members",
   search: "Search Channel",
   replies: "Replies",
   settings: "Channel settings",
@@ -158,12 +165,15 @@ function accessPermission(role?: string | null) {
 }
 
 function FollowersView({ channelId }: { channelId: string }) {
-  const openModal = useUiStore((s) => s.openModal);
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const currentUserId = useAuthStore((s) => s.user?.id);
   const [query, setQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"followers" | "access">("followers");
+  const followersEnabled = FEATURE_FLAGS.channelFollowers;
+  const [activeTab, setActiveTab] = useState<"followers" | "access">(
+    followersEnabled ? "followers" : "access"
+  );
   const [addOpen, setAddOpen] = useState(false);
+  const searchWrapRef = useRef<HTMLDivElement | null>(null);
   const [addingUserId, setAddingUserId] = useState<string | null>(null);
   const [memberActionId, setMemberActionId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<
@@ -189,20 +199,15 @@ function FollowersView({ channelId }: { channelId: string }) {
     () => new Set(allMembers.map((m) => m.id)),
     [allMembers]
   );
-  const addCandidates = useMemo(() => {
-    if (!channelIsPrivate || activeTab !== "access") return [];
-    return filterWorkspaceMembersToAdd(
-      workspaceMembersQuery.data ?? [],
-      channelMemberIds,
-      q
-    );
-  }, [
-    channelIsPrivate,
-    activeTab,
-    workspaceMembersQuery.data,
-    channelMemberIds,
-    q,
-  ]);
+  const addCandidates = useMemo(
+    () =>
+      filterWorkspaceMembersToAdd(
+        workspaceMembersQuery.data ?? [],
+        channelMemberIds,
+        q
+      ),
+    [workspaceMembersQuery.data, channelMemberIds, q]
+  );
   const followers = useMemo(
     () => allMembers.filter((m) => m.isFollowing),
     [allMembers]
@@ -212,11 +217,12 @@ function FollowersView({ channelId }: { channelId: string }) {
     member.fullName.toLowerCase().includes(q) ||
     member.email.toLowerCase().includes(q);
   const filteredFollowers = followers.filter(matchesQuery);
-  const filteredAccessFollowing = allMembers.filter(
-    (u) => u.isFollowing && matchesQuery(u)
-  );
+  const filteredAccessFollowing = followersEnabled
+    ? allMembers.filter((u) => u.isFollowing && matchesQuery(u))
+    : [];
+  // With followers hidden, the second section is the whole member list.
   const filteredAccessNotFollowing = allMembers.filter(
-    (u) => !u.isFollowing && matchesQuery(u)
+    (u) => (followersEnabled ? !u.isFollowing : true) && matchesQuery(u)
   );
 
   const channelCreatedById = useChatStore(
@@ -230,7 +236,8 @@ function FollowersView({ channelId }: { channelId: string }) {
   const isChannelCreator = Boolean(
     currentUserId && channelCreatedById === currentUserId
   );
-  const canAddToAccess = channelIsPrivate;
+  // Backend lets any channel member add people to public or private channels.
+  const canAddToAccess = true;
   const canManageMembers =
     workspaceRole === "OWNER" ||
     workspaceRole === "SUPER_ADMIN" ||
@@ -242,18 +249,27 @@ function FollowersView({ channelId }: { channelId: string }) {
     (channelIsPrivate ? allMembers.length > 1 : member.joinedAt != null);
 
   useEffect(() => {
-    if (!membersLoading && followers.length === 0) {
+    if (followersEnabled && !membersLoading && followers.length === 0) {
       setActiveTab("access");
     }
-  }, [membersLoading, followers.length]);
+  }, [followersEnabled, membersLoading, followers.length]);
 
   useEffect(() => {
-    if (channelIsPrivate && activeTab === "access") {
+    if (activeTab === "access") {
       reload();
     }
-  }, [channelIsPrivate, activeTab, channelId, reload]);
+  }, [activeTab, channelId, reload]);
 
-  const canChangeFollow = (_member: ChannelMember) => true;
+  useEffect(() => {
+    if (!addOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!searchWrapRef.current?.contains(e.target as Node)) setAddOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [addOpen]);
+
+  const canChangeFollow = (_member: ChannelMember) => followersEnabled;
 
   const setMemberFollowing = async (
     member: ChannelMember,
@@ -372,49 +388,95 @@ function FollowersView({ channelId }: { channelId: string }) {
 
   return (
     <div className="space-y-3">
-      <Tabs
-        value={activeTab}
-        onValueChange={(v) =>
-          v === "followers" || v === "access" ? setActiveTab(v) : undefined
-        }
-      >
-        <div className="flex items-center justify-between gap-2">
-          <TabsList variant="line" className="w-auto border-0">
-            <TabsTrigger value="followers" className="gap-1 px-2 py-1.5">
-              <UsersIcon className="size-3.5" />
-              Followers
-              <Badge className="h-4 min-w-4 px-1 text-[10px]">
-                {followers.length}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="access" className="gap-1 px-2 py-1.5">
-              <LockIcon className="size-3.5" />
-              Access
-              <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px]">
-                {allMembers.length}
-              </Badge>
-            </TabsTrigger>
-          </TabsList>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1 px-2 text-xs"
-            onClick={() => openModal("channel-share", channelId)}
-          >
-            <Share2Icon className="size-3.5" />
-            Share
-          </Button>
-        </div>
-      </Tabs>
+      {FEATURE_FLAGS.channelFollowers ? (
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) =>
+            v === "followers" || v === "access" ? setActiveTab(v) : undefined
+          }
+        >
+          <div className="flex items-center justify-between gap-2">
+            <TabsList variant="line" className="w-auto border-0">
+              <TabsTrigger value="followers" className="gap-1 px-2 py-1.5">
+                <UsersIcon className="size-3.5" />
+                Followers
+                <Badge className="h-4 min-w-4 px-1 text-[10px]">
+                  {followers.length}
+                </Badge>
+              </TabsTrigger>
+              <TabsTrigger value="access" className="gap-1 px-2 py-1.5">
+                <LockIcon className="size-3.5" />
+                Access
+                <Badge
+                  variant="secondary"
+                  className="h-4 min-w-4 px-1 text-[10px]"
+                >
+                  {allMembers.length}
+                </Badge>
+              </TabsTrigger>
+            </TabsList>
+          </div>
+        </Tabs>
+      ) : null}
 
-      <div className="relative">
+      <div className="relative" ref={searchWrapRef}>
         <SearchIcon className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
         <Input
           placeholder="Search people or invite by email"
           className="pl-8"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => setAddOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setAddOpen(false);
+          }}
         />
+        {canAddToAccess && addOpen ? (
+          <ul className="absolute top-full right-0 left-0 z-50 mt-1 max-h-64 space-y-1 overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-md">
+            {workspaceMembersQuery.loading ? (
+              <li className="px-2 py-2 text-sm text-muted-foreground">
+                Loading workspace members…
+              </li>
+            ) : null}
+            {!workspaceMembersQuery.loading &&
+              addCandidates.map((member) => (
+                <li key={member.id}>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-muted/50 disabled:opacity-60"
+                    disabled={addingUserId === member.id}
+                    onClick={() =>
+                      void addWorkspaceMember(member.id, member.fullName)
+                    }
+                  >
+                    <FollowerAvatar name={member.fullName} userId={member.id} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">
+                        {member.fullName}
+                      </span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {member.email}
+                      </span>
+                    </span>
+                    {addingUserId === member.id ? (
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        Adding…
+                      </span>
+                    ) : (
+                      <PlusIcon className="size-4 shrink-0 text-muted-foreground" />
+                    )}
+                  </button>
+                </li>
+              ))}
+            {!workspaceMembersQuery.loading && addCandidates.length === 0 ? (
+              <li className="px-2 py-2 text-sm text-muted-foreground">
+                {q
+                  ? "No workspace members match. They may already be in this channel."
+                  : "Everyone in the workspace is already in this channel."}
+              </li>
+            ) : null}
+          </ul>
+        ) : null}
       </div>
       {activeTab === "followers" ? (
         <div className="space-y-2">
@@ -474,69 +536,7 @@ function FollowersView({ channelId }: { channelId: string }) {
           {membersLoading && (
             <p className="px-2 py-3 text-sm text-muted-foreground">Loading…</p>
           )}
-          {canAddToAccess ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start"
-              onClick={() => setAddOpen(true)}
-            >
-              <PlusIcon className="size-4" />
-              Add people to access
-            </Button>
-          ) : null}
-          {canAddToAccess && q ? (
-            <div className="space-y-2">
-              <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-                Add to channel
-              </p>
-              <ul className="space-y-1">
-                {workspaceMembersQuery.loading ? (
-                  <li className="px-2 py-2 text-sm text-muted-foreground">
-                    Searching workspace…
-                  </li>
-                ) : null}
-                {!workspaceMembersQuery.loading &&
-                  addCandidates.map((member) => (
-                    <li
-                      key={member.id}
-                      className="flex items-center gap-2 rounded-lg px-2 py-2 hover:bg-muted/50"
-                    >
-                      <FollowerAvatar
-                        name={member.fullName}
-                        userId={member.id}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">
-                          {member.fullName}
-                        </p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {member.email}
-                        </p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 shrink-0 px-2 text-xs"
-                        loading={addingUserId === member.id}
-                        loadingText="Adding…"
-                        onClick={() =>
-                          void addWorkspaceMember(member.id, member.fullName)
-                        }
-                      >
-                        Add
-                      </Button>
-                    </li>
-                  ))}
-                {!workspaceMembersQuery.loading &&
-                addCandidates.length === 0 ? (
-                  <li className="px-2 py-2 text-sm text-muted-foreground">
-                    No workspace members match. They may already have access.
-                  </li>
-                ) : null}
-              </ul>
-            </div>
-          ) : null}
+          {followersEnabled ? (
           <div className="space-y-2">
             <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
               Following
@@ -584,9 +584,10 @@ function FollowersView({ channelId }: { channelId: string }) {
               ) : null}
             </ul>
           </div>
+          ) : null}
           <div className="space-y-2">
             <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-              Not following
+              {followersEnabled ? "Not following" : "Members"}
             </p>
             <ul className="space-y-1">
               {filteredAccessNotFollowing.map((user) => (
@@ -639,20 +640,17 @@ function FollowersView({ channelId }: { channelId: string }) {
               ))}
               {!membersLoading && filteredAccessNotFollowing.length === 0 ? (
                 <li className="px-2 py-2 text-sm text-muted-foreground">
-                  Everyone with access is following.
+                  {followersEnabled
+                    ? "Everyone with access is following."
+                    : q
+                      ? "No members match your search."
+                      : "No one has access to this channel yet."}
                 </li>
               ) : null}
             </ul>
           </div>
         </div>
       )}
-      <AddChannelMembersDialog
-        channelId={channelId}
-        open={addOpen}
-        onOpenChange={setAddOpen}
-        existingMemberIds={allMembers.map((m) => m.id)}
-        onAdded={reload}
-      />
       <ConfirmDialog
         open={confirmAction !== null}
         onOpenChange={(open) => !open && setConfirmAction(null)}

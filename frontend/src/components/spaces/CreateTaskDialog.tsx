@@ -61,7 +61,6 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CreateTaskListPicker } from "@/components/spaces/CreateTaskListPicker";
 import { toast } from "sonner";
-import { fetchWorkspaceMembers } from "@/lib/api/chat";
 import { fetchRecents, type SpaceDto } from "@/lib/api/home";
 import {
   addChecklist,
@@ -71,6 +70,7 @@ import {
   createSubtask,
   deleteChecklist,
   deleteChecklistItem,
+  fetchListAssignableMembers,
   fetchListMeta,
   fetchSpacesTree,
   flattenListsFromSpaces,
@@ -275,16 +275,14 @@ export function CreateTaskDialog({
     let cancelled = false;
     Promise.all([
       fetchSpacesTree(accessToken, workspaceId),
-      fetchWorkspaceMembers(accessToken, workspaceId),
       fetchRecents(accessToken, workspaceId),
     ])
-      .then(([spacesRes, membersRes, recentsRes]) => {
+      .then(([spacesRes, recentsRes]) => {
         if (cancelled) return;
         const tree = spacesRes.data;
         const options = flattenListsFromSpaces(tree);
         setSpaces(tree);
         setRecents(recentsRes.data);
-        setMembers(membersRes.data);
         const target =
           defaultListId && options.some((o) => o.id === defaultListId)
             ? defaultListId
@@ -333,6 +331,24 @@ export function CreateTaskDialog({
       cancelled = true;
     };
   }, [open, listId, ready, accessToken, workspaceId, defaultStatusId]);
+
+  useEffect(() => {
+    if (!open || !listId || !ready || !accessToken || !workspaceId) {
+      setMembers([]);
+      return;
+    }
+    let cancelled = false;
+    fetchListAssignableMembers(accessToken, workspaceId, listId)
+      .then((res) => {
+        if (!cancelled) setMembers(res.data);
+      })
+      .catch(() => {
+        if (!cancelled) setMembers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, listId, ready, accessToken, workspaceId]);
 
   const selectedStatus = useMemo(
     () => statuses.find((s) => s.id === statusId) ?? statuses[0],
@@ -752,15 +768,7 @@ export function CreateTaskDialog({
     try {
       const finalTask = await createOneTask();
       await attachStagedExtras(finalTask, accessToken, workspaceId);
-
-      if (action === "duplicate") {
-        const duplicateTask = await createOneTask();
-        await attachStagedExtras(duplicateTask, accessToken, workspaceId);
-        onCreated(duplicateTask);
-        toast.success("Task created and duplicated");
-      } else {
-        toast.success("Task created");
-      }
+      toast.success("Task created");
 
       onCreated(finalTask, { open: action === "open" });
 
@@ -770,8 +778,8 @@ export function CreateTaskDialog({
           statuses.find((s) => s.legacyKey === "TODO") ?? statuses[0];
         setStatusId(defaultStatus?.id ?? "");
       } else if (action === "duplicate") {
-        // Keep the modal open with its current fields so another
-        // "Create and duplicate" (or a tweak-then-duplicate) can follow -
+        // Keep the modal open with its current fields so the same
+        // settings carry over to the next task without retyping them -
         // unlike the other actions, this one shouldn't clear the form.
       } else {
         onOpenChange(false);

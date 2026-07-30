@@ -61,6 +61,7 @@ from app.services.folder_list_permissions import (
     require_folder_permission,
     require_list_permission,
     resolve_share_target,
+    user_ids_with_list_access,
 )
 from app.services.workspace_permissions import is_workspace_admin
 from app.socket.emit import (
@@ -862,6 +863,48 @@ async def list_list_members(
         if creator:
             data.insert(0, _creator_row_payload(creator))
     return {"isPrivate": task_list.is_private, "data": data}
+
+
+async def list_list_assignable_members(
+    session: AsyncSession,
+    workspace_id: str,
+    list_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+) -> dict:
+    """Everyone who can actually see this list (explicit grant or inherited
+    from its Folder/Space), for populating an assignee picker - not just the
+    people with an explicit ListMember override (see list_list_members)."""
+    task_list = await _list_with_space(session, workspace_id, list_id)
+    await require_list_permission(
+        session, task_list, user_id, role, PermissionLevel.VIEW
+    )
+    accessible_ids = await user_ids_with_list_access(session, workspace_id, task_list)
+    if not accessible_ids:
+        return {"data": []}
+    rows = (
+        await session.scalars(
+            select(WorkspaceMember)
+            .where(
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.user_id.in_(accessible_ids),
+                WorkspaceMember.status == MemberStatus.ACTIVE,
+            )
+            .options(selectinload(WorkspaceMember.user))
+        )
+    ).all()
+    data = [
+        {
+            "id": m.user.id,
+            "email": m.user.email,
+            "fullName": m.user.full_name,
+            "avatarUrl": m.user.avatar_url,
+            "isDisabled": m.user.is_disabled,
+        }
+        for m in rows
+        if not m.user.is_disabled
+    ]
+    return {"data": data}
 
 
 async def add_list_member(
