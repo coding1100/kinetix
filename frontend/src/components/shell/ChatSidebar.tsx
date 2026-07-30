@@ -136,16 +136,16 @@ export function ChatSidebar() {
 
   const sidebarQuery = useHomeQuery(
     async (token, ws) => {
-      const lists = await loadSidebarLists(token, ws, {
-        force: sidebarRefreshKey > 0,
-      });
+      const lists = await loadSidebarLists(token, ws);
       return { channels: lists.channels, dms: lists.dms };
     },
     [sidebarRefreshKey],
     {
+      // The cache paints immediately, but the fetch behind it always runs -
+      // skipping it left channels and DMs added while the tab was closed
+      // missing from the sidebar.
       initialData: initialSidebarData,
       refreshKey: sidebarRefreshKey,
-      skipInitialFetch: Boolean(initialSidebarData) && sidebarRefreshKey === 0,
     }
   );
 

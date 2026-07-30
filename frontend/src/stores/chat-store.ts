@@ -340,9 +340,10 @@ export const useChatStore = create<ChatState>()(
       // v2: sidebarListsCache entries from before member avatarUrl was wired
       // through the sidebar (group DM participants, etc.) would otherwise
       // sit in localStorage forever and keep masking fresh data - see
-      // mergeSidebarDms/mergeSidebarChannels, and loadSidebarLists() only
-      // hits the API at all when no cache is present. Drop old caches once
-      // so the next load re-fetches for real.
+      // mergeSidebarDms/mergeSidebarChannels. Drop old caches once so the
+      // next load re-fetches for real. (loadSidebarLists() now always
+      // revalidates against the API, so a stale cache only affects the first
+      // paint rather than persisting until something bumps the refresh key.)
       version: 2,
       migrate: (persisted) => {
         const state = persisted as { sidebarListsCache?: unknown } | undefined;
