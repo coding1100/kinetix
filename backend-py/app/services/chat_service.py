@@ -100,6 +100,7 @@ from app.socket.emit import (
     broadcast_chat_message_edit,
     broadcast_chat_read,
     broadcast_chat_reaction,
+    fire_and_forget,
 )
 from app.socket.presence import get_presence
 
@@ -385,7 +386,7 @@ async def _emit_channel_member_update(
     removed: bool = False,
 ) -> None:
     if removed:
-        asyncio.create_task(
+        fire_and_forget(
             broadcast_channel_member_updated(
                 workspace_id=workspace_id,
                 channel_id=channel_id,
@@ -407,7 +408,7 @@ async def _emit_channel_member_update(
         return
     roles = await _workspace_role_map(session, workspace_id, [user_id])
     member_payload = _channel_member_json(row.user, row, roles.get(user_id))
-    asyncio.create_task(
+    fire_and_forget(
         broadcast_channel_member_updated(
             workspace_id=workspace_id,
             channel_id=channel_id,
@@ -654,7 +655,7 @@ async def update_channel(
     await session.commit()
 
     if renamed:
-        asyncio.create_task(
+        fire_and_forget(
             broadcast_channel_renamed(
                 workspace_id=workspace_id,
                 channel_id=channel_id,
@@ -756,7 +757,7 @@ async def delete_channel(
             pass
 
     if member_ids:
-        asyncio.create_task(
+        fire_and_forget(
             broadcast_channel_removed(
                 workspace_id=workspace_id,
                 user_ids=member_ids,
@@ -983,7 +984,7 @@ async def sync_list_channel_members_for_space(
         if to_add:
             await _emit_channel_joined(session, workspace_id, channel, list(to_add))
         for uid in to_remove:
-            asyncio.create_task(
+            fire_and_forget(
                 broadcast_channel_member_updated(
                     workspace_id=workspace_id,
                     channel_id=channel.id,
@@ -1064,7 +1065,7 @@ async def mark_channel_read(
         raise AppError(404, "NOT_FOUND", "Channel not found")
     member.last_read_at = datetime.now(timezone.utc)
     await session.commit()
-    asyncio.create_task(
+    fire_and_forget(
         broadcast_chat_read(
             workspace_id=workspace_id,
             kind="channel",
@@ -1132,7 +1133,7 @@ async def send_channel_message(
     all_notifications = mention_notifications
     if all_notifications:
         await emit_home_notifications(session, workspace_id, all_notifications)
-    asyncio.create_task(
+    fire_and_forget(
         broadcast_chat_message(
             workspace_id=workspace_id,
             kind="channel",
@@ -1270,7 +1271,7 @@ async def send_thread_reply(
     if kind == "dm" and conversation_id:
         audience_user_ids = await _dm_participant_user_ids(session, conversation_id)
     if conv_id:
-        asyncio.create_task(
+        fire_and_forget(
             broadcast_chat_message(
                 workspace_id=workspace_id,
                 kind=kind,
@@ -1546,7 +1547,7 @@ async def mark_dm_read(
     participant.last_read_at = datetime.now(timezone.utc)
     await session.commit()
     audience_user_ids = [p.user_id for p in participant.conversation.participants]
-    asyncio.create_task(
+    fire_and_forget(
         broadcast_chat_read(
             workspace_id=workspace_id,
             kind="dm",
@@ -1615,7 +1616,7 @@ async def send_dm_message(
     )
     payload = map_message(loaded, user_id, thread_count=0)
     audience_user_ids = [p.user_id for p in participant.conversation.participants]
-    asyncio.create_task(
+    fire_and_forget(
         broadcast_chat_message(
             workspace_id=workspace_id,
             kind="dm",
@@ -1775,7 +1776,7 @@ async def update_message(
             session, loaded.conversation_id
         )
     if conv_id:
-        asyncio.create_task(
+        fire_and_forget(
             broadcast_chat_message_edit(
                 workspace_id=workspace_id,
                 kind=kind,
@@ -1813,7 +1814,7 @@ async def delete_message(
     await session.commit()
 
     if conv_id:
-        asyncio.create_task(
+        fire_and_forget(
             broadcast_chat_message_delete(
                 workspace_id=workspace_id,
                 kind=kind,
@@ -1865,7 +1866,7 @@ async def toggle_message_reaction(
         audience_user_ids = await _dm_participant_user_ids(
             session, message.conversation_id
         )
-    asyncio.create_task(
+    fire_and_forget(
         broadcast_chat_reaction(
             workspace_id=workspace_id,
             kind=kind,
@@ -2101,7 +2102,7 @@ async def remove_channel_member(
     await session.delete(target)
     await session.commit()
 
-    asyncio.create_task(
+    fire_and_forget(
         broadcast_channel_removed(
             workspace_id=workspace_id,
             user_ids=[target_user_id],
