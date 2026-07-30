@@ -6,12 +6,12 @@ export function filterWorkspaceMembersToAdd(
   query: string
 ): WorkspaceMemberOption[] {
   const q = query.trim().toLowerCase();
-  if (!q) return [];
 
   return workspaceMembers.filter(
     (member) =>
       !channelMemberIds.has(member.id) &&
-      (member.fullName.toLowerCase().includes(q) ||
+      (!q ||
+        member.fullName.toLowerCase().includes(q) ||
         member.email.toLowerCase().includes(q))
   );
 }
