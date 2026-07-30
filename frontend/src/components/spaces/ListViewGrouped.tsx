@@ -104,6 +104,7 @@ export function ListViewGrouped({
   statusFilter,
   onTaskSelect,
   onAddTask,
+  onTaskDeleted,
 }: {
   tasks: Task[] | undefined;
   statuses?: ListStatus[];
@@ -112,6 +113,7 @@ export function ListViewGrouped({
   statusFilter: string;
   onTaskSelect: (taskId: string) => void;
   onAddTask: (statusId?: string) => void;
+  onTaskDeleted?: () => void;
 }) {
   const groups = useMemo(() => {
     const rows = tasks ?? [];
@@ -149,6 +151,7 @@ export function ListViewGrouped({
                       key={task.id}
                       task={task}
                       onSelect={() => onTaskSelect(task.id)}
+                      onDeleted={onTaskDeleted}
                     />
                   ))}
                 </>
