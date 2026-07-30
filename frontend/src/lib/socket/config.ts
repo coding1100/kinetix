@@ -23,6 +23,12 @@ function resolveSocketBasePath(): string {
   return getAppBasePath() || resolveBasePathFromApi(API_BASE.trim());
 }
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+
+function isLoopbackHost(hostname: string): boolean {
+  return LOOPBACK_HOSTS.has(hostname);
+}
+
 function shouldUseBrowserOrigin(envUrl: string | undefined): boolean {
   if (typeof window === "undefined") return false;
   if (!envUrl || envUrl.startsWith("/")) return true;
@@ -30,9 +36,13 @@ function shouldUseBrowserOrigin(envUrl: string | undefined): boolean {
 
   try {
     const parsed = new URL(envUrl);
-    const host = parsed.hostname;
-    if (host === "localhost" || host === "127.0.0.1") {
-      return window.location.hostname !== host;
+    // A loopback socket URL is only wrong when the page itself is not on
+    // loopback (a deployed host with a leftover localhost env value). Browsing
+    // 127.0.0.1 while the env says localhost is the same machine, so keep the
+    // configured URL - falling back to the page origin there would point the
+    // socket at the Next dev server, which serves no socket.io endpoint.
+    if (isLoopbackHost(parsed.hostname)) {
+      return !isLoopbackHost(window.location.hostname);
     }
   } catch {
     return true;
