@@ -138,4 +138,10 @@ def dm_display_name(conversation: DirectConversation, current_user_id: str) -> s
     for p in conversation.participants:
         if p.user_id != current_user_id:
             return p.user.full_name
+    self_participant = next(
+        (p for p in conversation.participants if p.user_id == current_user_id),
+        None,
+    )
+    if self_participant:
+        return f"{self_participant.user.full_name} -- You"
     return "Direct message"

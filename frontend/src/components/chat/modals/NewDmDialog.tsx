@@ -43,10 +43,7 @@ export function NewDmDialog() {
 
   const membersQuery = useWorkspaceMembersQuery();
 
-  const members = useMemo(
-    () => (membersQuery.data ?? []).filter((m) => m.id !== currentUserId),
-    [membersQuery.data, currentUserId]
-  );
+  const members = useMemo(() => membersQuery.data ?? [], [membersQuery.data]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -240,6 +237,7 @@ export function NewDmDialog() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">
                       {m.fullName}
+                      {m.id === currentUserId ? " (You)" : ""}
                     </span>
                     <span className="block truncate text-xs text-muted-foreground">
                       {m.email}

@@ -1308,6 +1308,15 @@ def _dm_payload(
     unread: int,
 ) -> dict:
     other = next((p for p in conv.participants if p.user_id != user_id), None)
+    # A self-DM has no "other" participant - fall back to the user's own
+    # row so the conversation still gets an avatar/presence/id instead of
+    # nulls throughout.
+    is_self_dm = other is None and not conv.is_group
+    self_participant = (
+        next((p for p in conv.participants if p.user_id == user_id), None)
+        if is_self_dm
+        else None
+    )
     members = None
     participants = None
     if conv.is_group:
@@ -1324,6 +1333,8 @@ def _dm_payload(
     other_presence = (
         get_presence(workspace_id, other.user_id)
         if other and not conv.is_group
+        else get_presence(workspace_id, user_id)
+        if self_participant
         else "offline"
     )
     return {
@@ -1332,13 +1343,19 @@ def _dm_payload(
         "isGroup": conv.is_group,
         "members": members,
         "participants": participants,
-        "avatarUrl": other.user.avatar_url if other and not conv.is_group else None,
+        "avatarUrl": (
+            other.user.avatar_url
+            if other and not conv.is_group
+            else self_participant.user.avatar_url
+            if self_participant
+            else None
+        ),
         "lastMessage": last_message,
         "lastAt": last_at.isoformat(),
         "unread": unread,
         "presence": other_presence,
         "starred": participant.starred,
-        "otherUserId": other.user_id if other else None,
+        "otherUserId": other.user_id if other else (user_id if self_participant else None),
         "otherUserIsDisabled": other.user.is_disabled if other else False,
     }
 
@@ -1446,19 +1463,35 @@ async def create_or_get_dm(
                 400, "BAD_REQUEST", "All users must be workspace members"
             )
 
-    if len(unique_ids) == 2:
-        pair_subq = (
-            select(DirectParticipant.conversation_id)
-            .where(DirectParticipant.user_id.in_(unique_ids))
-            .group_by(DirectParticipant.conversation_id)
-            .having(func.count() == 2)
-        )
+    if len(unique_ids) in (1, 2):
+        # Exact-participant-set lookup so re-starting a DM reuses the
+        # existing conversation instead of creating a duplicate. 1 unique
+        # id is a self-DM (sender messaging themselves) - the subquery
+        # there must count *total* participants on the conversation
+        # (unfiltered), since filtering by `user_id == unique_ids` before
+        # counting would trivially match every conversation this user is
+        # in, not just their self-DM.
+        if len(unique_ids) == 1:
+            exact_size_subq = (
+                select(DirectParticipant.conversation_id)
+                .group_by(DirectParticipant.conversation_id)
+                .having(func.count() == 1)
+            )
+        else:
+            exact_size_subq = (
+                select(DirectParticipant.conversation_id)
+                .where(DirectParticipant.user_id.in_(unique_ids))
+                .group_by(DirectParticipant.conversation_id)
+                .having(func.count() == 2)
+            )
         existing_id = await session.scalar(
             select(DirectConversation.id)
+            .join(DirectParticipant, DirectParticipant.conversation_id == DirectConversation.id)
             .where(
                 DirectConversation.workspace_id == workspace_id,
                 DirectConversation.is_group.is_(False),
-                DirectConversation.id.in_(pair_subq),
+                DirectParticipant.user_id == user_id,
+                DirectConversation.id.in_(exact_size_subq),
             )
             .limit(1)
         )
