@@ -581,7 +581,12 @@ async def get_list_members(
     session: DbSession,
     user: CurrentUserDep,
     member: WorkspaceMemberDep,
+    scope: str = "explicit",
 ):
+    if scope == "assignable":
+        return await spaces_service.list_list_assignable_members(
+            session, workspace_id, list_id, user.id, member.role
+        )
     return await spaces_service.list_list_members(
         session, workspace_id, list_id, user.id, member.role
     )
