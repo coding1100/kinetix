@@ -22,13 +22,17 @@ export function useMentionMembers(
   const isChannel = conversationType === "channel" && !!conversationId;
   const isDm = conversationType === "dm" && !!conversationId;
 
-  const { members: channelMembers, loading: channelLoading } = useChannelMembers(
+  // Only used to sort people already in the channel to the top.
+  const { members: channelMembers } = useChannelMembers(
     isChannel ? conversationId! : "",
     { enabled: isChannel }
   );
 
   const isWorkspaceFallback = !isChannel && !isDm;
 
+  // Everywhere - channel, DM or standalone composer - anyone in the workspace
+  // can be mentioned. Whether a mention notifies is decided server-side
+  // (mentioned people without channel access get no notification).
   const workspaceQuery = useHomeQuery(
     (token, ws) => fetchWorkspaceMembers(token, ws).then((r) => r.data),
     [conversationType, conversationId],
@@ -42,23 +46,22 @@ export function useMentionMembers(
   );
 
   const members = useMemo((): MentionMember[] => {
+    const fromWorkspace = (workspaceQuery.data ?? []).map((m) => ({
+      id: m.id,
+      fullName: m.fullName,
+      email: m.email,
+      avatarUrl: m.avatarUrl,
+      isDisabled: m.isDisabled,
+    }));
     if (isChannel) {
-      return channelMembers.map((m) => ({
-        id: m.id,
-        fullName: m.fullName,
-        email: m.email,
-        avatarUrl: m.avatarUrl,
-        isDisabled: m.isDisabled,
-      }));
+      // Channel members first, then the rest of the workspace.
+      const inChannel = new Set(channelMembers.map((m) => m.id));
+      return [
+        ...fromWorkspace.filter((m) => inChannel.has(m.id)),
+        ...fromWorkspace.filter((m) => !inChannel.has(m.id)),
+      ];
     }
     if (isDm || isWorkspaceFallback) {
-      const fromWorkspace = (workspaceQuery.data ?? []).map((m) => ({
-        id: m.id,
-        fullName: m.fullName,
-        email: m.email,
-        avatarUrl: m.avatarUrl,
-        isDisabled: m.isDisabled,
-      }));
       if (isWorkspaceFallback) return fromWorkspace;
       if (!dmSidebarEntry?.otherUserId || !dmSidebarEntry.name) {
         return fromWorkspace;
@@ -80,7 +83,8 @@ export function useMentionMembers(
     return [];
   }, [isChannel, isDm, isWorkspaceFallback, channelMembers, workspaceQuery.data, dmSidebarEntry]);
 
-  const loading = isChannel ? channelLoading : (isDm || isWorkspaceFallback) ? workspaceQuery.loading : false;
+  const loading =
+    isChannel || isDm || isWorkspaceFallback ? workspaceQuery.loading : false;
 
   return { members, loading };
 }
