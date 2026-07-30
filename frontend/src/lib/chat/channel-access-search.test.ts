@@ -9,10 +9,10 @@ const members: WorkspaceMemberOption[] = [
 ];
 
 describe("filterWorkspaceMembersToAdd", () => {
-  it("returns empty when query is blank", () => {
+  it("returns every non-member when query is blank", () => {
     expect(
-      filterWorkspaceMembersToAdd(members, new Set(["u1"]), "")
-    ).toEqual([]);
+      filterWorkspaceMembersToAdd(members, new Set(["u1"]), "").map((m) => m.id)
+    ).toEqual(["u2", "u3"]);
   });
 
   it("excludes people already in the channel", () => {
