@@ -61,7 +61,6 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CreateTaskListPicker } from "@/components/spaces/CreateTaskListPicker";
 import { toast } from "sonner";
-import { fetchWorkspaceMembers } from "@/lib/api/chat";
 import { fetchRecents, type SpaceDto } from "@/lib/api/home";
 import {
   addChecklist,
@@ -71,6 +70,7 @@ import {
   createSubtask,
   deleteChecklist,
   deleteChecklistItem,
+  fetchListAssignableMembers,
   fetchListMeta,
   fetchSpacesTree,
   flattenListsFromSpaces,
@@ -275,16 +275,14 @@ export function CreateTaskDialog({
     let cancelled = false;
     Promise.all([
       fetchSpacesTree(accessToken, workspaceId),
-      fetchWorkspaceMembers(accessToken, workspaceId),
       fetchRecents(accessToken, workspaceId),
     ])
-      .then(([spacesRes, membersRes, recentsRes]) => {
+      .then(([spacesRes, recentsRes]) => {
         if (cancelled) return;
         const tree = spacesRes.data;
         const options = flattenListsFromSpaces(tree);
         setSpaces(tree);
         setRecents(recentsRes.data);
-        setMembers(membersRes.data);
         const target =
           defaultListId && options.some((o) => o.id === defaultListId)
             ? defaultListId
@@ -333,6 +331,24 @@ export function CreateTaskDialog({
       cancelled = true;
     };
   }, [open, listId, ready, accessToken, workspaceId, defaultStatusId]);
+
+  useEffect(() => {
+    if (!open || !listId || !ready || !accessToken || !workspaceId) {
+      setMembers([]);
+      return;
+    }
+    let cancelled = false;
+    fetchListAssignableMembers(accessToken, workspaceId, listId)
+      .then((res) => {
+        if (!cancelled) setMembers(res.data);
+      })
+      .catch(() => {
+        if (!cancelled) setMembers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, listId, ready, accessToken, workspaceId]);
 
   const selectedStatus = useMemo(
     () => statuses.find((s) => s.id === statusId) ?? statuses[0],
