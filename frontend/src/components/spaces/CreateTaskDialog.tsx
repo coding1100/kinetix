@@ -768,15 +768,7 @@ export function CreateTaskDialog({
     try {
       const finalTask = await createOneTask();
       await attachStagedExtras(finalTask, accessToken, workspaceId);
-
-      if (action === "duplicate") {
-        const duplicateTask = await createOneTask();
-        await attachStagedExtras(duplicateTask, accessToken, workspaceId);
-        onCreated(duplicateTask);
-        toast.success("Task created and duplicated");
-      } else {
-        toast.success("Task created");
-      }
+      toast.success("Task created");
 
       onCreated(finalTask, { open: action === "open" });
 
@@ -786,8 +778,8 @@ export function CreateTaskDialog({
           statuses.find((s) => s.legacyKey === "TODO") ?? statuses[0];
         setStatusId(defaultStatus?.id ?? "");
       } else if (action === "duplicate") {
-        // Keep the modal open with its current fields so another
-        // "Create and duplicate" (or a tweak-then-duplicate) can follow -
+        // Keep the modal open with its current fields so the same
+        // settings carry over to the next task without retyping them -
         // unlike the other actions, this one shouldn't clear the form.
       } else {
         onOpenChange(false);
