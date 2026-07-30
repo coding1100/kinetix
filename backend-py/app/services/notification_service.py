@@ -12,6 +12,7 @@ from app.db.models.home import InboxItem, Task
 from app.db.models.user import User
 from app.db.models.workspace import WorkspaceMember
 from app.services.home_helpers import map_inbox_type
+from app.services.inbox_visibility import is_inbox_visible
 from app.socket.emit import broadcast_home_notification
 
 PERSON_MENTION_RE = re.compile(
@@ -773,6 +774,12 @@ async def emit_home_notifications(
         return
     for _, item in created:
         await session.refresh(item)
+    # Only push what the Inbox would show. Emitting a hidden row would put it
+    # in the client's live notification cache, which merges into the list and
+    # the badge and would reintroduce the drift this rule exists to prevent.
+    visible = [(uid, item) for uid, item in created if is_inbox_visible(item)]
+    if not visible:
+        return
     await asyncio.gather(
         *[
             broadcast_home_notification(
@@ -780,7 +787,7 @@ async def emit_home_notifications(
                 user_ids=[recipient_id],
                 notification=notification_payload(item),
             )
-            for recipient_id, item in created
+            for recipient_id, item in visible
         ]
     )
 
