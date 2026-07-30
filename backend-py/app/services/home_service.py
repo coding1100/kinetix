@@ -45,6 +45,7 @@ from app.services.list_status_service import (
     get_list_status,
     list_statuses_for_list,
 )
+from app.services.inbox_visibility import inbox_visible_clause
 from app.services.personal_space_service import ensure_personal_space
 from app.services.space_permissions import (
     get_space_or_403,
@@ -337,6 +338,7 @@ async def list_inbox(
                 InboxItem.workspace_id == workspace_id,
                 InboxItem.user_id == user_id,
                 InboxItem.bucket == bucket,
+                inbox_visible_clause(),
             )
             .order_by(InboxItem.created_at.desc())
         )
@@ -2272,6 +2274,7 @@ async def list_notifications(
             .where(
                 InboxItem.workspace_id == workspace_id,
                 InboxItem.user_id == user_id,
+                inbox_visible_clause(),
             )
             .order_by(InboxItem.created_at.desc())
             .limit(limit)
@@ -2284,6 +2287,7 @@ async def list_notifications(
             InboxItem.workspace_id == workspace_id,
             InboxItem.user_id == user_id,
             InboxItem.unread.is_(True),
+            inbox_visible_clause(),
         )
     )
     return {
