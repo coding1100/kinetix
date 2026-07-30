@@ -311,10 +311,13 @@ async def create_mention_notifications(
     if channel:
         members = await _channel_members_for_notify(session, channel.id)
         level_by_user = {m.user_id: _notification_level(m) for m in members}
+        # Anyone in the workspace can be @mentioned, but only mentioned people
+        # who actually have channel access get notified - no ChatChannelMember
+        # row means no notification, same rule the DM branch below applies.
         recipient_ids = [
             rid
             for rid in recipient_ids
-            if level_by_user.get(rid, "MENTIONS") != "NONE"
+            if rid in level_by_user and level_by_user[rid] != "NONE"
         ]
     elif conversation_id:
         participant_ids = set(
