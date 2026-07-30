@@ -82,6 +82,7 @@ import {
   avatarInitialFromName,
 } from "@/lib/user-display";
 import { toast } from "sonner";
+import { useSpacesStore } from "@/stores/spaces-store";
 import { appPath, cn, PKT_TIME_ZONE } from "@/lib/utils";
 import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import {
@@ -295,6 +296,7 @@ export function TaskDrawer({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const bumpSpacesRefresh = useSpacesStore((s) => s.bumpRefresh);
   const [commenting, setCommenting] = useState(false);
   const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
@@ -1254,6 +1256,7 @@ export function TaskDrawer({
       await deleteTask(accessToken, workspaceId, taskId);
       setDeleteOpen(false);
       onOpenChange(false);
+      bumpSpacesRefresh();
       onDeleted?.();
       onSaved();
       toast.success("Task deleted");

@@ -119,6 +119,7 @@ export function ListWorkspace({
           statusFilter={statusFilter}
           onTaskSelect={openTask}
           onAddTask={openCreateTask}
+          onTaskDeleted={onTasksChange}
         />
       )}
 
