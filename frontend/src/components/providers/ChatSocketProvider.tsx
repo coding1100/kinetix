@@ -31,6 +31,7 @@ import type {
 import { ingestTaskEvent } from "@/lib/tasks/realtime";
 import { registerChatTypingSocket } from "@/lib/socket/chat-typing";
 import { applyHomeNotification } from "@/lib/notifications/realtime";
+import { playNotificationSound } from "@/lib/notifications/sound";
 import { clearLiveNotifications } from "@/lib/notifications/live-cache";
 import { bumpWorkspaceMembersRefresh } from "@/lib/workspace/realtime";
 import { getMe } from "@/lib/api/auth";
@@ -47,6 +48,7 @@ import { firstSelectableWorkspaceId, useAuthStore } from "@/stores/auth-store";
 import { useChatStore } from "@/stores/chat-store";
 import { usePresenceStore } from "@/stores/presence-store";
 import { useProfileStore } from "@/stores/profile-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useSpacesStore } from "@/stores/spaces-store";
 
 export function ChatSocketProvider({ children }: { children: React.ReactNode }) {
@@ -122,6 +124,27 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       );
     });
     socket.on("chat:message", (payload: ChatRealtimePayload) => {
+      // Sound first: it must not depend on the sidebar/store updates below
+      // succeeding, which they only partly do for a conversation that isn't
+      // open (or for a thread reply, which the sidebar ignores entirely).
+      const isOwnMessage = payload.message.authorId === userId;
+      const soundEnabled = useSettingsStore.getState().soundEnabled;
+      // TEMPORARY: diagnosing why the sound is skipped with the chat open.
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[chat sound] event", {
+          kind: payload.kind,
+          conversationId: payload.conversationId,
+          parentId: payload.parentId,
+          authorId: payload.message.authorId,
+          userId,
+          isOwnMessage,
+          soundEnabled,
+          willPlay: !isOwnMessage && soundEnabled,
+        });
+      }
+      if (!isOwnMessage && soundEnabled) {
+        playNotificationSound();
+      }
       applyRealtimeMessageToSidebar(payload, userId, accessToken);
       ingestRealtimeEvent(payload);
     });
