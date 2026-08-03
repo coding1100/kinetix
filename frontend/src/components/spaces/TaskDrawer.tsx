@@ -2342,6 +2342,16 @@ export function TaskDrawer({
                               placeholder="Add item"
                               className="h-7 flex-1 border-0 bg-transparent px-0 text-xs shadow-none placeholder:text-xs focus-visible:ring-0 dark:bg-transparent"
                             />
+                            {(checklistItemInput[checklist.id] ?? "").trim() ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="h-6 shrink-0 px-2 text-xs"
+                                onClick={() => void handleAddChecklistItem(checklist.id)}
+                              >
+                                Save
+                              </Button>
+                            ) : null}
                             <Popover
                               open={checklistAssigneeOpen === checklist.id}
                               onOpenChange={(open) => {
