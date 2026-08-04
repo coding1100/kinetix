@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { Switch } from "@/components/ui/switch";
 import { changePassword, getMe } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { PasswordStrengthMeter } from "@/components/auth/PasswordStrengthMeter";
@@ -26,7 +27,7 @@ export function SettingsView() {
   const accessToken = useAuthStore((s) => s.accessToken);
   const user = useAuthStore((s) => s.user);
   const workspace = useAuthStore(selectActiveWorkspace);
-  const { theme, setTheme } = useSettingsStore();
+  const { theme, setTheme, soundEnabled, setSoundEnabled } = useSettingsStore();
   const { setTheme: applyTheme, resolvedTheme } = useTheme();
 
   const [currentPassword, setCurrentPassword] = useState("");
@@ -111,6 +112,20 @@ export function SettingsView() {
                   Active: {resolvedTheme ?? theme}
                 </p>
               ) : null}
+            </div>
+          </section>
+
+          <section className="space-y-3 rounded-xl border border-border bg-card p-4">
+            <h2 className="text-sm font-semibold">Chat</h2>
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="notification-sound" className="text-sm font-normal">
+                Play sound on new messages
+              </Label>
+              <Switch
+                id="notification-sound"
+                checked={soundEnabled}
+                onCheckedChange={(v) => setSoundEnabled(Boolean(v))}
+              />
             </div>
           </section>
 

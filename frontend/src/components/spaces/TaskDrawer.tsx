@@ -41,6 +41,7 @@ import {
   recordTaskRecent,
   type SpaceDto,
 } from "@/lib/api/home";
+import { linkifyText } from "@/lib/text/linkify";
 import {
   addChecklist,
   addChecklistItem,
@@ -317,6 +318,7 @@ export function TaskDrawer({
   const [startInput, setStartInput] = useState("");
   const [timeEstimateMinutes, setTimeEstimateMinutes] = useState<number | null>(null);
   const [description, setDescription] = useState("");
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [listId, setListId] = useState("");
   const [listName, setListName] = useState("");
@@ -616,9 +618,13 @@ export function TaskDrawer({
   }, [members, shareSearch]);
 
   async function handleDescriptionSave() {
-    if (description === (task?.description ?? "")) return;
+    if (description === (task?.description ?? "")) {
+      setIsEditingDescription(false);
+      return;
+    }
     const updated = await persistPatch({ description });
     if (updated) toast.success("Description saved");
+    setIsEditingDescription(false);
   }
 
   async function handleAddSubtask() {
@@ -1678,24 +1684,61 @@ export function TaskDrawer({
                     <ListChecksIcon className="size-4 text-muted-foreground" />
                     Description
                   </div>
-                  <textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    rows={5}
-                    placeholder="Add description"
-                    className="min-h-[120px] w-full resize-y rounded-lg border border-transparent bg-muted/30 px-4 py-3 text-sm leading-relaxed outline-none focus:border-border"
-                  />
-                  <div className="mt-2 flex justify-end">
-                    <Button
-                      type="button"
-                      size="sm"
-                      loading={saving}
-                      disabled={description === (task?.description ?? "")}
-                      onClick={() => void handleDescriptionSave()}
+                  {isEditingDescription ? (
+                    <>
+                      <textarea
+                        autoFocus
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        rows={5}
+                        placeholder="Add description"
+                        className="min-h-[120px] w-full resize-y rounded-lg border border-transparent bg-muted/30 px-4 py-3 text-sm leading-relaxed outline-none focus:border-border"
+                      />
+                      <div className="mt-2 flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setDescription(task?.description ?? "");
+                            setIsEditingDescription(false);
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          loading={saving}
+                          disabled={description === (task?.description ?? "")}
+                          onClick={() => void handleDescriptionSave()}
+                        >
+                          Save
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest("a")) return;
+                        setIsEditingDescription(true);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") setIsEditingDescription(true);
+                      }}
+                      className="min-h-[120px] w-full whitespace-pre-wrap rounded-lg border border-transparent bg-muted/30 px-4 py-3 text-sm leading-relaxed text-foreground outline-none hover:border-border"
                     >
-                      Save
-                    </Button>
-                  </div>
+                      {description
+                        ? linkifyText(description)
+                        : (
+                          <span className="text-muted-foreground">
+                            Add description
+                          </span>
+                        )}
+                    </div>
+                  )}
                 </div>
 
                 {attachments.length > 0 ? (
@@ -2299,6 +2342,16 @@ export function TaskDrawer({
                               placeholder="Add item"
                               className="h-7 flex-1 border-0 bg-transparent px-0 text-xs shadow-none placeholder:text-xs focus-visible:ring-0 dark:bg-transparent"
                             />
+                            {(checklistItemInput[checklist.id] ?? "").trim() ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="h-6 shrink-0 px-2 text-xs"
+                                onClick={() => void handleAddChecklistItem(checklist.id)}
+                              >
+                                Save
+                              </Button>
+                            ) : null}
                             <Popover
                               open={checklistAssigneeOpen === checklist.id}
                               onOpenChange={(open) => {
