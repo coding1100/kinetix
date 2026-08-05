@@ -162,11 +162,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [hydrated, bootstrap]);
 
   useEffect(() => {
-    // Non-recoverable 401s (account disabled) force an immediate logout from
-    // wherever the user is, instead of waiting for the next hard refresh to
-    // notice via bootstrap().
+    // Non-recoverable 401s force an immediate logout from wherever the user
+    // is, instead of waiting for the next hard refresh to notice via
+    // bootstrap(): account disabled, or apiFetch's silent access-token
+    // refresh failed because the refresh token is itself expired/invalid.
     setUnauthorizedHandler((code) => {
-      if (code === "ACCOUNT_DISABLED") {
+      if (code === "ACCOUNT_DISABLED" || code === "INVALID_REFRESH") {
         forceLogout();
       }
     });
