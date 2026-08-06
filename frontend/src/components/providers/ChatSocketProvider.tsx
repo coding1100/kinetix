@@ -33,6 +33,7 @@ import { registerChatTypingSocket } from "@/lib/socket/chat-typing";
 import { applyHomeNotification } from "@/lib/notifications/realtime";
 import { playNotificationSound } from "@/lib/notifications/sound";
 import { showDesktopNotification } from "@/lib/notifications/desktop";
+import { toHomeHref } from "@/lib/chat/conversation-surface";
 import { clearLiveNotifications } from "@/lib/notifications/live-cache";
 import { bumpWorkspaceMembersRefresh } from "@/lib/workspace/realtime";
 import { getMe } from "@/lib/api/auth";
@@ -157,7 +158,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
         showDesktopNotification(message.authorName, {
           body: message.body,
           tag: `chat:${conversationId}`,
-          onClick: () => router.push(`/chat/dm/${conversationId}`),
+          onClick: () => router.push(`/home/dm/${conversationId}`),
         });
       }
       applyRealtimeMessageToSidebar(payload, userId, accessToken);
@@ -204,9 +205,8 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
         showDesktopNotification(notification.title, {
           body: notification.preview,
           tag: `notification:${notification.id}`,
-          onClick: () => {
-            if (notification.href) router.push(notification.href);
-          },
+          onClick: () =>
+            router.push(notification.href ? toHomeHref(notification.href) : "/home/inbox"),
         });
       }
     });
