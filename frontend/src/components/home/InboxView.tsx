@@ -10,6 +10,7 @@ import {
   markAllNotificationsReadAndSync,
   markNotificationReadAndSync,
 } from "@/lib/notifications/sync";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -20,6 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HomeDataState } from "@/components/home/HomeDataState";
 import { HomePageShell } from "@/components/home/HomePageShell";
 import { InboxFeedDateHeader, InboxFeedRow } from "@/components/home/InboxFeedRow";
@@ -77,6 +79,9 @@ export function InboxView() {
   const [typeFilter, setTypeFilter] = useState<Set<InboxItemType>>(new Set());
   const [refreshKey, setRefreshKey] = useState(0);
   const [liveTick, setLiveTick] = useState(0);
+  // Primary/Cleared mirrors the unread flag that "clear" already flips -
+  // no new backend field needed. Primary = still unread, Cleared = read.
+  const [inboxTab, setInboxTab] = useState<"primary" | "cleared">("primary");
 
   const load = useCallback(
     (token: string, ws: string) => fetchInbox(token, ws, "all").then((r) => r.data),
@@ -101,7 +106,17 @@ export function InboxView() {
     return filterByTypes(merged, typeFilter);
   }, [apiItems, liveTick, typeFilter]);
 
-  const hasUnread = (items ?? []).some((item) => item.unread);
+  const primaryItems = useMemo(
+    () => (items ?? []).filter((item) => item.unread),
+    [items]
+  );
+  const clearedItems = useMemo(
+    () => (items ?? []).filter((item) => !item.unread),
+    [items]
+  );
+  const visibleItems = inboxTab === "primary" ? primaryItems : clearedItems;
+
+  const hasUnread = primaryItems.length > 0;
 
   const toggleTypeFilter = (type: InboxItemType) => {
     setTypeFilter((current) => {
@@ -141,10 +156,9 @@ export function InboxView() {
   };
 
   const groupedSections = useMemo(() => {
-    if (!items) return [];
     const now = new Date();
     const buckets = new Map<DateGroup, InboxItemDto[]>();
-    for (const item of items) {
+    for (const item of visibleItems) {
       const group = dateGroupFor(item.createdAt, now);
       const bucket = buckets.get(group);
       if (bucket) bucket.push(item);
@@ -154,60 +168,86 @@ export function InboxView() {
       label: group,
       items: buckets.get(group)!,
     }));
-  }, [items]);
+  }, [visibleItems]);
 
-  const emptyMessage = "You're all caught up. New notifications will appear here.";
+  const emptyMessage =
+    inboxTab === "primary"
+      ? "You're all caught up. New notifications will appear here."
+      : "Nothing cleared yet. Notifications you clear will show up here.";
 
   return (
     <HomePageShell
       title="Inbox"
       toolbar={
-        <div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
+        <div className="flex shrink-0 flex-col gap-2 border-b border-border px-6 py-2">
+          <div className="flex items-center justify-between gap-3">
+            <Tabs
+              value={inboxTab}
+              onValueChange={(v) => {
+                if (v === "primary" || v === "cleared") setInboxTab(v);
+              }}
+            >
+              <TabsList variant="line" className="w-auto border-0">
+                <TabsTrigger value="primary">
+                  Primary
+                  {primaryItems.length > 0 ? (
+                    <Badge variant="secondary" className="ml-1.5 h-4 px-1 text-[10px]">
+                      {primaryItems.length}
+                    </Badge>
+                  ) : null}
+                </TabsTrigger>
+                <TabsTrigger value="cleared">Cleared</TabsTrigger>
+              </TabsList>
+            </Tabs>
+
+            <div className="flex items-center gap-1">
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1.5 text-xs"
+                    >
+                      <FilterIcon className="size-3.5" />
+                      Filter
+                      {typeFilter.size > 0 ? ` (${typeFilter.size})` : ""}
+                    </Button>
+                  }
+                />
+                <DropdownMenuContent align="start" className="w-56">
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel>Notification type</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {TYPE_FILTER_OPTIONS.map((option) => (
+                      <DropdownMenuCheckboxItem
+                        key={option.id}
+                        checked={typeFilter.has(option.id)}
+                        onCheckedChange={() => toggleTypeFilter(option.id)}
+                        onSelect={(e) => e.preventDefault()}
+                      >
+                        {option.label}
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {inboxTab === "primary" ? (
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  className="h-8 gap-1.5 text-xs"
+                  className="h-8 gap-1.5 text-xs text-muted-foreground"
+                  disabled={!hasUnread || !ready}
+                  onClick={() => void clearAll()}
                 >
-                  <FilterIcon className="size-3.5" />
-                  Filter
-                  {typeFilter.size > 0 ? ` (${typeFilter.size})` : ""}
+                  <CheckCheckIcon className="size-3.5" />
+                  Clear all
                 </Button>
-              }
-            />
-            <DropdownMenuContent align="start" className="w-56">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Notification type</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {TYPE_FILTER_OPTIONS.map((option) => (
-                  <DropdownMenuCheckboxItem
-                    key={option.id}
-                    checked={typeFilter.has(option.id)}
-                    onCheckedChange={() => toggleTypeFilter(option.id)}
-                    onSelect={(e) => e.preventDefault()}
-                  >
-                    {option.label}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <div className="flex items-center gap-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 gap-1.5 text-xs text-muted-foreground"
-              disabled={!hasUnread || !ready}
-              onClick={() => void clearAll()}
-            >
-              <CheckCheckIcon className="size-3.5" />
-              Clear all
-            </Button>
+              ) : null}
+            </div>
           </div>
         </div>
       }
@@ -215,7 +255,7 @@ export function InboxView() {
       <HomeDataState
         loading={loading}
         error={error}
-        empty={!loading && !error && (items?.length ?? 0) === 0}
+        empty={!loading && !error && visibleItems.length === 0}
         emptyMessage={emptyMessage}
       >
         <div className="w-full px-4 py-2">
