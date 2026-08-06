@@ -12,7 +12,7 @@ from app.db.models.enums import InboxBucket, InboxItemType, InboxTimeGroup, Memb
 from app.db.models.home import InboxItem, ListStatus, Task
 from app.db.models.user import User
 from app.db.models.workspace import WorkspaceMember
-from app.services.home_helpers import STATUS_LABELS, map_inbox_type
+from app.services.home_helpers import LEGACY_STATUS_GROUP, STATUS_LABELS, map_inbox_type
 from app.services.inbox_visibility import is_inbox_visible
 from app.socket.emit import broadcast_home_notification
 
@@ -813,17 +813,9 @@ async def task_status_meta(
         result[task_id] = {
             "color": color,
             "name": status_name or STATUS_LABELS.get(legacy_status, legacy_status.value.lower()),
-            "statusGroup": status_group.value if status_group else _LEGACY_STATUS_GROUP.get(legacy_status, "NOT_STARTED"),
+            "statusGroup": status_group.value if status_group else LEGACY_STATUS_GROUP.get(legacy_status, "NOT_STARTED"),
         }
     return result
-
-
-_LEGACY_STATUS_GROUP = {
-    TaskStatus.OPEN: "NOT_STARTED",
-    TaskStatus.TODO: "NOT_STARTED",
-    TaskStatus.IN_PROGRESS: "ACTIVE",
-    TaskStatus.DONE: "DONE",
-}
 
 
 async def emit_home_notifications(

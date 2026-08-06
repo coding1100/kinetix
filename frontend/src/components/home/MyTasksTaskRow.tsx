@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import type { Task } from "@/lib/types/task";
 import type { TaskPriority } from "@/lib/task-priority";
+import { TaskStatusIcon } from "@/lib/tasks/status-icon";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   avatarColorClassForKey,
@@ -64,11 +65,7 @@ export function MyTasksTaskRow({
     >
       <div className="flex min-w-0 items-center gap-2">
         <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground/40 opacity-0 group-hover:opacity-100" />
-        <span
-          className="size-2.5 shrink-0 rounded-full"
-          style={{ backgroundColor: task.statusColor }}
-          aria-hidden
-        />
+        <TaskStatusIcon task={task} className="size-4 shrink-0" />
         <div className="min-w-0">
           <p className="truncate font-medium">{task.name}</p>
           <p className="truncate text-xs text-muted-foreground">
