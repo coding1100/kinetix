@@ -64,6 +64,16 @@ STATUS_COLORS: dict[TaskStatus, str] = {
     TaskStatus.DONE: "#6bc950",
 }
 
+# ListStatus.status_group equivalent for tasks with no ListStatus row (legacy
+# Task.status only) - lets the frontend pick a status icon the same way for
+# both cases (see lib/tasks/status-icon.ts).
+LEGACY_STATUS_GROUP: dict[TaskStatus, str] = {
+    TaskStatus.OPEN: "NOT_STARTED",
+    TaskStatus.TODO: "NOT_STARTED",
+    TaskStatus.IN_PROGRESS: "ACTIVE",
+    TaskStatus.DONE: "DONE",
+}
+
 
 def start_of_today() -> datetime:
     now = datetime.now(timezone.utc)
@@ -178,10 +188,12 @@ def map_task(
         status_label = task.list_status.name
         status_color = task.list_status.color
         status_key = task.list_status.legacy_key or task.status.value
+        status_group = task.list_status.status_group.value
     else:
         status_label = STATUS_LABELS.get(task.status, task.status.value.lower())
         status_color = task.status_color
         status_key = task.status.value
+        status_group = LEGACY_STATUS_GROUP.get(task.status, "NOT_STARTED")
     return {
         "id": task.id,
         "name": task.name,
@@ -189,6 +201,7 @@ def map_task(
         "statusKey": status_key,
         "statusId": task.status_id,
         "statusColor": status_color,
+        "statusGroup": status_group,
         "assigneeIds": list(task.assignee_ids),
         "followerIds": list(task.follower_ids),
         "dueDate": format_due_date(task.due_date),
@@ -224,16 +237,19 @@ def map_subtask_summary(task: Task, current_user_id: str) -> dict:
         status_label = task.list_status.name
         status_color = task.list_status.color
         status_key = task.list_status.legacy_key or task.status.value
+        status_group = task.list_status.status_group.value
     else:
         status_label = STATUS_LABELS.get(task.status, task.status.value.lower())
         status_color = task.status_color
         status_key = task.status.value
+        status_group = LEGACY_STATUS_GROUP.get(task.status, "NOT_STARTED")
     return {
         "id": task.id,
         "name": task.name,
         "status": status_label,
         "statusKey": status_key,
         "statusColor": status_color,
+        "statusGroup": status_group,
     }
 
 

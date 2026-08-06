@@ -49,3 +49,27 @@ export function statusIcon(status: { name: string; statusGroup: string }): Lucid
   if (name === "closed") return ArchiveIcon;
   return statusGroupIcon(status.statusGroup);
 }
+
+/** Renders a task's actual status glyph, in its status color - the shared
+ * shape for "status" (name), "statusGroup" and "statusColor" that map_task()/
+ * map_subtask_summary() return, so callers don't repeat the icon lookup. */
+export function TaskStatusIcon({
+  task,
+  className,
+}: {
+  task: { status: string; statusGroup?: string; statusColor: string };
+  className?: string;
+}) {
+  const Icon = statusIcon({
+    name: task.status,
+    statusGroup: task.statusGroup ?? "NOT_STARTED",
+  });
+  return (
+    <Icon
+      className={className}
+      style={{ color: task.statusColor }}
+      strokeWidth={2}
+      aria-hidden
+    />
+  );
+}

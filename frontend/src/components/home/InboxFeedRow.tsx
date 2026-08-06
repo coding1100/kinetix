@@ -18,7 +18,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import type { InboxItemDto } from "@/lib/api/home";
-import { statusIcon } from "@/lib/tasks/status-icon";
+import { TaskStatusIcon } from "@/lib/tasks/status-icon";
 import { cn, formatNotificationDate } from "@/lib/utils";
 
 type InboxItemType = InboxItemDto["type"];
@@ -175,14 +175,15 @@ function renderConnectorIcon(item: InboxItemDto, className: string) {
 // misleading for e.g. a status-change or comment notification on a task
 // that's still in progress.
 function renderTypeOrStatusIcon(item: InboxItemDto, className: string) {
-  if (item.statusName && item.statusGroup) {
-    const StatusIcon = statusIcon({ name: item.statusName, statusGroup: item.statusGroup });
+  if (item.statusName) {
     return (
-      <StatusIcon
+      <TaskStatusIcon
+        task={{
+          status: item.statusName,
+          statusGroup: item.statusGroup,
+          statusColor: item.statusColor ?? "",
+        }}
         className={className}
-        style={{ color: item.statusColor }}
-        strokeWidth={2}
-        aria-hidden
       />
     );
   }
