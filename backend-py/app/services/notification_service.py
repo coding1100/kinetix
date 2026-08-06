@@ -6,12 +6,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.utils import as_aware_utc
 from app.db.models.chat import ChatChannel, ChatChannelMember, ChatMessage
-from app.db.models.enums import InboxBucket, InboxItemType, InboxTimeGroup, MemberStatus
-from app.db.models.home import InboxItem, Task
+from app.db.models.enums import InboxBucket, InboxItemType, InboxTimeGroup, MemberStatus, TaskStatus
+from app.db.models.home import InboxItem, ListStatus, Task
 from app.db.models.user import User
 from app.db.models.workspace import WorkspaceMember
-from app.services.home_helpers import map_inbox_type
+from app.services.home_helpers import LEGACY_STATUS_GROUP, STATUS_LABELS, map_inbox_type
 from app.services.inbox_visibility import is_inbox_visible
 from app.socket.emit import broadcast_home_notification
 
@@ -750,9 +751,9 @@ async def create_channel_follow_notifications(
     return created
 
 
-def notification_payload(item: InboxItem) -> dict:
-    created = item.created_at or datetime.now(timezone.utc)
-    return {
+def notification_payload(item: InboxItem, status: dict[str, str] | None = None) -> dict:
+    created = as_aware_utc(item.created_at or datetime.now(timezone.utc))
+    payload = {
         "id": item.id,
         "type": map_inbox_type(item.type),
         "title": item.title,
@@ -763,6 +764,58 @@ def notification_payload(item: InboxItem) -> dict:
         "group": item.time_group.value.lower(),
         "href": item.href,
     }
+    if status:
+        payload["statusColor"] = status["color"]
+        payload["statusName"] = status["name"]
+        payload["statusGroup"] = status["statusGroup"]
+    return payload
+
+
+_TASK_HREF_RE = re.compile(r"^/home/tasks/([^/?]+)")
+
+
+def task_id_from_href(href: str | None) -> str | None:
+    """Pulls the task id out of an Inbox item's href (e.g. /home/tasks/<id>)
+    without a stored column - lets the notification icon reflect the task's
+    live status color rather than a generic per-type icon, computed at read
+    time so it never goes stale."""
+    if not href:
+        return None
+    match = _TASK_HREF_RE.match(href)
+    return match.group(1) if match else None
+
+
+async def task_status_meta(
+    session: AsyncSession, task_ids: set[str]
+) -> dict[str, dict[str, str]]:
+    """color/name/statusGroup per task, for the Inbox notification icon to
+    show the task's actual status glyph (matching TaskDrawer's statusIcon())
+    instead of a generic per-type icon. Prefers the list's ListStatus row;
+    falls back to the legacy Task.status enum for tasks without one, same
+    fallback _status_label() uses elsewhere."""
+    if not task_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(
+                Task.id,
+                Task.status,
+                Task.status_color,
+                ListStatus.name,
+                ListStatus.status_group,
+            )
+            .outerjoin(ListStatus, Task.status_id == ListStatus.id)
+            .where(Task.id.in_(task_ids))
+        )
+    ).all()
+    result: dict[str, dict[str, str]] = {}
+    for task_id, legacy_status, color, status_name, status_group in rows:
+        result[task_id] = {
+            "color": color,
+            "name": status_name or STATUS_LABELS.get(legacy_status, legacy_status.value.lower()),
+            "statusGroup": status_group.value if status_group else LEGACY_STATUS_GROUP.get(legacy_status, "NOT_STARTED"),
+        }
+    return result
 
 
 async def emit_home_notifications(
@@ -780,12 +833,18 @@ async def emit_home_notifications(
     visible = [(uid, item) for uid, item in created if is_inbox_visible(item)]
     if not visible:
         return
+    task_ids = {
+        tid for _, item in visible if (tid := task_id_from_href(item.href))
+    }
+    status_meta = await task_status_meta(session, task_ids)
     await asyncio.gather(
         *[
             broadcast_home_notification(
                 workspace_id=workspace_id,
                 user_ids=[recipient_id],
-                notification=notification_payload(item),
+                notification=notification_payload(
+                    item, status_meta.get(task_id_from_href(item.href))
+                ),
             )
             for recipient_id, item in visible
         ]

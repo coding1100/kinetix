@@ -32,6 +32,8 @@ import { ingestTaskEvent } from "@/lib/tasks/realtime";
 import { registerChatTypingSocket } from "@/lib/socket/chat-typing";
 import { applyHomeNotification } from "@/lib/notifications/realtime";
 import { playNotificationSound } from "@/lib/notifications/sound";
+import { showDesktopNotification } from "@/lib/notifications/desktop";
+import { toHomeHref } from "@/lib/chat/conversation-surface";
 import { clearLiveNotifications } from "@/lib/notifications/live-cache";
 import { bumpWorkspaceMembersRefresh } from "@/lib/workspace/realtime";
 import { getMe } from "@/lib/api/auth";
@@ -145,6 +147,20 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       if (!isOwnMessage && soundEnabled) {
         playNotificationSound();
       }
+      // DMs only. Channel messages already raise a home:notification, which
+      // is where their desktop notification comes from - firing here too
+      // would double-notify, and would ignore the per-channel notification
+      // level (ALL/MENTIONS/NONE) that the backend applies when building
+      // that inbox item.
+      const desktopNotifications = useSettingsStore.getState().desktopNotifications;
+      if (!isOwnMessage && desktopNotifications && payload.kind === "dm") {
+        const { conversationId, message } = payload;
+        showDesktopNotification(message.authorName, {
+          body: message.body,
+          tag: `chat:${conversationId}`,
+          onClick: () => router.push(`/home/dm/${conversationId}`),
+        });
+      }
       applyRealtimeMessageToSidebar(payload, userId, accessToken);
       ingestRealtimeEvent(payload);
     });
@@ -179,6 +195,20 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     });
     socket.on("home:notification", (payload: HomeNotificationPayload) => {
       applyHomeNotification(payload, userId, workspaceId);
+      if (
+        useSettingsStore.getState().desktopNotifications &&
+        userId &&
+        payload.userIds.includes(userId) &&
+        (!workspaceId || payload.workspaceId === workspaceId)
+      ) {
+        const { notification } = payload;
+        showDesktopNotification(notification.title, {
+          body: notification.preview,
+          tag: `notification:${notification.id}`,
+          onClick: () =>
+            router.push(notification.href ? toHomeHref(notification.href) : "/home/inbox"),
+        });
+      }
     });
     socket.on(
       "workspace:member:role",

@@ -12,6 +12,7 @@ from app.db.models.enums import MemberStatus, TeamRole, WorkspaceRole
 from app.db.models.team import Team, TeamMember
 from app.db.models.workspace import WorkspaceMember
 from app.core.errors import AppError
+from app.core.utils import as_aware_utc
 from app.schemas.team import AddTeamMemberBody, CreateTeamBody, UpdateTeamBody
 
 TEAM_COLORS = [
@@ -51,7 +52,7 @@ def _team_summary(team: Team) -> dict:
         "description": team.description,
         "memberCount": len(members),
         "membersPreview": [_member_preview(m) for m in members[:5]],
-        "createdAt": team.created_at.isoformat() if team.created_at else None,
+        "createdAt": as_aware_utc(team.created_at).isoformat() if team.created_at else None,
         "createdBy": (
             {
                 "id": team.created_by.id,
@@ -67,7 +68,7 @@ def _team_summary(team: Team) -> dict:
 def _team_detail(team: Team) -> dict:
     body = _team_summary(team)
     body["members"] = [_member_preview(m) for m in (team.members or [])]
-    body["updatedAt"] = team.updated_at.isoformat() if team.updated_at else None
+    body["updatedAt"] = as_aware_utc(team.updated_at).isoformat() if team.updated_at else None
     return body
 
 

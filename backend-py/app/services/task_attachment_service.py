@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.errors import AppError
+from app.core.utils import as_aware_utc
 from app.db.models.home import Space, Task, TaskAttachment, TaskList
 from app.db.models.user import User
 from app.services.s3_service import object_exists, presign_get, presign_put, put_object
@@ -152,5 +153,5 @@ def map_task_attachment(row: TaskAttachment) -> dict:
         "sizeBytes": row.size_bytes,
         "status": row.status,
         "downloadUrl": download_url,
-        "createdAt": row.created_at.isoformat() if row.created_at else None,
+        "createdAt": as_aware_utc(row.created_at).isoformat() if row.created_at else None,
     }

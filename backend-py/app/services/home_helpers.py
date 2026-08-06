@@ -1,24 +1,15 @@
 from datetime import datetime, timezone
 
+from app.core.utils import as_aware_utc
 from app.db.models.enums import InboxItemType, TaskStatus
 from app.db.models.home import Task
 from app.services.task_attachment_service import map_task_attachment
 
 
-def _as_aware_utc(dt: datetime) -> datetime:
-    """asyncpg sometimes returns a naive datetime for a DateTime(timezone=True)
-    column (same driver/schema quirk fixed for chat threads in
-    chat_service._as_aware_utc) - without this, isoformat() omits the UTC
-    offset and the frontend's `new Date(...)` misparses it as local time."""
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt
-
-
 def _map_task_comment(comment) -> dict:
     updated = getattr(comment, "updated_at", None)
-    created_at = _as_aware_utc(comment.created_at) if comment.created_at else None
-    updated_at = _as_aware_utc(updated) if updated else None
+    created_at = as_aware_utc(comment.created_at) if comment.created_at else None
+    updated_at = as_aware_utc(updated) if updated else None
     return {
         "id": comment.id,
         "authorId": comment.user_id,
@@ -71,6 +62,16 @@ STATUS_COLORS: dict[TaskStatus, str] = {
     TaskStatus.TODO: "#87909e",
     TaskStatus.OPEN: "#5f55ee",
     TaskStatus.DONE: "#6bc950",
+}
+
+# ListStatus.status_group equivalent for tasks with no ListStatus row (legacy
+# Task.status only) - lets the frontend pick a status icon the same way for
+# both cases (see lib/tasks/status-icon.ts).
+LEGACY_STATUS_GROUP: dict[TaskStatus, str] = {
+    TaskStatus.OPEN: "NOT_STARTED",
+    TaskStatus.TODO: "NOT_STARTED",
+    TaskStatus.IN_PROGRESS: "ACTIVE",
+    TaskStatus.DONE: "DONE",
 }
 
 
@@ -187,10 +188,12 @@ def map_task(
         status_label = task.list_status.name
         status_color = task.list_status.color
         status_key = task.list_status.legacy_key or task.status.value
+        status_group = task.list_status.status_group.value
     else:
         status_label = STATUS_LABELS.get(task.status, task.status.value.lower())
         status_color = task.status_color
         status_key = task.status.value
+        status_group = LEGACY_STATUS_GROUP.get(task.status, "NOT_STARTED")
     return {
         "id": task.id,
         "name": task.name,
@@ -198,12 +201,13 @@ def map_task(
         "statusKey": status_key,
         "statusId": task.status_id,
         "statusColor": status_color,
+        "statusGroup": status_group,
         "assigneeIds": list(task.assignee_ids),
         "followerIds": list(task.follower_ids),
         "dueDate": format_due_date(task.due_date),
-        "dueDateIso": task.due_date.isoformat() if task.due_date else None,
+        "dueDateIso": as_aware_utc(task.due_date).isoformat() if task.due_date else None,
         "startDate": format_due_date(task.start_date),
-        "startDateIso": task.start_date.isoformat() if task.start_date else None,
+        "startDateIso": as_aware_utc(task.start_date).isoformat() if task.start_date else None,
         "timeEstimateMinutes": task.time_estimate_minutes,
         "assignees": assignee_labels,
         "disabledAssigneeIds": disabled_assignee_ids,
@@ -213,8 +217,8 @@ def map_task(
         "priority": task.priority.value.lower() if task.priority else None,
         "overdue": is_overdue(task.due_date, task.status),
         "description": task.description,
-        "createdAt": task.created_at.isoformat() if task.created_at else None,
-        "updatedAt": task.updated_at.isoformat() if task.updated_at else None,
+        "createdAt": as_aware_utc(task.created_at).isoformat() if task.created_at else None,
+        "updatedAt": as_aware_utc(task.updated_at).isoformat() if task.updated_at else None,
         "commentCount": len(comments),
         "subtaskCount": len(getattr(task, "subtasks", None) or []),
         "comments": _map_task_comments_threaded(comments),
@@ -233,16 +237,19 @@ def map_subtask_summary(task: Task, current_user_id: str) -> dict:
         status_label = task.list_status.name
         status_color = task.list_status.color
         status_key = task.list_status.legacy_key or task.status.value
+        status_group = task.list_status.status_group.value
     else:
         status_label = STATUS_LABELS.get(task.status, task.status.value.lower())
         status_color = task.status_color
         status_key = task.status.value
+        status_group = LEGACY_STATUS_GROUP.get(task.status, "NOT_STARTED")
     return {
         "id": task.id,
         "name": task.name,
         "status": status_label,
         "statusKey": status_key,
         "statusColor": status_color,
+        "statusGroup": status_group,
     }
 
 
@@ -284,7 +291,7 @@ def map_space_row(
         "statusConfig": space.status_config,
         "folders": folder_payload,
         "standaloneLists": standalone_payload,
-        "lastActivityAt": (last_activity_at or space.created_at).isoformat(),
+        "lastActivityAt": as_aware_utc(last_activity_at or space.created_at).isoformat(),
         "canShare": can_share,
         "canManageStructure": can_manage_structure,
     }

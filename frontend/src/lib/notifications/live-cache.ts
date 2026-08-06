@@ -70,6 +70,9 @@ export function notificationToInboxItem(
     unread: notification.unread,
     group: notification.group ?? "today",
     href: notification.href,
+    statusColor: notification.statusColor,
+    statusName: notification.statusName,
+    statusGroup: notification.statusGroup,
   };
 }
 

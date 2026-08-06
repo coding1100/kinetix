@@ -580,7 +580,14 @@ function ChannelRow({
               {starred ? (
                 <StarIcon className="size-3 shrink-0 fill-amber-400 text-amber-400" />
               ) : null}
-              <span className="truncate font-medium">{name}</span>
+              <span
+                className={cn(
+                  "truncate font-medium",
+                  active || displayUnread > 0 ? "text-white" : "text-[#B4B4B4]"
+                )}
+              >
+                {name}
+              </span>
               {privateChannel ? (
                 <LockIcon className="size-3 text-muted-foreground" />
               ) : null}
@@ -672,7 +679,12 @@ function DmRow({
                   showPresence={!isGroup}
                 />
               )}
-              <span className="truncate text-sm font-medium">
+              <span
+                className={cn(
+                  "truncate text-sm font-medium",
+                  active || displayUnread > 0 ? "text-white" : "text-[#B4B4B4]"
+                )}
+              >
                 {displayName}
                 {!isGroup && otherUserIsDisabled ? (
                   <span className="text-destructive"> (deactivated)</span>
