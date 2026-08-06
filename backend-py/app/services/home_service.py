@@ -84,7 +84,9 @@ from app.services.notification_service import (
     create_task_activity_notifications,
     create_task_assignment_notifications,
     emit_home_notifications,
+    task_id_from_href,
     task_notification_recipients,
+    task_status_meta,
 )
 from app.socket.emit import broadcast_task_event
 from app.services.home_helpers import (
@@ -357,6 +359,11 @@ async def list_inbox(
             .order_by(InboxItem.created_at.desc())
         )
     ).all()
+    # The notification icon shows the task's live status icon rather than a
+    # generic per-type icon - resolved by task_id (pulled out of href, not a
+    # stored column) so it never goes stale relative to the task itself.
+    task_ids = {tid for item in items if (tid := task_id_from_href(item.href))}
+    status_meta = await task_status_meta(session, task_ids)
     return {
         "data": [
             {
@@ -369,6 +376,16 @@ async def list_inbox(
                 "unread": item.unread,
                 "group": item.time_group.value.lower(),
                 "href": item.href,
+                **(
+                    {
+                        "statusColor": status["color"],
+                        "statusName": status["name"],
+                        "statusGroup": status["statusGroup"],
+                    }
+                    if (tid := task_id_from_href(item.href))
+                    and (status := status_meta.get(tid))
+                    else {}
+                ),
             }
             for item in items
         ]
