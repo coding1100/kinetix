@@ -81,8 +81,10 @@ from app.schemas.home import (
 )
 from app.services import workspace_service
 from app.services.notification_service import (
+    create_task_activity_notifications,
     create_task_assignment_notifications,
     emit_home_notifications,
+    task_notification_recipients,
 )
 from app.socket.emit import broadcast_task_event
 from app.services.home_helpers import (
@@ -164,6 +166,17 @@ def _status_label(status: TaskStatus, list_status: "ListStatus | None") -> str:
 
 def _priority_label(priority: TaskPriority | None) -> str:
     return priority.value.title() if priority else "None"
+
+
+def _time_estimate_label(minutes: int | None) -> str:
+    if not minutes:
+        return "no estimate"
+    hours, mins = divmod(minutes, 60)
+    if hours and mins:
+        return f"{hours}h {mins}m"
+    if hours:
+        return f"{hours}h"
+    return f"{mins}m"
 
 
 def _record_task_activity(
@@ -1373,6 +1386,7 @@ async def update_task(
     original_priority = task.priority
     original_due_date = task.due_date
     original_start_date = task.start_date
+    original_time_estimate_minutes = task.time_estimate_minutes
     original_list_id = task.list_id
     original_list_name = task.task_list.name
 
@@ -1527,15 +1541,36 @@ async def update_task(
 
     actor_name = await _resolve_user_name(session, user_id)
     logged_activity = False
+    # Assignees and followers get an Inbox (and, if enabled, desktop)
+    # notification for the field changes below - resolved once up front and
+    # reused across all of them rather than re-querying per field.
+    field_change_recipients = await task_notification_recipients(
+        session, task_id=task_id, exclude_user_id=user_id
+    )
+    field_change_notifications: list = []
     if task.status_id != original_status_id or task.status != original_status:
         new_status_label = _status_label(refreshed.status, refreshed.list_status)
+        status_change_preview = (
+            f"{actor_name} changed status from {original_status_label} to {new_status_label}"
+        )
         _record_task_activity(
             refreshed,
             actor_name=actor_name,
             activity_kind="task_status_changed",
-            preview=f"{actor_name} changed status from {original_status_label} to {new_status_label}",
+            preview=status_change_preview,
         )
         logged_activity = True
+        field_change_notifications += await create_task_activity_notifications(
+            session,
+            workspace_id=workspace_id,
+            actor_user_id=user_id,
+            task_name=task.name,
+            task_id=task_id,
+            recipient_ids=field_change_recipients,
+            title=f"Status changed: {task.name}",
+            preview_template=status_change_preview,
+            activity_kind="task_status_changed",
+        )
     if task.name != original_name:
         _record_task_activity(
             refreshed,
@@ -1568,6 +1603,17 @@ async def update_task(
             preview=preview,
         )
         logged_activity = True
+        field_change_notifications += await create_task_activity_notifications(
+            session,
+            workspace_id=workspace_id,
+            actor_user_id=user_id,
+            task_name=task.name,
+            task_id=task_id,
+            recipient_ids=field_change_recipients,
+            title=f"Priority changed: {task.name}",
+            preview_template=preview,
+            activity_kind="task_priority_changed",
+        )
     if task.due_date != original_due_date:
         old_due_label = format_due_date(original_due_date) or "no due date"
         new_due_label = format_due_date(task.due_date) or "no due date"
@@ -1584,6 +1630,17 @@ async def update_task(
             preview=preview,
         )
         logged_activity = True
+        field_change_notifications += await create_task_activity_notifications(
+            session,
+            workspace_id=workspace_id,
+            actor_user_id=user_id,
+            task_name=task.name,
+            task_id=task_id,
+            recipient_ids=field_change_recipients,
+            title=f"Due date changed: {task.name}",
+            preview_template=preview,
+            activity_kind="task_due_date_changed",
+        )
     if task.start_date != original_start_date:
         old_start_label = format_due_date(original_start_date) or "no start date"
         new_start_label = format_due_date(task.start_date) or "no start date"
@@ -1600,6 +1657,46 @@ async def update_task(
             preview=preview,
         )
         logged_activity = True
+        field_change_notifications += await create_task_activity_notifications(
+            session,
+            workspace_id=workspace_id,
+            actor_user_id=user_id,
+            task_name=task.name,
+            task_id=task_id,
+            recipient_ids=field_change_recipients,
+            title=f"Start date changed: {task.name}",
+            preview_template=preview,
+            activity_kind="task_start_date_changed",
+        )
+    if task.time_estimate_minutes != original_time_estimate_minutes:
+        old_estimate_label = _time_estimate_label(original_time_estimate_minutes)
+        new_estimate_label = _time_estimate_label(task.time_estimate_minutes)
+        if original_time_estimate_minutes is None:
+            estimate_preview = f"{actor_name} set time estimate to {new_estimate_label}"
+        elif task.time_estimate_minutes is None:
+            estimate_preview = f"{actor_name} removed the time estimate (was {old_estimate_label})"
+        else:
+            estimate_preview = (
+                f"{actor_name} changed time estimate from {old_estimate_label} to {new_estimate_label}"
+            )
+        _record_task_activity(
+            refreshed,
+            actor_name=actor_name,
+            activity_kind="task_time_estimate_changed",
+            preview=estimate_preview,
+        )
+        logged_activity = True
+        field_change_notifications += await create_task_activity_notifications(
+            session,
+            workspace_id=workspace_id,
+            actor_user_id=user_id,
+            task_name=task.name,
+            task_id=task_id,
+            recipient_ids=field_change_recipients,
+            title=f"Time estimate changed: {task.name}",
+            preview_template=estimate_preview,
+            activity_kind="task_time_estimate_changed",
+        )
     if task.list_id != original_list_id and moved_to_list_name:
         _record_task_activity(
             refreshed,
@@ -1616,21 +1713,49 @@ async def update_task(
             session, added_assignees | removed_assignees
         )
         for uid in added_assignees:
+            assignee_added_preview = (
+                f"{actor_name} added assignee {assignee_names.get(uid, 'Someone')}"
+            )
             _record_task_activity(
                 refreshed,
                 actor_name=actor_name,
                 activity_kind="task_assignee_added",
-                preview=f"{actor_name} added assignee {assignee_names.get(uid, 'Someone')}",
+                preview=assignee_added_preview,
             )
             logged_activity = True
+            field_change_notifications += await create_task_activity_notifications(
+                session,
+                workspace_id=workspace_id,
+                actor_user_id=user_id,
+                task_name=task.name,
+                task_id=task_id,
+                recipient_ids=field_change_recipients,
+                title=f"Assignee added: {task.name}",
+                preview_template=assignee_added_preview,
+                activity_kind="task_assignee_added",
+            )
         for uid in removed_assignees:
+            assignee_removed_preview = (
+                f"{actor_name} removed assignee {assignee_names.get(uid, 'Someone')}"
+            )
             _record_task_activity(
                 refreshed,
                 actor_name=actor_name,
                 activity_kind="task_assignee_removed",
-                preview=f"{actor_name} removed assignee {assignee_names.get(uid, 'Someone')}",
+                preview=assignee_removed_preview,
             )
             logged_activity = True
+            field_change_notifications += await create_task_activity_notifications(
+                session,
+                workspace_id=workspace_id,
+                actor_user_id=user_id,
+                task_name=task.name,
+                task_id=task_id,
+                recipient_ids=field_change_recipients,
+                title=f"Assignee removed: {task.name}",
+                preview_template=assignee_removed_preview,
+                activity_kind="task_assignee_removed",
+            )
     new_follower_ids = set(refreshed.follower_ids)
     added_followers = new_follower_ids - old_follower_ids - auto_followed_via_assignment
     removed_followers = old_follower_ids - new_follower_ids
@@ -1660,6 +1785,10 @@ async def update_task(
     if assignment_notifications:
         await emit_home_notifications(
             session, workspace_id, assignment_notifications
+        )
+    if field_change_notifications:
+        await emit_home_notifications(
+            session, workspace_id, field_change_notifications
         )
     await broadcast_task_event(
         workspace_id=workspace_id,
