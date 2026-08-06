@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project adheres to Semantic Versioning.
 
+[Unreleased] - 2026-08-06
+---------------------------
+
+### Added
+
+* Desktop (OS-level) notifications for chat DMs, channel messages, mentions, task activity, comments, shares, and invites, with a permission toggle in Settings.
+* Task notifications now also fire on status change, assignee added/removed, due/start date change, priority change, and time estimate change - sent to the task's assignees and followers.
+* All task comments and replies now notify assignees and followers, not just @mentioned users.
+* Inbox split into Primary (unread) and Cleared (read) tabs.
+* Lists, My Tasks, and All Tasks rows (Home and Space pages) now show the task's real status icon instead of a plain colored dot.
+
+### Changed
+
+* Sidebar nav rows (Home, Chat, Spaces) default to a lighter gray (#B4B4B4) and turn white when the row is the current route or has unread activity.
+
+### Fixed
+
+* Access token expiry no longer surfaces as an "invalid access token" error - the app now silently refreshes and retries; an expired refresh token forces logout instead.
+* Timestamps sent to the frontend (chat, threads, DMs, task comments, notifications, invites, admin, etc.) are now correctly stamped as UTC before serializing, fixing displayed times being off by the viewer's UTC offset.
+* Desktop notification clicks now open the relevant chat/channel/space inside the Home page instead of the standalone Chat/Spaces pages.
+* Task/Inbox notifications now show the task's actual status icon instead of a static green checkmark implying "done".
+
 [Unreleased] - 2026-08-03
 ---------------------------
 
