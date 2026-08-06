@@ -26,8 +26,9 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 * Timestamps sent to the frontend (chat, threads, DMs, task comments, notifications, invites, admin, etc.) are now correctly stamped as UTC before serializing, fixing displayed times being off by the viewer's UTC offset.
 * Desktop notification clicks now open the relevant chat/channel/space inside the Home page instead of the standalone Chat/Spaces pages.
 * Task/Inbox notifications now show the task's actual status icon instead of a static green checkmark implying "done".
+* Scrollbars (Home/Chat/Spaces sidebars and every other scrollable panel) are visible again - a Tailwind class mismatch (`data-vertical`/`data-horizontal` instead of `data-[orientation=...]`) against the scroll area's actual `data-orientation` attribute left them at zero width/height everywhere.
 
-[Unreleased] - 2026-08-03
+[Released] - 2026-08-03
 ---------------------------
 
 ### Added
