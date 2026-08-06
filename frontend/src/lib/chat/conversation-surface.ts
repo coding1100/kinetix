@@ -14,3 +14,16 @@ export function channelPathForSurface(
 ): string {
   return `${isHomeSurface(pathname) ? "/home" : "/chat"}/c/${channelId}`;
 }
+
+/**
+ * Rewrites a /chat/... href (as backend-built notification hrefs use) to its
+ * /home/... equivalent for the same resource, preserving any query string.
+ * Already-/home/... hrefs and paths outside the chat/home pair (e.g.
+ * /people) pass through unchanged.
+ */
+export function toHomeHref(href: string): string {
+  if (href === "/home" || href.startsWith("/home/")) return href;
+  if (href === "/chat") return "/home";
+  if (href.startsWith("/chat/")) return `/home${href.slice("/chat".length)}`;
+  return href;
+}

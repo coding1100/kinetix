@@ -21,13 +21,24 @@ import { PasswordStrengthMeter } from "@/components/auth/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password";
 import { useAuthStore, selectActiveWorkspace } from "@/stores/auth-store";
 import { useSettingsStore, type ThemePreference } from "@/stores/settings-store";
+import {
+  getDesktopPermission,
+  requestDesktopPermission,
+} from "@/lib/notifications/desktop";
 import { toast } from "sonner";
 
 export function SettingsView() {
   const accessToken = useAuthStore((s) => s.accessToken);
   const user = useAuthStore((s) => s.user);
   const workspace = useAuthStore(selectActiveWorkspace);
-  const { theme, setTheme, soundEnabled, setSoundEnabled } = useSettingsStore();
+  const {
+    theme,
+    setTheme,
+    soundEnabled,
+    setSoundEnabled,
+    desktopNotifications,
+    setDesktopNotifications,
+  } = useSettingsStore();
   const { setTheme: applyTheme, resolvedTheme } = useTheme();
 
   const [currentPassword, setCurrentPassword] = useState("");
@@ -53,6 +64,23 @@ export function SettingsView() {
     setTheme(value);
     applyTheme(value);
     toast.success("Theme updated");
+  };
+
+  const handleDesktopNotificationsChange = async (enabled: boolean) => {
+    if (!enabled) {
+      setDesktopNotifications(false);
+      return;
+    }
+    // requestPermission() must run inside this click handler — a call made
+    // later (e.g. from the socket provider) would be silently ignored.
+    const permission = await requestDesktopPermission();
+    if (permission === "granted") {
+      setDesktopNotifications(true);
+    } else if (permission === "denied") {
+      toast.error("Desktop notifications are blocked in your browser settings");
+    } else if (permission === "unsupported") {
+      toast.error("Desktop notifications aren't supported in this browser");
+    }
   };
 
   const handlePasswordChange = async () => {
@@ -125,6 +153,26 @@ export function SettingsView() {
                 id="notification-sound"
                 checked={soundEnabled}
                 onCheckedChange={(v) => setSoundEnabled(Boolean(v))}
+              />
+            </div>
+          </section>
+
+          <section className="space-y-3 rounded-xl border border-border bg-card p-4">
+            <h2 className="text-sm font-semibold">Notifications</h2>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <Label htmlFor="notification-desktop" className="text-sm font-normal">
+                  Desktop notifications
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Get notified about new messages and mentions when this tab
+                  isn&apos;t in focus.
+                </p>
+              </div>
+              <Switch
+                id="notification-desktop"
+                checked={desktopNotifications && mounted && getDesktopPermission() === "granted"}
+                onCheckedChange={(v) => void handleDesktopNotificationsChange(Boolean(v))}
               />
             </div>
           </section>

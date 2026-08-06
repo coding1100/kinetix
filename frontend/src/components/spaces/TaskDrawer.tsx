@@ -87,7 +87,6 @@ import { useSpacesStore } from "@/stores/spaces-store";
 import { appPath, cn, PKT_TIME_ZONE } from "@/lib/utils";
 import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import {
-  ArchiveIcon,
   BellIcon,
   BellOffIcon,
   CalendarIcon,
@@ -95,33 +94,26 @@ import {
   CheckCircle2Icon,
   ChevronDownIcon,
   ChevronUpIcon,
-  CircleDashedIcon,
-  CircleDotIcon,
   CircleIcon,
   Edit2Icon,
   FlagIcon,
-  FlaskConicalIcon,
   HourglassIcon,
   ListChecksIcon,
   LinkIcon,
-  Loader2Icon,
   Maximize2Icon,
   MoreHorizontalIcon,
   PaperclipIcon,
   PlusIcon,
-  RocketIcon,
   SearchIcon,
-  ShieldCheckIcon,
   Share2Icon,
   SquareCheckBigIcon,
   StarIcon,
   Trash2Icon,
-  Undo2Icon,
   UserMinusIcon,
   UserPlusIcon,
   UsersIcon,
-  WandSparklesIcon,
 } from "lucide-react";
+import { statusIcon } from "@/lib/tasks/status-icon";
 
 type Member = { id: string; fullName: string; email: string; avatarUrl?: string | null; isDisabled?: boolean };
 
@@ -142,35 +134,6 @@ function FollowerAvatar({ member }: { member: Member }) {
 }
 
 const NO_PRIORITY = "__none__";
-
-function statusGroupIcon(group: string) {
-  switch (group) {
-    case "ACTIVE":
-      return CircleDotIcon;
-    case "DONE":
-      return CheckCircle2Icon;
-    case "CLOSED":
-      return ArchiveIcon;
-    default:
-      return CircleIcon;
-  }
-}
-
-function statusIcon(status: Pick<ListStatus, "name" | "statusGroup">) {
-  const name = status.name.trim().toLowerCase();
-  if (name === "backlog") return CircleIcon;
-  if (name === "grooming") return WandSparklesIcon;
-  if (name === "todo") return CircleDashedIcon;
-  if (name === "ready for development") return RocketIcon;
-  if (name === "in progress") return Loader2Icon;
-  if (name === "in ui integration ready") return SquareCheckBigIcon;
-  if (name === "in qa ready") return FlaskConicalIcon;
-  if (name === "in qa") return ShieldCheckIcon;
-  if (name === "in qa sent back") return Undo2Icon;
-  if (name === "done") return CheckCircle2Icon;
-  if (name === "closed") return ArchiveIcon;
-  return statusGroupIcon(status.statusGroup);
-}
 
 function statusSections(rows: ListStatus[]) {
   const active = rows.filter(
