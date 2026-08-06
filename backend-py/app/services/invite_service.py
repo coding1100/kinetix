@@ -13,7 +13,7 @@ from app.services.chat_service import sync_list_channel_members_for_workspace
 from app.services.folder_list_permissions import resolve_pending_shares
 from app.services.personal_space_service import ensure_personal_space
 from app.core.security import hash_password, sign_access_token
-from app.core.utils import generate_token
+from app.core.utils import as_aware_utc, generate_token
 from app.db.models.enums import MemberStatus, WorkspaceRole
 from app.db.models.invite import Invite
 from app.db.models.user import User
@@ -144,8 +144,8 @@ def _invite_payload(
         "id": invite.id,
         "email": invite.email,
         "role": invite.role.value,
-        "expiresAt": invite.expires_at.isoformat(),
-        "createdAt": invite.created_at.isoformat() if invite.created_at else None,
+        "expiresAt": as_aware_utc(invite.expires_at).isoformat(),
+        "createdAt": as_aware_utc(invite.created_at).isoformat() if invite.created_at else None,
         "status": "expired" if expired else "pending",
         "workspace": {"id": workspace.id, "name": workspace.name},
         "inviteUrl": invite_url,
@@ -246,8 +246,8 @@ async def list_workspace_invites(
             "id": inv.id,
             "email": inv.email,
             "role": inv.role.value,
-            "expiresAt": inv.expires_at.isoformat(),
-            "createdAt": inv.created_at.isoformat() if inv.created_at else None,
+            "expiresAt": as_aware_utc(inv.expires_at).isoformat(),
+            "createdAt": as_aware_utc(inv.created_at).isoformat() if inv.created_at else None,
             "status": (
                 "expired"
                 if _as_utc(inv.expires_at) < now

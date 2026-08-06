@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.errors import AppError
+from app.core.utils import as_aware_utc
 from app.db.models.chat import (
     ChatChannel,
     ChatChannelMember,
@@ -355,7 +356,7 @@ def _channel_payload(
         "name": channel.name,
         "memberCount": member_count,
         "lastMessage": last_message,
-        "lastAt": last_at.isoformat(),
+        "lastAt": as_aware_utc(last_at).isoformat(),
         "unread": unread,
         "starred": member.starred,
         "topic": channel.topic,
@@ -373,7 +374,7 @@ def _channel_payload(
         ).upper(),
     }
     if member.pinned_at:
-        payload["pinnedAt"] = member.pinned_at.isoformat()
+        payload["pinnedAt"] = as_aware_utc(member.pinned_at).isoformat()
     return payload
 
 
@@ -1071,7 +1072,7 @@ async def mark_channel_read(
             kind="channel",
             conversation_id=channel_id,
             user_id=user_id,
-            read_at=member.last_read_at.isoformat(),
+            read_at=as_aware_utc(member.last_read_at).isoformat(),
         )
     )
     return {"ok": True, "unread": 0}
@@ -1144,20 +1145,14 @@ async def send_channel_message(
     return payload
 
 
-def _as_aware_utc(dt: datetime) -> datetime:
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt
-
-
 def _thread_has_new(
     replies: list[ChatMessage],
     user_id: str,
     last_read_at: datetime | None,
 ) -> bool:
-    last_read = _as_aware_utc(last_read_at) if last_read_at else _epoch()
+    last_read = as_aware_utc(last_read_at) if last_read_at else _epoch()
     return any(
-        r.author_id != user_id and _as_aware_utc(r.created_at) > last_read
+        r.author_id != user_id and as_aware_utc(r.created_at) > last_read
         for r in replies
     )
 
@@ -1351,7 +1346,7 @@ def _dm_payload(
             else None
         ),
         "lastMessage": last_message,
-        "lastAt": last_at.isoformat(),
+        "lastAt": as_aware_utc(last_at).isoformat(),
         "unread": unread,
         "presence": other_presence,
         "starred": participant.starred,
@@ -1586,7 +1581,7 @@ async def mark_dm_read(
             kind="dm",
             conversation_id=conversation_id,
             user_id=user_id,
-            read_at=participant.last_read_at.isoformat(),
+            read_at=as_aware_utc(participant.last_read_at).isoformat(),
             audience_user_ids=audience_user_ids,
         )
     )
@@ -1923,7 +1918,7 @@ def _channel_member_json(
         "isDisabled": user.is_disabled,
         "isFollowing": member.is_following,
         "starred": member.starred,
-        "joinedAt": member.joined_at.isoformat() if member.joined_at else None,
+        "joinedAt": as_aware_utc(member.joined_at).isoformat() if member.joined_at else None,
         "workspaceRole": workspace_role,
     }
 

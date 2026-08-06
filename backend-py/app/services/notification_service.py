@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.utils import as_aware_utc
 from app.db.models.chat import ChatChannel, ChatChannelMember, ChatMessage
 from app.db.models.enums import InboxBucket, InboxItemType, InboxTimeGroup, MemberStatus
 from app.db.models.home import InboxItem, Task
@@ -751,7 +752,7 @@ async def create_channel_follow_notifications(
 
 
 def notification_payload(item: InboxItem) -> dict:
-    created = item.created_at or datetime.now(timezone.utc)
+    created = as_aware_utc(item.created_at or datetime.now(timezone.utc))
     return {
         "id": item.id,
         "type": map_inbox_type(item.type),

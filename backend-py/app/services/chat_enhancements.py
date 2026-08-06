@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.errors import AppError
+from app.core.utils import as_aware_utc
 from app.db.models.chat import (
     ChatChannel,
     ChatChannelMember,
@@ -132,7 +133,7 @@ async def list_paginated_root_messages(
     for m in rows:
         payload = map_message(m, user_id, thread_summary=thread_summaries.get(m.id))
         if m.pinned_at:
-            payload["pinnedAt"] = m.pinned_at.isoformat()
+            payload["pinnedAt"] = as_aware_utc(m.pinned_at).isoformat()
         read_by = await _read_receipt_user_ids(
             session,
             channel_id=channel_id,

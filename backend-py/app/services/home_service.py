@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.errors import AppError
+from app.core.utils import as_aware_utc
 from app.db.models.chat import ChatChannel
 from app.db.models.enums import (
     InboxBucket,
@@ -351,7 +352,7 @@ async def list_inbox(
                 "title": item.title,
                 "preview": item.preview,
                 "source": item.source,
-                "createdAt": item.created_at.isoformat(),
+                "createdAt": as_aware_utc(item.created_at).isoformat(),
                 "unread": item.unread,
                 "group": item.time_group.value.lower(),
                 "href": item.href,
@@ -1723,7 +1724,7 @@ async def list_posts(session: AsyncSession, workspace_id: str) -> dict:
                 "author": p.author.full_name,
                 "channel": p.channel,
                 "content": p.content,
-                "createdAt": p.created_at.isoformat(),
+                "createdAt": as_aware_utc(p.created_at).isoformat(),
                 "reactions": p.reactions,
             }
             for p in posts
@@ -1755,7 +1756,7 @@ async def create_post(
         "author": loaded.author.full_name,
         "channel": loaded.channel,
         "content": loaded.content,
-        "createdAt": loaded.created_at.isoformat(),
+        "createdAt": as_aware_utc(loaded.created_at).isoformat(),
         "reactions": loaded.reactions,
     }
 
@@ -2233,7 +2234,7 @@ async def list_task_notifications(
                 "title": row.title,
                 "preview": row.preview,
                 "source": row.source,
-                "createdAt": row.created_at.isoformat(),
+                "createdAt": as_aware_utc(row.created_at).isoformat(),
                 "unread": row.unread,
                 "href": row.href,
                 "activityKind": row.activity_kind,
@@ -2299,7 +2300,7 @@ async def list_notifications(
                 "title": item.title,
                 "preview": item.preview,
                 "source": item.source,
-                "createdAt": item.created_at.isoformat(),
+                "createdAt": as_aware_utc(item.created_at).isoformat(),
                 "unread": item.unread,
                 "href": item.href,
             }
