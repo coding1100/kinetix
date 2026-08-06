@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
+from app.core.utils import as_aware_utc
 from app.db.models.enums import WorkspaceRole
 from app.db.models.home import Space, Task, TaskList, TaskTimeEntry
 from app.services.workspace_permissions import get_member_time_flags
@@ -66,7 +67,7 @@ async def get_task_time_state(
         "timeTracking": {
             "active": running is not None,
             "entryId": running.id if running else None,
-            "startedAt": running.started_at.isoformat() if running else None,
+            "startedAt": as_aware_utc(running.started_at).isoformat() if running else None,
         },
     }
 

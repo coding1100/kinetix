@@ -3,6 +3,7 @@ from datetime import datetime
 
 from sqlalchemy import inspect as sa_inspect
 
+from app.core.utils import as_aware_utc
 from app.db.models.chat import ChatMessage, DirectConversation
 from app.services.attachment_service import map_attachment
 
@@ -44,7 +45,7 @@ def _thread_fields(
             "threadCount": thread_summary.count,
             "lastReplyAuthorId": thread_summary.last_reply_author_id,
             "lastReplyAuthorName": thread_summary.last_reply_author_name,
-            "lastReplyAt": thread_summary.last_reply_at.isoformat(),
+            "lastReplyAt": as_aware_utc(thread_summary.last_reply_at).isoformat(),
         }
     return {
         "threadCount": (
@@ -67,14 +68,14 @@ def map_message(
         "authorName": msg.author.full_name,
         "authorIsDisabled": msg.author.is_disabled,
         "body": msg.body,
-        "createdAt": msg.created_at.isoformat(),
+        "createdAt": as_aware_utc(msg.created_at).isoformat(),
         "isSelf": msg.author_id == current_user_id,
         "reactions": _reaction_list(msg),
         **_thread_fields(msg, thread_count=thread_count, thread_summary=thread_summary),
         "attachments": [map_attachment(a) for a in (msg.attachments or [])],
     }
     if msg.pinned_at:
-        payload["pinnedAt"] = msg.pinned_at.isoformat()
+        payload["pinnedAt"] = as_aware_utc(msg.pinned_at).isoformat()
     if read_by_user_ids:
         payload["readByUserIds"] = read_by_user_ids
     return payload
@@ -112,13 +113,13 @@ def map_message_broadcast(
         "authorName": msg.author.full_name,
         "authorIsDisabled": msg.author.is_disabled,
         "body": msg.body,
-        "createdAt": msg.created_at.isoformat(),
+        "createdAt": as_aware_utc(msg.created_at).isoformat(),
         "reactions": _reaction_list(msg),
         **_thread_fields(msg, thread_count=thread_count, thread_summary=thread_summary),
         "attachments": [map_attachment(a) for a in (msg.attachments or [])],
     }
     if msg.pinned_at:
-        payload["pinnedAt"] = msg.pinned_at.isoformat()
+        payload["pinnedAt"] = as_aware_utc(msg.pinned_at).isoformat()
     return payload
 
 
