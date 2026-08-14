@@ -139,7 +139,7 @@ export default function StaffPage() {
           <h1 className="text-lg font-semibold">Platform admins</h1>
           <p className="text-sm text-[var(--muted-foreground)]">
             People who can sign in to this admin portal. Granting access requires an existing
-            account — it doesn't create one.
+            account — it doesn&apos;t create one.
           </p>
         </div>
 
