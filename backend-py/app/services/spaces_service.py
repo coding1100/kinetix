@@ -51,7 +51,9 @@ from app.services.notification_service import (
     create_resource_share_notification,
     create_resource_unshare_notification,
     create_task_comment_mention_notifications,
+    create_task_comment_notifications,
     emit_home_notifications,
+    task_notification_recipients,
 )
 from app.services.space_permissions import (
     get_space_or_403,
@@ -61,6 +63,7 @@ from app.services.folder_list_permissions import (
     require_folder_permission,
     require_list_permission,
     resolve_share_target,
+    user_ids_with_list_access,
 )
 from app.services.workspace_permissions import is_workspace_admin
 from app.socket.emit import (
@@ -864,6 +867,48 @@ async def list_list_members(
     return {"isPrivate": task_list.is_private, "data": data}
 
 
+async def list_list_assignable_members(
+    session: AsyncSession,
+    workspace_id: str,
+    list_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+) -> dict:
+    """Everyone who can actually see this list (explicit grant or inherited
+    from its Folder/Space), for populating an assignee picker - not just the
+    people with an explicit ListMember override (see list_list_members)."""
+    task_list = await _list_with_space(session, workspace_id, list_id)
+    await require_list_permission(
+        session, task_list, user_id, role, PermissionLevel.VIEW
+    )
+    accessible_ids = await user_ids_with_list_access(session, workspace_id, task_list)
+    if not accessible_ids:
+        return {"data": []}
+    rows = (
+        await session.scalars(
+            select(WorkspaceMember)
+            .where(
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.user_id.in_(accessible_ids),
+                WorkspaceMember.status == MemberStatus.ACTIVE,
+            )
+            .options(selectinload(WorkspaceMember.user))
+        )
+    ).all()
+    data = [
+        {
+            "id": m.user.id,
+            "email": m.user.email,
+            "fullName": m.user.full_name,
+            "avatarUrl": m.user.avatar_url,
+            "isDisabled": m.user.is_disabled,
+        }
+        for m in rows
+        if not m.user.is_disabled
+    ]
+    return {"data": data}
+
+
 async def add_list_member(
     session: AsyncSession,
     workspace_id: str,
@@ -1036,14 +1081,24 @@ async def add_task_comment(
             .values(comment_id=comment.id)
         )
 
-    # Task comments/replies only notify the people @mentioned in them, not
-    # every follower/parent-comment-author by default (see
-    # create_task_comment_notifications / create_task_comment_reply_notifications
-    # in notification_service.py - kept for reference, just not called here).
-    comment_notifications: list[tuple[str, object]] = []
-    reply_notifications: list[tuple[str, object]] = []
+    # Every comment and reply notifies the task's assignees and followers -
+    # covers both top-level comments and thread replies, since both create a
+    # TaskComment row here. @mentioned users get a separate, more specific
+    # "mentioned you" notification instead of the generic one below.
+    comment_recipients = await task_notification_recipients(
+        session, task_id=task_id, exclude_user_id=user_id
+    )
+    comment_notifications = await create_task_comment_notifications(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=user_id,
+        task_name=task.name,
+        task_id=task_id,
+        comment_preview=body.body.strip(),
+        follower_ids=comment_recipients,
+    )
 
-    already_notified = {uid for uid, _ in comment_notifications + reply_notifications}
+    already_notified = {uid for uid, _ in comment_notifications}
     mention_notifications = await create_task_comment_mention_notifications(
         session,
         workspace_id=workspace_id,
@@ -1055,7 +1110,7 @@ async def add_task_comment(
     )
 
     await session.commit()
-    all_notifications = comment_notifications + reply_notifications + mention_notifications
+    all_notifications = comment_notifications + mention_notifications
     if all_notifications:
         await emit_home_notifications(session, workspace_id, all_notifications)
 

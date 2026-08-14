@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.errors import AppError
+from app.core.utils import as_aware_utc
 from app.db.models.chat import (
     ChatChannel,
     ChatChannelMember,
@@ -74,7 +75,6 @@ def _validate_icon(icon: str | None) -> str | None:
     return icon
 from app.services.notification_service import (
     create_channel_access_notifications,
-    create_dm_broadcast_notifications,
     create_mention_notifications,
     emit_channel_access_notifications,
     emit_home_notifications,
@@ -101,6 +101,7 @@ from app.socket.emit import (
     broadcast_chat_message_edit,
     broadcast_chat_read,
     broadcast_chat_reaction,
+    fire_and_forget,
 )
 from app.socket.presence import get_presence
 
@@ -355,7 +356,7 @@ def _channel_payload(
         "name": channel.name,
         "memberCount": member_count,
         "lastMessage": last_message,
-        "lastAt": last_at.isoformat(),
+        "lastAt": as_aware_utc(last_at).isoformat(),
         "unread": unread,
         "starred": member.starred,
         "topic": channel.topic,
@@ -373,7 +374,7 @@ def _channel_payload(
         ).upper(),
     }
     if member.pinned_at:
-        payload["pinnedAt"] = member.pinned_at.isoformat()
+        payload["pinnedAt"] = as_aware_utc(member.pinned_at).isoformat()
     return payload
 
 
@@ -386,7 +387,7 @@ async def _emit_channel_member_update(
     removed: bool = False,
 ) -> None:
     if removed:
-        asyncio.create_task(
+        fire_and_forget(
             broadcast_channel_member_updated(
                 workspace_id=workspace_id,
                 channel_id=channel_id,
@@ -408,7 +409,7 @@ async def _emit_channel_member_update(
         return
     roles = await _workspace_role_map(session, workspace_id, [user_id])
     member_payload = _channel_member_json(row.user, row, roles.get(user_id))
-    asyncio.create_task(
+    fire_and_forget(
         broadcast_channel_member_updated(
             workspace_id=workspace_id,
             channel_id=channel_id,
@@ -655,7 +656,7 @@ async def update_channel(
     await session.commit()
 
     if renamed:
-        asyncio.create_task(
+        fire_and_forget(
             broadcast_channel_renamed(
                 workspace_id=workspace_id,
                 channel_id=channel_id,
@@ -757,7 +758,7 @@ async def delete_channel(
             pass
 
     if member_ids:
-        asyncio.create_task(
+        fire_and_forget(
             broadcast_channel_removed(
                 workspace_id=workspace_id,
                 user_ids=member_ids,
@@ -984,7 +985,7 @@ async def sync_list_channel_members_for_space(
         if to_add:
             await _emit_channel_joined(session, workspace_id, channel, list(to_add))
         for uid in to_remove:
-            asyncio.create_task(
+            fire_and_forget(
                 broadcast_channel_member_updated(
                     workspace_id=workspace_id,
                     channel_id=channel.id,
@@ -1065,13 +1066,13 @@ async def mark_channel_read(
         raise AppError(404, "NOT_FOUND", "Channel not found")
     member.last_read_at = datetime.now(timezone.utc)
     await session.commit()
-    asyncio.create_task(
+    fire_and_forget(
         broadcast_chat_read(
             workspace_id=workspace_id,
             kind="channel",
             conversation_id=channel_id,
             user_id=user_id,
-            read_at=member.last_read_at.isoformat(),
+            read_at=as_aware_utc(member.last_read_at).isoformat(),
         )
     )
     return {"ok": True, "unread": 0}
@@ -1133,7 +1134,7 @@ async def send_channel_message(
     all_notifications = mention_notifications
     if all_notifications:
         await emit_home_notifications(session, workspace_id, all_notifications)
-    asyncio.create_task(
+    fire_and_forget(
         broadcast_chat_message(
             workspace_id=workspace_id,
             kind="channel",
@@ -1144,20 +1145,14 @@ async def send_channel_message(
     return payload
 
 
-def _as_aware_utc(dt: datetime) -> datetime:
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt
-
-
 def _thread_has_new(
     replies: list[ChatMessage],
     user_id: str,
     last_read_at: datetime | None,
 ) -> bool:
-    last_read = _as_aware_utc(last_read_at) if last_read_at else _epoch()
+    last_read = as_aware_utc(last_read_at) if last_read_at else _epoch()
     return any(
-        r.author_id != user_id and _as_aware_utc(r.created_at) > last_read
+        r.author_id != user_id and as_aware_utc(r.created_at) > last_read
         for r in replies
     )
 
@@ -1271,7 +1266,7 @@ async def send_thread_reply(
     if kind == "dm" and conversation_id:
         audience_user_ids = await _dm_participant_user_ids(session, conversation_id)
     if conv_id:
-        asyncio.create_task(
+        fire_and_forget(
             broadcast_chat_message(
                 workspace_id=workspace_id,
                 kind=kind,
@@ -1308,6 +1303,15 @@ def _dm_payload(
     unread: int,
 ) -> dict:
     other = next((p for p in conv.participants if p.user_id != user_id), None)
+    # A self-DM has no "other" participant - fall back to the user's own
+    # row so the conversation still gets an avatar/presence/id instead of
+    # nulls throughout.
+    is_self_dm = other is None and not conv.is_group
+    self_participant = (
+        next((p for p in conv.participants if p.user_id == user_id), None)
+        if is_self_dm
+        else None
+    )
     members = None
     participants = None
     if conv.is_group:
@@ -1324,6 +1328,8 @@ def _dm_payload(
     other_presence = (
         get_presence(workspace_id, other.user_id)
         if other and not conv.is_group
+        else get_presence(workspace_id, user_id)
+        if self_participant
         else "offline"
     )
     return {
@@ -1332,13 +1338,19 @@ def _dm_payload(
         "isGroup": conv.is_group,
         "members": members,
         "participants": participants,
-        "avatarUrl": other.user.avatar_url if other and not conv.is_group else None,
+        "avatarUrl": (
+            other.user.avatar_url
+            if other and not conv.is_group
+            else self_participant.user.avatar_url
+            if self_participant
+            else None
+        ),
         "lastMessage": last_message,
-        "lastAt": last_at.isoformat(),
+        "lastAt": as_aware_utc(last_at).isoformat(),
         "unread": unread,
         "presence": other_presence,
         "starred": participant.starred,
-        "otherUserId": other.user_id if other else None,
+        "otherUserId": other.user_id if other else (user_id if self_participant else None),
         "otherUserIsDisabled": other.user.is_disabled if other else False,
     }
 
@@ -1446,19 +1458,35 @@ async def create_or_get_dm(
                 400, "BAD_REQUEST", "All users must be workspace members"
             )
 
-    if len(unique_ids) == 2:
-        pair_subq = (
-            select(DirectParticipant.conversation_id)
-            .where(DirectParticipant.user_id.in_(unique_ids))
-            .group_by(DirectParticipant.conversation_id)
-            .having(func.count() == 2)
-        )
+    if len(unique_ids) in (1, 2):
+        # Exact-participant-set lookup so re-starting a DM reuses the
+        # existing conversation instead of creating a duplicate. 1 unique
+        # id is a self-DM (sender messaging themselves) - the subquery
+        # there must count *total* participants on the conversation
+        # (unfiltered), since filtering by `user_id == unique_ids` before
+        # counting would trivially match every conversation this user is
+        # in, not just their self-DM.
+        if len(unique_ids) == 1:
+            exact_size_subq = (
+                select(DirectParticipant.conversation_id)
+                .group_by(DirectParticipant.conversation_id)
+                .having(func.count() == 1)
+            )
+        else:
+            exact_size_subq = (
+                select(DirectParticipant.conversation_id)
+                .where(DirectParticipant.user_id.in_(unique_ids))
+                .group_by(DirectParticipant.conversation_id)
+                .having(func.count() == 2)
+            )
         existing_id = await session.scalar(
             select(DirectConversation.id)
+            .join(DirectParticipant, DirectParticipant.conversation_id == DirectConversation.id)
             .where(
                 DirectConversation.workspace_id == workspace_id,
                 DirectConversation.is_group.is_(False),
-                DirectConversation.id.in_(pair_subq),
+                DirectParticipant.user_id == user_id,
+                DirectConversation.id.in_(exact_size_subq),
             )
             .limit(1)
         )
@@ -1547,13 +1575,13 @@ async def mark_dm_read(
     participant.last_read_at = datetime.now(timezone.utc)
     await session.commit()
     audience_user_ids = [p.user_id for p in participant.conversation.participants]
-    asyncio.create_task(
+    fire_and_forget(
         broadcast_chat_read(
             workspace_id=workspace_id,
             kind="dm",
             conversation_id=conversation_id,
             user_id=user_id,
-            read_at=participant.last_read_at.isoformat(),
+            read_at=as_aware_utc(participant.last_read_at).isoformat(),
             audience_user_ids=audience_user_ids,
         )
     )
@@ -1605,22 +1633,8 @@ async def send_dm_message(
         await link_attachments_to_message(
             session, workspace_id, user_id, message.id, attachment_ids
         )
-    mention_notifications = await create_mention_notifications(
-        session,
-        workspace_id=workspace_id,
-        author_user_id=user_id,
-        body=message.body,
-        channel=None,
-        conversation_id=conversation_id,
-    )
-    dm_notifications = await create_dm_broadcast_notifications(
-        session,
-        workspace_id=workspace_id,
-        author_user_id=user_id,
-        conversation_id=conversation_id,
-        recipient_ids=[p.user_id for p in participant.conversation.participants],
-        body=message.body,
-    )
+    # Nothing about a DM reaches the inbox - neither the message nor an
+    # @mention inside it. The DM's own unread count is the notification.
     await session.commit()
 
     loaded = await session.scalar(
@@ -1629,11 +1643,8 @@ async def send_dm_message(
         .options(*_MESSAGE_SEND_LOAD)
     )
     payload = map_message(loaded, user_id, thread_count=0)
-    all_notifications = mention_notifications + dm_notifications
-    if all_notifications:
-        await emit_home_notifications(session, workspace_id, all_notifications)
     audience_user_ids = [p.user_id for p in participant.conversation.participants]
-    asyncio.create_task(
+    fire_and_forget(
         broadcast_chat_message(
             workspace_id=workspace_id,
             kind="dm",
@@ -1793,7 +1804,7 @@ async def update_message(
             session, loaded.conversation_id
         )
     if conv_id:
-        asyncio.create_task(
+        fire_and_forget(
             broadcast_chat_message_edit(
                 workspace_id=workspace_id,
                 kind=kind,
@@ -1831,7 +1842,7 @@ async def delete_message(
     await session.commit()
 
     if conv_id:
-        asyncio.create_task(
+        fire_and_forget(
             broadcast_chat_message_delete(
                 workspace_id=workspace_id,
                 kind=kind,
@@ -1883,7 +1894,7 @@ async def toggle_message_reaction(
         audience_user_ids = await _dm_participant_user_ids(
             session, message.conversation_id
         )
-    asyncio.create_task(
+    fire_and_forget(
         broadcast_chat_reaction(
             workspace_id=workspace_id,
             kind=kind,
@@ -1907,7 +1918,7 @@ def _channel_member_json(
         "isDisabled": user.is_disabled,
         "isFollowing": member.is_following,
         "starred": member.starred,
-        "joinedAt": member.joined_at.isoformat() if member.joined_at else None,
+        "joinedAt": as_aware_utc(member.joined_at).isoformat() if member.joined_at else None,
         "workspaceRole": workspace_role,
     }
 
@@ -2119,7 +2130,7 @@ async def remove_channel_member(
     await session.delete(target)
     await session.commit()
 
-    asyncio.create_task(
+    fire_and_forget(
         broadcast_channel_removed(
             workspace_id=workspace_id,
             user_ids=[target_user_id],

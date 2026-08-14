@@ -31,10 +31,12 @@ import {
 } from "@/lib/user-display";
 import { MessageSquareIcon } from "lucide-react";
 import { upsertChannelInSidebar } from "@/lib/chat/sidebar-channel";
+import { channelPathForSurface } from "@/lib/chat/conversation-surface";
 import { ChannelIconPicker } from "@/components/chat/channels/ChannelIconPicker";
 
 export function CreateChannelDialog() {
   const router = useRouter();
+  const pathname = usePathname();
   const { activeModal, closeModal } = useUiStore();
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const open = activeModal === "new-channel";
@@ -106,7 +108,7 @@ export function CreateChannelDialog() {
       toast.success(`#${trimmed} created`);
       closeModal();
       reset();
-      router.push(`/chat/c/${channel.id}`);
+      router.push(channelPathForSurface(pathname, channel.id));
     } catch (err) {
       toast.error(
         err instanceof ApiError

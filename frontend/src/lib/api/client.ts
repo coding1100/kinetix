@@ -32,15 +32,56 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Fired synchronously whenever any apiFetch call gets a 401, from anywhere
-// in the app — not just the initial-load session bootstrap. Lets
-// AuthProvider force an immediate logout on a non-recoverable code (e.g.
-// ACCOUNT_DISABLED) without waiting for the next hard refresh.
+// Fired synchronously whenever any apiFetch call gets a 401 that couldn't be
+// resolved by a silent token refresh — from anywhere in the app, not just
+// the initial-load session bootstrap. Lets AuthProvider force an immediate
+// logout on a non-recoverable code (account disabled, or refresh token also
+// expired/invalid) without waiting for the next hard refresh.
 type UnauthorizedHandler = (code: string) => void;
 let unauthorizedHandler: UnauthorizedHandler | null = null;
 
 export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
   unauthorizedHandler = handler;
+}
+
+// De-dupes concurrent 401s: if five requests expire at once, only one
+// /auth/refresh call goes out and every caller awaits the same promise.
+let refreshPromise: Promise<string | null> | null = null;
+
+/**
+ * Silently exchanges the stored refresh token for a new access token and
+ * updates the auth store. Dynamic imports avoid a static circular import
+ * (auth.ts's refreshSession() itself calls apiFetch()).
+ */
+async function refreshAccessToken(): Promise<string | null> {
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      try {
+        const [{ useAuthStore }, { refreshSession }] = await Promise.all([
+          import("@/stores/auth-store"),
+          import("./auth"),
+        ]);
+        const store = useAuthStore.getState();
+        const refreshed = await refreshSession(store.refreshToken);
+        store.updateSession({
+          accessToken: refreshed.accessToken,
+          refreshToken: refreshed.refreshToken ?? store.refreshToken,
+          user: refreshed.user,
+          workspaces: store.workspaces,
+        });
+        return refreshed.accessToken;
+      } catch (err) {
+        // Refresh token itself is missing/expired/invalid — nothing left to
+        // retry with, caller falls back to the unauthorized handler.
+        const code = err instanceof ApiError ? err.code : "INVALID_REFRESH";
+        unauthorizedHandler?.(code);
+        return null;
+      } finally {
+        refreshPromise = null;
+      }
+    })();
+  }
+  return refreshPromise;
 }
 
 function parseApiError(
@@ -88,9 +129,17 @@ function shouldRetryRequest(method: string, attempt: number, err: unknown) {
   return method === "GET" && err instanceof TypeError;
 }
 
-export async function apiFetch<T>(
+export function apiFetch<T>(
   path: string,
   init?: RequestInit & { token?: string }
+): Promise<T> {
+  return apiFetchInternal<T>(path, init, false);
+}
+
+async function apiFetchInternal<T>(
+  path: string,
+  init: (RequestInit & { token?: string }) | undefined,
+  isRetryAfterRefresh: boolean
 ): Promise<T> {
   const isFormData =
     typeof FormData !== "undefined" && init?.body instanceof FormData;
@@ -121,6 +170,25 @@ export async function apiFetch<T>(
       if (!res.ok) {
         const apiError = parseApiError(res, data);
         if (apiError.status === 401) {
+          // Access token expired mid-session: refresh it once, silently,
+          // and replay this exact request — user never sees the error.
+          const canRefreshAndRetry =
+            !isRetryAfterRefresh &&
+            Boolean(init?.token) &&
+            apiError.code === "UNAUTHORIZED" &&
+            path !== "/auth/refresh";
+          if (canRefreshAndRetry) {
+            const newToken = await refreshAccessToken();
+            if (newToken) {
+              return apiFetchInternal<T>(
+                path,
+                { ...init, token: newToken },
+                true
+              );
+            }
+            // refreshAccessToken() already fired unauthorizedHandler.
+            throw apiError;
+          }
           unauthorizedHandler?.(apiError.code);
         }
         if (shouldRetryRequest(method, attempt, apiError)) {

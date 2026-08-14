@@ -30,6 +30,13 @@ export interface InboxItemDto {
   unread: boolean;
   group: "today" | "earlier";
   href?: string;
+  /** Task's live status, when this item is about a task - lets the Inbox
+   * row show the task's actual status icon instead of a generic per-type
+   * one (see lib/tasks/status-icon.ts, same mapping as TaskDrawer's status
+   * picker). All three are present together or not at all. */
+  statusColor?: string;
+  statusName?: string;
+  statusGroup?: string;
 }
 
 export interface SpaceDto {
@@ -128,6 +135,9 @@ export interface NotificationDto {
   unread: boolean;
   group?: InboxItemDto["group"];
   href?: string;
+  statusColor?: string;
+  statusName?: string;
+  statusGroup?: string;
 }
 
 export function fetchNotifications(token: string, workspaceId: string) {

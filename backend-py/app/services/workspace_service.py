@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.errors import AppError
-from app.core.utils import unique_workspace_slug
+from app.core.utils import as_aware_utc, unique_workspace_slug
 from app.db.models.enums import MemberStatus, WorkspaceRole, WorkspaceStatus
 from app.db.models.workspace import Workspace, WorkspaceMember
 from app.socket.presence import get_presence
@@ -29,8 +29,8 @@ def _workspace_json(ws: Workspace) -> dict:
         "id": ws.id,
         "name": ws.name,
         "slug": ws.slug,
-        "createdAt": ws.created_at.isoformat() if ws.created_at else None,
-        "updatedAt": ws.updated_at.isoformat() if ws.updated_at else None,
+        "createdAt": as_aware_utc(ws.created_at).isoformat() if ws.created_at else None,
+        "updatedAt": as_aware_utc(ws.updated_at).isoformat() if ws.updated_at else None,
     }
 
 
@@ -52,7 +52,7 @@ async def list_workspaces(session: AsyncSession, user_id: str) -> list[dict]:
             "name": m.workspace.name,
             "slug": m.workspace.slug,
             "role": m.role.value,
-            "joinedAt": m.joined_at.isoformat() if m.joined_at else None,
+            "joinedAt": as_aware_utc(m.joined_at).isoformat() if m.joined_at else None,
         }
         for m in rows
         if m.workspace.status != WorkspaceStatus.SUSPENDED and not m.workspace.is_deleted
@@ -192,7 +192,7 @@ async def list_workspace_members(session: AsyncSession, workspace_id: str) -> li
             "isDisabled": m.user.is_disabled,
             "role": m.role.value,
             "status": m.status.value,
-            "joinedAt": m.joined_at.isoformat() if m.joined_at else None,
+            "joinedAt": as_aware_utc(m.joined_at).isoformat() if m.joined_at else None,
             "presence": get_presence(workspace_id, m.user.id),
             "teams": teams_by_user.get(m.user.id, []),
             "invitedBy": invited_by_email.get(m.user.email),

@@ -6,12 +6,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.db.models.chat import ChatChannel, ChatChannelMember, ChatMessage, DirectParticipant
-from app.db.models.enums import InboxBucket, InboxItemType, InboxTimeGroup, MemberStatus
-from app.db.models.home import InboxItem, Task
+from app.core.utils import as_aware_utc
+from app.db.models.chat import ChatChannel, ChatChannelMember, ChatMessage
+from app.db.models.enums import InboxBucket, InboxItemType, InboxTimeGroup, MemberStatus, TaskStatus
+from app.db.models.home import InboxItem, ListStatus, Task
 from app.db.models.user import User
 from app.db.models.workspace import WorkspaceMember
-from app.services.home_helpers import map_inbox_type
+from app.services.home_helpers import LEGACY_STATUS_GROUP, STATUS_LABELS, map_inbox_type
+from app.services.inbox_visibility import is_inbox_visible
 from app.socket.emit import broadcast_home_notification
 
 PERSON_MENTION_RE = re.compile(
@@ -311,22 +313,18 @@ async def create_mention_notifications(
     if channel:
         members = await _channel_members_for_notify(session, channel.id)
         level_by_user = {m.user_id: _notification_level(m) for m in members}
+        # Anyone in the workspace can be @mentioned, but only mentioned people
+        # who actually have channel access get notified - no ChatChannelMember
+        # row means no notification, same rule the DM branch below applies.
         recipient_ids = [
             rid
             for rid in recipient_ids
-            if level_by_user.get(rid, "MENTIONS") != "NONE"
+            if rid in level_by_user and level_by_user[rid] != "NONE"
         ]
     elif conversation_id:
-        participant_ids = set(
-            await session.scalars(
-                select(DirectParticipant.user_id).where(
-                    DirectParticipant.conversation_id == conversation_id
-                )
-            )
-        )
-        recipient_ids = [
-            rid for rid in recipient_ids if rid in participant_ids
-        ]
+        # DMs never reach the inbox - not the message, not an @mention inside
+        # it. The conversation's own unread count is the whole notification.
+        return []
 
     if not recipient_ids:
         return []
@@ -508,48 +506,6 @@ async def create_resource_unshare_notification(
     session.add(item)
     await session.flush()
     return [(recipient_id, item)]
-
-
-async def create_dm_broadcast_notifications(
-    session: AsyncSession,
-    *,
-    workspace_id: str,
-    author_user_id: str,
-    conversation_id: str,
-    recipient_ids: list[str],
-    body: str,
-) -> list[tuple[str, InboxItem]]:
-    targets = [rid for rid in dict.fromkeys(recipient_ids) if rid != author_user_id]
-    if not targets:
-        return []
-
-    users = await _load_users(session, [author_user_id, *targets])
-    actor_name = (
-        users.get(author_user_id).full_name if users.get(author_user_id) else "Someone"
-    )
-    snippet = _message_snippet(body)
-    href = f"/chat/dm/{conversation_id}"
-
-    created: list[tuple[str, InboxItem]] = []
-    for recipient_id in targets:
-        item = InboxItem(
-            workspace_id=workspace_id,
-            user_id=recipient_id,
-            type=InboxItemType.CHAT,
-            title=f"New message from {actor_name}",
-            preview=f"{actor_name}: {snippet}",
-            source=actor_name,
-            unread=True,
-            bucket=InboxBucket.ALL,
-            time_group=InboxTimeGroup.TODAY,
-            href=href,
-            activity_kind="dm_message",
-        )
-        session.add(item)
-        created.append((recipient_id, item))
-
-    await session.flush()
-    return created
 
 
 async def create_thread_reply_notifications(
@@ -795,9 +751,9 @@ async def create_channel_follow_notifications(
     return created
 
 
-def notification_payload(item: InboxItem) -> dict:
-    created = item.created_at or datetime.now(timezone.utc)
-    return {
+def notification_payload(item: InboxItem, status: dict[str, str] | None = None) -> dict:
+    created = as_aware_utc(item.created_at or datetime.now(timezone.utc))
+    payload = {
         "id": item.id,
         "type": map_inbox_type(item.type),
         "title": item.title,
@@ -808,6 +764,58 @@ def notification_payload(item: InboxItem) -> dict:
         "group": item.time_group.value.lower(),
         "href": item.href,
     }
+    if status:
+        payload["statusColor"] = status["color"]
+        payload["statusName"] = status["name"]
+        payload["statusGroup"] = status["statusGroup"]
+    return payload
+
+
+_TASK_HREF_RE = re.compile(r"^/home/tasks/([^/?]+)")
+
+
+def task_id_from_href(href: str | None) -> str | None:
+    """Pulls the task id out of an Inbox item's href (e.g. /home/tasks/<id>)
+    without a stored column - lets the notification icon reflect the task's
+    live status color rather than a generic per-type icon, computed at read
+    time so it never goes stale."""
+    if not href:
+        return None
+    match = _TASK_HREF_RE.match(href)
+    return match.group(1) if match else None
+
+
+async def task_status_meta(
+    session: AsyncSession, task_ids: set[str]
+) -> dict[str, dict[str, str]]:
+    """color/name/statusGroup per task, for the Inbox notification icon to
+    show the task's actual status glyph (matching TaskDrawer's statusIcon())
+    instead of a generic per-type icon. Prefers the list's ListStatus row;
+    falls back to the legacy Task.status enum for tasks without one, same
+    fallback _status_label() uses elsewhere."""
+    if not task_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(
+                Task.id,
+                Task.status,
+                Task.status_color,
+                ListStatus.name,
+                ListStatus.status_group,
+            )
+            .outerjoin(ListStatus, Task.status_id == ListStatus.id)
+            .where(Task.id.in_(task_ids))
+        )
+    ).all()
+    result: dict[str, dict[str, str]] = {}
+    for task_id, legacy_status, color, status_name, status_group in rows:
+        result[task_id] = {
+            "color": color,
+            "name": status_name or STATUS_LABELS.get(legacy_status, legacy_status.value.lower()),
+            "statusGroup": status_group.value if status_group else LEGACY_STATUS_GROUP.get(legacy_status, "NOT_STARTED"),
+        }
+    return result
 
 
 async def emit_home_notifications(
@@ -819,14 +827,26 @@ async def emit_home_notifications(
         return
     for _, item in created:
         await session.refresh(item)
+    # Only push what the Inbox would show. Emitting a hidden row would put it
+    # in the client's live notification cache, which merges into the list and
+    # the badge and would reintroduce the drift this rule exists to prevent.
+    visible = [(uid, item) for uid, item in created if is_inbox_visible(item)]
+    if not visible:
+        return
+    task_ids = {
+        tid for _, item in visible if (tid := task_id_from_href(item.href))
+    }
+    status_meta = await task_status_meta(session, task_ids)
     await asyncio.gather(
         *[
             broadcast_home_notification(
                 workspace_id=workspace_id,
                 user_ids=[recipient_id],
-                notification=notification_payload(item),
+                notification=notification_payload(
+                    item, status_meta.get(task_id_from_href(item.href))
+                ),
             )
-            for recipient_id, item in created
+            for recipient_id, item in visible
         ]
     )
 

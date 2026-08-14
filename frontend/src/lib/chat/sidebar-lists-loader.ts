@@ -58,31 +58,27 @@ export function mergeSidebarDms(
   queryDms: DirectMessage[] | undefined,
   cacheDms: DirectMessage[] | undefined
 ): DirectMessage[] {
+  if (queryDms === undefined) {
+    return sortByLastAt([...(cacheDms ?? [])]);
+  }
   const merged = new Map<string, DirectMessage>();
-  for (const dm of queryDms ?? []) {
+  for (const dm of queryDms) {
     merged.set(dm.id, dm);
   }
   if (cacheDms !== undefined) {
-    const cacheIds = new Set(cacheDms.map((d) => d.id));
     for (const dm of cacheDms) {
       const existing = merged.get(dm.id);
-      merged.set(
-        dm.id,
-        existing
-          ? {
-              ...dm,
-              ...existing,
-              unread: mergeConversationUnread(dm.unread, existing.unread, {
-                isActive: activeDmId() === dm.id,
-              }),
-            }
-          : dm
-      );
-    }
-    for (const id of [...merged.keys()]) {
-      if (!cacheIds.has(id)) {
-        merged.delete(id);
-      }
+      // The API response owns set membership: a DM the server returns but the
+      // cache has never seen is a conversation someone just started with us,
+      // and closing a DM persists as hidden server-side, so it stays gone.
+      if (!existing) continue;
+      merged.set(dm.id, {
+        ...dm,
+        ...existing,
+        unread: mergeConversationUnread(dm.unread, existing.unread, {
+          isActive: activeDmId() === dm.id,
+        }),
+      });
     }
   }
   return sortByLastAt([...merged.values()]);
@@ -110,25 +106,24 @@ export function getSidebarListsFromStore(
   return null;
 }
 
-/** One shared loader for channels + DMs — deduped and sequential to protect the API/DB pool. */
+/** One shared loader for channels + DMs — deduped to protect the API/DB pool. */
 export function loadSidebarLists(
   token: string,
-  workspaceId: string,
-  options?: { force?: boolean }
+  workspaceId: string
 ): Promise<ChatSidebarLists> {
   const userId = useAuthStore.getState().user?.id;
   if (!userId) {
     return Promise.reject(new Error("No authenticated user"));
   }
 
-  const force = options?.force ?? false;
   const key = inflightKey(userId, workspaceId);
 
-  if (!force) {
-    const cached = getSidebarListsFromStore(workspaceId, userId);
-    if (cached) return Promise.resolve(cached);
-  }
-
+  // The cache is persisted to localStorage, so serving it without revalidating
+  // meant anything that changed while the tab was closed - a channel someone
+  // added you to, for instance - stayed invisible until some unrelated event
+  // bumped the refresh key. Callers still pass the cache as initialData for an
+  // instant first paint; this always goes to the API behind that, deduped per
+  // user+workspace by the inflight map below.
   const existing = inflight.get(key);
   if (existing) return existing;
 

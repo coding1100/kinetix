@@ -26,6 +26,7 @@ export interface TaskSubtask {
   status: string;
   statusKey?: string;
   statusColor: string;
+  statusGroup?: string;
 }
 
 export interface TaskChecklistItem {
@@ -70,6 +71,7 @@ export interface Task {
   statusKey?: string;
   statusId?: string | null;
   statusColor: string;
+  statusGroup?: string;
   assigneeIds?: string[];
   followerIds?: string[];
   tags?: string[];

@@ -1,4 +1,33 @@
+import asyncio
+import logging
+from collections.abc import Coroutine
+from typing import Any
+
 from app.socket.server import get_sio
+
+logger = logging.getLogger(__name__)
+
+# asyncio only keeps weak references to running tasks, so a broadcast created
+# with a bare asyncio.create_task() can be garbage collected before it is sent
+# and the event is lost with no error anywhere. Holding a strong reference
+# until the task finishes is what makes fire-and-forget delivery reliable.
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _log_broadcast_failure(task: asyncio.Task) -> None:
+    _background_tasks.discard(task)
+    if task.cancelled():
+        return
+    error = task.exception()
+    if error is not None:
+        logger.warning("Realtime broadcast failed: %r", error)
+
+
+def fire_and_forget(coro: Coroutine[Any, Any, Any]) -> None:
+    """Send a realtime broadcast without blocking the request that caused it."""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_log_broadcast_failure)
 
 
 async def _emit_workspace_or_users(

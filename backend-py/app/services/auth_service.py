@@ -19,7 +19,7 @@ from app.core.security import (
     verify_refresh_token,
     verify_token_hash,
 )
-from app.core.utils import generate_token, unique_workspace_slug
+from app.core.utils import as_aware_utc, generate_token, unique_workspace_slug
 from app.db.models.enums import MemberStatus, WorkspaceRole, WorkspaceStatus
 from app.db.models.user import PasswordResetToken, RefreshToken, User
 from app.db.models.workspace import Workspace, WorkspaceMember
@@ -235,7 +235,7 @@ async def get_me(
         "email": user.email,
         "fullName": user.full_name,
         "avatarUrl": user.avatar_url,
-        "createdAt": user.created_at.isoformat(),
+        "createdAt": as_aware_utc(user.created_at).isoformat(),
         "hasPassword": user.password_hash is not None,
         "workspaces": workspaces,
     }

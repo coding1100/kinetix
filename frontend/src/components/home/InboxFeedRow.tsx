@@ -18,6 +18,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import type { InboxItemDto } from "@/lib/api/home";
+import { TaskStatusIcon } from "@/lib/tasks/status-icon";
 import { cn, formatNotificationDate } from "@/lib/utils";
 
 type InboxItemType = InboxItemDto["type"];
@@ -169,6 +170,26 @@ function renderConnectorIcon(item: InboxItemDto, className: string) {
   return <MessageSquare className={className} strokeWidth={2} />;
 }
 
+// Task notification: show the task's actual (live) status glyph, same
+// mapping as TaskDrawer's status picker - a static "done" checkmark was
+// misleading for e.g. a status-change or comment notification on a task
+// that's still in progress.
+function renderTypeOrStatusIcon(item: InboxItemDto, className: string) {
+  if (item.statusName) {
+    return (
+      <TaskStatusIcon
+        task={{
+          status: item.statusName,
+          statusGroup: item.statusGroup,
+          statusColor: item.statusColor ?? "",
+        }}
+        className={className}
+      />
+    );
+  }
+  return renderItemIcon(item.type, className);
+}
+
 export function InboxFeedRow({
   item,
   onOpen,
@@ -196,11 +217,11 @@ export function InboxFeedRow({
       >
         <span
           className={cn(
-            "shrink-0",
-            item.unread ? itemIconTone(item.type) : "text-muted-foreground"
+            "flex size-4 shrink-0 items-center justify-center",
+            !item.statusColor && (item.unread ? itemIconTone(item.type) : "text-muted-foreground")
           )}
         >
-          {renderItemIcon(item.type, "size-4")}
+          {renderTypeOrStatusIcon(item, "size-4")}
         </span>
         <span
           className={cn(
