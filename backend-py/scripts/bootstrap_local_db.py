@@ -58,12 +58,12 @@ async def main() -> None:
                 session,
                 SignupBody(
                     email="owner@demo.com",
-                    password="Password123!",
+                    password="password123",
                     full_name="Owner Demo",
                     workspace_name="Acme Demo",
                 ),
             )
-            print("Seeded owner@demo.com / Password123! (workspace: Acme Demo)")
+            print("Seeded owner@demo.com / password123 (workspace: Acme Demo)")
         else:
             print("Demo owner user already exists — skipped owner seed")
 
@@ -74,7 +74,7 @@ async def main() -> None:
             alex = User(
                 id=str(uuid.uuid4()),
                 email="alex@demo.com",
-                password_hash=hash_password("Password123!"),
+                password_hash=hash_password("password123"),
                 full_name="Alex Demo",
             )
             session.add(alex)

@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 load_dotenv(".env")
 
 ADMIN_EMAIL = "admin@demo.com"
-ADMIN_PASSWORD = "Password123!"
+ADMIN_PASSWORD = "password123"
 ADMIN_NAME = "Admin Demo"
 OWNER_EMAIL = "owner@demo.com"
 WORKSPACE_NAME = "Acme Demo"
