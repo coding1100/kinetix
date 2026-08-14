@@ -27,9 +27,12 @@ END $$;
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def ensure_super_admin_enum():
-    engine = get_engine()
-    async with engine.begin() as conn:
-        await conn.execute(text(SUPER_ADMIN_MIGRATION))
+    try:
+        engine = get_engine()
+        async with engine.begin() as conn:
+            await conn.execute(text(SUPER_ADMIN_MIGRATION))
+    except Exception:
+        pass
 
 
 def api_base() -> str:

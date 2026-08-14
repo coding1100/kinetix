@@ -12,10 +12,14 @@ import { fetchSpace } from "@/lib/api/home";
 import { patchSpace } from "@/lib/api/spaces";
 import type { StatusConfigItem } from "@/lib/api/home";
 import { useHomeQuery } from "@/hooks/use-home-query";
+import { useRouter } from "next/navigation";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { ApiError } from "@/lib/api/client";
 
+import { PageLoader } from "@/components/ui/page-loader";
+
 export function SpaceSettingsView({ spaceId }: { spaceId: string }) {
+  const router = useRouter();
   const { accessToken, workspaceId } = useWorkspaceApi();
   const { data: space, loading, error } = useHomeQuery(
     (token, ws) => fetchSpace(token, ws, spaceId),
@@ -28,6 +32,12 @@ export function SpaceSettingsView({ spaceId }: { spaceId: string }) {
   useEffect(() => {
     if (space?.statusConfig) setStatuses(space.statusConfig);
   }, [space?.statusConfig]);
+
+  useEffect(() => {
+    if (!loading && (error || !space)) {
+      router.replace("/spaces");
+    }
+  }, [loading, error, space, router]);
 
   const canEdit = Boolean(space?.canManageStructure);
   const dirty =
@@ -49,6 +59,10 @@ export function SpaceSettingsView({ spaceId }: { spaceId: string }) {
     }
   };
 
+  if (!space && !loading) {
+    return <PageLoader label="Space not found. Redirecting to spaces…" />;
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
       <PageHeader title={space ? `${space.name} settings` : "Space settings"}>
@@ -62,7 +76,7 @@ export function SpaceSettingsView({ spaceId }: { spaceId: string }) {
           Back
         </Button>
       </PageHeader>
-      <HomeDataState loading={loading} error={error} empty={!space && !loading}>
+      <HomeDataState loading={loading} error={null} empty={false}>
         {space ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-6">
             <div className="mx-auto max-w-2xl space-y-6">

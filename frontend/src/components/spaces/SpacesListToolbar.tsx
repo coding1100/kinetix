@@ -2,8 +2,17 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { HashIcon, ListIcon, PlusIcon, Share2Icon } from "lucide-react";
+import {
+  CalendarIcon,
+  HashIcon,
+  LayoutGridIcon,
+  ListIcon,
+  PlusIcon,
+  SearchIcon,
+  Share2Icon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ShareModal } from "@/components/shared/ShareModal";
 import { UnderlineTabBar } from "@/components/shared/Tabs";
 import {
@@ -16,7 +25,7 @@ import {
 import type { ListStatus } from "@/lib/types/task";
 import { cn } from "@/lib/utils";
 
-type ViewMode = "channel" | "list";
+export type ViewMode = "channel" | "list" | "board" | "calendar";
 
 export function SpacesListToolbar({
   listId,
@@ -30,6 +39,10 @@ export function SpacesListToolbar({
   statuses,
   statusFilter,
   onStatusFilterChange,
+  priorityFilter = "all",
+  onPriorityFilterChange,
+  searchQuery = "",
+  onSearchQueryChange,
   onCreateTask,
   canShare,
   className,
@@ -45,6 +58,10 @@ export function SpacesListToolbar({
   statuses?: ListStatus[];
   statusFilter: string;
   onStatusFilterChange: (value: string) => void;
+  priorityFilter?: string;
+  onPriorityFilterChange?: (value: string) => void;
+  searchQuery?: string;
+  onSearchQueryChange?: (query: string) => void;
   onCreateTask: () => void;
   canShare?: boolean;
   className?: string;
@@ -92,21 +109,31 @@ export function SpacesListToolbar({
           size="default"
           tabs={[
             {
-              id: "channel",
-              label: "Channel",
-              icon: <HashIcon className="size-3" />,
-            },
-            {
               id: "list",
               label: "List",
               icon: <ListIcon className="size-3" />,
             },
+            {
+              id: "board",
+              label: "Board",
+              icon: <LayoutGridIcon className="size-3" />,
+            },
+            {
+              id: "calendar",
+              label: "Calendar",
+              icon: <CalendarIcon className="size-3" />,
+            },
+            {
+              id: "channel",
+              label: "Channel",
+              icon: <HashIcon className="size-3" />,
+            },
           ]}
           active={view}
-          onChange={onViewChange}
+          onChange={(v) => onViewChange(v as ViewMode)}
         />
         <div className="flex shrink-0 items-center gap-2">
-          {view === "list" ? (
+          {view !== "channel" ? (
             <Button
               variant="ghost"
               size="sm"
@@ -132,26 +159,54 @@ export function SpacesListToolbar({
       </div>
 
       {view === "channel" ? null : (
-      <div className="flex flex-wrap items-center justify-between gap-1 px-3 py-1">
-        <div className="flex items-center gap-1">
-          <Select
-            value={statusFilter}
-            onValueChange={(v) => onStatusFilterChange(v ?? "all")}
-          >
-            <SelectTrigger className="h-6 w-[110px] gap-1 text-[11px] font-medium">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All status</SelectItem>
-              {(statuses ?? []).map((status) => (
-                <SelectItem key={status.id} value={status.id}>
-                  {status.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative w-40">
+              <SearchIcon className="absolute left-2 top-1.5 size-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search tasks…"
+                value={searchQuery}
+                onChange={(e) => onSearchQueryChange?.(e.target.value)}
+                className="h-6 pl-7 text-xs"
+              />
+            </div>
+
+            <Select
+              value={statusFilter}
+              onValueChange={(v) => onStatusFilterChange(v ?? "all")}
+            >
+              <SelectTrigger className="h-6 w-[110px] gap-1 text-[11px] font-medium">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All status</SelectItem>
+                {(statuses ?? []).map((status) => (
+                  <SelectItem key={status.id} value={status.id}>
+                    {status.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {onPriorityFilterChange ? (
+              <Select
+                value={priorityFilter}
+                onValueChange={(v) => onPriorityFilterChange(v ?? "all")}
+              >
+                <SelectTrigger className="h-6 w-[110px] gap-1 text-[11px] font-medium">
+                  <SelectValue placeholder="Priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All priority</SelectItem>
+                  <SelectItem value="urgent">Urgent</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="normal">Normal</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : null}
+          </div>
         </div>
-      </div>
       )}
     </div>
   );

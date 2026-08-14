@@ -22,6 +22,7 @@ import {
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { useSpacesStore } from "@/stores/spaces-store";
 import { useRouter } from "next/navigation";
+import { formatRequestError } from "@/lib/api/client";
 import { toast } from "sonner";
 import { selectActiveWorkspace, useAuthStore } from "@/stores/auth-store";
 
@@ -146,7 +147,7 @@ export function SpacesHierarchyDialog({
       setName("");
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not save");
+      toast.error(formatRequestError(err));
     } finally {
       setSaving(false);
     }

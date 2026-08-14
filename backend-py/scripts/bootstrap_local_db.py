@@ -37,6 +37,11 @@ async def _run_sql_migrations(conn) -> None:
                 await conn.execute(text("\n".join(lines)))
 
 
+import uuid
+from app.core.security import hash_password
+from app.db.models.enums import MemberStatus, WorkspaceRole
+from app.db.models.workspace import Workspace, WorkspaceMember
+
 async def main() -> None:
     engine = get_engine()
     async with engine.begin() as conn:
@@ -53,14 +58,42 @@ async def main() -> None:
                 session,
                 SignupBody(
                     email="owner@demo.com",
-                    password="password123",
+                    password="Password123!",
                     full_name="Owner Demo",
                     workspace_name="Acme Demo",
                 ),
             )
-            print("Seeded owner@demo.com / password123 (workspace: Acme Demo)")
+            print("Seeded owner@demo.com / Password123! (workspace: Acme Demo)")
         else:
-            print("Demo user already exists — skipped seed")
+            print("Demo owner user already exists — skipped owner seed")
+
+        existing_alex = await session.scalar(
+            select(User).where(User.email == "alex@demo.com")
+        )
+        if not existing_alex:
+            alex = User(
+                id=str(uuid.uuid4()),
+                email="alex@demo.com",
+                password_hash=hash_password("Password123!"),
+                full_name="Alex Demo",
+            )
+            session.add(alex)
+            await session.flush()
+            ws = await session.scalar(
+                select(Workspace).where(Workspace.name == "Acme Demo")
+            )
+            if ws:
+                session.add(
+                    WorkspaceMember(
+                        id=str(uuid.uuid4()),
+                        workspace_id=ws.id,
+                        user_id=alex.id,
+                        role=WorkspaceRole.MEMBER,
+                        status=MemberStatus.ACTIVE,
+                    )
+                )
+            await session.commit()
+            print("Seeded alex@demo.com / Password123! (workspace: Acme Demo)")
 
     print("Local database is ready.")
 

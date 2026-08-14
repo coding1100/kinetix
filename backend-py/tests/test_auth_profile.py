@@ -1,16 +1,19 @@
 """Profile and password settings API."""
 
+import httpx
 import pytest
-from httpx import ASGITransport, AsyncClient
 
-from app.main import app
+from tests.conftest import API_BASE, require_py4_server
 
 
-@pytest.mark.asyncio
-async def test_openapi_profile_routes():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        res = await client.get("/openapi.json")
+@pytest.fixture(scope="module")
+def api_ready():
+    require_py4_server()
+    return True
+
+
+def test_openapi_profile_routes(api_ready):
+    res = httpx.get(f"{API_BASE}/openapi.json", timeout=10)
     assert res.status_code == 200
     paths = res.json()["paths"]
     assert "/api/v1/auth/me" in paths
@@ -18,47 +21,45 @@ async def test_openapi_profile_routes():
     assert "/api/v1/auth/me/change-password" in paths
 
 
-@pytest.mark.asyncio
-async def test_patch_me_updates_profile():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        login = await client.post(
-            "/api/v1/auth/login",
-            json={"email": "owner@demo.com", "password": "password123"},
-        )
-        if login.status_code != 200:
-            pytest.skip("Demo owner not in DB")
+def test_patch_me_updates_profile(api_ready):
+    login = httpx.post(
+        f"{API_BASE}/api/v1/auth/login",
+        json={"email": "owner@demo.com", "password": "password123"},
+        timeout=10,
+    )
+    if login.status_code != 200:
+        pytest.skip("Demo owner not in DB")
 
-        token = login.json()["accessToken"]
-        headers = {"Authorization": f"Bearer {token}"}
+    token = login.json()["accessToken"]
+    headers = {"Authorization": f"Bearer {token}"}
 
-        me = await client.get("/api/v1/auth/me", headers=headers)
-        assert me.status_code == 200
-        assert "hasPassword" in me.json()
+    me = httpx.get(f"{API_BASE}/api/v1/auth/me", headers=headers, timeout=10)
+    assert me.status_code == 200
+    assert "hasPassword" in me.json()
 
-        patch = await client.patch(
-            "/api/v1/auth/me",
-            headers=headers,
-            json={"fullName": "Demo Owner Updated"},
-        )
-        assert patch.status_code == 200, patch.text
-        assert patch.json()["fullName"] == "Demo Owner Updated"
+    patch = httpx.patch(
+        f"{API_BASE}/api/v1/auth/me",
+        headers=headers,
+        json={"fullName": "Demo Owner Updated"},
+        timeout=10,
+    )
+    assert patch.status_code == 200, patch.text
+    assert patch.json()["fullName"] == "Demo Owner Updated"
 
-        await client.patch(
-            "/api/v1/auth/me",
-            headers=headers,
-            json={"fullName": me.json()["fullName"]},
-        )
+    httpx.patch(
+        f"{API_BASE}/api/v1/auth/me",
+        headers=headers,
+        json={"fullName": me.json()["fullName"]},
+        timeout=10,
+    )
 
-        # Weak new password (no uppercase/symbol) must be rejected by the
-        # strength validator without touching the demo account's real
-        # password, which every other test in the suite logs in with.
-        pwd = await client.post(
-            "/api/v1/auth/me/change-password",
-            headers=headers,
-            json={
-                "currentPassword": "password123",
-                "newPassword": "password123",
-            },
-        )
-        assert pwd.status_code == 400
+    pwd = httpx.post(
+        f"{API_BASE}/api/v1/auth/me/change-password",
+        headers=headers,
+        json={
+            "currentPassword": "password123",
+            "newPassword": "password123",
+        },
+        timeout=10,
+    )
+    assert pwd.status_code == 400

@@ -132,13 +132,6 @@ export function useHomeQuery<T>(
           }
         }
 
-        if (err instanceof ApiError && err.status === 404) {
-          setError(
-            "API not found. Restart backend-py on port 4001 (latest PY-4 build)."
-          );
-          return;
-        }
-
         setError(
           err instanceof ApiError ? err.message : "Failed to load data"
         );

@@ -72,6 +72,7 @@ export interface Task {
   statusColor: string;
   assigneeIds?: string[];
   followerIds?: string[];
+  tags?: string[];
   dueDate?: string;
   dueDateIso?: string | null;
   startDate?: string | null;
@@ -95,6 +96,7 @@ export interface Task {
   subtasks?: TaskSubtask[];
   attachments?: TaskAttachment[];
   checklists?: TaskChecklist[];
+  dependencies?: TaskDependency[];
   inLineup?: boolean;
   isFollowing?: boolean;
 }

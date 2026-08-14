@@ -1,15 +1,26 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PageLoader } from "@/components/ui/page-loader";
 import { fetchSpacesTree, firstListIdFromSpaces } from "@/lib/api/spaces";
 import { useHomeQuery } from "@/hooks/use-home-query";
+import { EmptySpacesState } from "@/components/spaces/EmptySpacesState";
+import {
+  SpacesHierarchyDialog,
+  type HierarchyDialogMode,
+} from "@/components/spaces/SpacesHierarchyDialog";
+import { useSpacesStore } from "@/stores/spaces-store";
 
 export default function SpacesIndexPage() {
   const router = useRouter();
-  const query = useHomeQuery((token, ws) =>
-    fetchSpacesTree(token, ws).then((r) => r.data)
+  const refreshKey = useSpacesStore((s) => s.refreshKey);
+  const [dialogMode, setDialogMode] = useState<HierarchyDialogMode | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const query = useHomeQuery(
+    (token, ws) => fetchSpacesTree(token, ws).then((r) => r.data),
+    [refreshKey]
   );
 
   useEffect(() => {
@@ -29,15 +40,44 @@ export default function SpacesIndexPage() {
   }
 
   if (!query.loading && query.data && !firstListIdFromSpaces(query.data)) {
+    const firstSpace = query.data[0];
+
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-        <p className="text-sm font-medium">No lists in this workspace</p>
-        <p className="text-sm text-muted-foreground">
-          Seed the database or create a space and list to get started.
-        </p>
-      </div>
+      <>
+        <EmptySpacesState
+          title="No lists available in workspace"
+          description="Create your first space, folder, or list to start managing work."
+          onCreateSpace={() => {
+            setDialogMode({ type: "space" });
+            setDialogOpen(true);
+          }}
+          onCreateFolder={
+            firstSpace
+              ? () => {
+                  setDialogMode({ type: "folder", spaceId: firstSpace.id });
+                  setDialogOpen(true);
+                }
+              : undefined
+          }
+          onCreateList={
+            firstSpace
+              ? () => {
+                  setDialogMode({ type: "list", spaceId: firstSpace.id });
+                  setDialogOpen(true);
+                }
+              : undefined
+          }
+        />
+
+        <SpacesHierarchyDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          mode={dialogMode}
+        />
+      </>
     );
   }
 
   return <PageLoader label="Opening spaces…" />;
 }
+

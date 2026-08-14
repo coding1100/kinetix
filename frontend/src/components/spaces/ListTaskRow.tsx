@@ -31,6 +31,9 @@ function priorityFlagClass(priority?: TaskPriority) {
   }
 }
 
+import { getTagColorClass } from "@/components/tasks/TaskTagsManager";
+import { Badge } from "@/components/ui/badge";
+
 export function ListTaskRow({
   task,
   onSelect,
@@ -57,6 +60,22 @@ export function ListTaskRow({
           aria-hidden
         />
         <span className="truncate font-medium">{task.name}</span>
+        {task.tags && task.tags.length > 0 ? (
+          <div className="flex shrink-0 items-center gap-1">
+            {task.tags.slice(0, 2).map((tag) => (
+              <Badge
+                key={tag}
+                variant="outline"
+                className={`px-1.5 py-0 text-[10px] ${getTagColorClass(tag)}`}
+              >
+                {tag}
+              </Badge>
+            ))}
+            {task.tags.length > 2 ? (
+              <span className="text-[10px] text-muted-foreground">+{task.tags.length - 2}</span>
+            ) : null}
+          </div>
+        ) : null}
         {commentCount > 0 ? (
           <span className="flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground">
             <MessageSquareIcon className="size-3" />

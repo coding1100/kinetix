@@ -592,7 +592,7 @@ async def test_task_attachment_presign_upload_and_list(api_client: AsyncClient):
         ),
         patch("app.services.task_attachment_service.put_object"),
         patch(
-            "app.services.s3_service.presign_get",
+            "app.services.task_attachment_service.presign_get",
             return_value="https://example.com/download",
         ),
     ):

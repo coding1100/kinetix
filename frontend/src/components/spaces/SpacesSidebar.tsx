@@ -40,7 +40,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { DeleteHierarchyModal, type DeleteHierarchyTarget } from "@/components/spaces/DeleteHierarchyModal";
+import { StatusSettingsDialog } from "@/components/spaces/StatusSettingsDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -63,15 +64,18 @@ function isListActive(pathname: string, listId: string) {
   return pathname === listHref(listId);
 }
 
-type DeleteTarget =
-  | { kind: "space"; id: string; name: string }
-  | { kind: "folder"; id: string; name: string }
-  | { kind: "list"; id: string; name: string; isPersonal?: boolean };
-
 type ShareTarget = {
   type: ShareResourceType;
   id: string;
   name: string;
+};
+
+type StatusTarget = {
+  type: "space" | "list";
+  id: string;
+  name: string;
+  statuses?: any[];
+  canInherit?: boolean;
 };
 
 export function SpacesSidebar() {
@@ -88,9 +92,10 @@ export function SpacesSidebar() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [dialogMode, setDialogMode] = useState<HierarchyDialogMode | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteHierarchyTarget | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [shareTarget, setShareTarget] = useState<ShareTarget | null>(null);
+  const [statusTarget, setStatusTarget] = useState<StatusTarget | null>(null);
   const { data: sharedWithMe } = useHomeQuery(
     (token, ws) => fetchSharedWithMe(token, ws).then((r) => r.data),
     [refreshKey]
@@ -118,15 +123,31 @@ export function SpacesSidebar() {
       if (deleteTarget.kind === "space") {
         await deleteSpace(accessToken, workspaceId, deleteTarget.id);
         toast.success("Space deleted");
+        if (
+          pathname.includes(`/spaces/${deleteTarget.id}`) ||
+          pathname.startsWith("/spaces")
+        ) {
+          router.push("/spaces");
+        }
       } else if (deleteTarget.kind === "folder") {
         await deleteFolder(accessToken, workspaceId, deleteTarget.id);
         toast.success("Folder deleted");
+        if (pathname.startsWith("/spaces")) {
+          router.push("/spaces");
+        }
       } else {
         await deleteList(accessToken, workspaceId, deleteTarget.id);
         toast.success("List deleted");
-        if (pathname === listHref(deleteTarget.id)) {
+        if (
+          pathname === listHref(deleteTarget.id) ||
+          pathname.includes(deleteTarget.id) ||
+          pathname.startsWith("/spaces")
+        ) {
           router.push("/spaces");
         }
+      }
+      if (statusTarget && statusTarget.id === deleteTarget.id) {
+        setStatusTarget(null);
       }
       bumpRefresh();
       setDeleteTarget(null);
@@ -143,52 +164,20 @@ export function SpacesSidebar() {
     <>
       <aside className="flex min-h-0 w-[280px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
         <div className="flex items-center justify-between border-b border-sidebar-border px-4 py-3">
-          <span className="text-sm font-semibold tracking-tight">Spaces</span>
-          <div className="flex gap-0.5">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button variant="ghost" size="icon-sm" aria-label="Search spaces">
-                    <SearchIcon className="size-4" />
-                  </Button>
-                }
-              />
-              <TooltipContent side="bottom">Search spaces</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="New space"
-                    onClick={() => openDialog({ type: "space" })}
-                  >
-                    <PlusIcon className="size-4" />
-                  </Button>
-                }
-              />
-              <TooltipContent side="bottom">New space</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => setSecondaryPanelOpen(false)}
-                    aria-label="Collapse sidebar"
-                  >
-                    <PanelLeftCloseIcon className="size-4" />
-                  </Button>
-                }
-              />
-              <TooltipContent side="bottom">Collapse sidebar</TooltipContent>
-            </Tooltip>
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-sidebar-foreground">Spaces</span>
           </div>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => setSecondaryPanelOpen(false)}
+            aria-label="Close panel"
+          >
+            <PanelLeftCloseIcon className="size-4" />
+          </Button>
         </div>
-        <ScrollArea className="min-h-0 flex-1 px-2 py-3">
-          <nav className="mb-3 space-y-0.5 px-1">
+        <ScrollArea className="flex-1 px-2 py-2">
+          <nav className="mb-3 space-y-0.5 px-1" aria-label="Quick views">
             <Link
               href="/home/all-tasks"
               className={cn(
@@ -354,12 +343,17 @@ export function SpacesSidebar() {
                                 Rename
                               </DropdownMenuItem>
                               <DropdownMenuItem
-                                render={
-                                  <Link href={`/home/spaces/${space.id}/settings`} />
+                                onClick={() =>
+                                  setStatusTarget({
+                                    type: "space",
+                                    id: space.id,
+                                    name: space.name,
+                                    statuses: space.statusConfig,
+                                  })
                                 }
                               >
                                 <Settings2Icon className="size-4" />
-                                Settings
+                                Statuses
                               </DropdownMenuItem>
                             </>
                           ) : null}
@@ -385,6 +379,8 @@ export function SpacesSidebar() {
                                   kind: "space",
                                   id: space.id,
                                   name: space.name,
+                                  folderCount: space.folders?.length || 0,
+                                  listCount: space.standaloneLists?.length || 0,
                                 })
                               }
                             >
@@ -481,6 +477,7 @@ export function SpacesSidebar() {
                                           kind: "folder",
                                           id: folder.id,
                                           name: folder.name,
+                                          listCount: folder.lists?.length || 0,
                                         })
                                       }
                                     >
@@ -514,6 +511,18 @@ export function SpacesSidebar() {
                                         })
                                     : undefined
                                 }
+                                onStatuses={
+                                  list.canManageStructure
+                                    ? () =>
+                                        setStatusTarget({
+                                          type: "list",
+                                          id: list.id,
+                                          name: list.name,
+                                          statuses: list.statusConfig,
+                                          canInherit: true,
+                                        })
+                                    : undefined
+                                }
                                 onDelete={
                                   list.canManageStructure
                                     ? () =>
@@ -521,6 +530,7 @@ export function SpacesSidebar() {
                                           kind: "list",
                                           id: list.id,
                                           name: list.name,
+                                          isPersonal: false,
                                         })
                                     : undefined
                                 }
@@ -558,6 +568,18 @@ export function SpacesSidebar() {
                                         type: "edit-list",
                                         listId: list.id,
                                         initialName: list.name,
+                                      })
+                                  : undefined
+                              }
+                              onStatuses={
+                                list.canManageStructure
+                                  ? () =>
+                                      setStatusTarget({
+                                        type: "list",
+                                        id: list.id,
+                                        name: list.name,
+                                        statuses: list.statusConfig,
+                                        canInherit: true,
                                       })
                                   : undefined
                               }
@@ -611,29 +633,28 @@ export function SpacesSidebar() {
           setExpanded((prev) => ({ ...prev, [spaceId]: true }))
         }
       />
-      <ConfirmDialog
+      <DeleteHierarchyModal
         open={deleteTarget !== null}
         onOpenChange={(open) => {
           if (!open) setDeleteTarget(null);
         }}
-        title={
-          deleteTarget?.kind === "space"
-            ? "Delete space?"
-            : deleteTarget?.kind === "folder"
-              ? "Delete folder?"
-              : "Delete list?"
-        }
-        description={
-          deleteTarget?.kind === "list" && deleteTarget.isPersonal
-            ? "The Personal list cannot be deleted."
-            : deleteTarget
-              ? `"${deleteTarget.name}" and its tasks will be permanently deleted.`
-              : ""
-        }
-        confirmLabel="Delete"
+        target={deleteTarget}
         loading={deleting}
         onConfirm={() => void handleDelete()}
       />
+      {statusTarget ? (
+        <StatusSettingsDialog
+          open={statusTarget !== null}
+          onOpenChange={(open) => {
+            if (!open) setStatusTarget(null);
+          }}
+          targetType={statusTarget.type}
+          targetId={statusTarget.id}
+          targetName={statusTarget.name}
+          initialStatuses={statusTarget.statuses}
+          canInherit={statusTarget.canInherit}
+        />
+      ) : null}
       {shareTarget ? (
         <ShareModal
           open={shareTarget !== null}
@@ -658,6 +679,7 @@ function ListNavItem({
   isPrivate,
   canShare,
   onRename,
+  onStatuses,
   onDelete,
   onShare,
 }: {
@@ -669,11 +691,12 @@ function ListNavItem({
   isPrivate?: boolean;
   canShare?: boolean;
   onRename?: () => void;
+  onStatuses?: () => void;
   onDelete?: () => void;
   onShare: () => void;
 }) {
   const canDelete = Boolean(onDelete) && !isPersonal;
-  const hasMenu = Boolean(onRename) || canDelete || (Boolean(canShare) && Boolean(onShare));
+  const hasMenu = Boolean(onRename) || Boolean(onStatuses) || canDelete || (Boolean(canShare) && Boolean(onShare));
   return (
     <li className="group flex items-center gap-0.5">
       <Button
@@ -721,12 +744,10 @@ function ListNavItem({
                   Rename
                 </DropdownMenuItem>
               ) : null}
-              {onRename ? (
-                <DropdownMenuItem
-                  render={<Link href={`${listHref(listId)}/settings`} />}
-                >
+              {onStatuses ? (
+                <DropdownMenuItem onClick={onStatuses}>
                   <Settings2Icon className="size-4" />
-                  Settings
+                  Statuses
                 </DropdownMenuItem>
               ) : null}
               {canShare ? (

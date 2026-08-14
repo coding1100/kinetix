@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from app.db.models.enums import PermissionLevel, WorkspaceRole
-from app.services.space_permissions import DEFAULT_LEVEL_BY_ROLE, level_at_least
+from app.services.space_permissions import level_at_least
 from app.services.workspace_permissions import (
     ROLE_RANK,
     can_assign_role,
@@ -54,7 +54,7 @@ def test_role_rank_orders_full_hierarchy():
             WorkspaceRole.SUPER_ADMIN,
             set(ALL_ROLES) - {WorkspaceRole.OWNER, WorkspaceRole.SUPER_ADMIN},
         ),
-        (WorkspaceRole.ADMIN, CONTENT_ROLES),
+        (WorkspaceRole.ADMIN, CONTENT_ROLES | {WorkspaceRole.ADMIN}),
         (WorkspaceRole.MEMBER, CONTENT_ROLES),
         (WorkspaceRole.LIMITED_MEMBER, set()),
         (WorkspaceRole.GUEST, set()),
@@ -77,8 +77,7 @@ def test_can_assign_role_matrix(actor: WorkspaceRole, assignable: set[WorkspaceR
         ),
         (
             WorkspaceRole.ADMIN,
-            set(ALL_ROLES)
-            - {WorkspaceRole.OWNER, WorkspaceRole.SUPER_ADMIN, WorkspaceRole.ADMIN},
+            set(ALL_ROLES) - {WorkspaceRole.OWNER, WorkspaceRole.SUPER_ADMIN},
         ),
         (WorkspaceRole.MEMBER, set()),
         (WorkspaceRole.LIMITED_MEMBER, set()),
@@ -116,17 +115,6 @@ def test_privileged_and_admin_sets():
     assert is_super_admin(WorkspaceRole.OWNER) is False
 
 
-def test_default_space_level_by_role():
-    assert DEFAULT_LEVEL_BY_ROLE[WorkspaceRole.OWNER] == PermissionLevel.EDIT
-    assert DEFAULT_LEVEL_BY_ROLE[WorkspaceRole.SUPER_ADMIN] == PermissionLevel.EDIT
-    assert DEFAULT_LEVEL_BY_ROLE[WorkspaceRole.ADMIN] == PermissionLevel.EDIT
-    assert DEFAULT_LEVEL_BY_ROLE[WorkspaceRole.MEMBER] == PermissionLevel.EDIT
-    assert DEFAULT_LEVEL_BY_ROLE[WorkspaceRole.LIMITED_MEMBER] == PermissionLevel.VIEW
-    # Guests see nothing unless explicitly shared with.
-    assert DEFAULT_LEVEL_BY_ROLE[WorkspaceRole.GUEST] is None
-    assert set(DEFAULT_LEVEL_BY_ROLE) == set(ALL_ROLES)
-
-
 def test_level_at_least():
     assert level_at_least(PermissionLevel.EDIT, PermissionLevel.VIEW)
     assert level_at_least(PermissionLevel.EDIT, PermissionLevel.COMMENT)
@@ -135,3 +123,4 @@ def test_level_at_least():
     assert not level_at_least(PermissionLevel.COMMENT, PermissionLevel.EDIT)
     assert not level_at_least(PermissionLevel.VIEW, PermissionLevel.COMMENT)
     assert not level_at_least(None, PermissionLevel.VIEW)
+

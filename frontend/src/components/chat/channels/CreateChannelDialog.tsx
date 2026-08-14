@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { SlackImportDialog } from "@/components/chat/SlackImportDialog";
 import {
   Dialog,
   DialogContent,
@@ -44,6 +45,7 @@ export function CreateChannelDialog() {
   const [iconColor, setIconColor] = useState<string | null>(null);
   const [icon, setIcon] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [slackImportOpen, setSlackImportOpen] = useState(false);
   const [inviteIds, setInviteIds] = useState<Set<string>>(new Set());
   const currentUserId = useAuthStore((s) => s.user?.id);
 
@@ -231,11 +233,11 @@ export function CreateChannelDialog() {
           <Button
             type="button"
             variant="outline"
-            className="gap-2 invisible"
-            onClick={() => toast("Slack import — Phase 2")}
+            className="gap-2"
+            onClick={() => setSlackImportOpen(true)}
           >
             <MessageSquareIcon className="size-4 text-[#e01e5a]" />
-            Import
+            Import from Slack
           </Button>
           <Button
             type="button"
@@ -247,6 +249,11 @@ export function CreateChannelDialog() {
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <SlackImportDialog
+        open={slackImportOpen}
+        onOpenChange={setSlackImportOpen}
+      />
     </Dialog>
   );
 }

@@ -54,6 +54,8 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { DeleteHierarchyModal, type DeleteHierarchyTarget } from "@/components/spaces/DeleteHierarchyModal";
+import { StatusSettingsDialog } from "@/components/spaces/StatusSettingsDialog";
 import { useShellStore } from "@/stores/shell-store";
 import { SidebarNavIcon } from "@/components/icons/SidebarNavIcon";
 import { useNotificationsUnread } from "@/hooks/use-notifications-unread";
@@ -924,14 +926,26 @@ export function HomeSidebar() {
       if (deleteTarget.kind === "space") {
         await deleteSpace(accessToken, workspaceId, deleteTarget.id);
         toast.success("Space deleted");
+        if (
+          pathname.includes(`/spaces/${deleteTarget.id}`) ||
+          pathname.includes(deleteTarget.id)
+        ) {
+          router.push("/spaces");
+        }
       } else if (deleteTarget.kind === "folder") {
         await deleteFolder(accessToken, workspaceId, deleteTarget.id);
         toast.success("Folder deleted");
+        if (pathname.includes(deleteTarget.id)) {
+          router.push("/spaces");
+        }
       } else {
         await deleteList(accessToken, workspaceId, deleteTarget.id);
         toast.success("List deleted");
-        if (pathname === `/home/l/${deleteTarget.id}`) {
-          router.push("/home");
+        if (
+          pathname === `/home/l/${deleteTarget.id}` ||
+          pathname.includes(deleteTarget.id)
+        ) {
+          router.push("/spaces");
         }
       }
       bumpSpacesRefresh();

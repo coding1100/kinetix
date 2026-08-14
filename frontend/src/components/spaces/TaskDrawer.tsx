@@ -8,6 +8,8 @@ import type {
   TaskAttachment,
   TaskChecklist,
   TaskComment,
+  TaskDependency,
+  TaskDependencyType,
   TaskSubtask,
 } from "@/lib/types/task";
 import {
@@ -46,6 +48,8 @@ import {
   addChecklistItem,
   addTaskComment,
   createSubtask,
+  addTaskDependency,
+  deleteTaskDependency,
   deleteChecklist,
   deleteChecklistItem,
   deleteTask,
@@ -58,12 +62,14 @@ import {
   updateChecklistItem,
   updateTaskComment,
 } from "@/lib/api/spaces";
+import { TaskPickerDialog } from "@/components/spaces/TaskPickerDialog";
 import { uploadTaskAttachment } from "@/lib/tasks/upload-task-attachment";
 import { TaskCommentComposer } from "@/components/tasks/TaskCommentComposer";
 import { TaskActivityComment } from "@/components/tasks/TaskActivityComment";
 import { CommentAttachmentCard } from "@/components/tasks/CommentAttachmentCard";
 import { TaskDatesField } from "@/components/tasks/TaskDatesField";
 import { TaskTimeEstimateField } from "@/components/tasks/TaskTimeEstimateField";
+import { TaskTagsManager } from "@/components/tasks/TaskTagsManager";
 import { fetchWorkspaceMembers } from "@/lib/api/chat";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { useAuthStore } from "@/stores/auth-store";
@@ -113,12 +119,14 @@ import {
   Share2Icon,
   SquareCheckBigIcon,
   StarIcon,
+  TagIcon,
   Trash2Icon,
   Undo2Icon,
   UserMinusIcon,
   UserPlusIcon,
   UsersIcon,
   WandSparklesIcon,
+  XIcon,
 } from "lucide-react";
 
 type Member = { id: string; fullName: string; email: string; avatarUrl?: string | null; isDisabled?: boolean };
@@ -365,6 +373,41 @@ export function TaskDrawer({
   const [checklistItemsExpanded, setChecklistItemsExpanded] = useState(true);
   const [galleryExpanded, setGalleryExpanded] = useState(false);
 
+  const [dependencies, setDependencies] = useState<TaskDependency[]>([]);
+  const [dependencyPickerOpen, setDependencyPickerOpen] = useState(false);
+  const [selectedRelatedTask, setSelectedRelatedTask] = useState<Task | null>(null);
+  const [dependencyTypeModalOpen, setDependencyTypeModalOpen] = useState(false);
+
+  async function handleAddDependency(type: TaskDependencyType) {
+    if (!taskId || !selectedRelatedTask || !ready || !accessToken || !workspaceId) return;
+    try {
+      const created = await addTaskDependency(accessToken, workspaceId, taskId, {
+        relatedTaskId: selectedRelatedTask.id,
+        type,
+      });
+      setDependencies((prev) => [...prev, created]);
+      toast.success("Dependency added");
+      void refreshActivity();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not add dependency");
+    } finally {
+      setDependencyTypeModalOpen(false);
+      setSelectedRelatedTask(null);
+    }
+  }
+
+  async function handleDeleteDependency(depId: string) {
+    if (!taskId || !ready || !accessToken || !workspaceId) return;
+    try {
+      await deleteTaskDependency(accessToken, workspaceId, taskId, depId);
+      setDependencies((prev) => prev.filter((d) => d.id !== depId));
+      toast.success("Dependency removed");
+      void refreshActivity();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not remove dependency");
+    }
+  }
+
   const refreshActivity = useCallback(async () => {
     if (!taskId || !ready || !accessToken || !workspaceId) return;
     try {
@@ -464,6 +507,7 @@ export function TaskDrawer({
         setSubtasks(t.subtasks ?? []);
         setAttachments(t.attachments ?? []);
         setChecklists(t.checklists ?? []);
+        setDependencies(t.dependencies ?? []);
         setSubtaskInput("");
         setSubtaskOpen(false);
         setGalleryExpanded(false);
@@ -1668,6 +1712,62 @@ export function TaskDrawer({
                     />
                   </PropertyValue>
 
+                  <PropertyLabel icon={TagIcon}>Tags</PropertyLabel>
+                  <PropertyValue>
+                    <TaskTagsManager
+                      taskId={task.id}
+                      tags={task.tags}
+                      onTagsChange={(newTags) => {
+                        setTask((prev) => (prev ? { ...prev, tags: newTags } : null));
+                        onSaved();
+                      }}
+                    />
+                  </PropertyValue>
+
+                  <PropertyLabel icon={LinkIcon}>Dependencies</PropertyLabel>
+                  <PropertyValue>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {dependencies.map((dep) => (
+                        <Badge
+                          key={dep.id}
+                          variant="outline"
+                          className="gap-1 px-2 py-0.5 text-xs font-medium bg-muted/50 border-border"
+                        >
+                          <span className="text-muted-foreground font-normal">
+                            {dep.type === "blocking"
+                              ? "Waiting on"
+                              : dep.type === "blocked_by"
+                              ? "Blocking"
+                              : "Linked"}:
+                          </span>
+                          <button
+                            type="button"
+                            className="font-medium hover:underline text-foreground"
+                            onClick={() => onTaskNavigate?.(dep.task.id)}
+                          >
+                            {dep.task.name}
+                          </button>
+                          <button
+                            type="button"
+                            className="ml-0.5 rounded-xs hover:bg-black/10 dark:hover:bg-white/10 p-0.5 transition-colors"
+                            onClick={() => void handleDeleteDependency(dep.id)}
+                            aria-label="Remove dependency"
+                          >
+                            <XIcon className="size-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                        onClick={() => setDependencyPickerOpen(true)}
+                      >
+                        <PlusIcon className="size-3" />
+                        Add Dependency
+                      </Button>
+                    </div>
+                  </PropertyValue>
                 </div>
 
                 <div className="mt-8 border-t border-border pt-6">
@@ -2905,6 +3005,54 @@ export function TaskDrawer({
                 Done
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <TaskPickerDialog
+        open={dependencyPickerOpen}
+        onOpenChange={setDependencyPickerOpen}
+        title="Add Dependency"
+        excludeTaskIds={taskId ? [taskId] : []}
+        onSelect={(pickedTask) => {
+          setSelectedRelatedTask(pickedTask);
+          setDependencyTypeModalOpen(true);
+        }}
+      />
+
+      <Dialog open={dependencyTypeModalOpen} onOpenChange={setDependencyTypeModalOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Dependency Relationship</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            How does this task relate to &quot;{selectedRelatedTask?.name}&quot;?
+          </p>
+          <div className="flex flex-col gap-2 pt-2">
+            <Button
+              variant="outline"
+              className="justify-start gap-2 text-left"
+              onClick={() => void handleAddDependency("blocking")}
+            >
+              <span className="font-medium">Waiting on</span>
+              <span className="text-xs text-muted-foreground">— this task waits on target</span>
+            </Button>
+            <Button
+              variant="outline"
+              className="justify-start gap-2 text-left"
+              onClick={() => void handleAddDependency("blocked_by")}
+            >
+              <span className="font-medium">Blocking</span>
+              <span className="text-xs text-muted-foreground">— this task blocks target</span>
+            </Button>
+            <Button
+              variant="outline"
+              className="justify-start gap-2 text-left"
+              onClick={() => void handleAddDependency("linked")}
+            >
+              <span className="font-medium">Linked Task</span>
+              <span className="text-xs text-muted-foreground">— simple link</span>
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

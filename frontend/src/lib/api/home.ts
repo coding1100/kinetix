@@ -54,6 +54,7 @@ export interface SpaceDto {
       canShare?: boolean;
       canManageStructure?: boolean;
       isPrivate?: boolean;
+      statusConfig?: StatusConfigItem[];
     }[];
     canShare?: boolean;
     canManageStructure?: boolean;
@@ -66,6 +67,7 @@ export interface SpaceDto {
     canShare?: boolean;
     canManageStructure?: boolean;
     isPrivate?: boolean;
+    statusConfig?: StatusConfigItem[];
   }[];
   lastActivityAt?: string;
 }

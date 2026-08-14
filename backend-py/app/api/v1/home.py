@@ -885,6 +885,20 @@ async def add_task_dependency(
     )
 
 
+@router.delete("/tasks/{task_id}/dependencies/{dependency_id}")
+async def delete_task_dependency(
+    workspace_id: str,
+    task_id: str,
+    dependency_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await home_service.delete_task_dependency(
+        session, workspace_id, user.id, member.role, task_id, dependency_id
+    )
+
+
 @router.post(
     "/tasks/{task_id}/checklists",
     status_code=status.HTTP_201_CREATED,
