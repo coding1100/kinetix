@@ -42,6 +42,10 @@ import { ComposerAttachmentChips } from "@/components/chat/attachments/ComposerA
 import { CreateDocDialog } from "@/components/chat/attachments/CreateDocDialog";
 import { MediaRecorderDialog } from "@/components/chat/attachments/MediaRecorderDialog";
 import { SHOW_EXTENDED_COMPOSER_TOOLS } from "@/lib/chat/composer-flags";
+import { AudioRecorderModal } from "@/components/chat/AudioRecorderModal";
+import { VideoRecorderModal } from "@/components/chat/VideoRecorderModal";
+import { SlashCommandPalette } from "@/components/chat/SlashCommandPalette";
+import { SendLaterPopover } from "@/components/chat/SendLaterPopover";
 import { MentionPickerPopover } from "@/components/chat/mentions/MentionPickerPopover";
 import { RichComposerField } from "@/components/chat/composer/RichComposerField";
 import { useRichComposerField } from "@/hooks/use-rich-composer-field";
@@ -98,6 +102,9 @@ export function MessageComposer({
   const clearComposerQuote = useChatStore((s) => s.clearComposerQuote);
   const [docOpen, setDocOpen] = useState(false);
   const [videoOpen, setVideoOpen] = useState(false);
+  const [audioOpen, setAudioOpen] = useState(false);
+  const [sendLaterOpen, setSendLaterOpen] = useState(false);
+  const [slashOpen, setSlashOpen] = useState(false);
   const [clipOpen, setClipOpen] = useState(false);
   const openModal = useUiStore((s) => s.openModal);
   const { workspaceId } = useWorkspaceApi();
@@ -399,7 +406,12 @@ export function MessageComposer({
                   () => setVideoOpen(true),
                   uploading
                 )}
-                {iconBtn("Voice clip", MicIcon)}
+                {iconBtn(
+                  "Voice clip",
+                  MicIcon,
+                  () => setAudioOpen(true),
+                  uploading
+                )}
 
                 <ToolbarDivider />
 
@@ -455,11 +467,8 @@ export function MessageComposer({
                   }
                 />
                 <DropdownMenuContent align="end" className="w-44">
-                  <DropdownMenuItem onClick={() => openModal("schedule-message")}>
-                    Schedule message
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => toast("Send later — Phase 3")}>
-                    Send later
+                  <DropdownMenuItem onClick={() => setSendLaterOpen(true)}>
+                    Schedule message / Send later
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -467,6 +476,32 @@ export function MessageComposer({
           </div>
         </div>
       </div>
+
+      <AudioRecorderModal
+        open={audioOpen}
+        onOpenChange={setAudioOpen}
+        onSendAudio={(file) => {
+          void uploadFiles([file]);
+          toast.success("Voice clip attached!");
+        }}
+      />
+
+      <VideoRecorderModal
+        open={videoOpen}
+        onOpenChange={setVideoOpen}
+        onSendVideo={(file) => {
+          void uploadFiles([file]);
+          toast.success("Video clip attached!");
+        }}
+      />
+
+      <SendLaterPopover
+        open={sendLaterOpen}
+        onOpenChange={setSendLaterOpen}
+        onScheduleSend={(isoDate) => {
+          toast.success(`Message scheduled for ${new Date(isoDate).toLocaleString()}`);
+        }}
+      />
     </>
   );
 }

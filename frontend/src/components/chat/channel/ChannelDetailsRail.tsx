@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
-import { SearchIcon, SettingsIcon } from "lucide-react";
+import { useState, useMemo } from "react";
+import { SearchIcon, SettingsIcon, MailIcon } from "lucide-react";
+import { EmailToChannelModal } from "@/components/chat/EmailToChannelModal";
 import {
   useChatStore,
   type ChannelDetailsView,
@@ -68,9 +69,16 @@ function RailIconButton({
   );
 }
 
-export function ChannelDetailsRail({ channelId }: { channelId: string }) {
+export function ChannelDetailsRail({
+  channelId,
+  channelName = "channel",
+}: {
+  channelId: string;
+  channelName?: string;
+}) {
   const { channelDetailsView, toggleChannelDetailsView } = useChatStore();
   const { members } = useChannelMembers(channelId);
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
 
   const { preview, showCountBadge, displayCount, usingFollowers } = useMemo(() => {
     const following = members.filter((m) => m.isFollowing);
@@ -168,12 +176,26 @@ export function ChannelDetailsRail({ channelId }: { channelId: string }) {
         </div>
 
         <RailIconButton
+          label="Email to Channel"
+          icon={MailIcon}
+          active={emailModalOpen}
+          onClick={() => setEmailModalOpen(true)}
+        />
+
+        <RailIconButton
           label="Settings"
           icon={SettingsIcon}
           active={settingsActive}
           onClick={() => toggleChannelDetailsView("settings")}
         />
       </nav>
+
+      <EmailToChannelModal
+        open={emailModalOpen}
+        onOpenChange={setEmailModalOpen}
+        channelName={channelName}
+        channelId={channelId}
+      />
     </div>
   );
 }

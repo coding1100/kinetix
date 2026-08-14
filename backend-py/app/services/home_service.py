@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.errors import AppError
 from app.db.models.chat import ChatChannel
@@ -812,6 +813,7 @@ async def create_task(
         list_id=list_id,
         name=body.name.strip(),
         description=body.description,
+        tags=body.tags or [],
         updated_at=now,
         status_id=default_status.id if default_status else None,
         status_color=default_status.color if default_status else "#87909e",
@@ -954,6 +956,25 @@ async def add_task_dependency(
         "type": body.type,
         "task": map_subtask_summary(related, user_id),
     }
+
+
+async def delete_task_dependency(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    task_id: str,
+    dependency_id: str,
+) -> dict:
+    dep = await session.scalar(
+        select(TaskDependency).where(
+            TaskDependency.id == dependency_id, TaskDependency.task_id == task_id
+        )
+    )
+    if dep:
+        await session.delete(dep)
+        await session.commit()
+    return {"ok": True}
 
 
 async def add_checklist(
@@ -1273,7 +1294,7 @@ async def list_tasks(
         await session.commit()
     visible = await visible_space_ids(session, workspace_id, user_id, role)
     filters = _task_filters(workspace_id, user_id, filter_name, search)
-    if visible is not None:
+    if visible is not None and filter_name != "assigned":
         filters.append(Space.id.in_(visible))
     tasks = (
         await session.scalars(
@@ -1341,6 +1362,24 @@ async def get_task(
         )
     ).all()
     payload["attachments"] = [map_task_attachment(a) for a in attachments]
+
+    deps = (
+        await session.scalars(
+            select(TaskDependency)
+            .where(TaskDependency.task_id == task_id)
+            .options(selectinload(TaskDependency.related_task).selectinload(Task.list_status))
+            .order_by(TaskDependency.created_at.asc())
+        )
+    ).all()
+    payload["dependencies"] = [
+        {
+            "id": d.id,
+            "type": d.dependency_type,
+            "task": map_subtask_summary(d.related_task, user_id),
+        }
+        for d in deps
+        if d.related_task
+    ]
 
     from app.services.task_time_service import get_task_time_state
 
@@ -1451,6 +1490,7 @@ async def update_task(
             if uid not in allowed:
                 raise AppError(400, "VALIDATION_ERROR", "Invalid assignee")
         task.assignee_ids = list(dict.fromkeys(body.assignee_ids))
+        flag_modified(task, "assignee_ids")
 
     if body.follower_ids is not None:
         members = await workspace_service.list_workspace_members(
@@ -1461,6 +1501,7 @@ async def update_task(
             if uid not in allowed:
                 raise AppError(400, "VALIDATION_ERROR", "Invalid follower")
         task.follower_ids = list(dict.fromkeys(body.follower_ids))
+        flag_modified(task, "follower_ids")
 
     if body.assignee_ids is not None:
         # Assigning someone auto-follows them, same as real ClickUp - keeps
@@ -1477,6 +1518,10 @@ async def update_task(
         task.priority = (
             TaskPriority(body.priority.upper()) if body.priority else None
         )
+
+    if body.tags is not None:
+        task.tags = list(dict.fromkeys(body.tags))
+        flag_modified(task, "tags")
 
     moved_to_list_name: str | None = None
     if body.list_id is not None:

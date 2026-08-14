@@ -200,6 +200,7 @@ def map_task(
         "statusColor": status_color,
         "assigneeIds": list(task.assignee_ids),
         "followerIds": list(task.follower_ids),
+        "tags": list(task.tags or []),
         "dueDate": format_due_date(task.due_date),
         "dueDateIso": task.due_date.isoformat() if task.due_date else None,
         "startDate": format_due_date(task.start_date),

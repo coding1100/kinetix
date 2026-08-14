@@ -76,6 +76,7 @@ export type UpdateTaskInput = {
   timeEstimateMinutes?: number | null;
   assigneeIds?: string[];
   followerIds?: string[];
+  tags?: string[];
   priority?: Task["priority"] | null;
   listId?: string;
 };
@@ -116,6 +117,21 @@ export function addTaskDependency(
       method: "POST",
       token,
       body: JSON.stringify(input),
+    }
+  );
+}
+
+export function deleteTaskDependency(
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  dependencyId: string
+) {
+  return apiFetch<{ ok: boolean }>(
+    wsPath(workspaceId, `/tasks/${taskId}/dependencies/${dependencyId}`),
+    {
+      method: "DELETE",
+      token,
     }
   );
 }

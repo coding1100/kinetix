@@ -1,16 +1,16 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Task } from "@/lib/types/task";
 import type { ListMetaDto } from "@/lib/api/spaces";
 import { useUiStore } from "@/stores/ui-store";
 import { ListViewGrouped } from "@/components/spaces/ListViewGrouped";
-import { SpacesListToolbar } from "@/components/spaces/SpacesListToolbar";
+import { BoardView } from "@/components/spaces/BoardView";
+import { CalendarView } from "@/components/spaces/CalendarView";
+import { SpacesListToolbar, type ViewMode } from "@/components/spaces/SpacesListToolbar";
 import { TaskDrawer } from "@/components/spaces/TaskDrawer";
 import { ConversationView } from "@/components/chat/ConversationView";
-
-type ViewMode = "channel" | "list";
 
 type ListWorkspaceProps = {
   listId: string;
@@ -19,14 +19,7 @@ type ListWorkspaceProps = {
   loading: boolean;
   error: string | null;
   onTasksChange: () => void;
-  /** URL this workspace's tabs/task-drawer navigate within - defaults to the
-   * Spaces list URL, but the same tabbed layout is also used from the Chat
-   * route for a list's primary channel (see /chat/c/[channelId]/page.tsx),
-   * where it must stay on that URL instead of jumping to /spaces/l/. */
   basePath?: string;
-  /** Tab shown when the URL has no `?view=` param - "list" from a Spaces/
-   * list URL, "channel" when opened via a channel link (the channel's
-   * conversation should be what a channel click lands on, not its board). */
   defaultView?: ViewMode;
 };
 
@@ -43,10 +36,20 @@ export function ListWorkspace({
   const router = useRouter();
   const searchParams = useSearchParams();
   const openModal = useUiStore((s) => s.openModal);
+
   const [statusFilter, setStatusFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+
   const viewParam = searchParams.get("view");
   const view: ViewMode =
-    viewParam === "channel" || viewParam === "list" ? viewParam : defaultView;
+    viewParam === "channel" ||
+    viewParam === "list" ||
+    viewParam === "board" ||
+    viewParam === "calendar"
+      ? (viewParam as ViewMode)
+      : defaultView;
+
   const selectedTaskId = searchParams.get("task");
   const path = basePath ?? `/spaces/l/${listId}`;
 
@@ -84,6 +87,23 @@ export function ListWorkspace({
     [openModal, listId]
   );
 
+  // Apply Search, Status, and Priority filters to tasks
+  const filteredTasks = useMemo(() => {
+    if (!tasks) return undefined;
+    return tasks.filter((t) => {
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        const matchName = t.name.toLowerCase().includes(query);
+        const matchDesc = t.description?.toLowerCase().includes(query) ?? false;
+        if (!matchName && !matchDesc) return false;
+      }
+      if (priorityFilter !== "all") {
+        if (t.priority?.toLowerCase() !== priorityFilter.toLowerCase()) return false;
+      }
+      return true;
+    });
+  }, [tasks, searchQuery, priorityFilter]);
+
   return (
     <>
       <SpacesListToolbar
@@ -98,6 +118,10 @@ export function ListWorkspace({
         statuses={meta.statuses}
         statusFilter={statusFilter}
         onStatusFilterChange={setStatusFilter}
+        priorityFilter={priorityFilter}
+        onPriorityFilterChange={setPriorityFilter}
+        searchQuery={searchQuery}
+        onSearchQueryChange={setSearchQuery}
         onCreateTask={openCreateTask}
         canShare={meta.canShare}
       />
@@ -110,9 +134,25 @@ export function ListWorkspace({
             No channel linked to this list yet.
           </div>
         )
+      ) : view === "board" ? (
+        <BoardView
+          tasks={filteredTasks}
+          statuses={meta.statuses}
+          loading={loading}
+          error={error}
+          onTaskSelect={openTask}
+          onTasksChange={onTasksChange}
+        />
+      ) : view === "calendar" ? (
+        <CalendarView
+          tasks={filteredTasks}
+          loading={loading}
+          error={error}
+          onTaskSelect={openTask}
+        />
       ) : (
         <ListViewGrouped
-          tasks={tasks}
+          tasks={filteredTasks}
           statuses={meta.statuses}
           loading={loading}
           error={error}

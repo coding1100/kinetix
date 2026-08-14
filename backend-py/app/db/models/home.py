@@ -112,7 +112,7 @@ class SpaceMember(Base):
             "spaceId",
             "email",
             unique=True,
-            postgresql_where=Text("\"email\" IS NOT NULL"),
+            postgresql_where=text("\"email\" IS NOT NULL"),
         ),
     )
 
@@ -185,7 +185,7 @@ class FolderMember(Base):
             "folderId",
             "email",
             unique=True,
-            postgresql_where=Text("\"email\" IS NOT NULL"),
+            postgresql_where=text("\"email\" IS NOT NULL"),
         ),
     )
 
@@ -269,7 +269,7 @@ class ListMember(Base):
             "listId",
             "email",
             unique=True,
-            postgresql_where=Text("\"email\" IS NOT NULL"),
+            postgresql_where=text("\"email\" IS NOT NULL"),
         ),
     )
 
@@ -355,6 +355,9 @@ class Task(Base):
     )
     follower_ids: Mapped[list[str]] = mapped_column(
         "followerIds", ARRAY(String), nullable=False, default=list, server_default="{}"
+    )
+    tags: Mapped[list[str]] = mapped_column(
+        "tags", ARRAY(String), nullable=False, default=list, server_default="{}"
     )
     parent_task_id: Mapped[str | None] = mapped_column(
         "parentTaskId",

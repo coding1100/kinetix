@@ -11,6 +11,7 @@ class CreatePostBody(BaseModel):
 class CreateTaskBody(BaseModel):
     name: str = Field(min_length=1, max_length=500)
     description: str | None = Field(default=None, max_length=5000)
+    tags: list[str] | None = None
 
 
 class CreateSubtaskBody(BaseModel):
@@ -73,6 +74,7 @@ class UpdateTaskBody(BaseModel):
     )
     assignee_ids: list[str] | None = Field(default=None, alias="assigneeIds")
     follower_ids: list[str] | None = Field(default=None, alias="followerIds")
+    tags: list[str] | None = Field(default=None, alias="tags")
     priority: Literal["urgent", "high", "normal", "low"] | None = None
     list_id: str | None = Field(default=None, alias="listId")
     status_id: str | None = Field(default=None, alias="statusId")
