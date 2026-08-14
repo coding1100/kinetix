@@ -76,6 +76,17 @@ jobs:
           cd backend-py
           uv sync --extra dev
 
+      - name: Bootstrap & Seed Database
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgrespassword@localhost:5432/kinetix_test
+          DIRECT_URL: postgresql://postgres:postgrespassword@localhost:5432/kinetix_test
+          JWT_SECRET: testsecretkey12345678901234567890
+          API_PUBLIC_URL: http://localhost:4001
+        run: |
+          cd backend-py
+          uv run python scripts/bootstrap_local_db.py
+          uv run python scripts/seed_demo_admin.py
+
       - name: Run Pytest Suite
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgrespassword@localhost:5432/kinetix_test
