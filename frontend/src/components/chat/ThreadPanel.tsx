@@ -343,7 +343,7 @@ export function ThreadPanel({
   };
 
   const handleDeleteMessage = async (targetId: string) => {
-    let rollback: ThreadBundle | null = bundle;
+    const rollback: ThreadBundle | null = bundle;
     if (!bundle) return;
     if (bundle.parent.id === targetId) {
       setBundle(null);

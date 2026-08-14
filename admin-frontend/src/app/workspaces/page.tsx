@@ -143,107 +143,50 @@ export default function WorkspacesPage() {
     inviteBusy ||
     inviteActionId !== null;
 
+  const loadMembers = useCallback(
+    async (workspaceId: string) => {
+      if (!accessToken) return;
+      setMembersLoading(true);
+      try {
+        const result = await listWorkspaceMembers(accessToken, workspaceId);
+        setMembers(result.items);
+      } catch (err) {
+        setError(formatRequestError(err));
+      } finally {
+        setMembersLoading(false);
+      }
+    },
+    [accessToken]
+  );
+
+  const loadInvites = useCallback(
+    async (workspaceId: string) => {
+      if (!accessToken) return;
+      setInvitesLoading(true);
+      try {
+        const result = await listWorkspaceInvites(accessToken, workspaceId);
+        setInvites(result.items);
+      } catch (err) {
+        setInviteError(formatRequestError(err));
+      } finally {
+        setInvitesLoading(false);
+      }
+    },
+    [accessToken]
+  );
+
   useEffect(() => {
     if (!ready || !accessToken) return;
     const interval = setInterval(() => {
       if (pollGuardRef.current) return;
       void load(debouncedQ, statusFilter, showArchived, offset);
-      // Membership changes (e.g. an invite getting accepted) happen
-      // independently of the workspace list itself, so the expanded
-      // row's members/invites need their own refresh on the same tick.
       if (membersFor) {
         void loadMembers(membersFor);
         void loadInvites(membersFor);
       }
     }, POLL_MS);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, accessToken, debouncedQ, statusFilter, showArchived, offset, load, membersFor]);
-
-  const refreshAudit = useCallback(
-    async (workspaceId: string) => {
-      if (auditFor !== workspaceId || !accessToken) return;
-      try {
-        const result = await listAuditLog(accessToken, {
-          targetType: "workspace",
-          targetId: workspaceId,
-          limit: 25,
-        });
-        setAuditEntries(result.items);
-      } catch {
-        // best-effort refresh; the visible error state is owned by the action itself
-      }
-    },
-    [auditFor, accessToken]
-  );
-
-  const runAction = async (id: string, action: () => Promise<unknown>) => {
-    setBusyId(id);
-    setError(null);
-    try {
-      await action();
-      await load(debouncedQ, statusFilter, showArchived, offset);
-      await refreshAudit(id);
-    } catch (err) {
-      setError(formatRequestError(err));
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const handleTransferred = async () => {
-    const workspaceId = transferFor?.id;
-    setTransferFor(null);
-    if (!workspaceId) return;
-    await load(debouncedQ, statusFilter, showArchived, offset);
-    if (membersFor === workspaceId) await loadMembers(workspaceId);
-    await refreshAudit(workspaceId);
-  };
-
-  const toggleAudit = async (workspaceId: string) => {
-    if (auditFor === workspaceId) {
-      setAuditFor(null);
-      return;
-    }
-    setAuditFor(workspaceId);
-    if (!accessToken) return;
-    try {
-      const result = await listAuditLog(accessToken, {
-        targetType: "workspace",
-        targetId: workspaceId,
-        limit: 25,
-      });
-      setAuditEntries(result.items);
-    } catch (err) {
-      setError(formatRequestError(err));
-    }
-  };
-
-  const loadMembers = async (workspaceId: string) => {
-    if (!accessToken) return;
-    setMembersLoading(true);
-    try {
-      const result = await listWorkspaceMembers(accessToken, workspaceId);
-      setMembers(result.items);
-    } catch (err) {
-      setError(formatRequestError(err));
-    } finally {
-      setMembersLoading(false);
-    }
-  };
-
-  const loadInvites = async (workspaceId: string) => {
-    if (!accessToken) return;
-    setInvitesLoading(true);
-    try {
-      const result = await listWorkspaceInvites(accessToken, workspaceId);
-      setInvites(result.items);
-    } catch (err) {
-      setInviteError(formatRequestError(err));
-    } finally {
-      setInvitesLoading(false);
-    }
-  };
+  }, [ready, accessToken, debouncedQ, statusFilter, showArchived, offset, load, membersFor, loadMembers, loadInvites]);
 
   const hasOwner = (workspaceId: string) => {
     if (membersFor !== workspaceId) return true;

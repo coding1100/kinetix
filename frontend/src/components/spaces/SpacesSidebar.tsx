@@ -28,6 +28,7 @@ import {
   deleteSpace,
   fetchSpacesTree,
   type ShareResourceType,
+  type StatusConfigItem,
 } from "@/lib/api/spaces";
 import { fetchSharedWithMe } from "@/lib/api/home";
 import { ShareModal } from "@/components/shared/ShareModal";
@@ -75,7 +76,7 @@ type StatusTarget = {
   type: "space" | "list";
   id: string;
   name: string;
-  statuses?: any[];
+  statuses?: StatusConfigItem[];
   canInherit?: boolean;
 };
 
