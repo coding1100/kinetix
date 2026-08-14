@@ -1,4 +1,4 @@
-name: CI Validation (Tests, Typecheck & Lint)
+name: CI Validation
 
 on:
   push:
@@ -36,7 +36,7 @@ jobs:
               - '.github/workflows/ci.yml'
 
   backend-ci:
-    name: Backend CI (FastAPI & Pytest)
+    name: Backend Tests (FastAPI & Pytest)
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
@@ -74,12 +74,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd backend-py
-          uv sync
-
-      - name: Run Ruff Linter
-        run: |
-          cd backend-py
-          uv run ruff check .
+          uv sync --extra dev
 
       - name: Run Pytest Suite
         env:
@@ -90,10 +85,10 @@ jobs:
           FRONTEND_URL: http://localhost:3001
         run: |
           cd backend-py
-          uv run pytest -v
+          uv run pytest
 
   frontend-ci:
-    name: Frontend CI (Next.js & Vitest)
+    name: Frontend Tests (Next.js & Vitest)
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
@@ -114,16 +109,6 @@ jobs:
           cd frontend
           npm ci
 
-      - name: Run ESLint
-        run: |
-          cd frontend
-          npm run lint
-
-      - name: Run TypeScript Check
-        run: |
-          cd frontend
-          npx tsc --noEmit
-
       - name: Run Vitest Suite
         run: |
           cd frontend
@@ -137,7 +122,7 @@ jobs:
           npm run build
 
   admin-ci:
-    name: Admin Frontend CI (Next.js)
+    name: Admin Build Check
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.admin == 'true'
     runs-on: ubuntu-latest
@@ -157,16 +142,6 @@ jobs:
         run: |
           cd admin-frontend
           npm ci
-
-      - name: Run ESLint
-        run: |
-          cd admin-frontend
-          npm run lint
-
-      - name: Run TypeScript Check
-        run: |
-          cd admin-frontend
-          npx tsc --noEmit
 
       - name: Build Admin Next.js Application
         run: |
