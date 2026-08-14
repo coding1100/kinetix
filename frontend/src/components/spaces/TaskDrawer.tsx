@@ -43,6 +43,7 @@ import {
   recordTaskRecent,
   type SpaceDto,
 } from "@/lib/api/home";
+import { linkifyText } from "@/lib/text/linkify";
 import {
   addChecklist,
   addChecklistItem,
@@ -88,10 +89,10 @@ import {
   avatarInitialFromName,
 } from "@/lib/user-display";
 import { toast } from "sonner";
+import { useSpacesStore } from "@/stores/spaces-store";
 import { appPath, cn, PKT_TIME_ZONE } from "@/lib/utils";
 import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import {
-  ArchiveIcon,
   BellIcon,
   BellOffIcon,
   CalendarIcon,
@@ -99,35 +100,29 @@ import {
   CheckCircle2Icon,
   ChevronDownIcon,
   ChevronUpIcon,
-  CircleDashedIcon,
-  CircleDotIcon,
   CircleIcon,
   Edit2Icon,
   FlagIcon,
-  FlaskConicalIcon,
   HourglassIcon,
   ListChecksIcon,
   LinkIcon,
-  Loader2Icon,
   Maximize2Icon,
   MoreHorizontalIcon,
   PaperclipIcon,
   PlusIcon,
-  RocketIcon,
   SearchIcon,
-  ShieldCheckIcon,
   Share2Icon,
   SquareCheckBigIcon,
   StarIcon,
   TagIcon,
   Trash2Icon,
-  Undo2Icon,
   UserMinusIcon,
   UserPlusIcon,
   UsersIcon,
   WandSparklesIcon,
   XIcon,
 } from "lucide-react";
+import { statusIcon } from "@/lib/tasks/status-icon";
 
 type Member = { id: string; fullName: string; email: string; avatarUrl?: string | null; isDisabled?: boolean };
 
@@ -148,35 +143,6 @@ function FollowerAvatar({ member }: { member: Member }) {
 }
 
 const NO_PRIORITY = "__none__";
-
-function statusGroupIcon(group: string) {
-  switch (group) {
-    case "ACTIVE":
-      return CircleDotIcon;
-    case "DONE":
-      return CheckCircle2Icon;
-    case "CLOSED":
-      return ArchiveIcon;
-    default:
-      return CircleIcon;
-  }
-}
-
-function statusIcon(status: Pick<ListStatus, "name" | "statusGroup">) {
-  const name = status.name.trim().toLowerCase();
-  if (name === "backlog") return CircleIcon;
-  if (name === "grooming") return WandSparklesIcon;
-  if (name === "todo") return CircleDashedIcon;
-  if (name === "ready for development") return RocketIcon;
-  if (name === "in progress") return Loader2Icon;
-  if (name === "in ui integration ready") return SquareCheckBigIcon;
-  if (name === "in qa ready") return FlaskConicalIcon;
-  if (name === "in qa") return ShieldCheckIcon;
-  if (name === "in qa sent back") return Undo2Icon;
-  if (name === "done") return CheckCircle2Icon;
-  if (name === "closed") return ArchiveIcon;
-  return statusGroupIcon(status.statusGroup);
-}
 
 function statusSections(rows: ListStatus[]) {
   const active = rows.filter(
@@ -303,6 +269,7 @@ export function TaskDrawer({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const bumpSpacesRefresh = useSpacesStore((s) => s.bumpRefresh);
   const [commenting, setCommenting] = useState(false);
   const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
@@ -323,6 +290,7 @@ export function TaskDrawer({
   const [startInput, setStartInput] = useState("");
   const [timeEstimateMinutes, setTimeEstimateMinutes] = useState<number | null>(null);
   const [description, setDescription] = useState("");
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [listId, setListId] = useState("");
   const [listName, setListName] = useState("");
@@ -658,9 +626,13 @@ export function TaskDrawer({
   }, [members, shareSearch]);
 
   async function handleDescriptionSave() {
-    if (description === (task?.description ?? "")) return;
+    if (description === (task?.description ?? "")) {
+      setIsEditingDescription(false);
+      return;
+    }
     const updated = await persistPatch({ description });
     if (updated) toast.success("Description saved");
+    setIsEditingDescription(false);
   }
 
   async function handleAddSubtask() {
@@ -1298,6 +1270,7 @@ export function TaskDrawer({
       await deleteTask(accessToken, workspaceId, taskId);
       setDeleteOpen(false);
       onOpenChange(false);
+      bumpSpacesRefresh();
       onDeleted?.();
       onSaved();
       toast.success("Task deleted");
@@ -1775,24 +1748,61 @@ export function TaskDrawer({
                     <ListChecksIcon className="size-4 text-muted-foreground" />
                     Description
                   </div>
-                  <textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    rows={5}
-                    placeholder="Add description"
-                    className="min-h-[120px] w-full resize-y rounded-lg border border-transparent bg-muted/30 px-4 py-3 text-sm leading-relaxed outline-none focus:border-border"
-                  />
-                  <div className="mt-2 flex justify-end">
-                    <Button
-                      type="button"
-                      size="sm"
-                      loading={saving}
-                      disabled={description === (task?.description ?? "")}
-                      onClick={() => void handleDescriptionSave()}
+                  {isEditingDescription ? (
+                    <>
+                      <textarea
+                        autoFocus
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        rows={5}
+                        placeholder="Add description"
+                        className="min-h-[120px] w-full resize-y rounded-lg border border-transparent bg-muted/30 px-4 py-3 text-sm leading-relaxed outline-none focus:border-border"
+                      />
+                      <div className="mt-2 flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setDescription(task?.description ?? "");
+                            setIsEditingDescription(false);
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          loading={saving}
+                          disabled={description === (task?.description ?? "")}
+                          onClick={() => void handleDescriptionSave()}
+                        >
+                          Save
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest("a")) return;
+                        setIsEditingDescription(true);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") setIsEditingDescription(true);
+                      }}
+                      className="min-h-[120px] w-full whitespace-pre-wrap rounded-lg border border-transparent bg-muted/30 px-4 py-3 text-sm leading-relaxed text-foreground outline-none hover:border-border"
                     >
-                      Save
-                    </Button>
-                  </div>
+                      {description
+                        ? linkifyText(description)
+                        : (
+                          <span className="text-muted-foreground">
+                            Add description
+                          </span>
+                        )}
+                    </div>
+                  )}
                 </div>
 
                 {attachments.length > 0 ? (
@@ -2396,6 +2406,16 @@ export function TaskDrawer({
                               placeholder="Add item"
                               className="h-7 flex-1 border-0 bg-transparent px-0 text-xs shadow-none placeholder:text-xs focus-visible:ring-0 dark:bg-transparent"
                             />
+                            {(checklistItemInput[checklist.id] ?? "").trim() ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="h-6 shrink-0 px-2 text-xs"
+                                onClick={() => void handleAddChecklistItem(checklist.id)}
+                              >
+                                Save
+                              </Button>
+                            ) : null}
                             <Popover
                               open={checklistAssigneeOpen === checklist.id}
                               onOpenChange={(open) => {

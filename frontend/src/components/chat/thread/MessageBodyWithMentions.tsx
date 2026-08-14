@@ -16,6 +16,7 @@ import { useMentionMembers, type MentionMember } from "@/hooks/use-mention-membe
 import { UserProfilePeek } from "@/components/chat/UserProfilePeek";
 import { useAuthStore } from "@/stores/auth-store";
 import type { ConversationType } from "@/lib/types/chat";
+import { linkifyHtml, linkifyText } from "@/lib/text/linkify";
 
 function RichTextPart({ html }: { html: string }) {
   const safe = sanitizeMessageHtml(html);
@@ -24,7 +25,7 @@ function RichTextPart({ html }: { html: string }) {
   return (
     <div
       className={cn(RICH_TEXT_CONTENT_CLASS, "inline")}
-      dangerouslySetInnerHTML={{ __html: safe }}
+      dangerouslySetInnerHTML={{ __html: linkifyHtml(safe) }}
     />
   );
 }
@@ -115,7 +116,9 @@ export function MessageBodyWithMentions({
               </span>
             );
           }
-          return <span key={i}>{decodeMessageEntities(part)}</span>;
+          return (
+            <span key={i}>{linkifyText(decodeMessageEntities(part), `${i}-`)}</span>
+          );
         })}
       </p>
     );

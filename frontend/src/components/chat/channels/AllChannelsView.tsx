@@ -13,6 +13,7 @@ import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { updateChannelMember } from "@/lib/api/chat";
 import { loadSidebarLists } from "@/lib/chat/sidebar-lists-loader";
 import { HomeDataState } from "@/components/home/HomeDataState";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import type { Channel } from "@/lib/types/chat";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { toast } from "sonner";
@@ -63,7 +64,11 @@ export function AllChannelsView() {
   return (
     <HomePageShell
       title="All Channels"
-      subtitle="Search, follow, and manage channels across your workspace."
+      subtitle={
+        FEATURE_FLAGS.channelFollowers
+          ? "Search, follow, and manage channels across your workspace."
+          : "Search and manage channels across your workspace."
+      }
       headerRight={
         <Button
           type="button"
@@ -104,9 +109,13 @@ export function AllChannelsView() {
               <tr className="border-b text-left text-xs text-muted-foreground">
                 <th className="px-6 py-2.5 font-medium">Channels and Spaces</th>
                 <th className="px-4 py-2.5 font-medium">Topic</th>
-                <th className="px-4 py-2.5 font-medium">Followers</th>
+                <th className="px-4 py-2.5 font-medium">
+                  {FEATURE_FLAGS.channelFollowers ? "Followers" : "Members"}
+                </th>
                 <th className="px-4 py-2.5 font-medium">Last updated</th>
-                <th className="px-6 py-2.5 font-medium" />
+                {FEATURE_FLAGS.channelFollowers ? (
+                  <th className="px-6 py-2.5 font-medium" />
+                ) : null}
               </tr>
             </thead>
             <tbody>
@@ -129,16 +138,18 @@ export function AllChannelsView() {
                     <td className="px-4 py-3 text-muted-foreground">
                       {formatRelativeTime(new Date(channel.lastAt))}
                     </td>
-                    <td className="px-6 py-3 text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="min-w-[88px]"
-                        onClick={() => void toggleFollow(channel)}
-                      >
-                        {following ? "Following" : "Follow"}
-                      </Button>
-                    </td>
+                    {FEATURE_FLAGS.channelFollowers ? (
+                      <td className="px-6 py-3 text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="min-w-[88px]"
+                          onClick={() => void toggleFollow(channel)}
+                        >
+                          {following ? "Following" : "Follow"}
+                        </Button>
+                      </td>
+                    ) : null}
                   </tr>
                 );
               })}

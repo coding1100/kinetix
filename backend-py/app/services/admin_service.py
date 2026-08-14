@@ -20,6 +20,7 @@ from app.core.security import (
     verify_refresh_token,
     verify_token_hash,
 )
+from app.core.utils import as_aware_utc
 from app.db.models.enums import MemberStatus, PlatformRole, WorkspaceRole, WorkspaceStatus
 from app.db.models.platform import AdminAuditLog, PlatformStaff
 from app.db.models.user import RefreshToken, User
@@ -230,7 +231,7 @@ async def list_workspaces(
                 "slug": w.slug,
                 "status": w.status.value,
                 "isDeleted": w.is_deleted,
-                "deletedAt": w.deleted_at.isoformat() if w.deleted_at else None,
+                "deletedAt": as_aware_utc(w.deleted_at).isoformat() if w.deleted_at else None,
                 "memberCount": member_counts.get(w.id, 0),
                 "owner": (
                     {
@@ -241,7 +242,7 @@ async def list_workspaces(
                     if owner
                     else None
                 ),
-                "createdAt": w.created_at.isoformat(),
+                "createdAt": as_aware_utc(w.created_at).isoformat(),
             }
         )
     return {"items": items, "total": total, "limit": limit, "offset": offset}
@@ -703,7 +704,7 @@ async def list_users(
             "fullName": u.full_name,
             "isDisabled": u.is_disabled,
             "workspaceCount": workspace_counts.get(u.id, 0),
-            "createdAt": u.created_at.isoformat(),
+            "createdAt": as_aware_utc(u.created_at).isoformat(),
         }
         for u in users
     ]
@@ -787,7 +788,7 @@ async def list_platform_staff(session: AsyncSession) -> dict:
                 if row.granted_by and row.granted_by in granters
                 else None
             ),
-            "createdAt": row.created_at.isoformat(),
+            "createdAt": as_aware_utc(row.created_at).isoformat(),
         }
         for row in rows
     ]
@@ -891,7 +892,7 @@ async def list_audit_log(
                 "email": row.actor.email,
                 "fullName": row.actor.full_name,
             },
-            "createdAt": row.created_at.isoformat(),
+            "createdAt": as_aware_utc(row.created_at).isoformat(),
         }
         for row in rows
     ]

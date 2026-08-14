@@ -57,6 +57,7 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { DeleteHierarchyModal, type DeleteHierarchyTarget } from "@/components/spaces/DeleteHierarchyModal";
 import { StatusSettingsDialog } from "@/components/spaces/StatusSettingsDialog";
 import { useShellStore } from "@/stores/shell-store";
+import { SidebarResizeHandle } from "@/components/shell/SidebarResizeHandle";
 import { SidebarNavIcon } from "@/components/icons/SidebarNavIcon";
 import { useNotificationsUnread } from "@/hooks/use-notifications-unread";
 import { useHomeQuery } from "@/hooks/use-home-query";
@@ -93,10 +94,10 @@ import {
 } from "@/components/spaces/SpacesHierarchyDialog";
 
 const navItemClass =
-  "flex w-full min-w-0 items-center gap-2 rounded-md px-2.5 text-left text-sm font-medium text-sidebar-foreground transition-colors duration-150 hover:bg-sidebar-accent/80";
+  "flex w-full min-w-0 items-center gap-2 rounded-md px-2.5 text-left text-sm font-medium text-[#B4B4B4] transition-colors duration-150 hover:bg-sidebar-accent/80";
 
 const navItemActiveClass =
-  "bg-sidebar-accent font-medium text-sidebar-accent-foreground";
+  "bg-sidebar-accent font-medium text-white";
 
 // Guests / limited members don't get a Spaces tree or create affordances in
 // real ClickUp - they only see whatever's been individually shared with them.
@@ -223,9 +224,9 @@ function MyTasksSubNav({ pathname }: { pathname: string }) {
               href={link.href}
               className={cn(
                 navItemClass,
-                "h-7 text-[13px] font-normal text-muted-foreground",
+                "h-7 text-[13px] font-normal text-[#B4B4B4]",
                 subActive &&
-                  "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                  "bg-sidebar-accent font-medium text-white"
               )}
             >
               <SidebarNavIcon
@@ -276,8 +277,8 @@ function SpaceListLink({
         className={cn(
           "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-sidebar-accent/80",
           active
-            ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-            : "text-sidebar-foreground"
+            ? "bg-sidebar-accent font-medium text-white"
+            : "text-[#B4B4B4]"
         )}
       >
         <ListChecksIcon className="size-3.5 shrink-0 text-muted-foreground" />
@@ -407,7 +408,7 @@ function SpaceRow({
       <div className="group/space flex items-center gap-1 rounded-md pr-1 transition-colors hover:bg-sidebar-accent/80">
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm text-sidebar-foreground"
+          className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm text-[#B4B4B4]"
           onClick={onToggleExpanded}
           aria-expanded={expanded}
         >
@@ -721,8 +722,9 @@ function ChannelRow({
           <Link
             href={`/home/c/${id}`}
             className={cn(
-              "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/80",
-              active && "bg-sidebar-accent font-medium"
+              "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[#B4B4B4] transition-colors hover:bg-sidebar-accent/80",
+              active && "bg-sidebar-accent font-medium",
+              (active || displayUnread > 0) && "text-white"
             )}
           >
             {listChannel ? (
@@ -802,8 +804,9 @@ function DmRow({
           <Link
             href={`/home/dm/${id}`}
             className={cn(
-              "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/80",
-              active && "bg-sidebar-accent font-medium"
+              "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[#B4B4B4] transition-colors hover:bg-sidebar-accent/80",
+              active && "bg-sidebar-accent font-medium",
+              (active || displayUnread > 0) && "text-white"
             )}
           >
             {isGroup && groupParticipants.length > 0 ? (
@@ -870,7 +873,8 @@ export function HomeSidebar() {
   const hiddenItems = items.filter((i) => !i.pinned);
   const openModal = useUiStore((s) => s.openModal);
   const openModalDeferred = useUiStore((s) => s.openModalDeferred);
-  const { secondaryPanelOpen, setSecondaryPanelOpen } = useShellStore();
+  const { secondaryPanelOpen, setSecondaryPanelOpen, secondaryPanelWidth } =
+    useShellStore();
   const { unreadCount } = useNotificationsUnread();
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const role = useAuthStore(selectActiveWorkspace)?.role;
@@ -1000,7 +1004,7 @@ export function HomeSidebar() {
   );
 
   const chatListsQuery = useHomeQuery(
-    (token, ws) => loadSidebarLists(token, ws, { force: sidebarRefreshKey > 0 }),
+    (token, ws) => loadSidebarLists(token, ws),
     [sidebarRefreshKey]
   );
 
@@ -1026,7 +1030,10 @@ export function HomeSidebar() {
   );
 
   return (
-    <aside className="flex min-h-0 w-[260px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
+    <aside
+      className="relative flex min-h-0 shrink-0 flex-col border-r border-sidebar-border bg-sidebar"
+      style={{ width: secondaryPanelWidth }}
+    >
       <div className="flex items-center justify-between border-b border-sidebar-border px-3 py-2.5">
         <span className="text-[13px] font-semibold tracking-tight text-sidebar-foreground">
           Home
@@ -1362,6 +1369,7 @@ export function HomeSidebar() {
         loading={deletingSpacesItem}
         onConfirm={() => void handleDeleteSpacesItem()}
       />
+      <SidebarResizeHandle />
     </aside>
   );
 }

@@ -60,6 +60,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { matchesQuery } from "@/lib/search/match-query";
 import { useSidebarUnread } from "@/lib/chat/sidebar-display-unread";
 import { useShellStore } from "@/stores/shell-store";
+import { SidebarResizeHandle } from "@/components/shell/SidebarResizeHandle";
 import { useRouter } from "next/navigation";
 
 function DmAvatar({
@@ -111,7 +112,8 @@ export function ChatSidebar() {
   const setSidebarListsCache = useChatStore((s) => s.setSidebarListsCache);
   const openModal = useUiStore((s) => s.openModal);
   const openModalDeferred = useUiStore((s) => s.openModalDeferred);
-  const { secondaryPanelOpen, setSecondaryPanelOpen } = useShellStore();
+  const { secondaryPanelOpen, setSecondaryPanelOpen, secondaryPanelWidth } =
+    useShellStore();
   const seedPresence = usePresenceStore((s) => s.seedPresence);
   const userId = useAuthStore((s) => s.user?.id);
   const { workspaceId, ready } = useWorkspaceApi();
@@ -134,16 +136,16 @@ export function ChatSidebar() {
 
   const sidebarQuery = useHomeQuery(
     async (token, ws) => {
-      const lists = await loadSidebarLists(token, ws, {
-        force: sidebarRefreshKey > 0,
-      });
+      const lists = await loadSidebarLists(token, ws);
       return { channels: lists.channels, dms: lists.dms };
     },
     [sidebarRefreshKey],
     {
+      // The cache paints immediately, but the fetch behind it always runs -
+      // skipping it left channels and DMs added while the tab was closed
+      // missing from the sidebar.
       initialData: initialSidebarData,
       refreshKey: sidebarRefreshKey,
-      skipInitialFetch: Boolean(initialSidebarData) && sidebarRefreshKey === 0,
     }
   );
 
@@ -229,7 +231,10 @@ export function ChatSidebar() {
     );
 
   return (
-    <aside className="flex min-h-0 w-[260px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
+    <aside
+      className="relative flex min-h-0 shrink-0 flex-col border-r border-sidebar-border bg-sidebar"
+      style={{ width: secondaryPanelWidth }}
+    >
       <div className="flex items-center justify-between px-3 py-3">
         <span className="text-sm font-semibold">Chat</span>
         <div className="flex gap-0.5">
@@ -374,6 +379,7 @@ export function ChatSidebar() {
           <TooltipContent side="top">Recents</TooltipContent>
         </Tooltip>
       </div>
+      <SidebarResizeHandle />
     </aside>
   );
 }
@@ -574,7 +580,14 @@ function ChannelRow({
               {starred ? (
                 <StarIcon className="size-3 shrink-0 fill-amber-400 text-amber-400" />
               ) : null}
-              <span className="truncate font-medium">{name}</span>
+              <span
+                className={cn(
+                  "truncate font-medium",
+                  active || displayUnread > 0 ? "text-white" : "text-[#B4B4B4]"
+                )}
+              >
+                {name}
+              </span>
               {privateChannel ? (
                 <LockIcon className="size-3 text-muted-foreground" />
               ) : null}
@@ -666,7 +679,12 @@ function DmRow({
                   showPresence={!isGroup}
                 />
               )}
-              <span className="truncate text-sm font-medium">
+              <span
+                className={cn(
+                  "truncate text-sm font-medium",
+                  active || displayUnread > 0 ? "text-white" : "text-[#B4B4B4]"
+                )}
+              >
                 {displayName}
                 {!isGroup && otherUserIsDisabled ? (
                   <span className="text-destructive"> (deactivated)</span>

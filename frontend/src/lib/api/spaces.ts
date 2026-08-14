@@ -42,6 +42,24 @@ export function fetchListMeta(
   return apiFetch<ListMetaDto>(wsPath(workspaceId, `/lists/${listId}`), { token });
 }
 
+export function fetchListAssignableMembers(
+  token: string,
+  workspaceId: string,
+  listId: string
+) {
+  return apiFetch<{
+    data: {
+      id: string;
+      email: string;
+      fullName: string;
+      avatarUrl?: string | null;
+      isDisabled?: boolean;
+    }[];
+  }>(wsPath(workspaceId, `/lists/${listId}/members?scope=assignable`), {
+    token,
+  });
+}
+
 export function fetchListTasks(
   token: string,
   workspaceId: string,

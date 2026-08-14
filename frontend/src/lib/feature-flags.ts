@@ -12,4 +12,9 @@ export const FEATURE_FLAGS = {
   selfSignup: false,
   googleAuth: false,
   demoCredentialsBanner: false,
+  // Channel "followers" (ChatChannelMember.isFollowing) has no behaviour wired
+  // to it - message notifications key off notificationLevel instead, and
+  // nothing filters on it. Hide every follow surface until it means something;
+  // the data and endpoints stay untouched.
+  channelFollowers: false,
 } as const;

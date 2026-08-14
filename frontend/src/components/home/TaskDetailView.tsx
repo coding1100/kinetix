@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { linkifyText } from "@/lib/text/linkify";
 
 export function TaskDetailView({
   task,
@@ -66,9 +67,10 @@ export function TaskDetailView({
           <Separator />
           <section>
             <h2 className="mb-2 text-sm font-semibold">Description</h2>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              {task.description ??
-                "No description yet. Add details for this task in your workspace."}
+            <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
+              {task.description
+                ? linkifyText(task.description)
+                : "No description yet. Add details for this task in your workspace."}
             </p>
           </section>
           <section>

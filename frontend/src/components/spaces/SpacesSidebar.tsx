@@ -34,6 +34,7 @@ import { ShareModal } from "@/components/shared/ShareModal";
 import { useHomeQuery } from "@/hooks/use-home-query";
 import { HomeDataState } from "@/components/home/HomeDataState";
 import { useShellStore } from "@/stores/shell-store";
+import { SidebarResizeHandle } from "@/components/shell/SidebarResizeHandle";
 import { useSpacesStore } from "@/stores/spaces-store";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { cn } from "@/lib/utils";
@@ -82,7 +83,8 @@ export function SpacesSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
-  const { secondaryPanelOpen, setSecondaryPanelOpen } = useShellStore();
+  const { secondaryPanelOpen, setSecondaryPanelOpen, secondaryPanelWidth } =
+    useShellStore();
   const refreshKey = useSpacesStore((s) => s.refreshKey);
   const bumpRefresh = useSpacesStore((s) => s.bumpRefresh);
   const { data: spaces, loading, error } = useHomeQuery(
@@ -162,7 +164,10 @@ export function SpacesSidebar() {
 
   return (
     <>
-      <aside className="flex min-h-0 w-[280px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
+      <aside
+        className="relative flex min-h-0 shrink-0 flex-col border-r border-sidebar-border bg-sidebar"
+        style={{ width: secondaryPanelWidth }}
+      >
         <div className="flex items-center justify-between border-b border-sidebar-border px-4 py-3">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-sidebar-foreground">Spaces</span>
@@ -183,8 +188,8 @@ export function SpacesSidebar() {
               className={cn(
                 "flex items-center gap-2 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-sidebar-accent",
                 pathname === "/home/all-tasks"
-                  ? "bg-primary/10 font-medium text-primary"
-                  : "text-muted-foreground"
+                  ? "bg-primary/10 font-medium text-white"
+                  : "text-[#B4B4B4]"
               )}
             >
               <ListChecksIcon className="size-4 shrink-0" />
@@ -195,8 +200,8 @@ export function SpacesSidebar() {
               className={cn(
                 "flex items-center gap-2 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-sidebar-accent",
                 pathname === "/home/my-tasks/assigned"
-                  ? "bg-primary/10 font-medium text-primary"
-                  : "text-muted-foreground"
+                  ? "bg-primary/10 font-medium text-white"
+                  : "text-[#B4B4B4]"
               )}
             >
               <UsersIcon className="size-4 shrink-0" />
@@ -216,8 +221,8 @@ export function SpacesSidebar() {
                     className={cn(
                       "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-sidebar-accent",
                       isListActive(pathname, entry.id)
-                        ? "bg-primary/10 font-medium text-primary"
-                        : "text-muted-foreground"
+                        ? "bg-primary/10 font-medium text-white"
+                        : "text-[#B4B4B4]"
                     )}
                   >
                     <LayoutListIcon className="size-3.5 shrink-0 opacity-70" />
@@ -225,7 +230,7 @@ export function SpacesSidebar() {
                   </Link>
                 ) : (
                   <div key={`${entry.type}-${entry.id}`}>
-                    <div className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-[#B4B4B4]">
                       <FolderIcon className="size-3.5 shrink-0 opacity-70" />
                       <span className="truncate">{entry.name}</span>
                     </div>
@@ -237,8 +242,8 @@ export function SpacesSidebar() {
                           className={cn(
                             "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-sidebar-accent",
                             isListActive(pathname, lst.id)
-                              ? "bg-primary/10 font-medium text-primary"
-                              : "text-muted-foreground"
+                              ? "bg-primary/10 font-medium text-white"
+                              : "text-[#B4B4B4]"
                           )}
                         >
                           <LayoutListIcon className="size-3.5 shrink-0 opacity-70" />
@@ -263,7 +268,7 @@ export function SpacesSidebar() {
                   <div className="flex items-center gap-0.5">
                     <button
                       type="button"
-                      className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm font-semibold hover:bg-sidebar-accent"
+                      className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm font-semibold text-[#B4B4B4] hover:bg-sidebar-accent"
                       onClick={() =>
                         setExpanded((e) => ({
                           ...e,
@@ -624,6 +629,7 @@ export function SpacesSidebar() {
             New Space
           </Button>
         </div>
+        <SidebarResizeHandle />
       </aside>
       <SpacesHierarchyDialog
         open={dialogOpen}
@@ -705,8 +711,8 @@ function ListNavItem({
         render={<Link href={listHref(listId)} />}
         className={cn(
           "h-8 min-w-0 flex-1 justify-start gap-2 rounded-md px-2.5 text-sm",
-          active && "bg-primary/10 font-medium text-primary",
-          !active && "font-normal text-muted-foreground hover:bg-sidebar-accent"
+          active && "bg-primary/10 font-medium text-white",
+          !active && "font-normal text-[#B4B4B4] hover:bg-sidebar-accent"
         )}
       >
         <LayoutListIcon className="size-3.5 shrink-0 opacity-70" />
