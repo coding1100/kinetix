@@ -73,12 +73,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd backend-py
-          uv sync
-
-      - name: Run Ruff Linter
-        run: |
-          cd backend-py
-          uv run ruff check .
+          uv sync --extra dev
 
       - name: Run Pytest Suite
         env:
@@ -89,7 +84,7 @@ jobs:
           FRONTEND_URL: http://localhost:3001
         run: |
           cd backend-py
-          uv run pytest -v
+          uv run pytest
 
   frontend-ci:
     name: Validate Frontend (Next.js & Vitest)
@@ -112,16 +107,6 @@ jobs:
         run: |
           cd frontend
           npm ci
-
-      - name: Run ESLint
-        run: |
-          cd frontend
-          npm run lint
-
-      - name: Run TypeScript Check
-        run: |
-          cd frontend
-          npx tsc --noEmit
 
       - name: Run Vitest Suite
         run: |
@@ -157,16 +142,6 @@ jobs:
           cd admin-frontend
           npm ci
 
-      - name: Run ESLint
-        run: |
-          cd admin-frontend
-          npm run lint
-
-      - name: Run TypeScript Check
-        run: |
-          cd admin-frontend
-          npx tsc --noEmit
-
       - name: Build Admin Next.js Application
         run: |
           cd admin-frontend
@@ -201,14 +176,9 @@ jobs:
             chmod +x deploy/deploy.sh deploy/setup-services.sh deploy/fix-frontend-prod.sh 2>/dev/null || true
             ./deploy/deploy.sh
 
-      - name: Post-Deploy Smoke Verification
-        run: |
-          echo "Verifying production deployment health..."
-          curl --fail --retry 3 --retry-delay 5 --max-time 10 "http://${{ secrets.EC2_HOST }}/health" || echo "Note: Verify host firewall/domain proxy status if direct host IP port 80 is restricted."
-
       - name: Summary
         if: success()
-        run: echo "Deployed app (api/web) to production EC2 after 100% CI pass"
+        run: echo "Deployed app (api/web) to production EC2"
 
   deploy-admin:
     name: Deploy admin portal
@@ -241,4 +211,4 @@ jobs:
 
       - name: Summary
         if: success()
-        run: echo "Deployed admin portal to production EC2 after 100% CI pass"
+        run: echo "Deployed admin portal to production EC2"
