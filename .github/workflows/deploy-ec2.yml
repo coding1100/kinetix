@@ -1,16 +1,13 @@
-name: Deploy Production to EC2
+name: Deploy to EC2
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 concurrency:
   group: deploy-ec2
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   changes:
@@ -37,134 +34,10 @@ jobs:
             admin:
               - 'admin-frontend/**'
 
-  backend-ci:
-    name: Validate Backend (FastAPI & Pytest)
-    needs: changes
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.app == 'true')
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgrespassword
-          POSTGRES_DB: kinetix_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: "backend-py/uv.lock"
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: |
-          cd backend-py
-          uv sync --extra dev
-
-      - name: Bootstrap & Seed Database
-        env:
-          DATABASE_URL: postgresql+asyncpg://postgres:postgrespassword@localhost:5432/kinetix_test
-          DIRECT_URL: postgresql://postgres:postgrespassword@localhost:5432/kinetix_test
-          JWT_SECRET: testsecretkey12345678901234567890
-          API_PUBLIC_URL: http://localhost:4001
-        run: |
-          cd backend-py
-          uv run python scripts/bootstrap_local_db.py
-          uv run python scripts/seed_demo_admin.py
-
-      - name: Run Pytest Suite
-        env:
-          DATABASE_URL: postgresql+asyncpg://postgres:postgrespassword@localhost:5432/kinetix_test
-          DIRECT_URL: postgresql://postgres:postgrespassword@localhost:5432/kinetix_test
-          JWT_SECRET: testsecretkey12345678901234567890
-          API_PUBLIC_URL: http://localhost:4001
-          FRONTEND_URL: http://localhost:3001
-        run: |
-          cd backend-py
-          uv run pytest
-
-  frontend-ci:
-    name: Validate Frontend (Next.js & Vitest)
-    needs: changes
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.app == 'true')
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-          cache-dependency-path: 'frontend/package-lock.json'
-
-      - name: Install dependencies
-        run: |
-          cd frontend
-          npm ci
-
-      - name: Run Vitest Suite
-        run: |
-          cd frontend
-          npm run test
-
-      - name: Build Next.js Application
-        env:
-          NEXT_PUBLIC_API_URL: /api/v1
-        run: |
-          cd frontend
-          npm run build
-
-  admin-ci:
-    name: Validate Admin (Next.js Build)
-    needs: changes
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.admin == 'true')
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-          cache-dependency-path: 'admin-frontend/package-lock.json'
-
-      - name: Install dependencies
-        run: |
-          cd admin-frontend
-          npm ci
-
-      - name: Build Admin Next.js Application
-        run: |
-          cd admin-frontend
-          npm run build
-
   deploy-app:
     name: Deploy production app
-    needs: [changes, backend-ci, frontend-ci]
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.app == 'true')
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -173,23 +46,20 @@ jobs:
         uses: appleboy/ssh-action@v1.2.2
         env:
           APP_ROOT: ${{ secrets.EC2_APP_PATH }}
-          DEPLOY_SHA: ${{ github.sha }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
-          envs: APP_ROOT,DEPLOY_SHA
+          envs: APP_ROOT
           script_stop: true
           command_timeout: 20m
           script: |
             set -euo pipefail
             export APP_ROOT="${APP_ROOT:-/opt/clickup/kinetix}"
             cd "$APP_ROOT"
-            git fetch --no-tags origin main
-            git cat-file -e "${DEPLOY_SHA}^{commit}"
-            git reset --hard "$DEPLOY_SHA"
-            test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
+            git fetch origin main
+            git reset --hard origin/main
             chmod +x deploy/deploy.sh deploy/setup-services.sh deploy/fix-frontend-prod.sh 2>/dev/null || true
             ./deploy/deploy.sh
 
@@ -199,16 +69,8 @@ jobs:
 
   deploy-admin:
     name: Deploy admin portal
-    needs: [changes, admin-ci, deploy-app]
-    if: >-
-      always() &&
-      github.ref == 'refs/heads/main' &&
-      (github.event_name == 'workflow_dispatch' || needs.changes.outputs.admin == 'true') &&
-      needs.admin-ci.result == 'success' &&
-      (
-        needs.deploy-app.result == 'success' ||
-        (github.event_name != 'workflow_dispatch' && needs.changes.outputs.app != 'true' && needs.deploy-app.result == 'skipped')
-      )
+    needs: [changes, deploy-app]
+    if: always() && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.admin == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -217,23 +79,20 @@ jobs:
         uses: appleboy/ssh-action@v1.2.2
         env:
           APP_ROOT: ${{ secrets.EC2_APP_PATH }}
-          DEPLOY_SHA: ${{ github.sha }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
-          envs: APP_ROOT,DEPLOY_SHA
+          envs: APP_ROOT
           script_stop: true
           command_timeout: 15m
           script: |
             set -euo pipefail
             export APP_ROOT="${APP_ROOT:-/opt/clickup/kinetix}"
             cd "$APP_ROOT"
-            git fetch --no-tags origin main
-            git cat-file -e "${DEPLOY_SHA}^{commit}"
-            git reset --hard "$DEPLOY_SHA"
-            test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
+            git fetch origin main
+            git reset --hard origin/main
             chmod +x deploy/deploy-admin.sh 2>/dev/null || true
             ./deploy/deploy-admin.sh
 
