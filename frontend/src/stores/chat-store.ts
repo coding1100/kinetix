@@ -355,16 +355,7 @@ export const useChatStore = create<ChatState>()(
       },
       partialize: (s) => ({
         layout: s.layout,
-        sidebarListsCache: s.sidebarListsCache
-          ? {
-              ...s.sidebarListsCache,
-              channels: s.sidebarListsCache.channels.map((c) => ({
-                ...c,
-                unread: 0,
-              })),
-              dms: s.sidebarListsCache.dms.map((d) => ({ ...d, unread: 0 })),
-            }
-          : null,
+        sidebarListsCache: s.sidebarListsCache,
       }),
     }
   )
