@@ -31,12 +31,13 @@ export function EmojiPickerPopover({
       <PopoverTrigger render={trigger} />
       <PopoverContent align="start" sideOffset={6} className="w-auto p-0">
         <EmojiPicker
-          width={320}
-          height={380}
-          searchPlaceHolder="Search emoji"
-          emojiStyle={EmojiStyle.NATIVE}
+          width={330}
+          height={400}
+          searchPlaceHolder="Search emojis…"
+          emojiStyle={EmojiStyle.APPLE}
           theme={resolvedTheme === "dark" ? Theme.DARK : Theme.LIGHT}
           lazyLoadEmojis
+          previewConfig={{ showPreview: true }}
           onEmojiClick={(emojiData: EmojiClickData) => {
             onSelectEmoji(emojiData.emoji);
             setOpen(false);
