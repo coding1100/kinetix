@@ -160,10 +160,6 @@ export function PersonProfilePanel({
   const [savingManager, setSavingManager] = useState(false);
 
   const displayName = member?.fullName ?? "Member";
-  const activity = useMemo(
-    () => mockPersonActivity(displayName),
-    [displayName]
-  );
 
   const canEditManager =
     currentUserId === userId ||
@@ -223,14 +219,14 @@ export function PersonProfilePanel({
       : "Workspace member";
 
   useEffect(() => {
-    if (!ready || tab === "activity" || tab === "calendar") return;
+    if (!ready || tab === "calendar") return;
 
     let cancelled = false;
     setTabLoading(true);
 
     const load = async () => {
       try {
-        if (tab === "tasks") {
+        if (tab === "tasks" || tab === "activity") {
           const res = await fetchTasks(accessToken, workspaceId);
           const filtered = res.data.filter((t) =>
             (t.assigneeIds ?? []).includes(userId)
@@ -247,7 +243,7 @@ export function PersonProfilePanel({
         }
       } catch {
         if (!cancelled) {
-          if (tab === "tasks") setTasks([]);
+          if (tab === "tasks" || tab === "activity") setTasks([]);
           if (tab === "comments") setComments([]);
         }
       } finally {
@@ -268,6 +264,26 @@ export function PersonProfilePanel({
     displayName,
     member?.email,
   ]);
+
+  const activity = useMemo(() => {
+    if (tasks.length === 0) return [];
+    return tasks.map((t) => ({
+      id: `act-${t.id}`,
+      dateLabel: new Date(t.updatedAt || t.createdAt || Date.now()).toLocaleDateString(undefined, {
+        month: "numeric",
+        day: "numeric",
+        year: "2-digit",
+      }),
+      project: t.title,
+      breadcrumbs: t.listName ? `Space / ${t.listName}` : "Workspace / Tasks",
+      action: `${displayName} updated task status`,
+      fromStatus: { label: "Todo", color: "bg-zinc-400" },
+      toStatus: { label: t.statusName || "In Progress", color: "bg-sky-500" },
+      timestamp: t.updatedAt
+        ? new Date(t.updatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+        : "Recently",
+    }));
+  }, [tasks, displayName]);
 
   const taskCount = tab === "tasks" ? tasks.length : 0;
   const commentCount = tab === "comments" ? comments.length : 0;
@@ -610,24 +626,34 @@ export function PersonProfilePanel({
                   </div>
 
                   <div className="mt-3 space-y-4">
-                    {activity.map((entry, index) => (
-                      <div key={entry.id}>
-                        {(index === 0 ||
-                          activity[index - 1]?.dateLabel !== entry.dateLabel) && (
-                          <p className="mb-2 text-xs font-medium text-muted-foreground">
-                            {entry.dateLabel}
-                          </p>
-                        )}
-                        <ActivityCard
-                          project={entry.project}
-                          breadcrumbs={entry.breadcrumbs}
-                          action={entry.action}
-                          fromStatus={entry.fromStatus}
-                          toStatus={entry.toStatus}
-                          timestamp={entry.timestamp}
-                        />
+                    {tabLoading ? (
+                      <div className="flex justify-center py-6">
+                        <PageLoader />
                       </div>
-                    ))}
+                    ) : activity.length === 0 ? (
+                      <p className="py-6 text-center text-sm text-muted-foreground">
+                        No recent activity recorded for {displayName}.
+                      </p>
+                    ) : (
+                      activity.map((entry, index) => (
+                        <div key={entry.id}>
+                          {(index === 0 ||
+                            activity[index - 1]?.dateLabel !== entry.dateLabel) && (
+                            <p className="mb-2 text-xs font-medium text-muted-foreground">
+                              {entry.dateLabel}
+                            </p>
+                          )}
+                          <ActivityCard
+                            project={entry.project}
+                            breadcrumbs={entry.breadcrumbs}
+                            action={entry.action}
+                            fromStatus={entry.fromStatus}
+                            toStatus={entry.toStatus}
+                            timestamp={entry.timestamp}
+                          />
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               )}

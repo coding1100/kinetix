@@ -153,22 +153,42 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       // level (ALL/MENTIONS/NONE) that the backend applies when building
       // that inbox item.
       const desktopNotifications = useSettingsStore.getState().desktopNotifications;
-      if (!isOwnMessage && desktopNotifications && payload.kind === "dm") {
+      if (!isOwnMessage) {
         const { conversationId, message } = payload;
         const active = useChatStore.getState().activeConversation;
         const isCurrentConversation =
           document.hasFocus() &&
           document.visibilityState === "visible" &&
-          active?.kind === "dm" &&
+          active?.kind === payload.kind &&
           active?.id === conversationId;
 
         if (!isCurrentConversation) {
-          showDesktopNotification(message.authorName, {
-            body: message.body,
-            tag: `chat:${conversationId}`,
-            onClick: () => router.push(`/home/dm/${conversationId}`),
-            ignoreFocusCheck: true,
+          const title =
+            payload.kind === "dm"
+              ? message.authorName
+              : `#${payload.channelName ?? "channel"}`;
+          const href =
+            payload.kind === "dm"
+              ? `/home/dm/${conversationId}`
+              : `/chat/c/${conversationId}`;
+
+          toast(title, {
+            description: message.body,
+            action: {
+              label: "Open",
+              onClick: () => router.push(href),
+            },
+            duration: 5000,
           });
+
+          if (desktopNotifications) {
+            showDesktopNotification(title, {
+              body: message.body,
+              tag: `chat:${conversationId}`,
+              onClick: () => router.push(href),
+              ignoreFocusCheck: true,
+            });
+          }
         }
       }
       applyRealtimeMessageToSidebar(payload, userId, accessToken);
@@ -444,6 +464,31 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       upsertPresence(workspaceId, userId, presence);
     }
   }, [presence, workspaceId, userId, upsertPresence]);
+
+  useEffect(() => {
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === "visible") {
+        const socket = socketRef.current;
+        if (socket && !socket.connected) {
+          socket.connect();
+        } else if (socket && socket.connected && workspaceId) {
+          socket.emit("workspace:join", {
+            workspaceId,
+            status: presenceRef.current,
+          });
+        }
+        bumpSidebarRefresh();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+    window.addEventListener("focus", handleVisibilityOrFocus);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+    };
+  }, [workspaceId]);
 
   return <>{children}</>;
 }
