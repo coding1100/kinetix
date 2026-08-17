@@ -649,7 +649,7 @@ function ChannelRow({
                       "truncate font-medium",
                       active || displayUnread > 0
                         ? "font-semibold text-slate-900 dark:text-white"
-                        : "text-slate-700 dark:text-slate-300"
+                        : "text-slate-700 dark:text-slate-200"
                     )}
                   >
                     {name}
@@ -812,7 +812,7 @@ function DmRow({
                       "truncate text-sm font-medium",
                       active || displayUnread > 0
                         ? "font-semibold text-slate-900 dark:text-white"
-                        : "text-slate-700 dark:text-slate-300"
+                        : "text-slate-700 dark:text-slate-200"
                     )}
                   >
                     {displayName}

@@ -274,11 +274,11 @@ export function PersonProfilePanel({
         day: "numeric",
         year: "2-digit",
       }),
-      project: t.title,
-      breadcrumbs: t.listName ? `Space / ${t.listName}` : "Workspace / Tasks",
+      project: t.name || "Task",
+      breadcrumbs: t.list ? `Space / ${t.list}` : "Workspace / Tasks",
       action: `${displayName} updated task status`,
       fromStatus: { label: "Todo", color: "bg-zinc-400" },
-      toStatus: { label: t.statusName || "In Progress", color: "bg-sky-500" },
+      toStatus: { label: t.status || "In Progress", color: "bg-sky-500" },
       timestamp: t.updatedAt
         ? new Date(t.updatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
         : "Recently",

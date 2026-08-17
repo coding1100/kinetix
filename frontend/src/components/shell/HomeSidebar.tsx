@@ -812,7 +812,7 @@ function ChannelRow({
               <Link
                 href={href}
                 className={cn(
-                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-700 dark:text-slate-300 transition-colors hover:bg-sidebar-accent/80",
+                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-700 dark:text-slate-200 transition-colors hover:bg-sidebar-accent/80",
                   active && "bg-sidebar-accent font-semibold text-slate-900 dark:text-white",
                   displayUnread > 0 && "font-bold text-slate-900 dark:text-white"
                 )}
@@ -954,7 +954,7 @@ function DmRow({
               <Link
                 href={href}
                 className={cn(
-                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-700 dark:text-slate-300 transition-colors hover:bg-sidebar-accent/80",
+                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-700 dark:text-slate-200 transition-colors hover:bg-sidebar-accent/80",
                   active && "bg-sidebar-accent font-semibold text-slate-900 dark:text-white",
                   displayUnread > 0 && "font-bold text-slate-900 dark:text-white"
                 )}
