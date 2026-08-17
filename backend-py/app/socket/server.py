@@ -38,6 +38,18 @@ async def _is_workspace_member(workspace_id: str, user_id: str) -> bool:
         return bool(membership and membership.status == MemberStatus.ACTIVE)
 
 
+async def _resolve_typing_audience(kind: str, conversation_id: str) -> list[str] | None:
+    factory = get_session_factory()
+    async with factory() as session:
+        if kind == "dm":
+            from app.services.chat_service import _dm_participant_user_ids
+            return await _dm_participant_user_ids(session, conversation_id)
+        elif kind == "channel":
+            from app.services.chat_service import _channel_member_user_ids
+            return await _channel_member_user_ids(session, conversation_id)
+    return None
+
+
 def _register_events(sio: socketio.AsyncServer) -> None:
     @sio.event
     async def connect(sid, environ, auth):
@@ -48,14 +60,14 @@ def _register_events(sio: socketio.AsyncServer) -> None:
             payload = verify_access_token(token)
         except PyJWTError:
             return False
-        user_id = payload["sub"]
+        user_id = payload.get("sub")
+        if not user_id:
+            return False
         factory = get_session_factory()
         async with factory() as session:
-            is_disabled = await session.scalar(
-                select(User.is_disabled).where(User.id == user_id)
-            )
-        if is_disabled:
-            return False
+            user = await session.get(User, user_id)
+            if not user or getattr(user, "is_disabled", False):
+                return False
         await sio.save_session(sid, {"user_id": user_id})
         await sio.enter_room(sid, f"user:{user_id}")
         return True
@@ -63,7 +75,7 @@ def _register_events(sio: socketio.AsyncServer) -> None:
     @sio.event
     async def disconnect(sid):
         session = await sio.get_session(sid)
-        user_id = session.get("user_id")
+        user_id = session.get("user_id") if session else None
         updates = presence.leave_all_for_sid(sid)
         for uid, workspace_id, status in updates:
             await sio.emit(
@@ -81,18 +93,20 @@ def _register_events(sio: socketio.AsyncServer) -> None:
             for workspace_id, kind, conv_id, _remaining in typing_registry.clear_user(
                 user_id
             ):
+                audience = await _resolve_typing_audience(kind, conv_id)
                 await broadcast_chat_typing(
                     workspace_id=workspace_id,
                     kind=kind,
                     conversation_id=conv_id,
                     user_id=user_id,
                     typing=False,
+                    audience_user_ids=audience,
                 )
 
     @sio.on("workspace:join")
     async def workspace_join(sid, data):
         session = await sio.get_session(sid)
-        user_id = session.get("user_id")
+        user_id = session.get("user_id") if session else None
         workspace_id = (data or {}).get("workspaceId")
         if not user_id or not workspace_id:
             return {"ok": False}
@@ -133,10 +147,33 @@ def _register_events(sio: socketio.AsyncServer) -> None:
 
         return {"ok": True, "workspaceId": workspace_id}
 
+    @sio.on("workspace:leave")
+    async def workspace_leave(sid, data):
+        session = await sio.get_session(sid)
+        user_id = session.get("user_id") if session else None
+        workspace_id = (data or {}).get("workspaceId")
+        if not user_id or not workspace_id:
+            return {"ok": False}
+
+        status = presence.leave_workspace(sid, workspace_id, user_id)
+        await sio.leave_room(sid, f"ws:{workspace_id}")
+
+        await sio.emit(
+            "presence:update",
+            {
+                "workspaceId": workspace_id,
+                "userId": user_id,
+                "status": status,
+            },
+            room=f"ws:{workspace_id}",
+        )
+
+        return {"ok": True}
+
     @sio.on("presence:set")
     async def presence_set(sid, data):
         session = await sio.get_session(sid)
-        user_id = session.get("user_id")
+        user_id = session.get("user_id") if session else None
         workspace_id = (data or {}).get("workspaceId")
         status = (data or {}).get("status")
         if not user_id or not workspace_id or not status:
@@ -168,7 +205,7 @@ def _register_events(sio: socketio.AsyncServer) -> None:
         from app.socket.emit import broadcast_chat_typing
 
         session = await sio.get_session(sid)
-        user_id = session.get("user_id")
+        user_id = session.get("user_id") if session else None
         workspace_id = (data or {}).get("workspaceId")
         kind = (data or {}).get("kind")
         conversation_id = (data or {}).get("conversationId")
@@ -184,12 +221,14 @@ def _register_events(sio: socketio.AsyncServer) -> None:
         typing_registry.start_typing(
             workspace_id, kind, conversation_id, user_id
         )
+        audience = await _resolve_typing_audience(kind, conversation_id)
         await broadcast_chat_typing(
             workspace_id=workspace_id,
             kind=kind,
             conversation_id=conversation_id,
             user_id=user_id,
             typing=True,
+            audience_user_ids=audience,
         )
         return {"ok": True}
 
@@ -198,7 +237,7 @@ def _register_events(sio: socketio.AsyncServer) -> None:
         from app.socket.emit import broadcast_chat_typing
 
         session = await sio.get_session(sid)
-        user_id = session.get("user_id")
+        user_id = session.get("user_id") if session else None
         workspace_id = (data or {}).get("workspaceId")
         kind = (data or {}).get("kind")
         conversation_id = (data or {}).get("conversationId")
@@ -212,12 +251,14 @@ def _register_events(sio: socketio.AsyncServer) -> None:
         typing_registry.stop_typing(
             workspace_id, kind, conversation_id, user_id
         )
+        audience = await _resolve_typing_audience(kind, conversation_id)
         await broadcast_chat_typing(
             workspace_id=workspace_id,
             kind=kind,
             conversation_id=conversation_id,
             user_id=user_id,
             typing=False,
+            audience_user_ids=audience,
         )
         return {"ok": True}
 

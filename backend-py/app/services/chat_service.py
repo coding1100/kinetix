@@ -334,6 +334,20 @@ async def _dm_participant_user_ids(
     )
 
 
+async def _channel_member_user_ids(
+    session: AsyncSession, channel_id: str
+) -> list[str]:
+    return list(
+        (
+            await session.scalars(
+                select(ChatChannelMember.user_id).where(
+                    ChatChannelMember.channel_id == channel_id
+                )
+            )
+        ).all()
+    )
+
+
 def _channel_payload(
     channel: ChatChannel,
     member: ChatChannelMember,
@@ -1067,6 +1081,7 @@ async def mark_channel_read(
         raise AppError(404, "NOT_FOUND", "Channel not found")
     member.last_read_at = datetime.now(timezone.utc)
     await session.commit()
+    channel_member_user_ids = await _channel_member_user_ids(session, channel_id)
     fire_and_forget(
         broadcast_chat_read(
             workspace_id=workspace_id,
@@ -1074,6 +1089,7 @@ async def mark_channel_read(
             conversation_id=channel_id,
             user_id=user_id,
             read_at=as_aware_utc(member.last_read_at).isoformat(),
+            audience_user_ids=channel_member_user_ids,
         )
     )
     return {"ok": True, "unread": 0}
@@ -1148,12 +1164,15 @@ async def send_channel_message(
     ]
     if all_notifications:
         await emit_home_notifications(session, workspace_id, all_notifications)
+
+    channel_member_user_ids = await _channel_member_user_ids(session, channel_id)
     fire_and_forget(
         broadcast_chat_message(
             workspace_id=workspace_id,
             kind="channel",
             conversation_id=channel_id,
             message=map_message_broadcast(loaded, thread_count=0),
+            user_ids=channel_member_user_ids,
         )
     )
     return payload
@@ -1279,6 +1298,8 @@ async def send_thread_reply(
     audience_user_ids: list[str] | None = None
     if kind == "dm" and conversation_id:
         audience_user_ids = await _dm_participant_user_ids(session, conversation_id)
+    elif kind == "channel" and channel_id:
+        audience_user_ids = await _channel_member_user_ids(session, channel_id)
     if conv_id:
         fire_and_forget(
             broadcast_chat_message(
@@ -1817,6 +1838,10 @@ async def update_message(
         audience_user_ids = await _dm_participant_user_ids(
             session, loaded.conversation_id
         )
+    elif kind == "channel" and loaded.channel_id:
+        audience_user_ids = await _channel_member_user_ids(
+            session, loaded.channel_id
+        )
     if conv_id:
         fire_and_forget(
             broadcast_chat_message_edit(
@@ -1850,6 +1875,10 @@ async def delete_message(
     if kind == "dm" and message.conversation_id:
         audience_user_ids = await _dm_participant_user_ids(
             session, message.conversation_id
+        )
+    elif kind == "channel" and message.channel_id:
+        audience_user_ids = await _channel_member_user_ids(
+            session, message.channel_id
         )
 
     await session.delete(message)
@@ -1907,6 +1936,10 @@ async def toggle_message_reaction(
     if kind == "dm" and message.conversation_id:
         audience_user_ids = await _dm_participant_user_ids(
             session, message.conversation_id
+        )
+    elif kind == "channel" and message.channel_id:
+        audience_user_ids = await _channel_member_user_ids(
+            session, message.channel_id
         )
     fire_and_forget(
         broadcast_chat_reaction(
