@@ -33,21 +33,26 @@ export function mergeSidebarChannels(
     return sortByLastAt([...(cacheChannels ?? [])]);
   }
   const merged = new Map<string, Channel>();
-  for (const channel of queryChannels) {
-    merged.set(channel.id, channel);
+  for (const freshChannel of queryChannels) {
+    merged.set(freshChannel.id, freshChannel);
   }
   if (cacheChannels !== undefined) {
-    for (const channel of cacheChannels) {
-      const existing = merged.get(channel.id);
-      if (!existing) continue;
-      merged.set(channel.id, {
-        ...channel,
-        ...existing,
-        canDelete: channel.canDelete ?? existing.canDelete,
-        createdById: channel.createdById ?? existing.createdById,
-        unread: mergeConversationUnread(channel.unread, existing.unread, {
-          isActive: activeChannelId() === channel.id,
-        }),
+    const cachedById = new Map(cacheChannels.map((c) => [c.id, c]));
+    for (const [id, freshChannel] of merged.entries()) {
+      const cachedChannel = cachedById.get(id);
+      if (!cachedChannel) continue;
+      merged.set(id, {
+        ...cachedChannel,
+        ...freshChannel,
+        canDelete: freshChannel.canDelete ?? cachedChannel.canDelete,
+        createdById: freshChannel.createdById ?? cachedChannel.createdById,
+        unread: mergeConversationUnread(
+          freshChannel.unread,
+          cachedChannel.unread,
+          {
+            isActive: activeChannelId() === id,
+          }
+        ),
       });
     }
   }
@@ -62,21 +67,19 @@ export function mergeSidebarDms(
     return sortByLastAt([...(cacheDms ?? [])]);
   }
   const merged = new Map<string, DirectMessage>();
-  for (const dm of queryDms) {
-    merged.set(dm.id, dm);
+  for (const freshDm of queryDms) {
+    merged.set(freshDm.id, freshDm);
   }
   if (cacheDms !== undefined) {
-    for (const dm of cacheDms) {
-      const existing = merged.get(dm.id);
-      // The API response owns set membership: a DM the server returns but the
-      // cache has never seen is a conversation someone just started with us,
-      // and closing a DM persists as hidden server-side, so it stays gone.
-      if (!existing) continue;
-      merged.set(dm.id, {
-        ...dm,
-        ...existing,
-        unread: mergeConversationUnread(dm.unread, existing.unread, {
-          isActive: activeDmId() === dm.id,
+    const cachedById = new Map(cacheDms.map((d) => [d.id, d]));
+    for (const [id, freshDm] of merged.entries()) {
+      const cachedDm = cachedById.get(id);
+      if (!cachedDm) continue;
+      merged.set(id, {
+        ...cachedDm,
+        ...freshDm,
+        unread: mergeConversationUnread(freshDm.unread, cachedDm.unread, {
+          isActive: activeDmId() === id,
         }),
       });
     }
