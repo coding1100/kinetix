@@ -812,9 +812,12 @@ function ChannelRow({
               <Link
                 href={href}
                 className={cn(
-                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-700 dark:text-slate-200 transition-colors hover:bg-sidebar-accent/80",
-                  active && "bg-sidebar-accent font-semibold text-slate-900 dark:text-white",
-                  displayUnread > 0 && "font-bold text-slate-900 dark:text-white"
+                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-sidebar-accent/80",
+                  active
+                    ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground"
+                    : displayUnread > 0
+                    ? "font-bold text-sidebar-foreground"
+                    : "font-medium text-sidebar-foreground/85 hover:text-sidebar-foreground"
                 )}
               >
                 {listChannel ? (
@@ -954,9 +957,12 @@ function DmRow({
               <Link
                 href={href}
                 className={cn(
-                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-700 dark:text-slate-200 transition-colors hover:bg-sidebar-accent/80",
-                  active && "bg-sidebar-accent font-semibold text-slate-900 dark:text-white",
-                  displayUnread > 0 && "font-bold text-slate-900 dark:text-white"
+                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-sidebar-accent/80",
+                  active
+                    ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground"
+                    : displayUnread > 0
+                    ? "font-bold text-sidebar-foreground"
+                    : "font-medium text-sidebar-foreground/85 hover:text-sidebar-foreground"
                 )}
               >
                 {isGroup && groupParticipants.length > 0 ? (

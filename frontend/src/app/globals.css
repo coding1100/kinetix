@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* Kinetix design palette mapped to shadcn semantic tokens */
 :root {
   --radius: 0.5rem;

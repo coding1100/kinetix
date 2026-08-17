@@ -32,7 +32,10 @@ import { ingestTaskEvent } from "@/lib/tasks/realtime";
 import { registerChatTypingSocket } from "@/lib/socket/chat-typing";
 import { applyHomeNotification } from "@/lib/notifications/realtime";
 import { playNotificationSound } from "@/lib/notifications/sound";
-import { showDesktopNotification } from "@/lib/notifications/desktop";
+import {
+  showDesktopNotification,
+  requestDesktopPermission,
+} from "@/lib/notifications/desktop";
 import { toHomeHref } from "@/lib/chat/conversation-surface";
 import { clearLiveNotifications } from "@/lib/notifications/live-cache";
 import { bumpWorkspaceMembersRefresh } from "@/lib/workspace/realtime";
@@ -489,6 +492,12 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       window.removeEventListener("focus", handleVisibilityOrFocus);
     };
   }, [workspaceId]);
+
+  useEffect(() => {
+    if (useSettingsStore.getState().desktopNotifications) {
+      void requestDesktopPermission();
+    }
+  }, []);
 
   return <>{children}</>;
 }
