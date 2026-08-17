@@ -3,7 +3,12 @@
   "identifier": "default",
   "description": "Default permissions capability for Kinetix app",
   "windows": ["main"],
+  "remote": {
+    "urls": ["https://kinetix.mindrind.com/*"]
+  },
   "permissions": [
-    "core:default"
+    "core:default",
+    "notification:default",
+    "notification:allow-notify"
   ]
 }
