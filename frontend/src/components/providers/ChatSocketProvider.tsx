@@ -166,7 +166,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
           const title =
             payload.kind === "dm"
               ? message.authorName
-              : `#${payload.channelName ?? "channel"}`;
+              : "Channel message";
           const href =
             payload.kind === "dm"
               ? `/home/dm/${conversationId}`
