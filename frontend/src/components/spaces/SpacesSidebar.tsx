@@ -196,8 +196,8 @@ export function SpacesSidebar() {
               className={cn(
                 "flex items-center gap-2 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-sidebar-accent",
                 pathname === "/home/all-tasks"
-                  ? "bg-primary/10 font-medium text-white"
-                  : "text-[#B4B4B4]"
+                  ? "bg-primary/10 font-semibold text-slate-900 dark:text-white"
+                  : "text-slate-700 dark:text-slate-300"
               )}
             >
               <ListChecksIcon className="size-4 shrink-0" />
@@ -208,8 +208,8 @@ export function SpacesSidebar() {
               className={cn(
                 "flex items-center gap-2 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-sidebar-accent",
                 pathname === "/home/my-tasks/assigned"
-                  ? "bg-primary/10 font-medium text-white"
-                  : "text-[#B4B4B4]"
+                  ? "bg-primary/10 font-semibold text-slate-900 dark:text-white"
+                  : "text-slate-700 dark:text-slate-300"
               )}
             >
               <UsersIcon className="size-4 shrink-0" />
@@ -229,8 +229,8 @@ export function SpacesSidebar() {
                     className={cn(
                       "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-sidebar-accent",
                       isListActive(pathname, entry.id)
-                        ? "bg-primary/10 font-medium text-white"
-                        : "text-[#B4B4B4]"
+                        ? "bg-primary/10 font-semibold text-slate-900 dark:text-white"
+                        : "text-slate-700 dark:text-slate-300"
                     )}
                   >
                     <LayoutListIcon className="size-3.5 shrink-0 opacity-70" />
@@ -238,7 +238,7 @@ export function SpacesSidebar() {
                   </Link>
                 ) : (
                   <div key={`${entry.type}-${entry.id}`}>
-                    <div className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-[#B4B4B4]">
+                    <div className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-slate-700 dark:text-slate-300 font-medium">
                       <FolderIcon className="size-3.5 shrink-0 opacity-70" />
                       <span className="truncate">{entry.name}</span>
                     </div>
@@ -250,8 +250,8 @@ export function SpacesSidebar() {
                           className={cn(
                             "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-sidebar-accent",
                             isListActive(pathname, lst.id)
-                              ? "bg-primary/10 font-medium text-white"
-                              : "text-[#B4B4B4]"
+                              ? "bg-primary/10 font-semibold text-slate-900 dark:text-white"
+                              : "text-slate-700 dark:text-slate-300"
                           )}
                         >
                           <LayoutListIcon className="size-3.5 shrink-0 opacity-70" />
@@ -276,7 +276,7 @@ export function SpacesSidebar() {
                   <div className="flex items-center gap-0.5">
                     <button
                       type="button"
-                      className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm font-semibold text-[#B4B4B4] hover:bg-sidebar-accent"
+                      className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-sidebar-accent"
                       onClick={() =>
                         setExpanded((e) => ({
                           ...e,
@@ -723,8 +723,8 @@ function ListNavItem({
             render={<Link href={listHref(listId)} />}
             className={cn(
               "h-8 min-w-0 flex-1 justify-start gap-2 rounded-md px-2.5 text-sm",
-              active && "bg-primary/10 font-medium text-white",
-              !active && "font-normal text-[#B4B4B4] hover:bg-sidebar-accent"
+              active && "bg-primary/10 font-semibold text-slate-900 dark:text-white",
+              !active && "font-medium text-slate-700 dark:text-slate-300 hover:bg-sidebar-accent"
             )}
           >
             <LayoutListIcon className="size-3.5 shrink-0 opacity-70" />

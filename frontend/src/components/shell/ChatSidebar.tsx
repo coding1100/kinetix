@@ -427,7 +427,7 @@ function OrganizedList({
     <div className="space-y-4 pb-4">
       {favoriteChannels.length > 0 ? (
         <div>
-          <p className="mb-1 px-2 text-xs font-semibold text-muted-foreground uppercase">
+          <p className="mb-1 px-2 text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
             Favorites
           </p>
           <div className="space-y-0.5">
@@ -450,7 +450,7 @@ function OrganizedList({
       ) : null}
 
       <div>
-        <p className="mb-1 px-2 text-xs font-semibold text-muted-foreground uppercase">
+        <p className="mb-1 px-2 text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
           Channels
         </p>
         <div className="space-y-0.5">
@@ -470,7 +470,7 @@ function OrganizedList({
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 w-full justify-start gap-2 px-2 text-muted-foreground"
+            className="h-7 w-full justify-start gap-2 px-2 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-medium"
             onClick={onAddChannel}
           >
             <PlusIcon className="size-3.5" />
@@ -480,7 +480,7 @@ function OrganizedList({
       </div>
 
       <div>
-        <p className="mb-1 px-2 text-xs font-semibold text-muted-foreground uppercase">
+        <p className="mb-1 px-2 text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
           Direct Messages
         </p>
         <div className="space-y-0.5">
@@ -504,7 +504,7 @@ function OrganizedList({
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 w-full justify-start gap-2 px-2 text-muted-foreground"
+            className="h-7 w-full justify-start gap-2 px-2 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-medium"
             onClick={onNewDm}
           >
             <PlusIcon className="size-3.5" />
@@ -647,7 +647,9 @@ function ChannelRow({
                   <span
                     className={cn(
                       "truncate font-medium",
-                      active || displayUnread > 0 ? "text-white" : "text-[#B4B4B4]"
+                      active || displayUnread > 0
+                        ? "font-semibold text-slate-900 dark:text-white"
+                        : "text-slate-700 dark:text-slate-300"
                     )}
                   >
                     {name}
@@ -808,7 +810,9 @@ function DmRow({
                   <span
                     className={cn(
                       "truncate text-sm font-medium",
-                      active || displayUnread > 0 ? "text-white" : "text-[#B4B4B4]"
+                      active || displayUnread > 0
+                        ? "font-semibold text-slate-900 dark:text-white"
+                        : "text-slate-700 dark:text-slate-300"
                     )}
                   >
                     {displayName}
