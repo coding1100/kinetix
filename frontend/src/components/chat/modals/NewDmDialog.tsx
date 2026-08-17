@@ -28,6 +28,7 @@ import { upsertDmInSidebar } from "@/lib/chat/sidebar-dm";
 import { joinDmRoom } from "@/lib/socket/dm-rooms";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api/client";
+import { dmPathForSurface } from "@/lib/chat/conversation-surface";
 
 export function NewDmDialog() {
   const router = useRouter();
@@ -104,13 +105,10 @@ export function NewDmDialog() {
       upsertDmInSidebar(dm, workspaceId);
       closeModal();
       reset();
-      if (pathname?.startsWith("/home")) {
-        toast.success(
-          isGroup ? "Group chat created" : "Conversation started"
-        );
-      } else {
-        router.push(`/chat/dm/${dm.id}`);
-      }
+      toast.success(
+        isGroup ? "Group chat created" : "Conversation started"
+      );
+      router.push(dmPathForSurface(pathname, dm.id));
     } catch (err) {
       toast.error(
         err instanceof ApiError ? err.message : "Failed to start conversation"
@@ -119,6 +117,7 @@ export function NewDmDialog() {
       setCreating(false);
     }
   };
+
 
   return (
     <Dialog

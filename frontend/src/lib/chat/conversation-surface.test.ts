@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { channelPathForSurface, isHomeSurface } from "./conversation-surface";
+import { channelPathForSurface, dmPathForSurface, isHomeSurface } from "./conversation-surface";
 
 describe("channelPathForSurface", () => {
   it("keeps a channel created from Home inside Home", () => {
@@ -19,3 +19,18 @@ describe("channelPathForSurface", () => {
     expect(channelPathForSurface("/homework", "ch-1")).toBe("/chat/c/ch-1");
   });
 });
+
+describe("dmPathForSurface", () => {
+  it("keeps a DM created from Home inside Home", () => {
+    expect(dmPathForSurface("/home/inbox", "dm-1")).toBe("/home/dm/dm-1");
+    expect(dmPathForSurface("/home", "dm-1")).toBe("/home/dm/dm-1");
+    expect(dmPathForSurface("/home/dm/dm-0", "dm-1")).toBe("/home/dm/dm-1");
+  });
+
+  it("sends a DM created anywhere else to Chat", () => {
+    expect(dmPathForSurface("/chat", "dm-1")).toBe("/chat/dm/dm-1");
+    expect(dmPathForSurface("/people", "dm-1")).toBe("/chat/dm/dm-1");
+    expect(dmPathForSurface(null, "dm-1")).toBe("/chat/dm/dm-1");
+  });
+});
+

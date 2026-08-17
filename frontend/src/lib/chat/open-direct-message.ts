@@ -3,6 +3,7 @@ import { createDm } from "@/lib/api/chat";
 import { ApiError } from "@/lib/api/client";
 import { setConversationCache } from "@/lib/chat/conversation-cache";
 import { findDmByUserId, upsertDmInSidebar } from "@/lib/chat/sidebar-dm";
+import { dmPathForSurface } from "@/lib/chat/conversation-surface";
 import { joinDmRoom } from "@/lib/socket/dm-rooms";
 import { useAuthStore } from "@/stores/auth-store";
 import { useChatStore } from "@/stores/chat-store";
@@ -14,7 +15,8 @@ function resolveExistingDm(workspaceId: string, userId: string) {
 
 export async function openDirectMessageForUser(
   userId: string,
-  router: AppRouterInstance
+  router: AppRouterInstance,
+  pathname?: string | null
 ): Promise<boolean> {
   const accessToken = useAuthStore.getState().accessToken;
   const workspaceId = useAuthStore.getState().activeWorkspaceId;
@@ -35,7 +37,7 @@ export async function openDirectMessageForUser(
     if (existing) {
       setConversationCache(workspaceId, "dm", existing.id, { dm: existing });
       closePersonProfile();
-      router.push(`/chat/dm/${existing.id}`);
+      router.push(dmPathForSurface(pathname, existing.id));
       return true;
     }
 
@@ -44,8 +46,9 @@ export async function openDirectMessageForUser(
     upsertDmInSidebar(dm, workspaceId);
     setConversationCache(workspaceId, "dm", dm.id, { dm });
     closePersonProfile();
-    router.push(`/chat/dm/${dm.id}`);
+    router.push(dmPathForSurface(pathname, dm.id));
     return true;
+
   } catch (err) {
     toast.error(
       err instanceof ApiError ? err.message : "Failed to open direct message"

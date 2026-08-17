@@ -15,6 +15,14 @@ export function channelPathForSurface(
   return `${isHomeSurface(pathname) ? "/home" : "/chat"}/c/${channelId}`;
 }
 
+export function dmPathForSurface(
+  pathname: string | null | undefined,
+  dmId: string
+): string {
+  return `${isHomeSurface(pathname) ? "/home" : "/chat"}/dm/${dmId}`;
+}
+
+
 /**
  * Rewrites a /chat/... href (as backend-built notification hrefs use) to its
  * /home/... equivalent for the same resource, preserving any query string.
