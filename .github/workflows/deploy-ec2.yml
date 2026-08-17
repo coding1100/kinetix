@@ -30,7 +30,7 @@ jobs:
               - 'deploy/**'
               - 'docker-compose.yml'
               - 'docker-compose.app.yml'
-              - '.github/workflows/deploy-ec2.yml'
+              - '.github/**'
             admin:
               - 'admin-frontend/**'
 
