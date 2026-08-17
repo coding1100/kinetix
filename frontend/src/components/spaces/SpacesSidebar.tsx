@@ -55,6 +55,13 @@ import {
   SpacesHierarchyDialog,
   type HierarchyDialogMode,
 } from "@/components/spaces/SpacesHierarchyDialog";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { formatRequestError } from "@/lib/api/client";
 import { toast } from "sonner";
 
@@ -702,78 +709,115 @@ function ListNavItem({
   onDelete?: () => void;
   onShare: () => void;
 }) {
+  const router = useRouter();
   const canDelete = Boolean(onDelete) && !isPersonal;
   const hasMenu = Boolean(onRename) || Boolean(onStatuses) || canDelete || (Boolean(canShare) && Boolean(onShare));
+
   return (
-    <li className="group flex items-center gap-0.5">
-      <Button
-        variant="ghost"
-        nativeButton={false}
-        render={<Link href={listHref(listId)} />}
-        className={cn(
-          "h-8 min-w-0 flex-1 justify-start gap-2 rounded-md px-2.5 text-sm",
-          active && "bg-primary/10 font-medium text-white",
-          !active && "font-normal text-[#B4B4B4] hover:bg-sidebar-accent"
-        )}
-      >
-        <LayoutListIcon className="size-3.5 shrink-0 opacity-70" />
-        <span className="truncate">{name}</span>
-        {isPrivate ? <LockIcon className="size-3 shrink-0 opacity-70" /> : null}
-        {typeof taskCount === "number" ? (
-          <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
-            {taskCount}
-          </span>
-        ) : null}
-      </Button>
-      {hasMenu ? (
-        <Tooltip>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <TooltipTrigger
+    <ContextMenu>
+      <ContextMenuTrigger className="block w-full">
+        <li className="group flex items-center gap-0.5">
+          <Button
+            variant="ghost"
+            nativeButton={false}
+            render={<Link href={listHref(listId)} />}
+            className={cn(
+              "h-8 min-w-0 flex-1 justify-start gap-2 rounded-md px-2.5 text-sm",
+              active && "bg-primary/10 font-medium text-white",
+              !active && "font-normal text-[#B4B4B4] hover:bg-sidebar-accent"
+            )}
+          >
+            <LayoutListIcon className="size-3.5 shrink-0 opacity-70" />
+            <span className="truncate">{name}</span>
+            {isPrivate ? <LockIcon className="size-3 shrink-0 opacity-70" /> : null}
+            {typeof taskCount === "number" ? (
+              <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                {taskCount}
+              </span>
+            ) : null}
+          </Button>
+          {hasMenu ? (
+            <Tooltip>
+              <DropdownMenu>
+                <DropdownMenuTrigger
                   render={
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="size-6 shrink-0 opacity-0 group-hover:opacity-100 data-[popup-open]:opacity-100"
-                      aria-label={`Actions for ${name}`}
-                    >
-                      <MoreHorizontalIcon className="size-3" />
-                    </Button>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="size-6 shrink-0 opacity-0 group-hover:opacity-100 data-[popup-open]:opacity-100"
+                          aria-label={`Actions for ${name}`}
+                        >
+                          <MoreHorizontalIcon className="size-3" />
+                        </Button>
+                      }
+                    />
                   }
                 />
-              }
-            />
-            <DropdownMenuContent align="end">
-              {onRename ? (
-                <DropdownMenuItem onClick={onRename}>
-                  <PencilIcon className="size-4" />
-                  Rename
-                </DropdownMenuItem>
-              ) : null}
-              {onStatuses ? (
-                <DropdownMenuItem onClick={onStatuses}>
-                  <Settings2Icon className="size-4" />
-                  Statuses
-                </DropdownMenuItem>
-              ) : null}
-              {canShare ? (
-                <DropdownMenuItem onClick={onShare}>
-                  <Share2Icon className="size-4" />
-                  Share
-                </DropdownMenuItem>
-              ) : null}
-              {canDelete ? (
-                <DropdownMenuItem variant="destructive" onClick={onDelete}>
-                  <Trash2Icon className="size-4" />
-                  Delete list
-                </DropdownMenuItem>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <TooltipContent side="bottom">Actions</TooltipContent>
-        </Tooltip>
-      ) : null}
-    </li>
+                <DropdownMenuContent align="end">
+                  {onRename ? (
+                    <DropdownMenuItem onClick={onRename}>
+                      <PencilIcon className="size-4" />
+                      Rename
+                    </DropdownMenuItem>
+                  ) : null}
+                  {onStatuses ? (
+                    <DropdownMenuItem onClick={onStatuses}>
+                      <Settings2Icon className="size-4" />
+                      Statuses
+                    </DropdownMenuItem>
+                  ) : null}
+                  {canShare ? (
+                    <DropdownMenuItem onClick={onShare}>
+                      <Share2Icon className="size-4" />
+                      Share
+                    </DropdownMenuItem>
+                  ) : null}
+                  {canDelete ? (
+                    <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                      <Trash2Icon className="size-4" />
+                      Delete list
+                    </DropdownMenuItem>
+                  ) : null}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <TooltipContent side="bottom">Actions</TooltipContent>
+            </Tooltip>
+          ) : null}
+        </li>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => router.push(listHref(listId))}>
+          <LayoutListIcon className="size-4" />
+          Open list
+        </ContextMenuItem>
+        {onRename ? (
+          <ContextMenuItem onClick={onRename}>
+            <PencilIcon className="size-4" />
+            Rename
+          </ContextMenuItem>
+        ) : null}
+        {onStatuses ? (
+          <ContextMenuItem onClick={onStatuses}>
+            <Settings2Icon className="size-4" />
+            Statuses
+          </ContextMenuItem>
+        ) : null}
+        {canShare ? (
+          <ContextMenuItem onClick={onShare}>
+            <Share2Icon className="size-4" />
+            Share
+          </ContextMenuItem>
+        ) : null}
+        {canDelete ? <ContextMenuSeparator /> : null}
+        {canDelete ? (
+          <ContextMenuItem variant="destructive" onClick={onDelete}>
+            <Trash2Icon className="size-4" />
+            Delete list
+          </ContextMenuItem>
+        ) : null}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

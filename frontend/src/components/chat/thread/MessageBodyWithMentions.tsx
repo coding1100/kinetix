@@ -3,6 +3,8 @@
 import { useMemo } from "react";
 import {
   displayMentionToken,
+  isSpecialMention,
+  MENTION_CHIP_SPECIAL_CLASS,
   MESSAGE_TOKEN_RE,
 } from "@/lib/chat/mention-utils";
 import { cn } from "@/lib/utils";
@@ -96,6 +98,13 @@ export function MessageBodyWithMentions({
       <p className="text-sm leading-relaxed whitespace-pre-wrap text-foreground">
         {parts.map((part, i) => {
           if (part.startsWith("@")) {
+            if (isSpecialMention(part)) {
+              return (
+                <span key={i} className={MENTION_CHIP_SPECIAL_CLASS}>
+                  {displayMentionToken(part)}
+                </span>
+              );
+            }
             return (
               <PersonMentionToken
                 key={i}
@@ -129,6 +138,13 @@ export function MessageBodyWithMentions({
       {parts.map((part, i) => {
         if (!part) return null;
         if (part.startsWith("@")) {
+          if (isSpecialMention(part)) {
+            return (
+              <span key={i} className={MENTION_CHIP_SPECIAL_CLASS}>
+                {displayMentionToken(part)}
+              </span>
+            );
+          }
           return (
             <PersonMentionToken
               key={i}

@@ -171,6 +171,7 @@ interface ChatState {
   clearComposerQuote: () => void;
   startComposerEdit: (payload: ComposerEdit) => void;
   clearComposerEdit: () => void;
+  bumpSidebarRefresh: () => void;
   resetChatSession: () => void;
 }
 
@@ -312,6 +313,8 @@ export const useChatStore = create<ChatState>()(
         useChatStore.getState().requestMessageScroll(composerEdit.messageId);
       },
       clearComposerEdit: () => set({ composerEdit: null }),
+      bumpSidebarRefresh: () =>
+        set((s) => ({ sidebarRefreshKey: s.sidebarRefreshKey + 1 })),
       resetChatSession: () =>
         set({
           sidebarListsCache: null,

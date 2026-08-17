@@ -11,7 +11,28 @@ import {
   ListIcon,
   LockIcon,
   StarIcon,
+  CheckCircle2Icon,
+  CopyIcon,
+  MessageCircleIcon,
+  MessageSquareIcon,
+  XIcon,
 } from "lucide-react";
+import { toast } from "sonner";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  markChannelRead,
+  markChannelUnread,
+  markDmRead,
+  markDmUnread,
+  updateChannelMember,
+  updateDmParticipant,
+} from "@/lib/api/chat";
 import type { Channel, DirectMessage, DmParticipant } from "@/lib/types/chat";
 import { ChannelGlyph } from "@/lib/chat/channel-icons";
 import { GroupDmAvatarStack } from "@/components/chat/GroupDmAvatarStack";
@@ -543,6 +564,9 @@ function ChannelRow({
   starred?: boolean;
   icon?: string | null;
 }) {
+  const router = useRouter();
+  const { accessToken, workspaceId } = useWorkspaceApi();
+  const bumpSidebarRefresh = useChatStore((s) => s.bumpSidebarRefresh);
   const unreadBadgeHold = useChatStore((s) => s.unreadBadgeHold);
   const displayUnread = useSidebarUnread(
     "channel",
@@ -552,58 +576,119 @@ function ChannelRow({
     unreadBadgeHold
   );
 
+  const handleToggleRead = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!accessToken || !workspaceId) return;
+    try {
+      if (displayUnread > 0) {
+        await markChannelRead(accessToken, workspaceId, channelId);
+        toast.success("Marked as read");
+      } else {
+        await markChannelUnread(accessToken, workspaceId, channelId);
+        toast.success("Marked as unread");
+      }
+      bumpSidebarRefresh();
+    } catch {
+      toast.error("Failed to update unread status");
+    }
+  };
+
+  const handleToggleStar = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!accessToken || !workspaceId) return;
+    try {
+      await updateChannelMember(accessToken, workspaceId, channelId, {
+        starred: !starred,
+      });
+      toast.success(starred ? "Unstarred channel" : "Starred channel");
+      bumpSidebarRefresh();
+    } catch {
+      toast.error("Failed to update channel preference");
+    }
+  };
+
+  const handleCopyLink = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const url = `${window.location.origin}${href}`;
+    void navigator.clipboard.writeText(url);
+    toast.success("Channel link copied to clipboard");
+  };
+
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant="ghost"
-            nativeButton={false}
-            render={<Link href={href} />}
-            className={cn(
-              "h-8 w-full justify-between rounded-md px-2",
-              active && "bg-sidebar-accent"
-            )}
-          >
-            <span className="flex min-w-0 items-center gap-2 text-sm">
-              {listChannel ? (
-                <span className="flex shrink-0 items-center gap-0.5">
-                  <ChannelGlyph icon={icon} className="size-3.5 text-muted-foreground" />
-                  <ListIcon className="size-3.5 text-muted-foreground" />
-                </span>
-              ) : (
-                <ChannelGlyph
-                  icon={icon}
-                  className="size-3.5 shrink-0 text-muted-foreground"
-                />
-              )}
-              {starred ? (
-                <StarIcon className="size-3 shrink-0 fill-amber-400 text-amber-400" />
-              ) : null}
-              <span
+    <ContextMenu>
+      <ContextMenuTrigger className="block w-full">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                nativeButton={false}
+                render={<Link href={href} />}
                 className={cn(
-                  "truncate font-medium",
-                  active || displayUnread > 0 ? "text-white" : "text-[#B4B4B4]"
+                  "h-8 w-full justify-between rounded-md px-2",
+                  active && "bg-sidebar-accent"
                 )}
               >
-                {name}
-              </span>
-              {privateChannel ? (
-                <LockIcon className="size-3 text-muted-foreground" />
-              ) : null}
-            </span>
-            <span className="flex items-center gap-1">
-              {displayUnread > 0 && (
-                <Badge className="size-5 min-w-5 justify-center rounded-full px-1 text-[10px] transition-opacity duration-300">
-                  {displayUnread}
-                </Badge>
-              )}
-            </span>
-          </Button>
-        }
-      />
-      <TooltipContent side="right">{name}</TooltipContent>
-    </Tooltip>
+                <span className="flex min-w-0 items-center gap-2 text-sm">
+                  {listChannel ? (
+                    <span className="flex shrink-0 items-center gap-0.5">
+                      <ChannelGlyph icon={icon} className="size-3.5 text-muted-foreground" />
+                      <ListIcon className="size-3.5 text-muted-foreground" />
+                    </span>
+                  ) : (
+                    <ChannelGlyph
+                      icon={icon}
+                      className="size-3.5 shrink-0 text-muted-foreground"
+                    />
+                  )}
+                  {starred ? (
+                    <StarIcon className="size-3 shrink-0 fill-amber-400 text-amber-400" />
+                  ) : null}
+                  <span
+                    className={cn(
+                      "truncate font-medium",
+                      active || displayUnread > 0 ? "text-white" : "text-[#B4B4B4]"
+                    )}
+                  >
+                    {name}
+                  </span>
+                  {privateChannel ? (
+                    <LockIcon className="size-3 text-muted-foreground" />
+                  ) : null}
+                </span>
+                <span className="flex items-center gap-1">
+                  {displayUnread > 0 && (
+                    <Badge className="size-5 min-w-5 justify-center rounded-full px-1 text-[10px] transition-opacity duration-300">
+                      {displayUnread}
+                    </Badge>
+                  )}
+                </span>
+              </Button>
+            }
+          />
+          <TooltipContent side="right">{name}</TooltipContent>
+        </Tooltip>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => router.push(href)}>
+          <MessageSquareIcon className="size-4" />
+          Open channel
+        </ContextMenuItem>
+        <ContextMenuItem onClick={handleToggleRead}>
+          <CheckCircle2Icon className="size-4" />
+          {displayUnread > 0 ? "Mark as read" : "Mark as unread"}
+        </ContextMenuItem>
+        <ContextMenuItem onClick={handleToggleStar}>
+          <StarIcon className="size-4" />
+          {starred ? "Unstar channel" : "Star channel"}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={handleCopyLink}>
+          <CopyIcon className="size-4" />
+          Copy link
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -634,6 +719,9 @@ function DmRow({
   presenceFallback?: PresenceStatus;
   isGroup?: boolean;
 }) {
+  const router = useRouter();
+  const { accessToken, workspaceId } = useWorkspaceApi();
+  const bumpSidebarRefresh = useChatStore((s) => s.bumpSidebarRefresh);
   const unreadBadgeHold = useChatStore((s) => s.unreadBadgeHold);
   const displayUnread = useSidebarUnread(
     "dm",
@@ -654,55 +742,114 @@ function DmRow({
     ? resolveGroupDmTitle({ name, isGroup: true, participants }, currentUserId)
     : name;
 
+  const handleToggleRead = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!accessToken || !workspaceId) return;
+    try {
+      if (displayUnread > 0) {
+        await markDmRead(accessToken, workspaceId, dmId);
+        toast.success("Marked as read");
+      } else {
+        await markDmUnread(accessToken, workspaceId, dmId);
+        toast.success("Marked as unread");
+      }
+      bumpSidebarRefresh();
+    } catch {
+      toast.error("Failed to update unread status");
+    }
+  };
+
+  const handleCopyLink = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const url = `${window.location.origin}${href}`;
+    void navigator.clipboard.writeText(url);
+    toast.success("Conversation link copied to clipboard");
+  };
+
+  const handleCloseDm = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!accessToken || !workspaceId) return;
+    try {
+      await updateDmParticipant(accessToken, workspaceId, dmId, { hidden: true });
+      toast.success("Conversation closed");
+      bumpSidebarRefresh();
+    } catch {
+      toast.error("Failed to close conversation");
+    }
+  };
+
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant="ghost"
-            nativeButton={false}
-            render={<Link href={href} />}
-            className={cn(
-              "h-9 w-full justify-between rounded-md px-2",
-              active && "bg-sidebar-accent text-sidebar-accent-foreground"
-            )}
-          >
-            <span className="flex min-w-0 items-center gap-2">
-              {isGroup && groupParticipants.length > 0 ? (
-                <GroupDmAvatarStack participants={groupParticipants} />
-              ) : (
-                <DmAvatar
-                  name={displayName}
-                  userId={otherUserId}
-                  avatarUrl={avatarUrl}
-                  presence={presence}
-                  showPresence={!isGroup}
-                />
-              )}
-              <span
+    <ContextMenu>
+      <ContextMenuTrigger className="block w-full">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                nativeButton={false}
+                render={<Link href={href} />}
                 className={cn(
-                  "truncate text-sm font-medium",
-                  active || displayUnread > 0 ? "text-white" : "text-[#B4B4B4]"
+                  "h-9 w-full justify-between rounded-md px-2",
+                  active && "bg-sidebar-accent text-sidebar-accent-foreground"
                 )}
               >
-                {displayName}
-                {!isGroup && otherUserIsDisabled ? (
-                  <span className="text-destructive"> (deactivated)</span>
+                <span className="flex min-w-0 items-center gap-2">
+                  {isGroup && groupParticipants.length > 0 ? (
+                    <GroupDmAvatarStack participants={groupParticipants} />
+                  ) : (
+                    <DmAvatar
+                      name={displayName}
+                      userId={otherUserId}
+                      avatarUrl={avatarUrl}
+                      presence={presence}
+                      showPresence={!isGroup}
+                    />
+                  )}
+                  <span
+                    className={cn(
+                      "truncate text-sm font-medium",
+                      active || displayUnread > 0 ? "text-white" : "text-[#B4B4B4]"
+                    )}
+                  >
+                    {displayName}
+                    {!isGroup && otherUserIsDisabled ? (
+                      <span className="text-destructive"> (deactivated)</span>
+                    ) : null}
+                  </span>
+                </span>
+                {displayUnread > 0 ? (
+                  <Badge className="size-5 min-w-5 justify-center rounded-full px-1 text-[10px] transition-opacity duration-300">
+                    {displayUnread}
+                  </Badge>
                 ) : null}
-              </span>
-            </span>
-            {displayUnread > 0 ? (
-              <Badge className="size-5 min-w-5 justify-center rounded-full px-1 text-[10px] transition-opacity duration-300">
-                {displayUnread}
-              </Badge>
-            ) : null}
-          </Button>
-        }
-      />
-      <TooltipContent side="right">
-        {displayName}
-        {!isGroup && otherUserIsDisabled ? " (deactivated)" : ""}
-      </TooltipContent>
-    </Tooltip>
+              </Button>
+            }
+          />
+          <TooltipContent side="right">
+            {displayName}
+            {!isGroup && otherUserIsDisabled ? " (deactivated)" : ""}
+          </TooltipContent>
+        </Tooltip>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => router.push(href)}>
+          <MessageCircleIcon className="size-4" />
+          Open conversation
+        </ContextMenuItem>
+        <ContextMenuItem onClick={handleToggleRead}>
+          <CheckCircle2Icon className="size-4" />
+          {displayUnread > 0 ? "Mark as read" : "Mark as unread"}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={handleCopyLink}>
+          <CopyIcon className="size-4" />
+          Copy link
+        </ContextMenuItem>
+        <ContextMenuItem variant="destructive" onClick={handleCloseDm}>
+          <XIcon className="size-4" />
+          Close conversation
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

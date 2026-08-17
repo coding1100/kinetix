@@ -11,6 +11,7 @@ import { useMentionChannels } from "@/hooks/use-mention-channels";
 import {
   filterMentionChannels,
   filterMentionMembers,
+  filterSpecialMentions,
 } from "@/lib/chat/mention-utils";
 import { MentionMemberList } from "./MentionMemberList";
 import { MentionChannelList } from "./MentionChannelList";
@@ -76,10 +77,18 @@ export function MentionPickerContent({
   const membersLoading = membersProp ? false : hookLoading;
   const { channels, loading: channelsLoading } = useMentionChannels(peopleOnly);
 
-  const filteredMembers = useMemo(
-    () => filterMentionMembers(members, activeQuery).slice(0, 12),
-    [members, activeQuery]
-  );
+  const isChannel = conversationType === "channel";
+
+  const filteredMembers = useMemo(() => {
+    const matchedMembers = filterMentionMembers(members, activeQuery);
+    if (!isChannel || peopleOnly) return matchedMembers.slice(0, 12);
+    const matchedSpecials = filterSpecialMentions(activeQuery).map((s) => ({
+      id: s.id,
+      fullName: s.label,
+      email: s.description,
+    }));
+    return [...matchedSpecials, ...matchedMembers].slice(0, 12);
+  }, [members, activeQuery, isChannel, peopleOnly]);
 
   const filteredChannels = useMemo(
     () => filterMentionChannels(channels, activeQuery).slice(0, 12),
