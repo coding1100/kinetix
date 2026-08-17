@@ -10,20 +10,24 @@ import { GlobalLoader } from "@/components/providers/GlobalLoader";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
+import { AutoUpdateProvider } from "@/components/providers/AutoUpdateProvider";
+
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider>
       <ThemeSync />
       <TooltipProvider delay={200}>
         <AuthProvider>
-          <ChatSocketProvider>
-            {children}
-          </ChatSocketProvider>
-          <Suspense fallback={null}>
-            <Modals />
-          </Suspense>
-          <GlobalLoader />
-          <Toaster position="top-right" />
+          <AutoUpdateProvider>
+            <ChatSocketProvider>
+              {children}
+            </ChatSocketProvider>
+            <Suspense fallback={null}>
+              <Modals />
+            </Suspense>
+            <GlobalLoader />
+            <Toaster position="top-right" />
+          </AutoUpdateProvider>
         </AuthProvider>
       </TooltipProvider>
     </ThemeProvider>
