@@ -22,13 +22,22 @@ PERSON_MENTION_RE = re.compile(
 )
 
 CHANNEL_MENTION_RE = re.compile(
-    r"(?:@channel|#([\w-]+))",
+    r"(?:@channel|@everyone|@all|@here|#([\w-]+))",
+    re.IGNORECASE,
+)
+
+SPECIAL_CHANNEL_MENTION_RE = re.compile(
+    r"(?:@everyone|@all|@channel|@here)\b",
     re.IGNORECASE,
 )
 
 
 def body_has_channel_mention(body: str) -> bool:
     return bool(CHANNEL_MENTION_RE.search(body))
+
+
+def has_special_channel_mention(body: str) -> bool:
+    return bool(SPECIAL_CHANNEL_MENTION_RE.search(body))
 
 
 def _notification_level(member: ChatChannelMember) -> str:
@@ -307,12 +316,14 @@ async def create_mention_notifications(
     recipient_ids = await _resolve_mentioned_user_ids(
         session, workspace_id, labels, exclude_user_id=author_user_id
     )
-    if not recipient_ids:
-        return []
 
     if channel:
         members = await _channel_members_for_notify(session, channel.id)
         level_by_user = {m.user_id: _notification_level(m) for m in members}
+        if has_special_channel_mention(body):
+            broadcast_ids = [m.user_id for m in members if m.user_id != author_user_id]
+            recipient_ids = list(dict.fromkeys(recipient_ids + broadcast_ids))
+
         # Anyone in the workspace can be @mentioned, but only mentioned people
         # who actually have channel access get notified - no ChatChannelMember
         # row means no notification, same rule the DM branch below applies.

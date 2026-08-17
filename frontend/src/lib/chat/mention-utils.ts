@@ -20,6 +20,48 @@ export const MENTION_CHIP_PERSON_CLASS =
 /** Matches the #channel styling in sent messages. */
 export const MENTION_CHIP_CHANNEL_CLASS =
   "rounded-sm px-0.5 font-medium text-sky-700 hover:bg-sky-700/10 cursor-default";
+/** Matches @everyone / @channel / @here broadcast mentions in sent messages. */
+export const MENTION_CHIP_SPECIAL_CLASS =
+  "rounded-sm px-1 py-0.5 font-semibold text-amber-300 bg-amber-500/20 ring-1 ring-amber-500/30 cursor-default";
+
+export type SpecialMentionItem = {
+  id: string;
+  label: string;
+  description: string;
+};
+
+export const SPECIAL_MENTIONS: SpecialMentionItem[] = [
+  {
+    id: "special:everyone",
+    label: "everyone",
+    description: "Notify everyone in this channel",
+  },
+  {
+    id: "special:channel",
+    label: "channel",
+    description: "Notify everyone in this channel",
+  },
+  {
+    id: "special:here",
+    label: "here",
+    description: "Notify active members in this channel",
+  },
+];
+
+export function isSpecialMention(labelOrToken: string): boolean {
+  const clean = labelOrToken.replace(/^@/, "").trim().toLowerCase();
+  return ["everyone", "channel", "all", "here"].includes(clean);
+}
+
+export function filterSpecialMentions(query: string): SpecialMentionItem[] {
+  const q = query.trim().toLowerCase().replace(/^@/, "");
+  if (!q) return SPECIAL_MENTIONS;
+  return SPECIAL_MENTIONS.filter(
+    (item) =>
+      item.label.toLowerCase().includes(q) ||
+      (q === "all" && item.label === "everyone")
+  );
+}
 
 export function formatPersonMention(label: string) {
   const normalized = label.trim().replace(/\s+/g, MENTION_NAME_SEP);

@@ -9,7 +9,10 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
-from app.services.notification_service import parse_person_mention_labels
+from app.services.notification_service import (
+    has_special_channel_mention,
+    parse_person_mention_labels,
+)
 
 PASSWORD = "password123"
 OWNER_EMAIL = "owner@demo.com"
@@ -20,6 +23,14 @@ def test_parse_person_mention_labels():
     assert parse_person_mention_labels("@Husnain hey") == ["Husnain"]
     assert parse_person_mention_labels("@Husnain\u00a0Ali ping") == ["Husnain Ali"]
     assert parse_person_mention_labels("@A @B") == ["A", "B"]
+
+
+def test_has_special_channel_mention():
+    assert has_special_channel_mention("Hello @everyone!") is True
+    assert has_special_channel_mention("Attention @channel please") is True
+    assert has_special_channel_mention("Hey @here active people") is True
+    assert has_special_channel_mention("Notice to @all members") is True
+    assert has_special_channel_mention("Just a normal @Husnain message") is False
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")

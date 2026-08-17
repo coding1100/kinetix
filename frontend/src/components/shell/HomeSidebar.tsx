@@ -20,7 +20,26 @@ import {
   PencilIcon,
   Share2Icon,
   Trash2Icon,
+  CheckCircle2Icon,
+  CopyIcon,
+  MessageCircleIcon,
+  MessageSquareIcon,
+  XIcon,
 } from "lucide-react";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  markChannelRead,
+  markChannelUnread,
+  markDmRead,
+  markDmUnread,
+  updateDmParticipant,
+} from "@/lib/api/chat";
 import type { DmParticipant } from "@/lib/types/chat";
 import {
   otherGroupParticipants,
@@ -267,10 +286,11 @@ function SpaceListLink({
   onRename?: () => void;
   onDelete?: () => void;
 }) {
+  const router = useRouter();
   const canDelete = Boolean(onDelete) && !isPersonal;
   const hasMenu =
     Boolean(onRename) || canDelete || (Boolean(canShare) && Boolean(onShare));
-  return (
+  const linkContent = (
     <div className="group/list flex items-center gap-0.5">
       <Link
         href={`/home/l/${listId}`}
@@ -335,6 +355,45 @@ function SpaceListLink({
         </DropdownMenu>
       ) : null}
     </div>
+  );
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger className="block w-full">
+        {linkContent}
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => router.push(`/home/l/${listId}`)}>
+          <ListChecksIcon className="size-4" />
+          Open list
+        </ContextMenuItem>
+        {onRename ? (
+          <ContextMenuItem onClick={onRename}>
+            <PencilIcon className="size-4" />
+            Rename
+          </ContextMenuItem>
+        ) : null}
+        {onRename ? (
+          <ContextMenuItem onClick={() => router.push(`/home/l/${listId}/settings`)}>
+            <Settings2Icon className="size-4" />
+            Settings
+          </ContextMenuItem>
+        ) : null}
+        {canShare && onShare ? (
+          <ContextMenuItem onClick={onShare}>
+            <Share2Icon className="size-4" />
+            Share
+          </ContextMenuItem>
+        ) : null}
+        {canDelete ? <ContextMenuSeparator /> : null}
+        {canDelete ? (
+          <ContextMenuItem variant="destructive" onClick={onDelete}>
+            <Trash2Icon className="size-4" />
+            Delete list
+          </ContextMenuItem>
+        ) : null}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -706,6 +765,9 @@ function ChannelRow({
   active: boolean;
   icon?: string | null;
 }) {
+  const router = useRouter();
+  const { accessToken, workspaceId } = useWorkspaceApi();
+  const bumpSidebarRefresh = useChatStore((s) => s.bumpSidebarRefresh);
   const unreadBadgeHold = useChatStore((s) => s.unreadBadgeHold);
   const displayUnread = useSidebarUnread(
     "channel",
@@ -715,43 +777,88 @@ function ChannelRow({
     unreadBadgeHold
   );
 
+  const handleToggleRead = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!accessToken || !workspaceId) return;
+    try {
+      if (displayUnread > 0) {
+        await markChannelRead(accessToken, workspaceId, id);
+        toast.success("Marked as read");
+      } else {
+        await markChannelUnread(accessToken, workspaceId, id);
+        toast.success("Marked as unread");
+      }
+      bumpSidebarRefresh();
+    } catch {
+      toast.error("Failed to update unread status");
+    }
+  };
+
+  const handleCopyLink = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const url = `${window.location.origin}/home/c/${id}`;
+    void navigator.clipboard.writeText(url);
+    toast.success("Channel link copied to clipboard");
+  };
+
+  const href = `/home/c/${id}`;
+
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Link
-            href={`/home/c/${id}`}
-            className={cn(
-              "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[#B4B4B4] transition-colors hover:bg-sidebar-accent/80",
-              active && "bg-sidebar-accent font-medium",
-              (active || displayUnread > 0) && "text-white"
-            )}
-          >
-            {listChannel ? (
-              <span className="flex shrink-0 items-center gap-0.5">
-                <ChannelGlyph icon={icon} className="size-3.5 text-muted-foreground" />
-                <ListIcon className="size-3.5 text-muted-foreground" />
-              </span>
-            ) : (
-              <ChannelGlyph
-                icon={icon}
-                className="size-3.5 shrink-0 text-muted-foreground"
-              />
-            )}
-            <span className="min-w-0 flex-1 truncate">{name}</span>
-            {isPrivate ? (
-              <LockIcon className="size-3 shrink-0 text-muted-foreground" />
-            ) : null}
-            {displayUnread > 0 && (
-              <Badge className="size-5 min-w-5 shrink-0 justify-center rounded-full px-1 text-[10px]">
-                {displayUnread}
-              </Badge>
-            )}
-          </Link>
-        }
-      />
-      <TooltipContent side="right">{name}</TooltipContent>
-    </Tooltip>
+    <ContextMenu>
+      <ContextMenuTrigger className="block w-full">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Link
+                href={href}
+                className={cn(
+                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[#B4B4B4] transition-colors hover:bg-sidebar-accent/80",
+                  active && "bg-sidebar-accent font-medium",
+                  (active || displayUnread > 0) && "text-white"
+                )}
+              >
+                {listChannel ? (
+                  <span className="flex shrink-0 items-center gap-0.5">
+                    <ChannelGlyph icon={icon} className="size-3.5 text-muted-foreground" />
+                    <ListIcon className="size-3.5 text-muted-foreground" />
+                  </span>
+                ) : (
+                  <ChannelGlyph
+                    icon={icon}
+                    className="size-3.5 shrink-0 text-muted-foreground"
+                  />
+                )}
+                <span className="min-w-0 flex-1 truncate">{name}</span>
+                {isPrivate ? (
+                  <LockIcon className="size-3 shrink-0 text-muted-foreground" />
+                ) : null}
+                {displayUnread > 0 && (
+                  <Badge className="size-5 min-w-5 shrink-0 justify-center rounded-full px-1 text-[10px]">
+                    {displayUnread}
+                  </Badge>
+                )}
+              </Link>
+            }
+          />
+          <TooltipContent side="right">{name}</TooltipContent>
+        </Tooltip>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => router.push(href)}>
+          <MessageSquareIcon className="size-4" />
+          Open channel
+        </ContextMenuItem>
+        <ContextMenuItem onClick={handleToggleRead}>
+          <CheckCircle2Icon className="size-4" />
+          {displayUnread > 0 ? "Mark as read" : "Mark as unread"}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={handleCopyLink}>
+          <CopyIcon className="size-4" />
+          Copy link
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -780,6 +887,9 @@ function DmRow({
   unread: number;
   active: boolean;
 }) {
+  const router = useRouter();
+  const { accessToken, workspaceId } = useWorkspaceApi();
+  const bumpSidebarRefresh = useChatStore((s) => s.bumpSidebarRefresh);
   const unreadBadgeHold = useChatStore((s) => s.unreadBadgeHold);
   const displayUnread = useSidebarUnread(
     "dm",
@@ -797,55 +907,116 @@ function DmRow({
     ? resolveGroupDmTitle({ name, isGroup: true, participants }, currentUserId)
     : name;
 
+  const handleToggleRead = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!accessToken || !workspaceId) return;
+    try {
+      if (displayUnread > 0) {
+        await markDmRead(accessToken, workspaceId, id);
+        toast.success("Marked as read");
+      } else {
+        await markDmUnread(accessToken, workspaceId, id);
+        toast.success("Marked as unread");
+      }
+      bumpSidebarRefresh();
+    } catch {
+      toast.error("Failed to update unread status");
+    }
+  };
+
+  const handleCopyLink = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const url = `${window.location.origin}/home/dm/${id}`;
+    void navigator.clipboard.writeText(url);
+    toast.success("Conversation link copied to clipboard");
+  };
+
+  const handleCloseDm = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!accessToken || !workspaceId) return;
+    try {
+      await updateDmParticipant(accessToken, workspaceId, id, { hidden: true });
+      toast.success("Conversation closed");
+      bumpSidebarRefresh();
+    } catch {
+      toast.error("Failed to close conversation");
+    }
+  };
+
+  const href = `/home/dm/${id}`;
+
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Link
-            href={`/home/dm/${id}`}
-            className={cn(
-              "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[#B4B4B4] transition-colors hover:bg-sidebar-accent/80",
-              active && "bg-sidebar-accent font-medium",
-              (active || displayUnread > 0) && "text-white"
-            )}
-          >
-            {isGroup && groupParticipants.length > 0 ? (
-              <GroupDmAvatarStack participants={groupParticipants} />
-            ) : (
-              <UserAvatarWithPresence
-                name={displayName}
-                avatarUrl={avatarUrl}
-                presence={presence}
-                showPresence={!isGroup}
-                avatarClassName="size-6"
-                dotSize="sm"
-                borderClass="border-sidebar"
-                fallbackClassName={cn(
-                  "text-[10px] font-semibold",
-                  avatarColorClassForKey(otherUserId, displayName)
+    <ContextMenu>
+      <ContextMenuTrigger className="block w-full">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Link
+                href={href}
+                className={cn(
+                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[#B4B4B4] transition-colors hover:bg-sidebar-accent/80",
+                  active && "bg-sidebar-accent font-medium",
+                  (active || displayUnread > 0) && "text-white"
                 )}
-                fallback={avatarInitialFromName(displayName)}
-              />
-            )}
-            <span className="min-w-0 flex-1 truncate">
-              {displayName}
-              {!isGroup && otherUserIsDisabled ? (
-                <span className="text-destructive"> (deactivated)</span>
-              ) : null}
-            </span>
-            {displayUnread > 0 && (
-              <Badge className="size-5 min-w-5 shrink-0 justify-center rounded-full px-1 text-[10px]">
-                {displayUnread}
-              </Badge>
-            )}
-          </Link>
-        }
-      />
-      <TooltipContent side="right">
-        {displayName}
-        {!isGroup && otherUserIsDisabled ? " (deactivated)" : ""}
-      </TooltipContent>
-    </Tooltip>
+              >
+                {isGroup && groupParticipants.length > 0 ? (
+                  <GroupDmAvatarStack participants={groupParticipants} />
+                ) : (
+                  <UserAvatarWithPresence
+                    name={displayName}
+                    avatarUrl={avatarUrl}
+                    presence={presence}
+                    showPresence={!isGroup}
+                    avatarClassName="size-6"
+                    dotSize="sm"
+                    borderClass="border-sidebar"
+                    fallbackClassName={cn(
+                      "text-[10px] font-semibold",
+                      avatarColorClassForKey(otherUserId, displayName)
+                    )}
+                    fallback={avatarInitialFromName(displayName)}
+                  />
+                )}
+                <span className="min-w-0 flex-1 truncate">
+                  {displayName}
+                  {!isGroup && otherUserIsDisabled ? (
+                    <span className="text-destructive"> (deactivated)</span>
+                  ) : null}
+                </span>
+                {displayUnread > 0 && (
+                  <Badge className="size-5 min-w-5 shrink-0 justify-center rounded-full px-1 text-[10px]">
+                    {displayUnread}
+                  </Badge>
+                )}
+              </Link>
+            }
+          />
+          <TooltipContent side="right">
+            {displayName}
+            {!isGroup && otherUserIsDisabled ? " (deactivated)" : ""}
+          </TooltipContent>
+        </Tooltip>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => router.push(href)}>
+          <MessageCircleIcon className="size-4" />
+          Open conversation
+        </ContextMenuItem>
+        <ContextMenuItem onClick={handleToggleRead}>
+          <CheckCircle2Icon className="size-4" />
+          {displayUnread > 0 ? "Mark as read" : "Mark as unread"}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={handleCopyLink}>
+          <CopyIcon className="size-4" />
+          Copy link
+        </ContextMenuItem>
+        <ContextMenuItem variant="destructive" onClick={handleCloseDm}>
+          <XIcon className="size-4" />
+          Close conversation
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
