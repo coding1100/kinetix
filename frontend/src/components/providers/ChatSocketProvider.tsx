@@ -155,11 +155,21 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       const desktopNotifications = useSettingsStore.getState().desktopNotifications;
       if (!isOwnMessage && desktopNotifications && payload.kind === "dm") {
         const { conversationId, message } = payload;
-        showDesktopNotification(message.authorName, {
-          body: message.body,
-          tag: `chat:${conversationId}`,
-          onClick: () => router.push(`/home/dm/${conversationId}`),
-        });
+        const active = useChatStore.getState().activeConversation;
+        const isCurrentConversation =
+          document.hasFocus() &&
+          document.visibilityState === "visible" &&
+          active?.kind === "dm" &&
+          active?.id === conversationId;
+
+        if (!isCurrentConversation) {
+          showDesktopNotification(message.authorName, {
+            body: message.body,
+            tag: `chat:${conversationId}`,
+            onClick: () => router.push(`/home/dm/${conversationId}`),
+            ignoreFocusCheck: true,
+          });
+        }
       }
       applyRealtimeMessageToSidebar(payload, userId, accessToken);
       ingestRealtimeEvent(payload);
@@ -207,6 +217,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
           tag: `notification:${notification.id}`,
           onClick: () =>
             router.push(notification.href ? toHomeHref(notification.href) : "/home/inbox"),
+          ignoreFocusCheck: true,
         });
       }
     });
