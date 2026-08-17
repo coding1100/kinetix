@@ -92,15 +92,30 @@ export function showDesktopNotification(
   }
 
   // 2. Web Browser (Chrome, Edge, Firefox, Safari)
-  if (Notification.permission !== "granted") return;
+  if (typeof Notification === "undefined") return;
 
+  if (Notification.permission === "granted") {
+    triggerWebNotification(title, { body, tag, icon, onClick });
+  } else if (Notification.permission === "default") {
+    void requestDesktopPermission().then((perm) => {
+      if (perm === "granted") {
+        triggerWebNotification(title, { body, tag, icon, onClick });
+      }
+    });
+  }
+}
+
+function triggerWebNotification(
+  title: string,
+  options: { body?: string; tag?: string; icon?: string; onClick?: () => void }
+) {
   try {
     const notification = new Notification(title, {
-      body: body ?? undefined,
-      tag: tag ?? undefined,
-      icon: icon ?? NOTIFICATION_ICON,
+      body: options.body ?? undefined,
+      tag: options.tag ?? undefined,
+      icon: options.icon ?? NOTIFICATION_ICON,
       badge: NOTIFICATION_ICON,
-      silent: true, // Audio handled by our sound engine
+      silent: true,
     });
 
     notification.onclick = (ev) => {
@@ -112,7 +127,7 @@ export function showDesktopNotification(
       } catch {
         // ignore window focus restriction errors
       }
-      onClick?.();
+      options.onClick?.();
       notification.close();
     };
   } catch (err) {
