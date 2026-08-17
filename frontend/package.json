@@ -1,9 +1,10 @@
 {
   "name": "frontend",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3001",
+    "prebuild": "node scripts/generate-version.mjs",
     "build": "next build",
     "build:tauri": "cross-env IS_TAURI=true next build",
     "start": "next start",

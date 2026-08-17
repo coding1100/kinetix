@@ -13,6 +13,19 @@ const nextConfig: NextConfig = {
   ...(isTauri ? { images: { unoptimized: true } } : {}),
   ...(!isTauri
     ? {
+        async headers() {
+          return [
+            {
+              source: "/version.json",
+              headers: [
+                {
+                  key: "Cache-Control",
+                  value: "no-cache, no-store, must-revalidate",
+                },
+              ],
+            },
+          ];
+        },
         async rewrites() {
           return [
             {
