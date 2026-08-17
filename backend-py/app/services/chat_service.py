@@ -77,6 +77,8 @@ from app.services.notification_service import (
     create_channel_access_notifications,
     create_channel_broadcast_notifications,
     create_mention_notifications,
+    create_reaction_notification,
+    create_thread_reply_notifications,
     emit_channel_access_notifications,
     emit_home_notifications,
 )
@@ -1282,6 +1284,15 @@ async def send_thread_reply(
         channel=mention_channel,
         conversation_id=conversation_id if not channel_id else None,
     )
+    thread_notifications = await create_thread_reply_notifications(
+        session,
+        workspace_id=workspace_id,
+        author_user_id=user_id,
+        parent=parent,
+        reply_body=message.body,
+        kind="channel" if channel_id else "dm",
+        conversation_id=channel_id or conversation_id or "",
+    )
     await session.commit()
 
     loaded = await session.scalar(
@@ -1290,7 +1301,12 @@ async def send_thread_reply(
         .options(*_MESSAGE_SEND_LOAD)
     )
     payload = map_message(loaded, user_id, thread_count=0)
-    all_notifications = mention_notifications
+    mentioned_users = {uid for uid, _ in mention_notifications}
+    all_notifications = mention_notifications + [
+        (uid, item)
+        for uid, item in thread_notifications
+        if uid not in mentioned_users
+    ]
     if all_notifications:
         await emit_home_notifications(session, workspace_id, all_notifications)
     conv_id = channel_id or conversation_id
@@ -1917,6 +1933,7 @@ async def toggle_message_reaction(
             MessageReaction.emoji == trimmed,
         )
     )
+    reaction_notifications: list[tuple[str, InboxItem]] = []
     if existing:
         await session.delete(existing)
     else:
@@ -1927,7 +1944,17 @@ async def toggle_message_reaction(
                 emoji=trimmed,
             )
         )
+        if message.author_id != user_id:
+            reaction_notifications = await create_reaction_notification(
+                session,
+                workspace_id=workspace_id,
+                actor_user_id=user_id,
+                emoji=trimmed,
+                message=message,
+            )
     await session.commit()
+    if reaction_notifications:
+        await emit_home_notifications(session, workspace_id, reaction_notifications)
 
     reactions = await _reaction_counts(session, message_id)
     kind = "channel" if message.channel_id else "dm"

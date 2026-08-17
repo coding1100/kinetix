@@ -519,6 +519,57 @@ async def create_resource_unshare_notification(
     return [(recipient_id, item)]
 
 
+async def create_reaction_notification(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    actor_user_id: str,
+    emoji: str,
+    message: ChatMessage,
+) -> list[tuple[str, InboxItem]]:
+    recipient_id = message.author_id
+    if recipient_id == actor_user_id:
+        return []
+
+    if message.channel_id:
+        channel = await session.get(ChatChannel, message.channel_id)
+        if not channel:
+            return []
+        members = await _channel_members_for_notify(session, channel.id)
+        level_by_user = {m.user_id: _notification_level(m) for m in members}
+        if recipient_id not in level_by_user or level_by_user[recipient_id] == "NONE":
+            return []
+        channel_label = channel.name
+        href = f"{_channel_href(channel)}?message={message.id}"
+        source = channel_label
+        title = f"Reacted with {emoji} in #{channel_label}"
+    else:
+        return []
+
+    users = await _load_users(session, [actor_user_id])
+    actor_name = (
+        users.get(actor_user_id).full_name if users.get(actor_user_id) else "Someone"
+    )
+    snippet = _message_snippet(message.body)
+
+    item = InboxItem(
+        workspace_id=workspace_id,
+        user_id=recipient_id,
+        type=InboxItemType.REACTION,
+        title=title,
+        preview=f"{actor_name} reacted with {emoji}: {snippet}",
+        source=source,
+        unread=True,
+        bucket=InboxBucket.ALL,
+        time_group=InboxTimeGroup.TODAY,
+        href=href,
+        activity_kind="reaction",
+    )
+    session.add(item)
+    await session.flush()
+    return [(recipient_id, item)]
+
+
 async def create_thread_reply_notifications(
     session: AsyncSession,
     *,
