@@ -20,11 +20,18 @@ import { ApiError } from "@/lib/api/client";
 import { PasswordStrengthMeter } from "@/components/auth/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password";
 import { useAuthStore, selectActiveWorkspace } from "@/stores/auth-store";
-import { useSettingsStore, type ThemePreference } from "@/stores/settings-store";
+import { BellIcon, Volume2Icon } from "lucide-react";
+import {
+  useSettingsStore,
+  type SoundPreset,
+  type ThemePreference,
+} from "@/stores/settings-store";
 import {
   getDesktopPermission,
   requestDesktopPermission,
+  sendTestDesktopNotification,
 } from "@/lib/notifications/desktop";
+import { playNotificationSound, SOUND_PRESETS } from "@/lib/notifications/sound";
 import { toast } from "sonner";
 
 export function SettingsView() {
@@ -36,6 +43,8 @@ export function SettingsView() {
     setTheme,
     soundEnabled,
     setSoundEnabled,
+    soundPreset,
+    setSoundPreset,
     desktopNotifications,
     setDesktopNotifications,
   } = useSettingsStore();
@@ -66,16 +75,22 @@ export function SettingsView() {
     toast.success("Theme updated");
   };
 
+  const handleSoundPresetChange = (preset: SoundPreset) => {
+    setSoundPreset(preset);
+    playNotificationSound(preset, true);
+    toast.success("Notification sound updated");
+  };
+
   const handleDesktopNotificationsChange = async (enabled: boolean) => {
     if (!enabled) {
       setDesktopNotifications(false);
       return;
     }
-    // requestPermission() must run inside this click handler — a call made
-    // later (e.g. from the socket provider) would be silently ignored.
     const permission = await requestDesktopPermission();
     if (permission === "granted") {
       setDesktopNotifications(true);
+      sendTestDesktopNotification();
+      toast.success("Desktop notifications enabled!");
     } else if (permission === "denied") {
       toast.error("Desktop notifications are blocked in your browser settings");
     } else if (permission === "unsupported") {
@@ -143,8 +158,9 @@ export function SettingsView() {
             </div>
           </section>
 
-          <section className="space-y-3 rounded-xl border border-border bg-card p-4">
-            <h2 className="text-sm font-semibold">Chat</h2>
+          <section className="space-y-4 rounded-xl border border-border bg-card p-4">
+            <h2 className="text-sm font-semibold">Notifications & Sound</h2>
+
             <div className="flex items-center justify-between gap-3">
               <Label htmlFor="notification-sound" className="text-sm font-normal">
                 Play sound on new messages
@@ -155,25 +171,79 @@ export function SettingsView() {
                 onCheckedChange={(v) => setSoundEnabled(Boolean(v))}
               />
             </div>
-          </section>
 
-          <section className="space-y-3 rounded-xl border border-border bg-card p-4">
-            <h2 className="text-sm font-semibold">Notifications</h2>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <Label htmlFor="notification-desktop" className="text-sm font-normal">
-                  Desktop notifications
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  Get notified about new messages and mentions when this tab
-                  isn&apos;t in focus.
-                </p>
+            {soundEnabled ? (
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="sound-preset" className="text-xs text-muted-foreground">
+                    Notification Sound
+                  </Label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => playNotificationSound(soundPreset, true)}
+                  >
+                    <Volume2Icon className="size-3.5" />
+                    Test Sound
+                  </Button>
+                </div>
+                <Select
+                  value={soundPreset}
+                  onValueChange={(v) => v && handleSoundPresetChange(v as SoundPreset)}
+                >
+                  <SelectTrigger id="sound-preset" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SOUND_PRESETS.map((preset) => (
+                      <SelectItem key={preset.id} value={preset.id}>
+                        <div className="flex flex-col text-left">
+                          <span className="font-medium">{preset.label}</span>
+                          <span className="text-[11px] text-muted-foreground">
+                            {preset.description}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <Switch
-                id="notification-desktop"
-                checked={desktopNotifications && mounted && getDesktopPermission() === "granted"}
-                onCheckedChange={(v) => void handleDesktopNotificationsChange(Boolean(v))}
-              />
+            ) : null}
+
+            <div className="border-t border-border pt-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <Label htmlFor="notification-desktop" className="text-sm font-normal">
+                    Desktop notifications
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Get notified about new messages and mentions when this app or tab isn&apos;t in focus.
+                  </p>
+                </div>
+                <Switch
+                  id="notification-desktop"
+                  checked={desktopNotifications && mounted && getDesktopPermission() === "granted"}
+                  onCheckedChange={(v) => void handleDesktopNotificationsChange(Boolean(v))}
+                />
+              </div>
+
+              {desktopNotifications && mounted && getDesktopPermission() === "granted" ? (
+                <div className="mt-2.5 flex justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 text-xs"
+                    onClick={() => {
+                      sendTestDesktopNotification();
+                      toast.info("Sent test desktop notification");
+                    }}
+                  >
+                    <BellIcon className="size-3.5" />
+                    Send Test Notification
+                  </Button>
+                </div>
+              ) : null}
             </div>
           </section>
 
