@@ -48,9 +48,9 @@ describe("mergeSidebarDms", () => {
     expect(merged.map((d) => d.id)).toEqual(["dm-1"]);
   });
 
-  it("does not raise unread from a stale API refetch", () => {
+  it("uses unread count from API refetch when not active", () => {
     const merged = mergeSidebarDms([dm("dm-1", 25)], [dm("dm-1", 0)]);
-    expect(merged[0]?.unread).toBe(0);
+    expect(merged[0]?.unread).toBe(25);
   });
 });
 
@@ -59,12 +59,12 @@ describe("mergeSidebarChannels unread", () => {
     useChatStore.setState({ activeConversation: null });
   });
 
-  it("does not raise unread from a stale API refetch", () => {
+  it("uses unread count from API refetch when not active", () => {
     const merged = mergeSidebarChannels(
       [channel("ch-1", 25)],
       [channel("ch-1", 0)]
     );
-    expect(merged[0]?.unread).toBe(0);
+    expect(merged[0]?.unread).toBe(25);
   });
 
   it("keeps local unread while the channel is active", () => {
