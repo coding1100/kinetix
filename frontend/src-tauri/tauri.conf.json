@@ -2,12 +2,12 @@
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
   "productName": "Kinetix",
   "version": "0.1.0",
-  "identifier": "com.kinetix.app",
+  "identifier": "com.kinetix.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:3001",
-    "beforeBuildCommand": "npm run build",
-    "frontendDist": "../out"
+    "beforeBuildCommand": "",
+    "frontendDist": "https://kinetix.mindrind.com"
   },
   "app": {
     "windows": [
