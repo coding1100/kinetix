@@ -105,7 +105,15 @@ class Settings(BaseSettings):
     @property
     def browser_cors_origins(self) -> list[str]:
         """Browser Origin header is scheme + host + port only (no path)."""
-        origins: set[str] = set()
+        origins: set[str] = {
+            "tauri://localhost",
+            "http://tauri.localhost",
+            "https://tauri.localhost",
+            "http://localhost:3001",
+            "http://localhost:3000",
+            "http://127.0.0.1:3001",
+            "http://127.0.0.1:3000",
+        }
         for url in (self.frontend_url, self.admin_frontend_url):
             parsed = urlparse(url.strip())
             if parsed.scheme and parsed.netloc:

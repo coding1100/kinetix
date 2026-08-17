@@ -113,10 +113,10 @@ import {
 } from "@/components/spaces/SpacesHierarchyDialog";
 
 const navItemClass =
-  "flex w-full min-w-0 items-center gap-2 rounded-md px-2.5 text-left text-sm font-medium text-[#B4B4B4] transition-colors duration-150 hover:bg-sidebar-accent/80";
+  "flex w-full min-w-0 items-center gap-2 rounded-md px-2.5 text-left text-sm font-medium text-slate-700 dark:text-slate-300 transition-colors duration-150 hover:bg-sidebar-accent/80";
 
 const navItemActiveClass =
-  "bg-sidebar-accent font-medium text-white";
+  "bg-sidebar-accent font-semibold text-slate-900 dark:text-white";
 
 // Guests / limited members don't get a Spaces tree or create affordances in
 // real ClickUp - they only see whatever's been individually shared with them.
@@ -243,9 +243,9 @@ function MyTasksSubNav({ pathname }: { pathname: string }) {
               href={link.href}
               className={cn(
                 navItemClass,
-                "h-7 text-[13px] font-normal text-[#B4B4B4]",
+                "h-7 text-[13px] font-normal text-slate-700 dark:text-slate-300",
                 subActive &&
-                  "bg-sidebar-accent font-medium text-white"
+                  "bg-sidebar-accent font-semibold text-slate-900 dark:text-white"
               )}
             >
               <SidebarNavIcon
@@ -297,8 +297,8 @@ function SpaceListLink({
         className={cn(
           "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-sidebar-accent/80",
           active
-            ? "bg-sidebar-accent font-medium text-white"
-            : "text-[#B4B4B4]"
+            ? "bg-sidebar-accent font-semibold text-slate-900 dark:text-white"
+            : "text-slate-700 dark:text-slate-300"
         )}
       >
         <ListChecksIcon className="size-3.5 shrink-0 text-muted-foreground" />
@@ -467,7 +467,7 @@ function SpaceRow({
       <div className="group/space flex items-center gap-1 rounded-md pr-1 transition-colors hover:bg-sidebar-accent/80">
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm text-[#B4B4B4]"
+          className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
           onClick={onToggleExpanded}
           aria-expanded={expanded}
         >
@@ -812,9 +812,9 @@ function ChannelRow({
               <Link
                 href={href}
                 className={cn(
-                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[#B4B4B4] transition-colors hover:bg-sidebar-accent/80",
-                  active && "bg-sidebar-accent font-medium",
-                  (active || displayUnread > 0) && "text-white"
+                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-700 dark:text-slate-300 transition-colors hover:bg-sidebar-accent/80",
+                  active && "bg-sidebar-accent font-semibold text-slate-900 dark:text-white",
+                  displayUnread > 0 && "font-bold text-slate-900 dark:text-white"
                 )}
               >
                 {listChannel ? (
@@ -954,9 +954,9 @@ function DmRow({
               <Link
                 href={href}
                 className={cn(
-                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[#B4B4B4] transition-colors hover:bg-sidebar-accent/80",
-                  active && "bg-sidebar-accent font-medium",
-                  (active || displayUnread > 0) && "text-white"
+                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-700 dark:text-slate-300 transition-colors hover:bg-sidebar-accent/80",
+                  active && "bg-sidebar-accent font-semibold text-slate-900 dark:text-white",
+                  displayUnread > 0 && "font-bold text-slate-900 dark:text-white"
                 )}
               >
                 {isGroup && groupParticipants.length > 0 ? (
