@@ -31,9 +31,17 @@ export function applyHomeNotification(
   if (currentWorkspaceId && event.workspaceId !== currentWorkspaceId) return;
   const { notification } = event;
   ingestLiveNotification(notification);
-  toast(notification.title, {
-    description: notification.preview,
-    duration: 6000,
-  });
+
+  const isTabActiveAndFocused =
+    typeof document !== "undefined" &&
+    document.visibilityState === "visible" &&
+    document.hasFocus();
+
+  if (isTabActiveAndFocused) {
+    toast(notification.title, {
+      description: notification.preview,
+      duration: 6000,
+    });
+  }
   bumpNotificationsRefresh();
 }

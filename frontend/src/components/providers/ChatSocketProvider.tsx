@@ -158,10 +158,14 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       const desktopNotifications = useSettingsStore.getState().desktopNotifications;
       if (!isOwnMessage) {
         const { conversationId, message } = payload;
+        const isTabActiveAndFocused =
+          typeof document !== "undefined" &&
+          document.visibilityState === "visible" &&
+          document.hasFocus();
+
         const active = useChatStore.getState().activeConversation;
         const isCurrentConversation =
-          document.hasFocus() &&
-          document.visibilityState === "visible" &&
+          isTabActiveAndFocused &&
           active?.kind === payload.kind &&
           active?.id === conversationId;
 
@@ -175,20 +179,25 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
               ? `/home/dm/${conversationId}`
               : `/chat/c/${conversationId}`;
 
-          toast(title, {
-            description: message.body,
-            action: {
-              label: "Open",
-              onClick: () => router.push(href),
-            },
-            duration: 5000,
-          });
-
-          if (desktopNotifications) {
+          if (isTabActiveAndFocused) {
+            // User IS on Kinetix: In-app popup ONLY
+            toast(title, {
+              description: message.body,
+              action: {
+                label: "Open",
+                onClick: () => router.push(href),
+              },
+              duration: 5000,
+            });
+          } else if (desktopNotifications) {
+            // User IS NOT on Kinetix: Chrome / OS Desktop popup ONLY
             showDesktopNotification(title, {
               body: message.body,
               tag: `chat:${conversationId}`,
-              onClick: () => router.push(href),
+              onClick: () => {
+                if (typeof window !== "undefined") window.focus();
+                router.push(href);
+              },
               ignoreFocusCheck: true,
             });
           }
