@@ -37,12 +37,13 @@ export async function requestDesktopPermission(): Promise<
  */
 export function showDesktopNotification(
   title: string,
-  options?: NotificationOptions & { onClick?: () => void }
+  options?: NotificationOptions & { onClick?: () => void; ignoreFocusCheck?: boolean }
 ) {
   if (!supported() || Notification.permission !== "granted") return;
-  if (document.visibilityState === "visible" && document.hasFocus()) return;
 
-  const { onClick, ...rest } = options ?? {};
+  const { onClick, ignoreFocusCheck = false, ...rest } = options ?? {};
+  if (!ignoreFocusCheck && document.visibilityState === "visible" && document.hasFocus()) return;
+
   const notification = new Notification(title, {
     icon: NOTIFICATION_ICON,
     ...rest,

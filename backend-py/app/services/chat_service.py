@@ -75,6 +75,7 @@ def _validate_icon(icon: str | None) -> str | None:
     return icon
 from app.services.notification_service import (
     create_channel_access_notifications,
+    create_channel_broadcast_notifications,
     create_mention_notifications,
     emit_channel_access_notifications,
     emit_home_notifications,
@@ -1123,6 +1124,14 @@ async def send_channel_message(
         body=message.body,
         channel=member.channel,
     )
+    broadcast_notifications = await create_channel_broadcast_notifications(
+        session,
+        workspace_id=workspace_id,
+        author_user_id=user_id,
+        channel=member.channel,
+        body=message.body,
+        message_id=message.id,
+    )
     await session.commit()
 
     loaded = await session.scalar(
@@ -1131,7 +1140,12 @@ async def send_channel_message(
         .options(*_MESSAGE_SEND_LOAD)
     )
     payload = map_message(loaded, user_id, thread_count=0)
-    all_notifications = mention_notifications
+    mentioned_users = {uid for uid, _ in mention_notifications}
+    all_notifications = mention_notifications + [
+        (uid, item)
+        for uid, item in broadcast_notifications
+        if uid not in mentioned_users
+    ]
     if all_notifications:
         await emit_home_notifications(session, workspace_id, all_notifications)
     fire_and_forget(

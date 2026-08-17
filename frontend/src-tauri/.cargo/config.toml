@@ -1,0 +1,3 @@
+[build]
+# Use temp directory on Windows to prevent Windows Defender file locking (os error 32)
+target-dir = "target"
