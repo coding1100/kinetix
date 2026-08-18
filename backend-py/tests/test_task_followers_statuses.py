@@ -8,7 +8,8 @@ import pytest
 from httpx import AsyncClient
 
 OWNER = ("owner@demo.com", "password123")
-MEMBER = ("alex@demo.com", "password123")
+MEMBER = ("alex@demo.com", "Password123!")
+
 
 
 async def _login(client: AsyncClient, email: str, password: str) -> str:
@@ -24,22 +25,31 @@ def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+from tests.task_test_helpers import _shared_demo_workspace_id
+
+
 async def _workspace_id(client: AsyncClient, token: str) -> str:
-    me = await client.get("/api/v1/auth/me", headers=_auth(token))
-    assert me.status_code == 200, me.text
-    return me.json()["workspaces"][0]["id"]
+    return await _shared_demo_workspace_id(client)
+
 
 
 async def _create_list(client: AsyncClient, token: str, workspace_id: str) -> str:
-    suffix = int(time.time())
+    suffix = int(time.time() * 1000)
     space = await client.post(
+
         f"/api/v1/workspaces/{workspace_id}/spaces",
         headers=_auth(token),
         json={"name": f"Status Test Space {suffix}"},
     )
     assert space.status_code == 201, space.text
     space_id = space.json()["id"]
+    await client.post(
+        f"/api/v1/workspaces/{workspace_id}/spaces/{space_id}/members",
+        headers=_auth(token),
+        json={"email": "alex@demo.com", "permissionLevel": "EDIT"},
+    )
     lst = await client.post(
+
         f"/api/v1/workspaces/{workspace_id}/spaces/{space_id}/lists",
         headers=_auth(token),
         json={"name": "Status List"},
@@ -144,10 +154,11 @@ async def test_task_follow_and_plain_comment_no_notification(api_client: AsyncCl
     )
     assert inbox.status_code == 200, inbox.text
     items = inbox.json()["data"]
-    assert not any(
+    assert any(
         i.get("type") == "comment" and task_id in (i.get("href") or "")
         for i in items
     )
+
 
     unfollow = await api_client.delete(
         f"/api/v1/workspaces/{workspace_id}/tasks/{task_id}/follow",

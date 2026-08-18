@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { RefreshCcwIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { PageLoader } from "@/components/ui/page-loader";
 import { fetchSpacesTree, firstListIdFromSpaces } from "@/lib/api/spaces";
 import { useHomeQuery } from "@/hooks/use-home-query";
@@ -15,6 +17,7 @@ import { useSpacesStore } from "@/stores/spaces-store";
 export default function SpacesIndexPage() {
   const router = useRouter();
   const refreshKey = useSpacesStore((s) => s.refreshKey);
+  const bumpRefresh = useSpacesStore((s) => s.bumpRefresh);
   const [dialogMode, setDialogMode] = useState<HierarchyDialogMode | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -33,8 +36,19 @@ export default function SpacesIndexPage() {
 
   if (query.error) {
     return (
-      <div className="flex flex-1 items-center justify-center p-6 text-sm text-destructive">
-        {query.error}
+      <div className="flex flex-1 items-center justify-center p-6">
+        <div className="max-w-md space-y-4 text-center">
+          <p className="text-sm font-medium text-destructive">{query.error}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => bumpRefresh()}
+          >
+            <RefreshCcwIcon className="size-4" />
+            Retry
+          </Button>
+        </div>
       </div>
     );
   }
@@ -78,6 +92,5 @@ export default function SpacesIndexPage() {
     );
   }
 
-  return <PageLoader label="Opening spaces…" />;
+  return <PageLoader label="Opening spaces..." />;
 }
-

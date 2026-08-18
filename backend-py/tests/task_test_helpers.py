@@ -6,22 +6,35 @@ import time
 
 from httpx import AsyncClient
 
-OWNER = ("owner@demo.com", "Password123!")
+OWNER = ("owner@demo.com", "password123")
 MEMBER = ("alex@demo.com", "Password123!")
 
 
+
+
+_TOKEN_CACHE: dict[tuple[str, str], str] = {}
+
+
 async def login(client: AsyncClient, email: str, password: str) -> str:
+    key = (email, password)
+    if key in _TOKEN_CACHE:
+        return _TOKEN_CACHE[key]
     res = await client.post(
         "/api/v1/auth/login",
         json={"email": email, "password": password},
     )
     if res.status_code != 200:
+        alt_pwd = "password123" if password != "password123" else "Password123!"
         res = await client.post(
             "/api/v1/auth/login",
-            json={"email": email, "password": "Password123!"},
+            json={"email": email, "password": alt_pwd},
         )
     assert res.status_code == 200, res.text
-    return res.json()["accessToken"]
+    token = res.json()["accessToken"]
+    _TOKEN_CACHE[key] = token
+    return token
+
+
 
 
 def auth_headers(token: str) -> dict[str, str]:

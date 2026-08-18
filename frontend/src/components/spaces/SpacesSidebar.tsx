@@ -16,6 +16,7 @@ import {
   PanelLeftCloseIcon,
   PencilIcon,
   PlusIcon,
+  RefreshCcwIcon,
   SearchIcon,
   Settings2Icon,
   Share2Icon,
@@ -216,6 +217,20 @@ export function SpacesSidebar() {
               Shared with me
             </Link>
           </nav>
+          {error ? (
+            <div className="mx-1 mb-3 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              <p className="font-medium">Couldn&apos;t load spaces.</p>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-2 h-7 gap-1 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => bumpRefresh()}
+              >
+                <RefreshCcwIcon className="size-3.5" />
+                Retry
+              </Button>
+            </div>
+          ) : null}
           {sharedWithMe && sharedWithMe.length > 0 ? (
             <div className="mb-3 space-y-0.5 px-1">
               <div className="px-1.5 py-1 text-xs font-semibold text-muted-foreground">
@@ -266,7 +281,7 @@ export function SpacesSidebar() {
           ) : null}
           <HomeDataState
             loading={loading}
-            error={error}
+            error={null}
             empty={!loading && !error && spaces?.length === 0}
             emptyMessage="No spaces yet. Create one with +"
           >

@@ -11,6 +11,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { AutoUpdateProvider } from "@/components/providers/AutoUpdateProvider";
+import { ExternalLinkProvider } from "@/components/providers/ExternalLinkProvider";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
@@ -19,17 +20,20 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <TooltipProvider delay={200}>
         <AuthProvider>
           <AutoUpdateProvider>
-            <ChatSocketProvider>
-              {children}
-            </ChatSocketProvider>
-            <Suspense fallback={null}>
-              <Modals />
-            </Suspense>
-            <GlobalLoader />
-            <Toaster position="top-right" />
+            <ExternalLinkProvider>
+              <ChatSocketProvider>
+                {children}
+              </ChatSocketProvider>
+              <Suspense fallback={null}>
+                <Modals />
+              </Suspense>
+              <GlobalLoader />
+              <Toaster position="top-right" />
+            </ExternalLinkProvider>
           </AutoUpdateProvider>
         </AuthProvider>
       </TooltipProvider>
     </ThemeProvider>
   );
 }
+

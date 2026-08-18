@@ -4,14 +4,20 @@ import Link from "next/link";
 import { useState } from "react";
 import {
   CalendarIcon,
+  ChartGanttIcon,
+  FolderKanbanIcon,
+  GaugeIcon,
   HashIcon,
   LayoutGridIcon,
   ListIcon,
   PlusIcon,
+  PresentationIcon,
   SearchIcon,
   Share2Icon,
+  ZapIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
 import { Input } from "@/components/ui/input";
 import { ShareModal } from "@/components/shared/ShareModal";
 import { UnderlineTabBar } from "@/components/shared/Tabs";
@@ -25,9 +31,19 @@ import {
 import type { ListStatus } from "@/lib/types/task";
 import { cn } from "@/lib/utils";
 
-export type ViewMode = "channel" | "list" | "board" | "calendar";
+
+export type ViewMode =
+  | "channel"
+  | "list"
+  | "board"
+  | "calendar"
+  | "gantt"
+  | "workload"
+  | "portfolios"
+  | "whiteboard";
 
 export function SpacesListToolbar({
+
   listId,
   listName,
   spaceName,
@@ -124,11 +140,32 @@ export function SpacesListToolbar({
               icon: <CalendarIcon className="size-3" />,
             },
             {
+              id: "gantt",
+              label: "Gantt",
+              icon: <ChartGanttIcon className="size-3" />,
+            },
+            {
+              id: "workload",
+              label: "Workload",
+              icon: <GaugeIcon className="size-3" />,
+            },
+            {
+              id: "portfolios",
+              label: "Portfolios",
+              icon: <FolderKanbanIcon className="size-3" />,
+            },
+            {
+              id: "whiteboard",
+              label: "Whiteboard",
+              icon: <PresentationIcon className="size-3" />,
+            },
+            {
               id: "channel",
               label: "Channel",
               icon: <HashIcon className="size-3" />,
             },
           ]}
+
           active={view}
           onChange={(v) => onViewChange(v as ViewMode)}
         />

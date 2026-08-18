@@ -8,7 +8,8 @@ import pytest
 from httpx import AsyncClient
 
 OWNER = ("owner@demo.com", "password123")
-MEMBER = ("alex@demo.com", "password123")
+MEMBER = ("alex@demo.com", "Password123!")
+
 
 
 async def _login(client: AsyncClient, email: str, password: str) -> str:

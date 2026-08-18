@@ -12,6 +12,11 @@ import { SpacesListToolbar, type ViewMode } from "@/components/spaces/SpacesList
 import { TaskDrawer } from "@/components/spaces/TaskDrawer";
 import { ConversationView } from "@/components/chat/ConversationView";
 
+import { GanttView } from "@/components/spaces/GanttView";
+import { WorkloadView } from "@/components/spaces/WorkloadView";
+import { PortfoliosView } from "@/components/spaces/PortfoliosView";
+import { WhiteboardCanvasView } from "@/components/spaces/WhiteboardCanvasView";
+
 type ListWorkspaceProps = {
   listId: string;
   meta: ListMetaDto;
@@ -46,7 +51,11 @@ export function ListWorkspace({
     viewParam === "channel" ||
     viewParam === "list" ||
     viewParam === "board" ||
-    viewParam === "calendar"
+    viewParam === "calendar" ||
+    viewParam === "gantt" ||
+    viewParam === "workload" ||
+    viewParam === "portfolios" ||
+    viewParam === "whiteboard"
       ? (viewParam as ViewMode)
       : defaultView;
 
@@ -150,6 +159,19 @@ export function ListWorkspace({
           error={error}
           onTaskSelect={openTask}
         />
+      ) : view === "gantt" ? (
+        <GanttView
+          tasks={filteredTasks}
+          loading={loading}
+          error={error}
+          onTaskSelect={openTask}
+        />
+      ) : view === "workload" ? (
+        <WorkloadView workspaceId={meta.space.id} />
+      ) : view === "portfolios" ? (
+        <PortfoliosView workspaceId={meta.space.id} />
+      ) : view === "whiteboard" ? (
+        <WhiteboardCanvasView workspaceId={meta.space.id} spaceId={meta.space.id} />
       ) : (
         <ListViewGrouped
           tasks={filteredTasks}
@@ -162,6 +184,7 @@ export function ListWorkspace({
           onTaskDeleted={onTasksChange}
         />
       )}
+
 
       <TaskDrawer
         taskId={selectedTaskId}

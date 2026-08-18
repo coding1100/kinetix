@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import admin, auth, chat, home, invites, teams, workspaces
+from app.api.v1 import admin, auth, chat, home, invites, planning, teams, workspaces
 
 api_router = APIRouter()
 
@@ -11,6 +11,8 @@ api_router.include_router(teams.router)
 api_router.include_router(home.router)
 api_router.include_router(chat.router)
 api_router.include_router(invites.router)
+api_router.include_router(planning.router)
+
 
 
 @api_router.get("", tags=["meta"])
