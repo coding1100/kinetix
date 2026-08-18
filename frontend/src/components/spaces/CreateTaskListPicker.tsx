@@ -38,27 +38,32 @@ function listIdFromHref(href: string): string | null {
 
 function buildListIndex(spaces: SpaceDto[]): Map<string, ListEntry> {
   const map = new Map<string, ListEntry>();
-  for (const space of spaces) {
-    for (const list of space.standaloneLists ?? []) {
+  for (const space of spaces ?? []) {
+    if (!space) continue;
+    const standalone = space.standaloneLists ?? (space as any).lists ?? [];
+    for (const list of standalone) {
+      if (!list) continue;
       map.set(list.id, {
         id: list.id,
         name: list.name,
-        taskCount: list.taskCount,
+        taskCount: list.taskCount ?? 0,
         spaceId: space.id,
-        spaceName: space.name,
-        spaceColor: space.color,
+        spaceName: space.name ?? "Space",
+        spaceColor: space.color ?? "#4F8EF7",
         isPersonal: space.isPersonal,
       });
     }
     for (const folder of space.folders ?? []) {
-      for (const list of folder.lists) {
+      if (!folder) continue;
+      for (const list of folder.lists ?? []) {
+        if (!list) continue;
         map.set(list.id, {
           id: list.id,
           name: list.name,
-          taskCount: list.taskCount,
+          taskCount: list.taskCount ?? 0,
           spaceId: space.id,
-          spaceName: space.name,
-          spaceColor: space.color,
+          spaceName: space.name ?? "Space",
+          spaceColor: space.color ?? "#4F8EF7",
           folderName: folder.name,
           isPersonal: space.isPersonal,
         });
@@ -67,6 +72,7 @@ function buildListIndex(spaces: SpaceDto[]): Map<string, ListEntry> {
   }
   return map;
 }
+
 
 function matchesQuery(entry: ListEntry, query: string) {
   const haystack = [
@@ -298,7 +304,7 @@ export function CreateTaskListPicker({
                     <span className="truncate">{space.name}</span>
                   </div>
 
-                  {(space.standaloneLists ?? []).map((list) => {
+                  {(space.standaloneLists ?? (space as any).lists ?? []).map((list: any) => {
                     const entry = listIndex.get(list.id);
                     if (!entry) return null;
                     return (
@@ -321,10 +327,10 @@ export function CreateTaskListPicker({
                         <FolderIcon className="size-3.5 shrink-0" />
                         <span className="truncate">{folder.name}</span>
                         <span className="ml-auto pr-2 text-xs tabular-nums">
-                          {folder.lists.reduce((n, l) => n + l.taskCount, 0)}
+                          {(folder.lists ?? []).reduce((n, l) => n + (l.taskCount ?? 0), 0)}
                         </span>
                       </div>
-                      {folder.lists.map((list) => {
+                      {(folder.lists ?? []).map((list) => {
                         const entry = listIndex.get(list.id);
                         if (!entry) return null;
                         return (
@@ -339,6 +345,7 @@ export function CreateTaskListPicker({
                       })}
                     </div>
                   ))}
+
                 </div>
               ))
             )}

@@ -62,7 +62,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { CreateTaskListPicker } from "@/components/spaces/CreateTaskListPicker";
 import { toast } from "sonner";
 import { fetchRecents, type SpaceDto } from "@/lib/api/home";
+import { fetchWorkspaceMembers } from "@/lib/api/chat";
+import { getMe } from "@/lib/api/auth";
+import { ApiError } from "@/lib/api/client";
+import { firstSelectableWorkspaceId, useAuthStore } from "@/stores/auth-store";
 import {
+
+
   addChecklist,
   addChecklistItem,
   addTaskDependency,
@@ -273,45 +279,93 @@ export function CreateTaskDialog({
   useEffect(() => {
     if (!open || !ready || !accessToken || !workspaceId) return;
     let cancelled = false;
-    Promise.all([
-      fetchSpacesTree(accessToken, workspaceId).catch((err) => {
-        console.error("Failed to load spaces tree for create task:", err);
-        return { data: [] };
-      }),
-      fetchRecents(accessToken, workspaceId).catch((err) => {
-        console.error("Failed to load recents for create task:", err);
-        return { data: [] };
-      }),
-    ])
-      .then(([spacesRes, recentsRes]) => {
-        if (cancelled) return;
-        const tree = Array.isArray(spacesRes?.data) ? spacesRes.data : [];
-        const options = flattenListsFromSpaces(tree);
-        setSpaces(tree);
-        setRecents(Array.isArray(recentsRes?.data) ? recentsRes.data : []);
-        const target =
-          defaultListId && options.some((o) => o.id === defaultListId)
-            ? defaultListId
-            : options[0]?.id ?? "";
-        setListId(target);
-        const selected = options.find((o) => o.id === target);
-        setListName(selected?.label ? (selected.label.split(" / ").pop() ?? "") : "");
-      })
-      .catch((err) => {
-        console.error("Error loading task creation options:", err);
-        if (!cancelled) toast.error("Could not load create-task options");
-      });
+
+    const loadOptions = async () => {
+      let currentWsId = workspaceId;
+      let tree: SpaceDto[] = [];
+      try {
+        const res = await fetchSpacesTree(accessToken, currentWsId);
+        tree = Array.isArray(res?.data) ? res.data : [];
+      } catch (err) {
+        if (
+          err instanceof ApiError &&
+          err.status === 403 &&
+          err.message.toLowerCase().includes("workspace")
+        ) {
+          try {
+            const me = await getMe(accessToken);
+            const nextWsId = firstSelectableWorkspaceId(me.workspaces);
+            if (nextWsId) {
+              useAuthStore.getState().updateSession({
+                accessToken,
+                user: {
+                  id: me.id,
+                  email: me.email,
+                  fullName: me.fullName,
+                  avatarUrl: me.avatarUrl,
+                },
+                workspaces: me.workspaces,
+                activeWorkspaceId: nextWsId,
+              });
+              const retry = await fetchSpacesTree(accessToken, nextWsId);
+              tree = Array.isArray(retry?.data) ? retry.data : [];
+              currentWsId = nextWsId;
+            }
+          } catch {
+            // recovery failed
+          }
+        } else {
+          console.error("Failed to load spaces tree for create task:", err);
+        }
+      }
+
+      let recentsData: any[] = [];
+      try {
+        const recRes = await fetchRecents(accessToken, currentWsId);
+        recentsData = Array.isArray(recRes?.data) ? recRes.data : [];
+      } catch {
+        // non-fatal
+      }
+
+      if (cancelled) return;
+      const options = flattenListsFromSpaces(tree);
+      setSpaces(tree);
+      setRecents(recentsData);
+
+      const target =
+        defaultListId && options.some((o) => o.id === defaultListId)
+          ? defaultListId
+          : options[0]?.id ?? "";
+      setListId(target);
+      const selected = options.find((o) => o.id === target);
+      setListName(
+        selected?.label ? (selected.label.split(" / ").pop() ?? "") : ""
+      );
+    };
+
+    void loadOptions();
     return () => {
       cancelled = true;
     };
   }, [open, ready, accessToken, workspaceId, defaultListId]);
 
 
+
+  const FALLBACK_STATUSES = useMemo<ListStatus[]>(
+    () => [
+      { id: "todo", name: "TO DO", legacyKey: "TODO", color: "#6B7280", statusGroup: "active", sortOrder: 0 },
+      { id: "in_progress", name: "IN PROGRESS", legacyKey: "IN_PROGRESS", color: "#3B82F6", statusGroup: "active", sortOrder: 1 },
+      { id: "complete", name: "COMPLETE", legacyKey: "COMPLETE", color: "#10B981", statusGroup: "closed", sortOrder: 2 },
+    ],
+    []
+  );
+
+
   useEffect(() => {
-    if (!open || !listId || !ready || !accessToken || !workspaceId) {
-      setStatuses([]);
-      setStatusId("");
-      setListName("");
+    if (!open || !ready || !accessToken || !workspaceId) return;
+    if (!listId) {
+      setStatuses(FALLBACK_STATUSES);
+      setStatusId("todo");
       return;
     }
     let cancelled = false;
@@ -322,41 +376,63 @@ export function CreateTaskDialog({
         const rows = [...(meta.statuses ?? [])].sort(
           (a, b) => a.sortOrder - b.sortOrder
         );
-        setStatuses(rows);
+        const activeStatuses = rows.length > 0 ? rows : FALLBACK_STATUSES;
+        setStatuses(activeStatuses);
         const defaultStatus =
-          rows.find((s) => s.id === defaultStatusId) ??
-          rows.find((s) => s.legacyKey === "TODO") ??
-          rows[0];
-        setStatusId(defaultStatus?.id ?? "");
+          activeStatuses.find((s) => s.id === defaultStatusId) ??
+          activeStatuses.find((s) => s.legacyKey === "TODO") ??
+          activeStatuses[0];
+        setStatusId(defaultStatus?.id ?? "todo");
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error("Failed to load list metadata for task creation:", err);
         if (!cancelled) {
-          setStatuses([]);
-          setStatusId("");
+          setStatuses(FALLBACK_STATUSES);
+          setStatusId("todo");
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [open, listId, ready, accessToken, workspaceId, defaultStatusId]);
+  }, [open, listId, ready, accessToken, workspaceId, defaultStatusId, FALLBACK_STATUSES]);
 
   useEffect(() => {
-    if (!open || !listId || !ready || !accessToken || !workspaceId) {
+    if (!open || !ready || !accessToken || !workspaceId) {
       setMembers([]);
       return;
     }
     let cancelled = false;
-    fetchListAssignableMembers(accessToken, workspaceId, listId)
-      .then((res) => {
-        if (!cancelled) setMembers(res.data);
-      })
-      .catch(() => {
-        if (!cancelled) setMembers([]);
-      });
+    const loadMembers = async () => {
+      try {
+        if (listId) {
+          const res = await fetchListAssignableMembers(accessToken, workspaceId, listId);
+          if (!cancelled && res.data && res.data.length > 0) {
+            setMembers(res.data);
+            return;
+          }
+        }
+        const wsMembers = await fetchWorkspaceMembers(accessToken, workspaceId);
+        if (!cancelled) {
+          setMembers(wsMembers.data ?? []);
+        }
+      } catch (err) {
+        console.error("Failed to load assignable members for task creation:", err);
+        if (!cancelled) {
+          try {
+            const wsMembers = await fetchWorkspaceMembers(accessToken, workspaceId);
+            if (!cancelled) setMembers(wsMembers.data ?? []);
+          } catch {
+            if (!cancelled) setMembers([]);
+          }
+        }
+      }
+    };
+    void loadMembers();
     return () => {
       cancelled = true;
     };
   }, [open, listId, ready, accessToken, workspaceId]);
+
 
   const selectedStatus = useMemo(
     () => statuses.find((s) => s.id === statusId) ?? statuses[0],
