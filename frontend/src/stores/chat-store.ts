@@ -115,6 +115,7 @@ interface ChatState {
   personProfileTab: PersonProfileTab;
   channelFollowing: Record<string, boolean>;
   channelNotifications: Record<string, "all" | "mentions" | "none">;
+  channelSurfaceRefreshKey: Record<string, number>;
   channelMetaOverrides: Record<
     string,
     Partial<Pick<Channel, "name" | "starred">>
@@ -140,6 +141,7 @@ interface ChatState {
     channelId: string,
     level: "all" | "mentions" | "none"
   ) => void;
+  bumpChannelSurfaceRefresh: (channelId: string) => void;
   requestMessageScroll: (messageId: string) => void;
   clearMessageScrollTarget: () => void;
   setSidebarListsCache: (cache: ChatSidebarLists) => void;
@@ -196,6 +198,7 @@ export const useChatStore = create<ChatState>()(
       personProfileTab: "activity",
       channelFollowing: {},
       channelNotifications: {},
+      channelSurfaceRefreshKey: {},
       channelMetaOverrides: {},
       messageScrollTarget: null,
       activeConversation: null,
@@ -252,6 +255,13 @@ export const useChatStore = create<ChatState>()(
           channelNotifications: {
             ...s.channelNotifications,
             [channelId]: level,
+          },
+        })),
+      bumpChannelSurfaceRefresh: (channelId) =>
+        set((s) => ({
+          channelSurfaceRefreshKey: {
+            ...s.channelSurfaceRefreshKey,
+            [channelId]: (s.channelSurfaceRefreshKey[channelId] ?? 0) + 1,
           },
         })),
       requestMessageScroll: (messageId) =>
@@ -332,6 +342,7 @@ export const useChatStore = create<ChatState>()(
           personProfileUserId: null,
           channelFollowing: {},
           channelNotifications: {},
+          channelSurfaceRefreshKey: {},
           channelMetaOverrides: {},
           messageScrollTarget: null,
           activeConversation: null,

@@ -7,6 +7,11 @@ from app.db.models.chat import (
     MessageAttachment,
     MessageReaction,
 )
+from app.db.models.chat_surfaces import (
+    ChatChannelCanvas,
+    ChatHuddle,
+    ChatHuddleParticipant,
+)
 from app.db.models.home import (
     AssignedComment,
     Folder,
@@ -66,4 +71,7 @@ __all__ = [
     "ChatMessage",
     "MessageAttachment",
     "MessageReaction",
+    "ChatChannelCanvas",
+    "ChatHuddle",
+    "ChatHuddleParticipant",
 ]

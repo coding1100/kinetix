@@ -285,6 +285,42 @@ async def broadcast_channel_renamed(
     )
 
 
+async def broadcast_channel_canvas_updated(
+    *,
+    workspace_id: str,
+    channel_id: str,
+    canvas: dict,
+) -> None:
+    sio = get_sio()
+    await sio.emit(
+        "chat:channel:canvas",
+        {
+            "workspaceId": workspace_id,
+            "channelId": channel_id,
+            "canvas": canvas,
+        },
+        room=f"ws:{workspace_id}",
+    )
+
+
+async def broadcast_channel_huddle_updated(
+    *,
+    workspace_id: str,
+    channel_id: str,
+    huddle: dict,
+) -> None:
+    sio = get_sio()
+    await sio.emit(
+        "chat:channel:huddle",
+        {
+            "workspaceId": workspace_id,
+            "channelId": channel_id,
+            "huddle": huddle,
+        },
+        room=f"ws:{workspace_id}",
+    )
+
+
 async def broadcast_chat_typing(
     *,
     workspace_id: str,

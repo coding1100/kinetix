@@ -139,3 +139,44 @@ export interface ChannelMember {
   joinedAt: string | null;
   workspaceRole?: string | null;
 }
+
+export interface ChannelCanvas {
+  id: string | null;
+  channelId: string;
+  workspaceId: string;
+  title: string;
+  body: string;
+  revision: number;
+  updatedAt: string | null;
+  updatedById: string | null;
+  updatedByName?: string | null;
+  createdAt: string | null;
+}
+
+export interface HuddleParticipant {
+  id: string;
+  fullName: string;
+  avatarUrl?: string | null;
+  isDisabled?: boolean;
+  joinedAt: string;
+  leftAt?: string | null;
+  isMuted?: boolean;
+}
+
+export interface ChannelHuddle {
+  id: string;
+  channelId: string;
+  workspaceId: string;
+  title: string;
+  notes: string;
+  isActive: boolean;
+  startedAt: string;
+  endedAt?: string | null;
+  startedById?: string | null;
+  endedById?: string | null;
+  participantCount: number;
+  participants: HuddleParticipant[];
+  currentUserJoined: boolean;
+  createdAt: string;
+  updatedAt: string;
+}

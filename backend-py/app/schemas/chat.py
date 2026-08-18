@@ -117,3 +117,24 @@ class PinMessageBody(BaseModel):
 
 class ToggleReactionBody(BaseModel):
     emoji: str = Field(min_length=1, max_length=32)
+
+
+class UpdateCanvasBody(BaseModel):
+    title: str = Field(default="Canvas", min_length=1, max_length=120)
+    body: str = Field(default="", max_length=50000)
+    expectedRevision: int | None = Field(default=None, ge=0)
+
+
+class StartHuddleBody(BaseModel):
+    title: str = Field(default="Live huddle", min_length=1, max_length=120)
+    notes: str = Field(default="", max_length=20000)
+
+
+class UpdateHuddleBody(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=120)
+    notes: str | None = Field(default=None, max_length=20000)
+    isActive: bool | None = None
+
+
+class ToggleHuddleParticipantBody(BaseModel):
+    muted: bool | None = None
