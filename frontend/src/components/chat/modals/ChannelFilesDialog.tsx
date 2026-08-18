@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useUiStore } from "@/stores/ui-store";
-import { getChannelById } from "@/lib/mocks/channel-details";
+import { useChatStore } from "@/stores/chat-store";
 import { useChannelFiles } from "@/hooks/use-channel-files";
 import type { AttachmentKind, MessageAttachment } from "@/lib/types/chat";
 
@@ -42,8 +42,13 @@ function kindLabel(kind: AttachmentKind) {
 export function ChannelFilesDialog() {
   const { activeModal, closeModal, modalChannelId } = useUiStore();
   const [query, setQuery] = useState("");
+  const [preview, setPreview] = useState<MessageAttachment | null>(null);
   const open = activeModal === "channel-files";
-  const channel = modalChannelId ? getChannelById(modalChannelId) : null;
+  const channel = useChatStore((state) =>
+    modalChannelId
+      ? state.sidebarListsCache?.channels.find((item) => item.id === modalChannelId)
+      : undefined
+  );
   const { files, loading } = useChannelFiles(open ? modalChannelId : null);
 
   const filtered = useMemo(() => {
@@ -53,11 +58,13 @@ export function ChannelFilesDialog() {
   }, [files, query]);
 
   return (
-    <Dialog
+    <>
+      <Dialog
       open={open}
       onOpenChange={(o) => {
         if (!o) {
           setQuery("");
+          setPreview(null);
           closeModal();
         }
       }}
@@ -86,12 +93,26 @@ export function ChannelFilesDialog() {
           {!loading &&
             filtered.map((file) => (
               <li key={file.id}>
-                <a
-                  href={file.downloadUrl ?? undefined}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-muted/50"
-                >
+                {file.mimeType.startsWith("image/") && file.downloadUrl ? (
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-muted/50"
+                    onClick={() => setPreview(file)}
+                  >
+                    <span className="flex size-9 items-center justify-center rounded-lg border border-border bg-muted/40 text-muted-foreground">
+                      <FileKindIcon file={file} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{file.fileName}</span>
+                      <span className="text-xs capitalize text-muted-foreground">{kindLabel(file.kind)}</span>
+                    </span>
+                  </button>
+                ) : (
+                  <a
+                    href={file.downloadUrl ?? undefined}
+                    download={file.fileName}
+                    className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-muted/50"
+                  >
                   <span className="flex size-9 items-center justify-center rounded-lg border border-border bg-muted/40 text-muted-foreground">
                     <FileKindIcon file={file} />
                   </span>
@@ -103,7 +124,8 @@ export function ChannelFilesDialog() {
                       {kindLabel(file.kind)}
                     </span>
                   </span>
-                </a>
+                  </a>
+                )}
               </li>
             ))}
           {!loading && filtered.length === 0 ? (
@@ -118,6 +140,14 @@ export function ChannelFilesDialog() {
           Close
         </Button>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+      <Dialog open={Boolean(preview)} onOpenChange={(open) => !open && setPreview(null)}>
+      <DialogContent className="max-w-4xl bg-black/95">
+        <DialogHeader><DialogTitle className="text-white">{preview?.fileName ?? "Image preview"}</DialogTitle></DialogHeader>
+        {preview?.downloadUrl ? <img src={preview.downloadUrl} alt={preview.fileName} className="max-h-[75vh] w-full object-contain" /> : null}
+        <Button variant="outline" onClick={() => setPreview(null)}>Close</Button>
+      </DialogContent>
+      </Dialog>
+    </>
   );
 }

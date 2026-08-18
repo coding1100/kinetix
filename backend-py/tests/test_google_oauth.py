@@ -238,7 +238,7 @@ async def test_oauth_exchange_returns_session(monkeypatch):
     assert body["accessToken"] == "access-token-test"
     assert body["user"]["email"] == "oauth@test.com"
     assert "riseup_refresh" in res.cookies
-    assert res.json().get("refreshToken")
+    assert "refreshToken" not in body
 
 
 def _api_base() -> str:

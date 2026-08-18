@@ -62,7 +62,7 @@ function ImageLightbox({
                 className="size-8 text-white/70 hover:text-white hover:bg-white/10"
                 nativeButton={false}
                 render={
-                  <a href={downloadUrl} download={fileName} target="_blank" rel="noreferrer" />
+                  <a href={downloadUrl} download={fileName} />
                 }
                 aria-label="Download"
               >
@@ -134,8 +134,6 @@ export function CommentAttachmentCard({
             <a
               href={attachment.downloadUrl}
               download={attachment.fileName}
-              target="_blank"
-              rel="noreferrer"
               onClick={(e) => e.stopPropagation()}
               className="absolute top-1.5 right-1.5 rounded-md bg-black/50 p-1.5 text-white opacity-0 transition-opacity hover:bg-black/70 group-hover/image:opacity-100"
               aria-label={`Download ${attachment.fileName}`}
@@ -182,8 +180,6 @@ export function CommentAttachmentCard({
         <a
           href={attachment.downloadUrl}
           download={attachment.fileName}
-          target="_blank"
-          rel="noreferrer"
           className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           aria-label={`Download ${attachment.fileName}`}
         >

@@ -6,13 +6,8 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   HomeIcon,
   MessageSquareIcon,
-  CalendarIcon,
   UsersIcon,
   UsersRoundIcon,
-  FileTextIcon,
-  LayoutDashboardIcon,
-  ClipboardCheckIcon,
-  ClockIcon,
   LayoutGridIcon,
   BoxesIcon,
   UserPlusIcon,
@@ -25,7 +20,6 @@ import { useChatStore } from "@/stores/chat-store";
 import { useNotificationsUnread } from "@/hooks/use-notifications-unread";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { toast } from "sonner";
 
 type NavItem = {
   label: string;
@@ -42,13 +36,7 @@ const BASE_NAV_ITEMS: NavItem[] = [
   { label: "Chat", icon: MessageSquareIcon, href: "/chat" },
   { label: "Spaces", icon: BoxesIcon, href: "/spaces" },
   { label: "Teams", icon: UsersRoundIcon, href: "/teams", hidden: !FEATURE_FLAGS.teams },
-  { label: "Planner", icon: CalendarIcon, disabled: true, hidden: true },
   { label: "People", icon: UsersIcon, href: "/people" },
-  { label: "Docs", icon: FileTextIcon, disabled: true, hidden: true },
-  { label: "Dashboard", icon: LayoutDashboardIcon, disabled: true, hidden: true },
-  { label: "Forms", icon: ClipboardCheckIcon, disabled: true, hidden: true },
-  { label: "Timesheet", icon: ClockIcon, disabled: true, hidden: true },
-  { label: "More", icon: LayoutGridIcon, disabled: true, hidden: true },
 ];
 
 export function GlobalNav() {
@@ -155,7 +143,7 @@ function NavRailItem({
   const iconWrapClass = cn(
     "flex size-8 items-center justify-center rounded-lg transition-colors",
     active ? "bg-white/20" : "bg-transparent",
-    !item.disabled && !active && "group-hover:bg-white/20"
+    !active && "group-hover:bg-white/20"
   );
 
   const content = (
@@ -185,7 +173,7 @@ function NavRailItem({
     item.disabled && "cursor-not-allowed opacity-40 hover:text-white/75"
   );
 
-  if (item.href && !item.disabled) {
+  if (item.href) {
     return (
       <Link
         href={item.href}
@@ -200,9 +188,8 @@ function NavRailItem({
   return (
     <button
       type="button"
-      disabled={item.disabled}
       className={className}
-      onClick={() => item.disabled && toast(`${item.label} — Phase 3+`)}
+      aria-disabled="true"
     >
       {content}
     </button>

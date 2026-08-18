@@ -4,6 +4,11 @@ const liveById = new Map<string, NotificationDto>();
 const readLocallyIds = new Set<string>();
 let bulkClearedAt = 0;
 
+function itemCreatedAtMs(item: { createdAt?: string }) {
+  const parsed = item.createdAt ? new Date(item.createdAt).getTime() : NaN;
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
 function withReadState(item: NotificationDto): NotificationDto {
   if (isReadLocally(item.id)) {
     return { ...item, unread: false };
@@ -25,7 +30,11 @@ export function clearLiveNotifications() {
 }
 
 function isReadLocally(id: string) {
-  return bulkClearedAt > 0 || readLocallyIds.has(id);
+  if (readLocallyIds.has(id)) return true;
+  const liveItem = liveById.get(id);
+  return bulkClearedAt > 0 && liveItem
+    ? itemCreatedAtMs(liveItem) <= bulkClearedAt
+    : false;
 }
 
 function sortNewestFirst<T extends { createdAt: string }>(items: T[]) {
@@ -36,7 +45,11 @@ function sortNewestFirst<T extends { createdAt: string }>(items: T[]) {
 
 export function mergeNotifications(api: NotificationDto[]): NotificationDto[] {
   const merged = new Map<string, NotificationDto>();
-  for (const item of api) merged.set(item.id, withReadState(item));
+  for (const item of api) {
+    const locallyCleared =
+      bulkClearedAt > 0 && itemCreatedAtMs(item) <= bulkClearedAt;
+    merged.set(item.id, locallyCleared ? { ...item, unread: false } : withReadState(item));
+  }
   for (const item of liveById.values()) {
     merged.set(item.id, withReadState(item));
   }
@@ -46,9 +59,11 @@ export function mergeNotifications(api: NotificationDto[]): NotificationDto[] {
 export function mergeInboxItems(api: InboxItemDto[]): InboxItemDto[] {
   const merged = new Map<string, InboxItemDto>();
   for (const item of api) {
+    const locallyCleared =
+      bulkClearedAt > 0 && itemCreatedAtMs(item) <= bulkClearedAt;
     merged.set(
       item.id,
-      isReadLocally(item.id) ? { ...item, unread: false } : item
+      locallyCleared || isReadLocally(item.id) ? { ...item, unread: false } : item
     );
   }
   for (const item of liveById.values()) {
@@ -97,7 +112,7 @@ export function liveUnreadDelta(api: NotificationDto[]) {
   const apiIds = new Set(api.map((n) => n.id));
   let delta = 0;
   for (const item of liveById.values()) {
-    if (!apiIds.has(item.id) && item.unread) delta += 1;
+    if (!apiIds.has(item.id) && item.unread && !isReadLocally(item.id)) delta += 1;
   }
   return delta;
 }
@@ -107,7 +122,13 @@ export function countUnreadNotifications(
   apiUnreadCount: number
 ) {
   if (bulkClearedAt > 0) {
-    return liveUnreadDelta(api);
+    const apiUnreadAfterBulkClear = api.filter(
+      (n) =>
+        n.unread &&
+        !readLocallyIds.has(n.id) &&
+        itemCreatedAtMs(n) > bulkClearedAt
+    ).length;
+    return apiUnreadAfterBulkClear + liveUnreadDelta(api);
   }
   const markedRead = api.filter((n) => n.unread && readLocallyIds.has(n.id)).length;
   return Math.max(0, apiUnreadCount - markedRead) + liveUnreadDelta(api);

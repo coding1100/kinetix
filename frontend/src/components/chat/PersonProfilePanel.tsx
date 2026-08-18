@@ -37,7 +37,6 @@ import { useAuthStore } from "@/stores/auth-store";
 import { findDmByUserId } from "@/lib/chat/sidebar-dm";
 import { fetchAssignedComments, fetchTasks } from "@/lib/api/home";
 import { fetchWorkspacePeople, updateMemberManager } from "@/lib/api/workspace";
-import { mockPersonActivity } from "@/lib/mocks/person-profile";
 import {
   avatarColorClassForKey,
   avatarInitialFromName,
@@ -269,11 +268,13 @@ export function PersonProfilePanel({
     if (tasks.length === 0) return [];
     return tasks.map((t) => ({
       id: `act-${t.id}`,
-      dateLabel: new Date(t.updatedAt || t.createdAt || Date.now()).toLocaleDateString(undefined, {
-        month: "numeric",
-        day: "numeric",
-        year: "2-digit",
-      }),
+      dateLabel: t.updatedAt || t.createdAt
+        ? new Date(t.updatedAt ?? t.createdAt!).toLocaleDateString(undefined, {
+            month: "numeric",
+            day: "numeric",
+            year: "2-digit",
+          })
+        : "No date",
       project: t.name || "Task",
       breadcrumbs: t.list ? `Space / ${t.list}` : "Workspace / Tasks",
       action: `${displayName} updated task status`,

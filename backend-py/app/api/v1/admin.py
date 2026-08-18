@@ -1,14 +1,14 @@
-from fastapi import APIRouter, BackgroundTasks, Cookie, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Cookie, Query, Request, Response
 
 from app.api.cookies import clear_admin_refresh_cookie, set_admin_refresh_cookie
+from app.core.rate_limit import email_account, throttle
 from app.core.errors import AppError
 from app.db.models.enums import WorkspaceStatus
 from app.deps.auth import CurrentUserDep, DbSession
-from app.deps.platform import PlatformStaffDep
+from app.deps.platform import PlatformStaffDep, PlatformSuperAdminDep
 from app.schemas.admin import (
     AdminGrantStaffBody,
     AdminLoginBody,
-    AdminRefreshBody,
     AdminTransferOwnershipBody,
     AdminUpdateMemberRoleBody,
 )
@@ -21,29 +21,48 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 @router.post("/auth/login")
 async def admin_login(
     body: AdminLoginBody,
+    request: Request,
     response: Response,
     session: DbSession,
 ):
+    from app.config import get_settings
+
+    settings = get_settings()
+    await throttle(
+        request,
+        scope="admin.login",
+        ip_limit=settings.auth_login_ip_limit,
+        account_limit=settings.auth_login_account_limit,
+        account=email_account(body.email),
+    )
     result = await admin_service.admin_login(session, body)
     refresh_token = result.pop("refreshToken")
     set_admin_refresh_cookie(response, refresh_token)
-    return {**result, "refreshToken": refresh_token}
+    return result
 
 
 @router.post("/auth/refresh")
 async def admin_refresh(
+    request: Request,
     response: Response,
     session: DbSession,
-    body: AdminRefreshBody | None = None,
     riseup_admin_refresh: str | None = Cookie(default=None),
 ):
-    refresh_token = riseup_admin_refresh or (body.refresh_token if body else None)
+    from app.config import get_settings
+
+    settings = get_settings()
+    await throttle(
+        request,
+        scope="admin.refresh",
+        ip_limit=settings.auth_refresh_ip_limit,
+    )
+    refresh_token = riseup_admin_refresh
     if not refresh_token:
         raise AppError(401, "UNAUTHORIZED", "Refresh token missing")
     result = await admin_service.admin_refresh_session(session, refresh_token)
     new_refresh = result.pop("refreshToken")
     set_admin_refresh_cookie(response, new_refresh)
-    return {**result, "refreshToken": new_refresh}
+    return result
 
 
 @router.post("/auth/logout")
@@ -60,7 +79,7 @@ async def admin_logout(
 @router.post("/workspaces", status_code=201)
 async def create_workspace(
     body: CreateWorkspaceBody,
-    staff: PlatformStaffDep,
+    staff: PlatformSuperAdminDep,
     user: CurrentUserDep,
     session: DbSession,
 ):
@@ -85,7 +104,7 @@ async def list_workspaces(
 @router.post("/workspaces/{workspaceId}/suspend")
 async def suspend_workspace(
     workspaceId: str,
-    staff: PlatformStaffDep,
+    staff: PlatformSuperAdminDep,
     user: CurrentUserDep,
     session: DbSession,
 ):
@@ -97,7 +116,7 @@ async def suspend_workspace(
 @router.post("/workspaces/{workspaceId}/reactivate")
 async def reactivate_workspace(
     workspaceId: str,
-    staff: PlatformStaffDep,
+    staff: PlatformSuperAdminDep,
     user: CurrentUserDep,
     session: DbSession,
 ):
@@ -109,7 +128,7 @@ async def reactivate_workspace(
 @router.delete("/workspaces/{workspaceId}")
 async def delete_workspace(
     workspaceId: str,
-    staff: PlatformStaffDep,
+    staff: PlatformSuperAdminDep,
     user: CurrentUserDep,
     session: DbSession,
 ):
@@ -119,7 +138,7 @@ async def delete_workspace(
 @router.post("/workspaces/{workspaceId}/restore")
 async def restore_workspace(
     workspaceId: str,
-    staff: PlatformStaffDep,
+    staff: PlatformSuperAdminDep,
     user: CurrentUserDep,
     session: DbSession,
 ):
@@ -130,7 +149,7 @@ async def restore_workspace(
 async def transfer_ownership(
     workspaceId: str,
     body: AdminTransferOwnershipBody,
-    staff: PlatformStaffDep,
+    staff: PlatformSuperAdminDep,
     user: CurrentUserDep,
     session: DbSession,
 ):
@@ -165,7 +184,7 @@ async def list_workspace_invites(
 async def create_workspace_invite(
     workspaceId: str,
     body: CreateInviteBody,
-    staff: PlatformStaffDep,
+    staff: PlatformSuperAdminDep,
     user: CurrentUserDep,
     session: DbSession,
     background_tasks: BackgroundTasks,
@@ -179,7 +198,7 @@ async def create_workspace_invite(
 async def cancel_workspace_invite(
     workspaceId: str,
     inviteId: str,
-    staff: PlatformStaffDep,
+    staff: PlatformSuperAdminDep,
     user: CurrentUserDep,
     session: DbSession,
 ):
@@ -190,7 +209,7 @@ async def cancel_workspace_invite(
 async def resend_workspace_invite(
     workspaceId: str,
     inviteId: str,
-    staff: PlatformStaffDep,
+    staff: PlatformSuperAdminDep,
     user: CurrentUserDep,
     session: DbSession,
     background_tasks: BackgroundTasks,
@@ -205,7 +224,7 @@ async def update_member_role(
     workspaceId: str,
     userId: str,
     body: AdminUpdateMemberRoleBody,
-    staff: PlatformStaffDep,
+    staff: PlatformSuperAdminDep,
     user: CurrentUserDep,
     session: DbSession,
 ):
@@ -218,7 +237,7 @@ async def update_member_role(
 async def suspend_member(
     workspaceId: str,
     userId: str,
-    staff: PlatformStaffDep,
+    staff: PlatformSuperAdminDep,
     user: CurrentUserDep,
     session: DbSession,
 ):
@@ -231,7 +250,7 @@ async def suspend_member(
 async def reactivate_member(
     workspaceId: str,
     userId: str,
-    staff: PlatformStaffDep,
+    staff: PlatformSuperAdminDep,
     user: CurrentUserDep,
     session: DbSession,
 ):
@@ -264,7 +283,7 @@ async def list_user_workspaces(
 @router.post("/users/{userId}/disable")
 async def disable_user(
     userId: str,
-    staff: PlatformStaffDep,
+    staff: PlatformSuperAdminDep,
     user: CurrentUserDep,
     session: DbSession,
 ):
@@ -274,7 +293,7 @@ async def disable_user(
 @router.post("/users/{userId}/enable")
 async def enable_user(
     userId: str,
-    staff: PlatformStaffDep,
+    staff: PlatformSuperAdminDep,
     user: CurrentUserDep,
     session: DbSession,
 ):
@@ -292,17 +311,17 @@ async def list_staff(
 @router.post("/staff")
 async def grant_staff(
     body: AdminGrantStaffBody,
-    staff: PlatformStaffDep,
+    staff: PlatformSuperAdminDep,
     user: CurrentUserDep,
     session: DbSession,
 ):
-    return await admin_service.grant_platform_staff(session, user.id, body.email)
+    return await admin_service.grant_platform_staff(session, user.id, body.email, body.role)
 
 
 @router.delete("/staff/{userId}")
 async def revoke_staff(
     userId: str,
-    staff: PlatformStaffDep,
+    staff: PlatformSuperAdminDep,
     user: CurrentUserDep,
     session: DbSession,
 ):

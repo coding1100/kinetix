@@ -64,7 +64,7 @@ export function UnderlineTabBar<T extends string>({
             role="tab"
             aria-selected={isActive}
             disabled={tab.disabled}
-            title={tab.disabled ? "Coming soon" : undefined}
+            title={tab.disabled ? "Unavailable" : undefined}
             onClick={() => !tab.disabled && onChange(tab.id)}
             className={cn(
               "relative -mb-px flex items-center border-0 bg-transparent transition-colors outline-none",

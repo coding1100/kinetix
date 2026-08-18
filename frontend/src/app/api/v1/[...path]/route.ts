@@ -77,10 +77,8 @@ async function handler(request: NextRequest, context: RouteContext) {
   return proxyRequest(request, path);
 }
 
-export const dynamic = "force-static";
-export function generateStaticParams() {
-  return [{ path: ["health"] }];
-}
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export const GET = handler;
 export const POST = handler;

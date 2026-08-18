@@ -50,6 +50,26 @@ async def _resolve_typing_audience(kind: str, conversation_id: str) -> list[str]
     return None
 
 
+async def _can_type_in_conversation(
+    kind: str, conversation_id: str, user_id: str
+) -> bool:
+    factory = get_session_factory()
+    async with factory() as session:
+        from app.services.chat_service import (
+            _assert_channel_member,
+            _assert_dm_participant,
+        )
+
+        try:
+            if kind == "channel":
+                await _assert_channel_member(session, conversation_id, user_id)
+            else:
+                await _assert_dm_participant(session, conversation_id, user_id)
+            return True
+        except Exception:
+            return False
+
+
 def _register_events(sio: socketio.AsyncServer) -> None:
     @sio.event
     async def connect(sid, environ, auth):
@@ -111,6 +131,8 @@ def _register_events(sio: socketio.AsyncServer) -> None:
         if not user_id or not workspace_id:
             return {"ok": False}
         if not await _is_workspace_member(workspace_id, user_id):
+            return {"ok": False}
+        if not await _can_type_in_conversation(kind, conversation_id, user_id):
             return {"ok": False}
         await sio.enter_room(sid, f"ws:{workspace_id}")
 
@@ -247,6 +269,10 @@ def _register_events(sio: socketio.AsyncServer) -> None:
             or kind not in ("channel", "dm")
             or not conversation_id
         ):
+            return {"ok": False}
+        if not await _is_workspace_member(workspace_id, user_id):
+            return {"ok": False}
+        if not await _can_type_in_conversation(kind, conversation_id, user_id):
             return {"ok": False}
         typing_registry.stop_typing(
             workspace_id, kind, conversation_id, user_id

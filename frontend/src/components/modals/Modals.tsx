@@ -2,23 +2,19 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useUiStore } from "@/stores/ui-store";
 import { useHomeSidebarStore } from "@/stores/home-sidebar-store";
 import { CreateChannelDialog } from "@/components/chat/channels/CreateChannelDialog";
 import { ChannelShareDialog } from "@/components/chat/modals/ChannelShareDialog";
 import { ChannelFilesDialog } from "@/components/chat/modals/ChannelFilesDialog";
-import { SyncUpDialog } from "@/components/chat/modals/SyncUpDialog";
 import { NewDmDialog } from "@/components/chat/modals/NewDmDialog";
 import { RenameChannelDialog } from "@/components/chat/modals/RenameChannelDialog";
 import { ChangeChannelIconDialog } from "@/components/chat/modals/ChangeChannelIconDialog";
@@ -74,32 +70,9 @@ export function Modals() {
       <CreateChannelDialog />
       <ChannelShareDialog />
       <ChannelFilesDialog />
-      <SyncUpDialog />
       <NewDmDialog />
       <RenameChannelDialog />
       <ChangeChannelIconDialog />
-
-      <Dialog
-        open={activeModal === "schedule-message"}
-        onOpenChange={(o) => !o && closeModal()}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Schedule message</DialogTitle>
-          </DialogHeader>
-          <Input type="datetime-local" />
-          <DialogFooter>
-            <Button
-              onClick={() => {
-                toast.success("Scheduled (mock)");
-                closeModal();
-              }}
-            >
-              Schedule
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
     </>
   );

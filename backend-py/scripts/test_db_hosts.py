@@ -1,16 +1,13 @@
 import asyncio
+import os
 import time
 
 import asyncpg
 
-HOSTS = [
-    "aws-1-ap-southeast-2.pooler.supabase.com:5432",
-    "aws-1-ap-southeast-2.pooler.supabase.com:6543",
-    "db.idjyzrtalfibjphdjqqn.supabase.co:5432",
-]
-USER = "postgres.idjyzrtalfibjphdjqqn"
-PASSWORD = "htrajpoot9673"
-DB = "postgres"
+HOSTS = [h.strip() for h in os.environ.get("DB_TEST_HOSTS", "").split(",") if h.strip()]
+USER = os.environ.get("DB_TEST_USER", "")
+PASSWORD = os.environ.get("DB_TEST_PASSWORD", "")
+DB = os.environ.get("DB_TEST_NAME", "postgres")
 
 
 async def test(host: str) -> None:
@@ -29,6 +26,10 @@ async def test(host: str) -> None:
 
 
 async def main():
+    if not HOSTS or not USER or not PASSWORD:
+        raise SystemExit(
+            "Set DB_TEST_HOSTS, DB_TEST_USER, and DB_TEST_PASSWORD before running this script."
+        )
     for host in HOSTS:
         await test(host)
 

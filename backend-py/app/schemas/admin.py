@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
-from app.db.models.enums import WorkspaceRole
+from app.db.models.enums import PlatformRole, WorkspaceRole
 
 
 class AdminUpdateMemberRoleBody(BaseModel):
@@ -9,17 +9,12 @@ class AdminUpdateMemberRoleBody(BaseModel):
 
 class AdminGrantStaffBody(BaseModel):
     email: EmailStr
+    role: PlatformRole = PlatformRole.STAFF
 
 
 class AdminLoginBody(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1)
-
-
-class AdminRefreshBody(BaseModel):
-    refresh_token: str | None = Field(default=None, alias="refreshToken")
-
-    model_config = {"populate_by_name": True}
 
 
 class AdminTransferOwnershipBody(BaseModel):

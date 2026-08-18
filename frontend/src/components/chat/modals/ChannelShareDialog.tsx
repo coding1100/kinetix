@@ -14,7 +14,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useUiStore } from "@/stores/ui-store";
 import { useChatStore } from "@/stores/chat-store";
-import { getChannelById } from "@/lib/mocks/channel-details";
 import { useChannelMembers } from "@/hooks/use-channel-members";
 import type { Channel } from "@/lib/types/chat";
 import { AddChannelMembersDialog } from "@/components/chat/modals/AddChannelMembersDialog";
@@ -50,7 +49,7 @@ export function ChannelShareDialog() {
   );
   const open = activeModal === "channel-share";
   const channelId = modalChannelId ?? "";
-  const channel = channelFromStore ?? (channelId ? getChannelById(channelId) : null);
+  const channel = channelFromStore ?? null;
   const [addOpen, setAddOpen] = useState(false);
   const { members, loading, reload } = useChannelMembers(channelId, {
     enabled: open && !!channelId,

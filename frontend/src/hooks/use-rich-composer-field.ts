@@ -16,7 +16,6 @@ import {
   deleteTextBeforeCursor,
   exitBlockquoteOnShiftEnter,
   focusEditorEnd,
-  getPlainTextBeforeCursor,
   getPlainTextBeforeCursorInBlock,
   insertChipAtCursor,
   insertTextAtCursor,

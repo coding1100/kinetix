@@ -20,14 +20,13 @@ export type TeamDetailTab =
 export const TEAM_DETAIL_TABS: {
   id: TeamDetailTab;
   label: string;
-  enabled: boolean;
 }[] = [
-  { id: "overview", label: "Overview", enabled: true },
-  { id: "analytics", label: "Analytics", enabled: false },
-  { id: "priorities", label: "Priorities", enabled: false },
-  { id: "team", label: "Team", enabled: true },
-  { id: "team-chart", label: "Team Chart", enabled: false },
-  { id: "standup", label: "StandUp", enabled: false },
-  { id: "workload", label: "Workload", enabled: false },
-  { id: "timesheet", label: "Timesheet", enabled: false },
+  { id: "overview", label: "Overview" },
+  { id: "analytics", label: "Analytics" },
+  { id: "priorities", label: "Priorities" },
+  { id: "team", label: "Team" },
+  { id: "team-chart", label: "Team Chart" },
+  { id: "standup", label: "StandUp" },
+  { id: "workload", label: "Workload" },
+  { id: "timesheet", label: "Timesheet" },
 ];

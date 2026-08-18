@@ -23,6 +23,14 @@ export interface TeamSummary {
 export interface TeamDetail extends TeamSummary {
   members: TeamMemberPreview[];
   updatedAt: string | null;
+  bookmarks: TeamBookmark[];
+}
+
+export interface TeamBookmark {
+  id: string;
+  title: string;
+  url: string;
+  createdAt: string;
 }
 
 export interface WorkspaceMemberWithTeams extends WorkspaceMemberRow {
@@ -133,6 +141,31 @@ export function removeTeamMember(
 ) {
   return apiFetch<TeamDetail>(
     wsPath(workspaceId, `/teams/${teamId}/members/${userId}`),
+    { method: "DELETE", token }
+  );
+}
+
+export function createTeamBookmark(
+  token: string,
+  workspaceId: string,
+  teamId: string,
+  body: { title: string; url: string }
+) {
+  return apiFetch<TeamDetail>(wsPath(workspaceId, `/teams/${teamId}/bookmarks`), {
+    method: "POST",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteTeamBookmark(
+  token: string,
+  workspaceId: string,
+  teamId: string,
+  bookmarkId: string
+) {
+  return apiFetch<{ ok: boolean }>(
+    wsPath(workspaceId, `/teams/${teamId}/bookmarks/${bookmarkId}`),
     { method: "DELETE", token }
   );
 }

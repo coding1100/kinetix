@@ -66,28 +66,28 @@ to run every time — instant no-op if already installed.)
 ## 7. Check schema drift — tells you exactly what to run, don't guess
 
 ```
-docker exec -it "$api_id" sh -c "export DATABASE_URL=\"postgresql://\${POSTGRES_USER}:\${POSTGRES_PASSWORD}@postgres:5432/\${POSTGRES_DB}\"; cd /app && /app/.venv/bin/python scripts/check_schema_drift.py"
+docker exec -it "$api_id" sh -c "cd /app && /app/.venv/bin/python scripts/apply_migrations.py"
 ```
 Prints `MISSING` for every table/column the ORM models expect but the DB
-doesn't have, and next to each finding, which `run_*_migration.py` fixes it.
+doesn't have. The versioned migration gate applies the required scripts in order.
 Ends with a copy-pasteable summary block. If a table's `.sql` file has no
 `run_*.py` wrapping it yet, it prints a `MANUAL:` note instead — write the
-missing runner script (see existing `run_*_migration.py` files for the
-pattern) rather than hand-running SQL.
+register the missing SQL file in `scripts/apply_migrations.py` rather than
+hand-running SQL.
 
 **Blind spot:** this only diffs table/column names, not Postgres enum
 *labels*. A `.sql` file that does `ALTER TYPE "X" ADD VALUE ...` (e.g.
-`migrate_super_admin_role.sql`) won't show up here even when unrun — it'll
+an enum-altering migration won't show up here even when unrun — it'll
 surface at runtime instead as `asyncpg.exceptions.InvalidTextRepresentationError:
 invalid input value for enum "X"`, which the app's generic exception handler
 disguises as a `DATABASE_UNAVAILABLE` 503. If you add an enum-altering `.sql`
-file, always write its `run_*_migration.py` runner in the same PR — don't
+file, register it in the versioned migration gate in the same PR — don't
 rely on drift check to catch a missing one.
 
 ## 8. Run each script it listed
 
 ```
-docker exec -it "$api_id" sh -c "export DATABASE_URL=\"postgresql://\${POSTGRES_USER}:\${POSTGRES_PASSWORD}@postgres:5432/\${POSTGRES_DB}\"; cd /app && /app/.venv/bin/python scripts/<name_from_step_7>.py"
+docker exec -it "$api_id" sh -c "cd /app && /app/.venv/bin/python scripts/apply_migrations.py"
 ```
 Stop and inspect if any one fails before running the next — they aren't
 chained in one transaction.
@@ -95,7 +95,7 @@ chained in one transaction.
 ## 9. Re-run drift check — must come back clean
 
 ```
-docker exec -it "$api_id" sh -c "export DATABASE_URL=\"postgresql://\${POSTGRES_USER}:\${POSTGRES_PASSWORD}@postgres:5432/\${POSTGRES_DB}\"; cd /app && /app/.venv/bin/python scripts/check_schema_drift.py"
+docker exec -it "$api_id" sh -c "cd /app && /app/.venv/bin/python scripts/apply_migrations.py"
 ```
 Expect: `No drift - DB schema matches all ORM models.` (remember the enum
 blind spot above — clean here doesn't guarantee every enum-altering script

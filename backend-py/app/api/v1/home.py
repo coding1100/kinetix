@@ -1,5 +1,6 @@
 from fastapi import APIRouter, File, Query, UploadFile, status
 
+from app.config import get_settings
 from app.deps.auth import CurrentUserDep, DbSession
 from app.deps.workspace import WorkspaceMemberDep
 from app.schemas.home import (
@@ -42,7 +43,7 @@ async def get_inbox(
     workspace_id: str,
     session: DbSession,
     user: CurrentUserDep,
-    _member: WorkspaceMemberDep,
+    member: WorkspaceMemberDep,
     tab: str = Query("all"),
 ):
     return await home_service.list_inbox(session, workspace_id, user.id, tab)
@@ -55,7 +56,7 @@ async def patch_inbox_item(
     item_id: str,
     session: DbSession,
     user: CurrentUserDep,
-    _member: WorkspaceMemberDep,
+    member: WorkspaceMemberDep,
 ):
     return await home_service.update_inbox_item(
         session, workspace_id, user.id, item_id, body
@@ -223,9 +224,9 @@ async def get_lineup(
     workspace_id: str,
     session: DbSession,
     user: CurrentUserDep,
-    _member: WorkspaceMemberDep,
+    member: WorkspaceMemberDep,
 ):
-    return await home_service.list_lineup(session, workspace_id, user.id)
+    return await home_service.list_lineup(session, workspace_id, user.id, member.role)
 
 
 @router.post("/home/lineup", status_code=status.HTTP_201_CREATED)
@@ -234,10 +235,10 @@ async def post_lineup(
     workspace_id: str,
     session: DbSession,
     user: CurrentUserDep,
-    _member: WorkspaceMemberDep,
+    member: WorkspaceMemberDep,
 ):
     return await home_service.add_to_lineup(
-        session, workspace_id, user.id, body
+        session, workspace_id, user.id, member.role, body
     )
 
 
@@ -792,6 +793,7 @@ async def post_task_attachment_presign(
         session,
         workspace_id,
         user.id,
+        member.role,
         task_id,
         file_name=body.file_name,
         mime_type=body.mime_type,
@@ -806,19 +808,29 @@ async def post_task_attachment_upload(
     attachment_id: str,
     session: DbSession,
     user: CurrentUserDep,
-    _member: WorkspaceMemberDep,
+    member: WorkspaceMemberDep,
     file: UploadFile = File(...),
     for_comment: bool = False,
 ):
     _ = task_id
-    data = await file.read()
+    max_bytes = get_settings().attachment_max_bytes
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await file.read(min(1024 * 1024, max_bytes - total + 1)):
+        chunks.append(chunk)
+        total += len(chunk)
+        if total > max_bytes:
+            break
+    data = b"".join(chunks)
     return await task_attachment_service.upload_file_content(
         session,
         workspace_id,
         user.id,
         attachment_id,
         data,
-        file.content_type,
+        member.role,
+        task_id=task_id,
+        content_type=file.content_type,
         for_comment=for_comment,
     )
 
@@ -856,10 +868,10 @@ async def follow_task(
     task_id: str,
     session: DbSession,
     user: CurrentUserDep,
-    _member: WorkspaceMemberDep,
+    member: WorkspaceMemberDep,
 ):
     return await home_service.follow_task(
-        session, workspace_id, user.id, task_id
+        session, workspace_id, user.id, member.role, task_id
     )
 
 
@@ -869,10 +881,10 @@ async def unfollow_task(
     task_id: str,
     session: DbSession,
     user: CurrentUserDep,
-    _member: WorkspaceMemberDep,
+    member: WorkspaceMemberDep,
 ):
     return await home_service.unfollow_task(
-        session, workspace_id, user.id, task_id
+        session, workspace_id, user.id, member.role, task_id
     )
 
 
@@ -1005,10 +1017,10 @@ async def get_task_activity(
     task_id: str,
     session: DbSession,
     user: CurrentUserDep,
-    _member: WorkspaceMemberDep,
+    member: WorkspaceMemberDep,
 ):
     return await home_service.list_task_activity(
-        session, workspace_id, user.id, task_id
+        session, workspace_id, user.id, member.role, task_id
     )
 
 
@@ -1018,11 +1030,11 @@ async def get_task_notifications(
     task_id: str,
     session: DbSession,
     user: CurrentUserDep,
-    _member: WorkspaceMemberDep,
+    member: WorkspaceMemberDep,
     limit: int = Query(50, ge=1, le=100),
 ):
     return await home_service.list_task_notifications(
-        session, workspace_id, user.id, task_id, limit
+        session, workspace_id, user.id, member.role, task_id, limit
     )
 
 
@@ -1032,10 +1044,10 @@ async def post_task_notifications_read_all(
     task_id: str,
     session: DbSession,
     user: CurrentUserDep,
-    _member: WorkspaceMemberDep,
+    member: WorkspaceMemberDep,
 ):
     return await home_service.mark_task_notifications_read(
-        session, workspace_id, user.id, task_id
+        session, workspace_id, user.id, member.role, task_id
     )
 
 

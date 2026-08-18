@@ -62,10 +62,9 @@ async function refreshAccessToken(): Promise<string | null> {
           import("./auth"),
         ]);
         const store = useAuthStore.getState();
-        const refreshed = await refreshSession(store.refreshToken);
+        const refreshed = await refreshSession();
         store.updateSession({
           accessToken: refreshed.accessToken,
-          refreshToken: refreshed.refreshToken ?? store.refreshToken,
           user: refreshed.user,
           workspaces: store.workspaces,
         });

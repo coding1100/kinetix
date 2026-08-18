@@ -2,7 +2,12 @@ from fastapi import APIRouter, Query, status
 
 from app.deps.auth import CurrentUserDep, DbSession
 from app.deps.workspace import WorkspaceMemberDep
-from app.schemas.team import AddTeamMemberBody, CreateTeamBody, UpdateTeamBody
+from app.schemas.team import (
+    AddTeamMemberBody,
+    CreateTeamBody,
+    CreateTeamBookmarkBody,
+    UpdateTeamBody,
+)
 from app.services import team_service
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/teams", tags=["teams"])
@@ -108,4 +113,32 @@ async def remove_team_member(
 ):
     return await team_service.remove_team_member(
         session, workspace_id, team_id, target_user_id, user.id, member.role
+    )
+
+
+@router.post("/{team_id}/bookmarks", status_code=status.HTTP_201_CREATED)
+async def create_team_bookmark(
+    body: CreateTeamBookmarkBody,
+    workspace_id: str,
+    team_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await team_service.create_team_bookmark(
+        session, workspace_id, team_id, user.id, member.role, body
+    )
+
+
+@router.delete("/{team_id}/bookmarks/{bookmark_id}")
+async def delete_team_bookmark(
+    workspace_id: str,
+    team_id: str,
+    bookmark_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    return await team_service.delete_team_bookmark(
+        session, workspace_id, team_id, bookmark_id, user.id, member.role
     )

@@ -42,7 +42,7 @@ function toInboxItem(item: NotificationDto): InboxItemDto {
 export function NotificationsMenu() {
   const router = useRouter();
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
-  const { unreadCount, items, reload } = useNotificationsUnread();
+  const { unreadCount, items, error, reload } = useNotificationsUnread();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -153,12 +153,27 @@ export function NotificationsMenu() {
             <Spinner size="sm" label="Loading notifications" />
             Loading…
           </p>
+        ) : error && items.length === 0 ? (
+          <div className="space-y-2 px-3 py-8 text-center text-sm text-muted-foreground">
+            <p>Notifications could not be loaded.</p>
+            <Button variant="outline" size="sm" onClick={() => void load()}>
+              Retry
+            </Button>
+          </div>
         ) : items.length === 0 ? (
           <p className="px-3 py-8 text-center text-sm text-muted-foreground">
             No notifications yet.
           </p>
         ) : (
           <ScrollArea className="max-h-[min(420px,60vh)]">
+            {error ? (
+              <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2 text-xs text-destructive">
+                <span>Unable to refresh notifications. Showing saved results.</span>
+                <Button variant="ghost" size="sm" onClick={() => void load()}>
+                  Retry
+                </Button>
+              </div>
+            ) : null}
             <ul className="space-y-2 p-2">
               {items.map((item) => {
                 const row = toInboxItem(item);

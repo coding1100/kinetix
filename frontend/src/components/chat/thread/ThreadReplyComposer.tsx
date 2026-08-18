@@ -51,7 +51,7 @@ export function ThreadReplyComposer({
   alsoSendChannelLabel?: string;
   conversationType?: ConversationType;
   conversationId?: string;
-  onSend?: (payload: SendMessagePayload) => Promise<void>;
+  onSend: (payload: SendMessagePayload) => Promise<void>;
 }) {
   const [alsoSend, setAlsoSend] = useState(false);
   const [sending, setSending] = useState(false);
@@ -138,17 +138,13 @@ export function ThreadReplyComposer({
     clearMentions();
     clearPending();
     try {
-      if (onSend) {
-        await onSend({
-          body: messageBody,
-          attachmentIds: ids.length ? ids : undefined,
-          optimisticAttachments: optimisticAttachments.length
-            ? optimisticAttachments
-            : undefined,
-        });
-      } else {
-        toast.success("Reply sent (mock)");
-      }
+      await onSend({
+        body: messageBody,
+        attachmentIds: ids.length ? ids : undefined,
+        optimisticAttachments: optimisticAttachments.length
+          ? optimisticAttachments
+          : undefined,
+      });
     } catch {
       restoreMentions(messageBody);
       toast.error("Failed to send reply");
@@ -173,8 +169,8 @@ export function ThreadReplyComposer({
       size="icon-sm"
       className="size-7 text-muted-foreground hover:text-foreground"
       aria-label={label}
-      disabled={disabled}
-      onClick={onClick ?? (() => toast(`${label} — coming soon`))}
+      disabled={disabled || !onClick}
+      onClick={onClick}
     >
       <Icon className="size-4" strokeWidth={1.5} />
     </Button>

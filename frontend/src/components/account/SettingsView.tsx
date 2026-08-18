@@ -36,7 +36,6 @@ import { toast } from "sonner";
 
 export function SettingsView() {
   const accessToken = useAuthStore((s) => s.accessToken);
-  const user = useAuthStore((s) => s.user);
   const workspace = useAuthStore(selectActiveWorkspace);
   const {
     theme,

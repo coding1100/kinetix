@@ -21,7 +21,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self' https://kinetix.mindrind.com; connect-src 'self' https://kinetix.mindrind.com wss://kinetix.mindrind.com; img-src 'self' data: blob: https://kinetix.mindrind.com https://*.amazonaws.com; media-src 'self' blob: https://kinetix.mindrind.com https://*.amazonaws.com; style-src 'self' 'unsafe-inline'; script-src 'self' https://kinetix.mindrind.com 'unsafe-inline'"
     }
   },
   "bundle": {

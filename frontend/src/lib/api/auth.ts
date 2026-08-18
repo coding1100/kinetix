@@ -19,7 +19,6 @@ export interface WorkspaceSummary {
 export interface LoginResponse {
   user: AuthUser;
   accessToken: string;
-  refreshToken?: string;
 }
 
 export interface SignupResponse extends LoginResponse {
@@ -111,13 +110,11 @@ export function logout() {
 export interface RefreshResponse {
   user: AuthUser;
   accessToken: string;
-  refreshToken?: string;
 }
 
-export function refreshSession(refreshToken?: string | null) {
+export function refreshSession() {
   return apiFetch<RefreshResponse>("/auth/refresh", {
     method: "POST",
-    body: refreshToken ? JSON.stringify({ refreshToken }) : undefined,
   });
 }
 

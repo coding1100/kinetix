@@ -2192,7 +2192,12 @@ async def record_recent(
 
 
 async def _get_workspace_task(
-    session: AsyncSession, workspace_id: str, task_id: str
+    session: AsyncSession,
+    workspace_id: str,
+    task_id: str,
+    user_id: str | None = None,
+    role: WorkspaceRole | None = None,
+    needed: PermissionLevel = PermissionLevel.VIEW,
 ) -> Task:
     task = await session.scalar(
         select(Task)
@@ -2202,11 +2207,13 @@ async def _get_workspace_task(
     )
     if not task:
         raise AppError(404, "NOT_FOUND", "Task not found")
+    if user_id is not None and role is not None:
+        await require_list_permission(session, task.task_list, user_id, role, needed)
     return task
 
 
 async def list_lineup(
-    session: AsyncSession, workspace_id: str, user_id: str
+    session: AsyncSession, workspace_id: str, user_id: str, role: WorkspaceRole
 ) -> dict:
     rows = (
         await session.scalars(
@@ -2223,17 +2230,30 @@ async def list_lineup(
             .order_by(UserTaskLineup.sort_order.asc())
         )
     ).all()
-    names = await _assignee_name_map(session, list(rows))
-    return {"data": [map_task(t, user_id, names) for t in rows]}
+    visible_rows = []
+    for task in rows:
+        try:
+            await require_list_permission(
+                session, task.task_list, user_id, role, PermissionLevel.VIEW
+            )
+            visible_rows.append(task)
+        except AppError as exc:
+            if exc.status_code != 403:
+                raise
+    names = await _assignee_name_map(session, visible_rows)
+    return {"data": [map_task(t, user_id, names) for t in visible_rows]}
 
 
 async def add_to_lineup(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     body: AddLineupBody,
 ) -> dict:
-    await _get_workspace_task(session, workspace_id, body.task_id)
+    await _get_workspace_task(
+        session, workspace_id, body.task_id, user_id, role, PermissionLevel.VIEW
+    )
     existing = await session.scalar(
         select(UserTaskLineup).where(
             UserTaskLineup.user_id == user_id,
@@ -2331,9 +2351,12 @@ async def follow_task(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     task_id: str,
 ) -> dict:
-    task = await _get_workspace_task(session, workspace_id, task_id)
+    task = await _get_workspace_task(
+        session, workspace_id, task_id, user_id, role, PermissionLevel.VIEW
+    )
     if user_id not in task.follower_ids:
         task.follower_ids = [*task.follower_ids, user_id]
         await session.commit()
@@ -2344,9 +2367,12 @@ async def unfollow_task(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     task_id: str,
 ) -> dict:
-    task = await _get_workspace_task(session, workspace_id, task_id)
+    task = await _get_workspace_task(
+        session, workspace_id, task_id, user_id, role, PermissionLevel.VIEW
+    )
     if user_id in task.follower_ids:
         task.follower_ids = [uid for uid in task.follower_ids if uid != user_id]
         await session.commit()
@@ -2357,6 +2383,7 @@ async def list_task_activity(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     task_id: str,
     limit: int = 50,
 ) -> dict:
@@ -2364,7 +2391,9 @@ async def list_task_activity(
     # same full history, including their own actions) - unlike InboxItem,
     # which is a per-user notification inbox and never records the actor's
     # own actions. See scripts/migrate_task_activity_log.sql.
-    task = await _get_workspace_task(session, workspace_id, task_id)
+    task = await _get_workspace_task(
+        session, workspace_id, task_id, user_id, role, PermissionLevel.VIEW
+    )
     href = f"/home/tasks/{task_id}"
     entries = list(task.activity or [])
     entries.sort(key=lambda e: e.get("createdAt") or "", reverse=True)
@@ -2389,10 +2418,13 @@ async def list_task_notifications(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     task_id: str,
     limit: int = 50,
 ) -> dict:
-    await _get_workspace_task(session, workspace_id, task_id)
+    await _get_workspace_task(
+        session, workspace_id, task_id, user_id, role, PermissionLevel.VIEW
+    )
     href = f"/home/tasks/{task_id}"
     rows = (
         await session.scalars(
@@ -2436,9 +2468,15 @@ async def list_task_notifications(
 
 
 async def mark_task_notifications_read(
-    session: AsyncSession, workspace_id: str, user_id: str, task_id: str
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    task_id: str,
 ) -> dict:
-    await _get_workspace_task(session, workspace_id, task_id)
+    await _get_workspace_task(
+        session, workspace_id, task_id, user_id, role, PermissionLevel.VIEW
+    )
     href = f"/home/tasks/{task_id}"
     result = await session.execute(
         update(InboxItem)
@@ -2472,6 +2510,8 @@ async def list_notifications(
             .limit(limit)
         )
     ).all()
+    task_ids = {tid for item in items if (tid := task_id_from_href(item.href))}
+    status_meta = await task_status_meta(session, task_ids)
     unread_count = await session.scalar(
         select(func.count())
         .select_from(InboxItem)
@@ -2493,7 +2533,18 @@ async def list_notifications(
                 "source": item.source,
                 "createdAt": as_aware_utc(item.created_at).isoformat(),
                 "unread": item.unread,
+                "group": item.time_group.value.lower(),
                 "href": item.href,
+                **(
+                    {
+                        "statusColor": status["color"],
+                        "statusName": status["name"],
+                        "statusGroup": status["statusGroup"],
+                    }
+                    if (tid := task_id_from_href(item.href))
+                    and (status := status_meta.get(tid))
+                    else {}
+                ),
             }
             for item in items
         ],
@@ -2509,6 +2560,7 @@ async def mark_all_notifications_read(
             InboxItem.workspace_id == workspace_id,
             InboxItem.user_id == user_id,
             InboxItem.unread.is_(True),
+            inbox_visible_clause(),
         )
         .values(unread=False)
     )
@@ -2526,6 +2578,7 @@ async def get_unread_summary(
             InboxItem.workspace_id == workspace_id,
             InboxItem.user_id == user_id,
             InboxItem.unread.is_(True),
+            inbox_visible_clause(),
         )
     )
     return {"home": int(count or 0)}

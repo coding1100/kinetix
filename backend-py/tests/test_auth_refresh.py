@@ -1,4 +1,4 @@
-"""Refresh session cookie + body fallback tests."""
+"""Refresh session cookie tests."""
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -8,7 +8,7 @@ from app.services import auth_service
 
 
 @pytest.mark.asyncio
-async def test_refresh_accepts_body_token(monkeypatch):
+async def test_refresh_accepts_cookie_token(monkeypatch):
     async def fake_refresh(_session, token):
         assert token == "stored-refresh-jwt"
         return {
@@ -28,12 +28,12 @@ async def test_refresh_accepts_body_token(monkeypatch):
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         res = await client.post(
             "/api/v1/auth/refresh",
-            json={"refreshToken": "stored-refresh-jwt"},
+            cookies={"riseup_refresh": "stored-refresh-jwt"},
         )
 
     assert res.status_code == 200
     assert res.json()["accessToken"] == "new-access"
-    assert res.json()["refreshToken"] == "new-refresh"
+    assert "refreshToken" not in res.json()
     assert res.cookies.get("riseup_refresh") == "new-refresh"
 
 

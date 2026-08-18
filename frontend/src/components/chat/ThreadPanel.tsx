@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   XIcon,
-  UserSquare2Icon,
   ListTodoIcon,
   ChevronDownIcon,
   SearchIcon,
@@ -508,15 +507,6 @@ export function ThreadPanel({
           </Button>
         </div>
         <div className="mt-2.5 flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 gap-1.5 border-border px-2.5 text-xs font-medium"
-            onClick={() => toast("Assign to — Phase 3")}
-          >
-            <UserSquare2Icon className="size-3.5" strokeWidth={1.5} />
-            Assign to
-          </Button>
           <Popover
             open={createTaskOpen}
             onOpenChange={(next) => {

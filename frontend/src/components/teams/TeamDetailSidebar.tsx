@@ -11,7 +11,6 @@ import {
   avatarInitialFromName,
 } from "@/lib/user-display";
 import type { TeamDetailTab } from "@/components/teams/team-utils";
-import { toast } from "sonner";
 import { PKT_TIME_ZONE } from "@/lib/utils";
 
 function formatCreated(iso: string | null) {
@@ -108,7 +107,7 @@ export function TeamDetailSidebar({
               <button
                 type="button"
                 className="font-medium underline underline-offset-2"
-                onClick={() => toast("Priorities — coming soon")}
+                onClick={() => onTabChange("priorities")}
               >
                 Learn more
               </button>
@@ -138,7 +137,7 @@ export function TeamDetailSidebar({
           <Button
             variant="link"
             className="mt-2 h-auto p-0 text-xs"
-            onClick={() => toast("Team analytics — coming soon")}
+            onClick={() => onTabChange("analytics")}
           >
             View full analytics
           </Button>

@@ -390,7 +390,6 @@ export function PeopleView() {
               accessToken={accessToken}
               workspaceId={workspaceId}
               canInviteAdmin={canInviteAdmin}
-              canInviteSuperAdmin={actorRole === "OWNER"}
               compact
               onSuccess={() => {
                 reload();

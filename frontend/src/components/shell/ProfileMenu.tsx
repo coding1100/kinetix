@@ -5,18 +5,13 @@ import { useRouter } from "next/navigation";
 import {
   UserIcon,
   SettingsIcon,
-  PaletteIcon,
   VolumeXIcon,
   ListPlusIcon,
   BriefcaseIcon,
   TimerIcon,
-  NotebookIcon,
-  VideoIcon,
   AlarmClockIcon,
   FileTextIcon,
-  PenToolIcon,
   UsersIcon,
-  LayoutDashboardIcon,
   SparklesIcon,
   Trash2Icon,
   LogOutIcon,
@@ -54,7 +49,6 @@ import {
   avatarColorClassForKey,
   avatarInitial,
 } from "@/lib/user-display";
-import { PROFILE_MENU_VISIBILITY } from "@/lib/profile-menu-config";
 import type { AuthUser } from "@/lib/api/auth";
 
 type ToolItem = {
@@ -211,19 +205,6 @@ export function ProfileMenu() {
       action: () => router.push("/home/my-tasks/today"),
     },
     {
-      id: "notepad",
-      label: "Notepad",
-      icon: <NotebookIcon className="size-4" />,
-      action: () => toast("Notepad — coming soon"),
-    },
-    {
-      id: "record-clip",
-      label: "Record a Clip",
-      icon: <VideoIcon className="size-4" />,
-      pinnable: true,
-      action: () => toast("Clip recording — coming soon"),
-    },
-    {
       id: "create-reminder",
       label: "Create Reminder",
       icon: <AlarmClockIcon className="size-4" />,
@@ -237,23 +218,10 @@ export function ProfileMenu() {
       action: () => router.push("/home/posts"),
     },
     {
-      id: "create-whiteboard",
-      label: "Create Whiteboard",
-      icon: <PenToolIcon className="size-4" />,
-      action: () => toast("Whiteboards — coming soon"),
-    },
-    {
       id: "view-people",
       label: "View People",
       icon: <UsersIcon className="size-4" />,
       action: () => router.push("/people"),
-    },
-    {
-      id: "create-dashboard",
-      label: "Create Dashboard",
-      icon: <LayoutDashboardIcon className="size-4" />,
-      pinnable: true,
-      action: () => toast("Dashboards — coming soon"),
     },
     {
       id: "ai-notetaker",
@@ -356,17 +324,9 @@ export function ProfileMenu() {
             label="Settings"
             onClick={closeAnd(() => router.push("/settings"))}
           />
-          {PROFILE_MENU_VISIBILITY.themes ? (
-            <MenuRow
-              icon={<PaletteIcon className="size-4" />}
-              label="Themes"
-              onClick={closeAnd(() => router.push("/settings"))}
-            />
-          ) : null}
         </div>
 
-        {PROFILE_MENU_VISIBILITY.personalTools ? (
-          <>
+        <>
             <DropdownMenuSeparator className="m-0" />
             <DropdownMenuGroup className="max-h-[220px] overflow-y-auto p-1 pb-2">
               <p className="px-2 pt-2 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
@@ -405,8 +365,7 @@ export function ProfileMenu() {
                 );
               })}
             </DropdownMenuGroup>
-          </>
-        ) : null}
+        </>
 
         <DropdownMenuSeparator className="m-0" />
         <div className="p-1">

@@ -4,11 +4,14 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.core.errors import AppError
 from app.core.utils import as_aware_utc
 from app.db.models.home import Space, Task, TaskAttachment, TaskList
+from app.db.models.enums import PermissionLevel, WorkspaceRole
+from app.services.folder_list_permissions import require_list_permission
 from app.db.models.user import User
 from app.services.s3_service import object_exists, presign_get, presign_put, put_object
 
@@ -35,10 +38,32 @@ async def _assert_task_in_workspace(
     return task
 
 
+async def _assert_task_access(
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    role: WorkspaceRole,
+    task_id: str,
+    needed: PermissionLevel,
+) -> Task:
+    task = await session.scalar(
+        select(Task)
+        .join(Task.task_list)
+        .join(TaskList.space)
+        .where(Task.id == task_id, Space.workspace_id == workspace_id)
+        .options(selectinload(Task.task_list))
+    )
+    if not task:
+        raise AppError(404, "NOT_FOUND", "Task not found")
+    await require_list_permission(session, task.task_list, user_id, role, needed)
+    return task
+
+
 async def presign_upload(
     session: AsyncSession,
     workspace_id: str,
     user_id: str,
+    role: WorkspaceRole,
     task_id: str,
     *,
     file_name: str,
@@ -52,7 +77,9 @@ async def presign_upload(
     if size_bytes <= 0 or size_bytes > settings.attachment_max_bytes:
         raise AppError(400, "VALIDATION_ERROR", "File exceeds size limit")
 
-    await _assert_task_in_workspace(session, workspace_id, task_id)
+    await _assert_task_access(
+        session, workspace_id, user_id, role, task_id, PermissionLevel.COMMENT
+    )
 
     attachment_id = str(uuid.uuid4())
     safe_name = _sanitize_filename(file_name)
@@ -89,6 +116,8 @@ async def upload_file_content(
     user_id: str,
     attachment_id: str,
     data: bytes,
+    role: WorkspaceRole,
+    task_id: str | None = None,
     content_type: str | None = None,
     for_comment: bool = False,
 ) -> dict:
@@ -98,7 +127,7 @@ async def upload_file_content(
             TaskAttachment.workspace_id == workspace_id,
         )
     )
-    if not row or row.uploader_id != user_id:
+    if not row or row.uploader_id != user_id or (task_id and row.task_id != task_id):
         raise AppError(404, "NOT_FOUND", "Attachment not found")
     if row.status not in {"pending", "ready"}:
         raise AppError(400, "VALIDATION_ERROR", "Attachment is no longer uploadable")
@@ -106,6 +135,15 @@ async def upload_file_content(
     settings = get_settings()
     if len(data) <= 0 or len(data) > settings.attachment_max_bytes:
         raise AppError(400, "VALIDATION_ERROR", "File exceeds size limit")
+
+    await _assert_task_access(
+        session,
+        workspace_id,
+        user_id,
+        role,
+        row.task_id,
+        PermissionLevel.COMMENT,
+    )
 
     mime = (content_type or row.mime_type or "application/octet-stream").strip()
     put_object(row.storage_key, data, mime)
@@ -121,7 +159,14 @@ async def upload_file_content(
     # separate notification/activity entry: the comment itself already shows
     # up in the feed with the attachment embedded in it.
     if not for_comment:
-        task = await _assert_task_in_workspace(session, workspace_id, row.task_id)
+        task = await _assert_task_access(
+            session,
+            workspace_id,
+            user_id,
+            role,
+            row.task_id,
+            PermissionLevel.COMMENT,
+        )
         actor = await session.get(User, user_id)
         actor_name = actor.full_name if actor else "Someone"
         entry = {

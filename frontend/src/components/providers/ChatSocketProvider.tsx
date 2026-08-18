@@ -23,7 +23,6 @@ import type {
   ResourceAccessChangedPayload,
   TaskRealtimePayload,
   AccountDisabledPayload,
-  WorkspaceMemberReactivatedPayload,
   WorkspaceMemberRolePayload,
   WorkspaceMemberSuspendedPayload,
   WorkspaceStatusPayload,
@@ -134,20 +133,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       // open (or for a thread reply, which the sidebar ignores entirely).
       const isOwnMessage = payload.message.authorId === userId;
       const soundEnabled = useSettingsStore.getState().soundEnabled;
-      // TEMPORARY: diagnosing why the sound is skipped with the chat open.
-      if (process.env.NODE_ENV !== "production") {
-        console.log("[chat sound] event", {
-          kind: payload.kind,
-          conversationId: payload.conversationId,
-          parentId: payload.parentId,
-          authorId: payload.message.authorId,
-          userId,
-          isOwnMessage,
-          soundEnabled,
-          willPlay: !isOwnMessage && soundEnabled,
-        });
-      }
-      if (!isOwnMessage && soundEnabled) {
+      if (!isOwnMessage && soundEnabled && payload.kind === "dm") {
         playNotificationSound();
       }
       // DMs only. Channel messages already raise a home:notification, which
@@ -238,6 +224,14 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     socket.on("home:notification", (payload: HomeNotificationPayload) => {
       applyHomeNotification(payload, userId, workspaceId);
       if (
+        useSettingsStore.getState().soundEnabled &&
+        userId &&
+        payload.userIds.includes(userId) &&
+        (!workspaceId || payload.workspaceId === workspaceId)
+      ) {
+        playNotificationSound();
+      }
+      if (
         useSettingsStore.getState().desktopNotifications &&
         userId &&
         payload.userIds.includes(userId) &&
@@ -249,7 +243,6 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
           tag: `notification:${notification.id}`,
           onClick: () =>
             router.push(notification.href ? toHomeHref(notification.href) : "/home/inbox"),
-          ignoreFocusCheck: true,
         });
       }
     });
@@ -343,7 +336,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     );
     socket.on(
       "workspace:member:reactivated",
-      (_payload: WorkspaceMemberReactivatedPayload) => {
+      () => {
         // Targeted at this user's own room by the backend. Not gated on
         // the currently-active workspace - unlike suspend, this doesn't
         // need to kick anyone anywhere, it just needs the workspace
@@ -459,6 +452,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     upsertPresence,
     router,
     updateSession,
+    clearSession,
     bumpSpacesRefresh,
   ]);
 

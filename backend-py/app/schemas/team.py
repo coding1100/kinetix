@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import AnyHttpUrl, BaseModel, Field
 
 from app.db.models.enums import TeamRole
 
@@ -31,3 +31,8 @@ class AddTeamMemberBody(BaseModel):
 
 class UpdateTeamMemberBody(BaseModel):
     role: TeamRole
+
+
+class CreateTeamBookmarkBody(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    url: AnyHttpUrl

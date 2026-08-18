@@ -286,6 +286,8 @@ async def exchange_oauth_code(session: AsyncSession, code: str) -> dict:
     user = await session.get(User, row.user_id)
     if not user:
         raise AppError(400, "OAUTH_CODE_INVALID", "User not found")
+    if user.is_disabled:
+        raise AppError(403, "ACCOUNT_DISABLED", "This account is disabled")
 
     row.used_at = now
     access_token = sign_access_token(sub=str(user.id), email=user.email)
