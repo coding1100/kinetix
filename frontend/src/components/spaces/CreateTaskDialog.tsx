@@ -67,12 +67,12 @@ import { getMe } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { firstSelectableWorkspaceId, useAuthStore } from "@/stores/auth-store";
 import {
-
-
   addChecklist,
   addChecklistItem,
   addTaskDependency,
+  createList,
   createListTask,
+  createSpace,
   createSubtask,
   deleteChecklist,
   deleteChecklistItem,
@@ -84,6 +84,7 @@ import {
   updateChecklist,
   updateChecklistItem,
 } from "@/lib/api/spaces";
+
 import { uploadTaskAttachment } from "@/lib/tasks/upload-task-attachment";
 import { TaskPickerDialog } from "@/components/spaces/TaskPickerDialog";
 import type { ListStatus, Task, TaskDependencyType } from "@/lib/types/task";
@@ -328,7 +329,41 @@ export function CreateTaskDialog({
       }
 
       if (cancelled) return;
-      const options = flattenListsFromSpaces(tree);
+      let options = flattenListsFromSpaces(tree);
+
+      if (options.length === 0 && tree.length === 0) {
+        try {
+          const newSpace = await createSpace(accessToken, currentWsId, {
+            name: "General",
+            color: "#4F8EF7",
+          });
+          if (newSpace?.id) {
+            await createList(accessToken, currentWsId, newSpace.id, {
+              name: "Tasks",
+            });
+            const refreshed = await fetchSpacesTree(accessToken, currentWsId);
+            tree = Array.isArray(refreshed?.data) ? refreshed.data : [];
+            options = flattenListsFromSpaces(tree);
+          }
+        } catch (err) {
+          console.error("Failed to auto-provision default space and list:", err);
+        }
+      } else if (options.length === 0 && tree.length > 0) {
+        try {
+          const firstSpace = tree[0];
+          if (firstSpace?.id) {
+            await createList(accessToken, currentWsId, firstSpace.id, {
+              name: "Tasks",
+            });
+            const refreshed = await fetchSpacesTree(accessToken, currentWsId);
+            tree = Array.isArray(refreshed?.data) ? refreshed.data : [];
+            options = flattenListsFromSpaces(tree);
+          }
+        } catch (err) {
+          console.error("Failed to auto-create list in existing space:", err);
+        }
+      }
+
       setSpaces(tree);
       setRecents(recentsData);
 
@@ -342,6 +377,7 @@ export function CreateTaskDialog({
         selected?.label ? (selected.label.split(" / ").pop() ?? "") : ""
       );
     };
+
 
     void loadOptions();
     return () => {
