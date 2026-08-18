@@ -10,6 +10,15 @@
     "core:default",
     "notification:default",
     "notification:allow-notify",
-    "shell:allow-open"
+    "shell:default",
+    {
+      "identifier": "shell:allow-open",
+      "allow": [
+        { "href": "http://*" },
+        { "href": "https://*" },
+        { "href": "mailto:*" }
+      ]
+    }
   ]
 }
+
