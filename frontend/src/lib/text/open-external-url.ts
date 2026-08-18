@@ -103,11 +103,16 @@ export async function openExternalUrl(rawUrl: string): Promise<void> {
     }
   }
 
-  // 3. Fallback standard browser window / DOM anchor trigger
+  // 3. Fallback for WebViews & older .exe binaries:
+  // window.open(url, "_blank") triggers WebView2 default OS browser handoff
   try {
-    const tab = window.open(normalized, "_blank", "noopener,noreferrer");
+    const tab = window.open(normalized, "_blank");
     if (tab) {
-      tab.opener = null;
+      try {
+        tab.opener = null;
+      } catch {
+        // ignore
+      }
       return;
     }
   } catch {
@@ -125,6 +130,7 @@ export async function openExternalUrl(rawUrl: string): Promise<void> {
   } catch (err) {
     console.error("[links] failed all open attempts for", normalized, err);
   }
+
 }
 
 
