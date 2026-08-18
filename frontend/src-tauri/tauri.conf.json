@@ -34,5 +34,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://kinetix.mindrind.com/api/v1/desktop/update/{{target}}/{{current_version}}"
+      ]
+    }
   }
 }
