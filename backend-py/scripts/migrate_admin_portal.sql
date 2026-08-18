@@ -41,14 +41,6 @@ CREATE TABLE IF NOT EXISTS "AdminAuditLog" (
 CREATE INDEX IF NOT EXISTS "AdminAuditLog_targetType_targetId_idx"
     ON "AdminAuditLog" ("targetType", "targetId");
 
-UPDATE "PlatformStaff"
-SET "role" = 'SUPER_ADMIN'
-WHERE "userId" = (
-    SELECT "userId"
-    FROM "PlatformStaff"
-    ORDER BY "createdAt" ASC
-    LIMIT 1
-)
-AND NOT EXISTS (
-    SELECT 1 FROM "PlatformStaff" WHERE "role" = 'SUPER_ADMIN'
-);
+-- SUPER_ADMIN backfill runs in migrate_platform_super_admin.sql after this
+-- migration commits. PostgreSQL cannot use a newly-added enum value in the
+-- same transaction that added it.

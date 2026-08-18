@@ -22,9 +22,9 @@ MIGRATIONS: tuple[str, ...] = (
     "backfill_channel_notification_level_default.sql",
     "migrate_content_ownership.sql",
     "migrate_folder_list_privacy.sql",
-    "migrate_share_grants.sql",
     "migrate_space_is_personal.sql",
     "migrate_space_permissions.sql",
+    "migrate_share_grants.sql",
     "migrate_space_status_config.sql",
     "migrate_list_status_config.sql",
     "migrate_list_status_followers.sql",
@@ -35,11 +35,11 @@ MIGRATIONS: tuple[str, ...] = (
     "migrate_task_activity_log.sql",
     "migrate_task_assignee_follower_arrays.sql",
     "migrate_task_checklists.sql",
+    "migrate_task_subtasks_attachments.sql",
     "migrate_task_comment_attachments.sql",
     "migrate_task_comment_threads.sql",
     "migrate_task_dates_time.sql",
     "migrate_task_dependencies.sql",
-    "migrate_task_subtasks_attachments.sql",
     "migrate_list_channel.sql",
     "migrate_teams.sql",
     "migrate_team_bookmarks.sql",
@@ -156,7 +156,8 @@ async def main() -> None:
             )
         )
 
-        for name in MIGRATIONS:
+    for name in MIGRATIONS:
+        async with engine.begin() as conn:
             path = scripts_dir / name
             if not path.exists():
                 raise RuntimeError(f"Missing migration file: {name}")
@@ -177,8 +178,13 @@ async def main() -> None:
             # asyncpg prepares each exec_driver_sql call and rejects multiple
             # commands in one prepared statement. Split only at top-level
             # semicolons so strings, comments, and DO $$...$$ blocks stay intact.
-            for statement in _split_sql_statements(raw):
-                await conn.exec_driver_sql(statement)
+            for position, statement in enumerate(_split_sql_statements(raw), start=1):
+                try:
+                    await conn.exec_driver_sql(statement)
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Migration {name} failed at statement {position}"
+                    ) from exc
             await conn.execute(
                 text(
                     'INSERT INTO "SchemaMigration" ("name", "checksum") '
