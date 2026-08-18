@@ -8,17 +8,27 @@ from app.schemas.chat import (
     AddDmParticipantsBody,
     CreateChannelBody,
     CreateDmBody,
+    StartHuddleBody,
     PinMessageBody,
     PresignAttachmentBody,
     SendMessageBody,
     ToggleReactionBody,
+    ToggleHuddleParticipantBody,
     UpdateChannelBody,
     UpdateDmBody,
     UpdateDmParticipantBody,
     UpdateMessageBody,
     UpdateChannelMemberBody,
+    UpdateCanvasBody,
+    UpdateHuddleBody,
 )
 from app.services import attachment_service, chat_enhancements, chat_service
+from app.services import chat_canvas_service, chat_huddle_service
+from app.socket.emit import (
+    broadcast_channel_canvas_updated,
+    broadcast_channel_huddle_updated,
+    fire_and_forget,
+)
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["chat"])
 
@@ -88,6 +98,188 @@ async def get_channel_files(
     return await attachment_service.list_channel_files(
         session, workspace_id, user.id, channel_id
     )
+
+
+@router.get("/chat/channels/{channel_id}/canvas")
+async def get_channel_canvas(
+    workspace_id: str,
+    channel_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await chat_canvas_service.get_canvas(
+        session, workspace_id, user.id, channel_id
+    )
+
+
+@router.put("/chat/channels/{channel_id}/canvas")
+async def put_channel_canvas(
+    body: UpdateCanvasBody,
+    workspace_id: str,
+    channel_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    canvas = await chat_canvas_service.update_canvas(
+        session, workspace_id, user.id, channel_id, body
+    )
+    fire_and_forget(
+        broadcast_channel_canvas_updated(
+            workspace_id=workspace_id,
+            channel_id=channel_id,
+            canvas=canvas,
+        )
+    )
+    return canvas
+
+
+@router.get("/chat/channels/{channel_id}/huddles")
+async def get_channel_huddles(
+    workspace_id: str,
+    channel_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    return await chat_huddle_service.list_huddles(
+        session, workspace_id, user.id, channel_id
+    )
+
+
+@router.post("/chat/channels/{channel_id}/huddles/start", status_code=status.HTTP_201_CREATED)
+async def post_channel_huddle_start(
+    body: StartHuddleBody,
+    workspace_id: str,
+    channel_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    huddle = await chat_huddle_service.start_huddle(
+        session, workspace_id, user.id, channel_id, body
+    )
+    fire_and_forget(
+        broadcast_channel_huddle_updated(
+            workspace_id=workspace_id,
+            channel_id=channel_id,
+            huddle=huddle,
+        )
+    )
+    return huddle
+
+
+@router.patch("/chat/channels/{channel_id}/huddles/{huddle_id}")
+async def patch_channel_huddle(
+    body: UpdateHuddleBody,
+    workspace_id: str,
+    channel_id: str,
+    huddle_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    huddle = await chat_huddle_service.update_huddle(
+        session, workspace_id, user.id, channel_id, huddle_id, body
+    )
+    fire_and_forget(
+        broadcast_channel_huddle_updated(
+            workspace_id=workspace_id,
+            channel_id=channel_id,
+            huddle=huddle,
+        )
+    )
+    return huddle
+
+
+@router.post("/chat/channels/{channel_id}/huddles/{huddle_id}/join")
+async def post_channel_huddle_join(
+    workspace_id: str,
+    channel_id: str,
+    huddle_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    huddle = await chat_huddle_service.join_huddle(
+        session, workspace_id, user.id, channel_id, huddle_id
+    )
+    fire_and_forget(
+        broadcast_channel_huddle_updated(
+            workspace_id=workspace_id,
+            channel_id=channel_id,
+            huddle=huddle,
+        )
+    )
+    return huddle
+
+
+@router.post("/chat/channels/{channel_id}/huddles/{huddle_id}/leave")
+async def post_channel_huddle_leave(
+    workspace_id: str,
+    channel_id: str,
+    huddle_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    huddle = await chat_huddle_service.leave_huddle(
+        session, workspace_id, user.id, channel_id, huddle_id
+    )
+    fire_and_forget(
+        broadcast_channel_huddle_updated(
+            workspace_id=workspace_id,
+            channel_id=channel_id,
+            huddle=huddle,
+        )
+    )
+    return huddle
+
+
+@router.post("/chat/channels/{channel_id}/huddles/{huddle_id}/end")
+async def post_channel_huddle_end(
+    workspace_id: str,
+    channel_id: str,
+    huddle_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    huddle = await chat_huddle_service.end_huddle(
+        session, workspace_id, user.id, channel_id, huddle_id
+    )
+    fire_and_forget(
+        broadcast_channel_huddle_updated(
+            workspace_id=workspace_id,
+            channel_id=channel_id,
+            huddle=huddle,
+        )
+    )
+    return huddle
+
+
+@router.patch("/chat/channels/{channel_id}/huddles/{huddle_id}/me")
+async def patch_channel_huddle_me(
+    body: ToggleHuddleParticipantBody,
+    workspace_id: str,
+    channel_id: str,
+    huddle_id: str,
+    session: DbSession,
+    user: CurrentUserDep,
+    _member: WorkspaceMemberDep,
+):
+    huddle = await chat_huddle_service.set_huddle_participant_muted(
+        session, workspace_id, user.id, channel_id, huddle_id, body
+    )
+    fire_and_forget(
+        broadcast_channel_huddle_updated(
+            workspace_id=workspace_id,
+            channel_id=channel_id,
+            huddle=huddle,
+        )
+    )
+    return huddle
 
 
 @router.get("/chat/channels")

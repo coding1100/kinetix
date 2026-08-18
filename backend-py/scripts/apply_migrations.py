@@ -49,6 +49,7 @@ MIGRATIONS: tuple[str, ...] = (
     "migrate_invite_invited_by_cascade.sql",
     "migrate_admin_portal.sql",
     "migrate_platform_super_admin.sql",
+    "migrate_chat_canvas_huddles.sql",
 )
 
 

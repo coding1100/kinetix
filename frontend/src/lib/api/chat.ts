@@ -1,6 +1,8 @@
 import { apiFetch } from "./client";
 import type {
   Channel,
+  ChannelCanvas,
+  ChannelHuddle,
   ChannelMember,
   ChannelNotificationLevel,
   ChatMessage,
@@ -42,6 +44,29 @@ export function fetchChannel(
   return apiFetch<Channel>(
     wsPath(workspaceId, `/chat/channels/${channelId}`),
     { token, ...init }
+  );
+}
+
+export function fetchChannelCanvas(
+  token: string,
+  workspaceId: string,
+  channelId: string
+) {
+  return apiFetch<ChannelCanvas>(
+    wsPath(workspaceId, `/chat/channels/${channelId}/canvas`),
+    { token }
+  );
+}
+
+export function updateChannelCanvas(
+  token: string,
+  workspaceId: string,
+  channelId: string,
+  body: { title: string; body: string; expectedRevision?: number }
+) {
+  return apiFetch<ChannelCanvas>(
+    wsPath(workspaceId, `/chat/channels/${channelId}/canvas`),
+    { method: "PUT", token, body: JSON.stringify(body) }
   );
 }
 
@@ -273,6 +298,91 @@ export function searchChannelMessages(
   return apiFetch<{ data: ChatSearchHit[] }>(
     wsPath(workspaceId, `/chat/channels/${channelId}/messages/search?q=${q}`),
     { token }
+  );
+}
+
+export function fetchChannelHuddles(
+  token: string,
+  workspaceId: string,
+  channelId: string
+) {
+  return apiFetch<{ current: ChannelHuddle | null; data: ChannelHuddle[] }>(
+    wsPath(workspaceId, `/chat/channels/${channelId}/huddles`),
+    { token }
+  );
+}
+
+export function startChannelHuddle(
+  token: string,
+  workspaceId: string,
+  channelId: string,
+  body: { title: string; notes: string }
+) {
+  return apiFetch<ChannelHuddle>(
+    wsPath(workspaceId, `/chat/channels/${channelId}/huddles/start`),
+    { method: "POST", token, body: JSON.stringify(body) }
+  );
+}
+
+export function updateChannelHuddle(
+  token: string,
+  workspaceId: string,
+  channelId: string,
+  huddleId: string,
+  body: { title?: string; notes?: string; isActive?: boolean }
+) {
+  return apiFetch<ChannelHuddle>(
+    wsPath(workspaceId, `/chat/channels/${channelId}/huddles/${huddleId}`),
+    { method: "PATCH", token, body: JSON.stringify(body) }
+  );
+}
+
+export function joinChannelHuddle(
+  token: string,
+  workspaceId: string,
+  channelId: string,
+  huddleId: string
+) {
+  return apiFetch<ChannelHuddle>(
+    wsPath(workspaceId, `/chat/channels/${channelId}/huddles/${huddleId}/join`),
+    { method: "POST", token }
+  );
+}
+
+export function leaveChannelHuddle(
+  token: string,
+  workspaceId: string,
+  channelId: string,
+  huddleId: string
+) {
+  return apiFetch<ChannelHuddle>(
+    wsPath(workspaceId, `/chat/channels/${channelId}/huddles/${huddleId}/leave`),
+    { method: "POST", token }
+  );
+}
+
+export function endChannelHuddle(
+  token: string,
+  workspaceId: string,
+  channelId: string,
+  huddleId: string
+) {
+  return apiFetch<ChannelHuddle>(
+    wsPath(workspaceId, `/chat/channels/${channelId}/huddles/${huddleId}/end`),
+    { method: "POST", token }
+  );
+}
+
+export function updateMyChannelHuddle(
+  token: string,
+  workspaceId: string,
+  channelId: string,
+  huddleId: string,
+  body: { muted?: boolean }
+) {
+  return apiFetch<ChannelHuddle>(
+    wsPath(workspaceId, `/chat/channels/${channelId}/huddles/${huddleId}/me`),
+    { method: "PATCH", token, body: JSON.stringify(body) }
   );
 }
 

@@ -9,6 +9,8 @@ import type {
   ChatChannelJoinedPayload,
   ChatChannelMemberPayload,
   ChatChannelPrivacyPayload,
+  ChatChannelCanvasPayload,
+  ChatChannelHuddlePayload,
   ChatChannelRemovedPayload,
   ChatChannelRenamedPayload,
   ChatMessageDeletePayload,
@@ -76,6 +78,9 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
   const upsertPresence = usePresenceStore((s) => s.upsertPresence);
   const setPresenceWorkspace = usePresenceStore((s) => s.setWorkspace);
   const bumpSpacesRefresh = useSpacesStore((s) => s.bumpRefresh);
+  const bumpChannelSurfaceRefresh = useChatStore(
+    (s) => s.bumpChannelSurfaceRefresh
+  );
   const socketRef = useRef<Socket | null>(null);
   const presenceRef = useRef(presence);
   const joinedWorkspaceRef = useRef<string | null>(null);
@@ -220,6 +225,14 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     });
     socket.on("chat:channel:privacy", (payload: ChatChannelPrivacyPayload) => {
       applyChannelPrivacyChanged(payload);
+    });
+    socket.on("chat:channel:canvas", (payload: ChatChannelCanvasPayload) => {
+      if (payload.workspaceId !== workspaceId) return;
+      bumpChannelSurfaceRefresh(payload.channelId);
+    });
+    socket.on("chat:channel:huddle", (payload: ChatChannelHuddlePayload) => {
+      if (payload.workspaceId !== workspaceId) return;
+      bumpChannelSurfaceRefresh(payload.channelId);
     });
     socket.on("home:notification", (payload: HomeNotificationPayload) => {
       applyHomeNotification(payload, userId, workspaceId);
@@ -416,6 +429,8 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       socket.off("chat:channel:member");
       socket.off("chat:channel:renamed");
       socket.off("chat:channel:privacy");
+      socket.off("chat:channel:canvas");
+      socket.off("chat:channel:huddle");
       socket.off("home:notification");
       socket.off("workspace:member:role");
       socket.off("workspace:suspended");
@@ -450,6 +465,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     ingestReadEvent,
     syncPresence,
     upsertPresence,
+    bumpChannelSurfaceRefresh,
     router,
     updateSession,
     clearSession,

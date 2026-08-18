@@ -67,6 +67,18 @@ export type ChatChannelPrivacyPayload = {
   isPrivate: boolean;
 };
 
+export type ChatChannelCanvasPayload = {
+  workspaceId: string;
+  channelId: string;
+  canvas: import("@/lib/types/chat").ChannelCanvas;
+};
+
+export type ChatChannelHuddlePayload = {
+  workspaceId: string;
+  channelId: string;
+  huddle: import("@/lib/types/chat").ChannelHuddle;
+};
+
 export type { HomeNotificationPayload } from "@/lib/notifications/realtime";
 
 export type PresenceSyncPayload = {

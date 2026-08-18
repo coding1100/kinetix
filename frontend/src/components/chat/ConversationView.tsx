@@ -95,6 +95,7 @@ import { UNREAD_BADGE_HIDE_DELAY_MS } from "@/lib/chat/sidebar-display-unread";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { PersonProfilePanel } from "@/components/chat/PersonProfilePanel";
 import { MessageQuoteToolbar } from "@/components/chat/MessageQuoteToolbar";
+import { ChannelSurfaceNav } from "@/components/chat/channel/ChannelSurfaceNav";
 
 const MESSAGE_PAGE_SIZE = 50;
 
@@ -1139,6 +1140,13 @@ export function ConversationView({
           )}
         </div>
       </header>
+      ) : null}
+      {type === "channel" ? (
+        <ChannelSurfaceNav
+          channelId={id}
+          active="messages"
+          className="border-t-0"
+        />
       ) : null}
       <Separator />
       <div className="flex min-h-0 flex-1 overflow-hidden">
