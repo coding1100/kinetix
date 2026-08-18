@@ -11,6 +11,9 @@
     "notification:default",
     "notification:allow-notify",
     "shell:default",
+    "updater:default",
+    "updater:allow-check",
+    "updater:allow-download-and-install",
     {
       "identifier": "shell:allow-open",
       "allow": [
@@ -21,4 +24,5 @@
     }
   ]
 }
+
 
