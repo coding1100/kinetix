@@ -581,8 +581,6 @@ async def list_drafts_sent(
 async def list_spaces(
     session: AsyncSession, workspace_id: str, user_id: str, role: WorkspaceRole
 ) -> dict:
-    await ensure_personal_space(session, workspace_id)
-    await session.commit()
     visible = await visible_space_ids(session, workspace_id, user_id, role)
     spaces = (
         await session.scalars(
