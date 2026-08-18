@@ -1,7 +1,5 @@
--- Transform TaskChecklistItem from task-direct to checklist-based.
--- Drop old table, create TaskChecklist, recreate TaskChecklistItem with proper FK.
-
-DROP TABLE IF EXISTS "TaskChecklistItem";
+-- Create the checklist schema idempotently. Never drop the item table here:
+-- installations that already use this schema may contain production data.
 
 CREATE TABLE IF NOT EXISTS "TaskChecklist" (
   id VARCHAR PRIMARY KEY,

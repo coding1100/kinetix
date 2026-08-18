@@ -36,7 +36,7 @@ jobs:
 
   deploy-app:
     name: Deploy production app
-    needs: changes
+    needs: [changes, validate-api]
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -66,6 +66,59 @@ jobs:
       - name: Summary
         if: success()
         run: echo "Deployed app (api/web) to production EC2"
+
+  validate-api:
+    name: Validate API migrations
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kinetix_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d kinetix_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    defaults:
+      run:
+        working-directory: backend-py
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/kinetix_ci
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/kinetix_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install API dependencies
+        run: uv sync --frozen --no-dev
+      - name: Create current schema
+        run: |
+          uv run python - <<'PY'
+          import asyncio
+          from app.db import models  # noqa: F401
+          from app.db.base import Base
+          from app.db.session import get_engine
+
+          async def create_schema():
+              engine = get_engine()
+              async with engine.begin() as connection:
+                  await connection.run_sync(Base.metadata.create_all)
+              await engine.dispose()
+
+          asyncio.run(create_schema())
+          PY
+      - name: Apply migration manifest twice
+        run: |
+          uv run python scripts/apply_migrations.py
+          uv run python scripts/apply_migrations.py
 
   deploy-admin:
     name: Deploy admin portal

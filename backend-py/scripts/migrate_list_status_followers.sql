@@ -1,6 +1,12 @@
 -- Run once: per-list custom statuses + task followers.
 -- StatusGroup enum is created by the versioned migration gate if missing.
 
+DO $$ BEGIN
+  CREATE TYPE "StatusGroup" AS ENUM ('NOT_STARTED', 'ACTIVE', 'DONE', 'CLOSED');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
 CREATE TABLE IF NOT EXISTS "ListStatus" (
   id VARCHAR PRIMARY KEY,
   "listId" VARCHAR NOT NULL REFERENCES "TaskList"(id) ON DELETE CASCADE,
