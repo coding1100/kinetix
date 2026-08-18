@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { TeamsGrid } from "@/components/teams/TeamsGrid";
 import { PageLoader } from "@/components/ui/page-loader";

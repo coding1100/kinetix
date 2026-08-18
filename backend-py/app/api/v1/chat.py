@@ -1,5 +1,6 @@
 from fastapi import APIRouter, File, Query, UploadFile, status
 
+from app.api.upload_limits import read_upload_limited
 from app.deps.auth import CurrentUserDep, DbSession
 from app.deps.workspace import WorkspaceMemberDep
 from app.schemas.chat import (
@@ -52,7 +53,7 @@ async def post_attachment_upload(
     _member: WorkspaceMemberDep,
     file: UploadFile = File(...),
 ):
-    data = await file.read()
+    data = await read_upload_limited(file)
     return await attachment_service.upload_file_content(
         session,
         workspace_id,

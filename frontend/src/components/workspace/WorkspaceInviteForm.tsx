@@ -40,7 +40,6 @@ type Props = {
   accessToken: string;
   workspaceId: string;
   canInviteAdmin?: boolean;
-  canInviteSuperAdmin?: boolean;
   onSuccess?: () => void;
   compact?: boolean;
 };
@@ -49,7 +48,6 @@ export function WorkspaceInviteForm({
   accessToken,
   workspaceId,
   canInviteAdmin = false,
-  canInviteSuperAdmin = false,
   onSuccess,
   compact = false,
 }: Props) {

@@ -118,24 +118,20 @@ export function TeamsSidebar({
             <UsersIcon className="size-4 shrink-0" />
             All People
           </Link>
-          <button
-            type="button"
-            disabled
-            className={cn(navLinkClass(false), "w-full cursor-not-allowed opacity-50")}
-            title="Coming soon"
+          <Link
+            href="/teams/org-chart"
+            className={navLinkClass(pathname === "/teams/org-chart")}
           >
             <NetworkIcon className="size-4 shrink-0" />
             Org Chart
-          </button>
-          <button
-            type="button"
-            disabled
-            className={cn(navLinkClass(false), "w-full cursor-not-allowed opacity-50")}
-            title="Coming soon"
+          </Link>
+          <Link
+            href="/teams/analytics"
+            className={navLinkClass(pathname === "/teams/analytics")}
           >
             <BarChart3Icon className="size-4 shrink-0" />
             Analytics
-          </button>
+          </Link>
         </nav>
 
         <Separator className="my-3" />

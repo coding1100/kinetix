@@ -17,7 +17,7 @@ interface PresenceState {
   seedPresence: (entries: { userId: string; status: PresenceStatus }[]) => void;
 }
 
-export const usePresenceStore = create<PresenceState>((set, get) => ({
+export const usePresenceStore = create<PresenceState>((set) => ({
   workspaceId: null,
   byUserId: {},
   setWorkspace: (workspaceId) => set({ workspaceId, byUserId: {} }),

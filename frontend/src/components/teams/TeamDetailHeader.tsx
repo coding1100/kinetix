@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  MoreHorizontalIcon,
-  PencilIcon,
-  Trash2Icon,
-  UserPlusIcon,
-} from "lucide-react";
+import { MoreHorizontalIcon, PencilIcon, Trash2Icon, UserPlusIcon } from "lucide-react";
 import type { TeamDetail } from "@/lib/api/teams";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -17,8 +12,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { TEAM_DETAIL_TABS, teamHandle, type TeamDetailTab } from "@/components/teams/team-utils";
-import { cn } from "@/lib/utils";
-import { toast } from "sonner";
 
 export function TeamDetailHeader({
   team,
@@ -85,27 +78,16 @@ export function TeamDetailHeader({
 
       <Tabs
         value={tab}
-        onValueChange={(v) => {
-          const next = TEAM_DETAIL_TABS.find((t) => t.id === v);
-          if (next?.enabled) onTabChange(next.id);
-          else if (v) toast(`${next?.label ?? v} — coming soon`);
+        onValueChange={(value) => {
+          const next = TEAM_DETAIL_TABS.find((item) => item.id === value);
+          if (next) onTabChange(next.id);
         }}
         className="px-6"
       >
         <div className="-mx-6 overflow-x-auto overflow-y-hidden px-6 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-          <TabsList
-            variant="line"
-            className="h-auto w-max min-w-full justify-start gap-0 border-0 pb-0"
-          >
+          <TabsList variant="line" className="h-auto w-max min-w-full justify-start gap-0 border-0 pb-0">
             {TEAM_DETAIL_TABS.map((item) => (
-              <TabsTrigger
-                key={item.id}
-                value={item.id}
-                className={cn(
-                  "shrink-0 px-3 py-2 text-sm",
-                  !item.enabled && "opacity-60"
-                )}
-              >
+              <TabsTrigger key={item.id} value={item.id} className="shrink-0 px-3 py-2 text-sm">
                 {item.label}
               </TabsTrigger>
             ))}

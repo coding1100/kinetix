@@ -76,7 +76,10 @@ git reset --hard "origin/$DEPLOY_BRANCH"
 log "Deployed commit: $(git rev-parse --short HEAD) — $(git log -1 --format='%s')"
 
 disable_staging_systemd
-ensure_edge_network
+if ! docker network inspect edge >/dev/null 2>&1; then
+  log "Create shared edge Docker network"
+  docker network create edge
+fi
 
 log "Ensure production stack is up ($PROD_ROOT)"
 cd "$PROD_ROOT"

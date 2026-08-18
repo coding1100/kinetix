@@ -29,7 +29,7 @@ import {
   avatarColorClassForKey,
   avatarInitialFromName,
 } from "@/lib/user-display";
-import { updateDmParticipant } from "@/lib/api/chat";
+import { sendDmMessage, updateDmParticipant } from "@/lib/api/chat";
 import { formatRequestError } from "@/lib/api/client";
 import { patchSidebarDm, removeDmFromSidebar } from "@/lib/chat/sidebar-dm";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
@@ -148,12 +148,14 @@ function OneToOneSettings({
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const setDmDetailsView = useChatStore((s) => s.setDmDetailsView);
   const openPersonProfile = useChatStore((s) => s.openPersonProfile);
+  const setPersonProfileTab = useChatStore((s) => s.setPersonProfileTab);
   const sidebarStarred = useChatStore(
     (s) => s.sidebarListsCache?.dms.find((d) => d.id === dmId)?.starred
   );
   const { member, loading } = usePersonProfileMember(otherUserId);
   const presence = useUserPresence(otherUserId, "offline");
   const [filesExpanded, setFilesExpanded] = useState(false);
+  const [syncUpBusy, setSyncUpBusy] = useState(false);
 
   const displayName = member?.fullName ?? dm.name;
   const attachments = useMemo(() => collectAttachments(messages), [messages]);
@@ -205,6 +207,30 @@ function OneToOneSettings({
     setDmDetailsView(null);
     toast.success("DM closed. Will reappear with new messages.");
     router.push("/chat");
+  };
+
+  const openPriorities = () => {
+    setPersonProfileTab("tasks");
+    openPersonProfile(otherUserId);
+  };
+
+  const requestSyncUp = async () => {
+    if (!ready || syncUpBusy) return;
+    setSyncUpBusy(true);
+    try {
+      await sendDmMessage(
+        accessToken,
+        workspaceId,
+        dmId,
+        `Hi ${displayName}, can we schedule a quick SyncUp?`
+      );
+      toast.success("SyncUp request sent");
+      setDmDetailsView(null);
+    } catch (error) {
+      toast.error(formatRequestError(error));
+    } finally {
+      setSyncUpBusy(false);
+    }
   };
 
   if (loading) {
@@ -261,7 +287,7 @@ function OneToOneSettings({
               <button
                 type="button"
                 className="flex flex-col items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => toast("Priorities (coming soon)")}
+                onClick={openPriorities}
               >
                 <span className="flex size-10 items-center justify-center rounded-full border border-border bg-background">
                   <FlagIcon className="size-4" strokeWidth={1.75} />
@@ -271,7 +297,8 @@ function OneToOneSettings({
               <button
                 type="button"
                 className="flex flex-col items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => toast("SyncUp (coming soon)")}
+                onClick={() => void requestSyncUp()}
+                disabled={syncUpBusy || !ready}
               >
                 <span className="flex size-10 items-center justify-center rounded-full border border-border bg-background">
                   <PhoneIcon className="size-4" strokeWidth={1.75} />

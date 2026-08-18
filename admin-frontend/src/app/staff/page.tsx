@@ -9,6 +9,7 @@ import { formatRequestError, isAbortError } from "@/lib/api/client";
 import { PKT_TIME_ZONE } from "@/lib/audit";
 import {
   type AdminUserRow,
+  type PlatformRole,
   type PlatformStaffMember,
   grantPlatformStaff,
   listPlatformStaff,
@@ -38,6 +39,7 @@ export default function StaffPage() {
   const [searching, setSearching] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [selected, setSelected] = useState<AdminUserRow | null>(null);
+  const [grantRole, setGrantRole] = useState<PlatformRole>("STAFF");
   const [granting, setGranting] = useState(false);
   const searchAbortRef = useRef<AbortController | null>(null);
 
@@ -104,9 +106,10 @@ export default function StaffPage() {
     setGranting(true);
     setError(null);
     try {
-      await grantPlatformStaff(accessToken, selected.email);
+      await grantPlatformStaff(accessToken, selected.email, grantRole);
       setQuery("");
       setSelected(null);
+      setGrantRole("STAFF");
       await load();
     } catch (err) {
       setError(formatRequestError(err));
@@ -173,6 +176,14 @@ export default function StaffPage() {
               </div>
             )}
           </div>
+          <select
+            value={grantRole}
+            onChange={(e) => setGrantRole(e.target.value as PlatformRole)}
+            className="rounded border border-[var(--border)] bg-transparent px-3 py-2 text-sm"
+          >
+            <option value="STAFF">Staff</option>
+            <option value="SUPER_ADMIN">Super admin</option>
+          </select>
           <button
             type="button"
             disabled={!selected || granting}
@@ -195,6 +206,7 @@ export default function StaffPage() {
               <tr>
                 <th className="px-3 py-2">Name</th>
                 <th className="px-3 py-2">Email</th>
+                <th className="px-3 py-2">Role</th>
                 <th className="px-3 py-2">Granted by</th>
                 <th className="px-3 py-2">Since</th>
                 <th className="px-3 py-2">Actions</th>
@@ -212,6 +224,7 @@ export default function StaffPage() {
                       )}
                     </td>
                     <td className="px-3 py-2">{s.email}</td>
+                    <td className="px-3 py-2">{s.role}</td>
                     <td className="px-3 py-2 text-[var(--muted-foreground)]">
                       {s.grantedBy ? `${s.grantedBy.fullName} (${s.grantedBy.email})` : "—"}
                     </td>
@@ -240,7 +253,7 @@ export default function StaffPage() {
               })}
               {items.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center text-[var(--muted-foreground)]">
+                  <td colSpan={6} className="px-3 py-6 text-center text-[var(--muted-foreground)]">
                     No platform admins yet.
                   </td>
                 </tr>

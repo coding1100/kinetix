@@ -76,4 +76,7 @@ async def check() -> None:
 asyncio.run(check())
 PY
 
+echo "Applying database migrations..."
+python scripts/apply_migrations.py
+
 exec python -m uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-4000}"

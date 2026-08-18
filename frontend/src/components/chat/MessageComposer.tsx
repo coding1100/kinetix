@@ -66,7 +66,7 @@ type MessageComposerProps = {
   className?: string;
   conversationType?: ConversationType;
   conversationId?: string;
-  onSend?: (payload: SendMessagePayload) => Promise<void>;
+  onSend: (payload: SendMessagePayload) => Promise<void>;
 };
 
 export function MessageComposer({
@@ -190,17 +190,13 @@ export function MessageComposer({
       emitTypingStop(workspaceId, conversationType, conversationId);
     }
     try {
-      if (onSend) {
-        await onSend({
-          body: messageBody,
-          attachmentIds: ids.length ? ids : undefined,
-          optimisticAttachments: optimisticAttachments.length
-            ? optimisticAttachments
-            : undefined,
-        });
-      } else {
-        toast.success("Message sent (mock)");
-      }
+      await onSend({
+        body: messageBody,
+        attachmentIds: ids.length ? ids : undefined,
+        optimisticAttachments: optimisticAttachments.length
+          ? optimisticAttachments
+          : undefined,
+      });
     } catch (err) {
       restoreMentions(messageBody);
       const detail = formatRequestError(err);
@@ -230,8 +226,8 @@ export function MessageComposer({
             size="icon-sm"
             className="size-6 text-muted-foreground hover:text-foreground"
             aria-label={label}
-            disabled={disabled}
-            onClick={onClick ?? (() => toast(`${label} — coming soon`))}
+            disabled={disabled || !onClick}
+            onClick={onClick}
           >
             <Icon className="size-3.5" strokeWidth={1.5} />
           </Button>

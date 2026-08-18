@@ -48,7 +48,6 @@ function LoginForm() {
       const me = await getMe(result.accessToken);
       setSession({
         accessToken: result.accessToken,
-        refreshToken: result.refreshToken ?? null,
         user: result.user,
         workspaces: me.workspaces,
       });

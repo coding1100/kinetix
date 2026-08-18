@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     s3_attachments_bucket: str = ""
     s3_presign_expires_seconds: int = 900
     attachment_max_bytes: int = 26_214_400
+    avatar_max_bytes: int = 5_242_880
+    auth_rate_limit_enabled: bool = True
+    auth_rate_limit_window_seconds: int = 900
+    auth_login_ip_limit: int = 30
+    auth_login_account_limit: int = 10
+    auth_signup_ip_limit: int = 20
+    auth_refresh_ip_limit: int = 120
+    auth_password_reset_ip_limit: int = 20
+    auth_password_reset_account_limit: int = 5
 
     @property
     def s3_configured(self) -> bool:

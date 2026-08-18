@@ -18,4 +18,15 @@ async def get_platform_staff(
     return role
 
 
+async def get_platform_super_admin(
+    user: CurrentUserDep,
+    session: DbSession,
+) -> PlatformRole:
+    role = await get_platform_staff(user, session)
+    if role != PlatformRole.SUPER_ADMIN:
+        raise AppError(403, "FORBIDDEN", "Platform super-admin access required")
+    return role
+
+
 PlatformStaffDep = Annotated[PlatformRole, Depends(get_platform_staff)]
+PlatformSuperAdminDep = Annotated[PlatformRole, Depends(get_platform_super_admin)]

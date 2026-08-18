@@ -70,26 +70,25 @@ docker cp backend-py/scripts/. "$api_id":/app/scripts/
 ## 7. Check schema drift — this tells you exactly what to run, don't guess
 
 ```
-docker exec -it "$api_id" sh -c "export DATABASE_URL=\"postgresql://\${POSTGRES_USER}:\${POSTGRES_PASSWORD}@postgres:5432/\${POSTGRES_DB}\"; cd /app && /app/.venv/bin/python scripts/check_schema_drift.py"
+docker exec -it "$api_id" sh -c "cd /app && /app/.venv/bin/python scripts/apply_migrations.py"
 ```
 Prints `MISSING` for every table/column the ORM models expect but the DB
 doesn't have yet — exactly what breaks pages at runtime — and, next to each
-finding, which `run_*_migration.py` fixes it. Ends with a copy-pasteable
+finding. The versioned migration gate applies the required SQL files in order.
 summary block, e.g.:
 ```
 Schema drift found. Scripts to run:
-  python scripts/run_folder_list_privacy_migration.py
-  python scripts/run_share_grants_migration.py
+  python scripts/apply_migrations.py
 ```
 If a table's `.sql` file has no `run_*.py` wrapping it yet, it prints
 `MANUAL: <file>.sql (no run_*.py wraps it - run via psql directly)` instead —
-write the missing runner script (see existing `run_*_migration.py` for the
-pattern) rather than hand-running SQL, so it's covered next time too.
+register the missing SQL file in `scripts/apply_migrations.py` rather than
+hand-running SQL, so deployment remains repeatable.
 
 ## 8. Run each script the drift check listed
 
 ```
-docker exec -it "$api_id" sh -c "export DATABASE_URL=\"postgresql://\${POSTGRES_USER}:\${POSTGRES_PASSWORD}@postgres:5432/\${POSTGRES_DB}\"; cd /app && /app/.venv/bin/python scripts/<name_from_step_7>.py"
+docker exec -it "$api_id" sh -c "cd /app && /app/.venv/bin/python scripts/apply_migrations.py"
 ```
 Stop and inspect if any one fails before running the next — they aren't
 chained in one transaction.
@@ -97,7 +96,7 @@ chained in one transaction.
 ## 9. Re-run drift check — must come back clean
 
 ```
-docker exec -it "$api_id" sh -c "export DATABASE_URL=\"postgresql://\${POSTGRES_USER}:\${POSTGRES_PASSWORD}@postgres:5432/\${POSTGRES_DB}\"; cd /app && /app/.venv/bin/python scripts/check_schema_drift.py"
+docker exec -it "$api_id" sh -c "cd /app && /app/.venv/bin/python scripts/apply_migrations.py"
 ```
 Expect: `No drift - DB schema matches all ORM models.`
 

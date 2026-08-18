@@ -5,11 +5,9 @@ type Modal =
   | "create-task"
   | "new-channel"
   | "new-dm"
-  | "schedule-message"
   | "invite-people"
   | "channel-share"
   | "channel-files"
-  | "syncup"
   | "rename-channel"
   | "change-channel-icon"
   | null;

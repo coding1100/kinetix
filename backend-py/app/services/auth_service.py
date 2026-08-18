@@ -109,6 +109,8 @@ async def login(session: AsyncSession, body: LoginBody) -> dict:
         raise AppError(401, "INVALID_CREDENTIALS", "Invalid email or password")
     if not verify_password(body.password, user.password_hash):
         raise AppError(401, "INVALID_CREDENTIALS", "Invalid email or password")
+    if user.is_disabled:
+        raise AppError(403, "ACCOUNT_DISABLED", "This account is disabled")
 
     access_token = sign_access_token(sub=str(user.id), email=user.email)
     refresh_token = await issue_refresh_for_user(session, user.id)
@@ -146,6 +148,8 @@ async def refresh_session(session: AsyncSession, refresh_token: str) -> dict:
     user = await session.get(User, user_id)
     if not user:
         raise AppError(401, "UNAUTHORIZED", "User not found")
+    if user.is_disabled:
+        raise AppError(403, "ACCOUNT_DISABLED", "This account is disabled")
 
     await session.delete(matched)
     access_token = sign_access_token(sub=str(user.id), email=user.email)

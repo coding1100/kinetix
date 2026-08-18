@@ -268,6 +268,66 @@ export default function WorkspacesPage() {
     await load(debouncedQ, statusFilter, showArchived, 0);
   };
 
+  const refreshAudit = useCallback(
+    async (workspaceId: string) => {
+      if (!accessToken || auditFor !== workspaceId) return;
+      try {
+        const result = await listAuditLog(accessToken, {
+          targetType: "workspace",
+          targetId: workspaceId,
+          limit: 25,
+        });
+        setAuditEntries(result.items);
+      } catch (err) {
+        setError(formatRequestError(err));
+      }
+    },
+    [accessToken, auditFor]
+  );
+
+  const toggleAudit = async (workspaceId: string) => {
+    if (!accessToken) return;
+    if (auditFor === workspaceId) {
+      setAuditFor(null);
+      setAuditEntries([]);
+      return;
+    }
+    setAuditFor(workspaceId);
+    try {
+      const result = await listAuditLog(accessToken, {
+        targetType: "workspace",
+        targetId: workspaceId,
+        limit: 25,
+      });
+      setAuditEntries(result.items);
+    } catch (err) {
+      setError(formatRequestError(err));
+    }
+  };
+
+  const runAction = async (workspaceId: string, action: () => Promise<unknown>) => {
+    setBusyId(workspaceId);
+    setError(null);
+    try {
+      await action();
+      await load(debouncedQ, statusFilter, showArchived, offset);
+      await refreshAudit(workspaceId);
+    } catch (err) {
+      setError(formatRequestError(err));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleTransferred = async () => {
+    const workspaceId = transferFor?.id;
+    setTransferFor(null);
+    if (!workspaceId) return;
+    await load(debouncedQ, statusFilter, showArchived, offset);
+    await loadMembers(workspaceId);
+    await refreshAudit(workspaceId);
+  };
+
   const requestRoleChange = (member: AdminWorkspaceMember, toRole: WorkspaceRole) => {
     if (!membersFor || toRole === member.role) return;
     setPendingRoleChange({

@@ -35,6 +35,7 @@ import { TeamDetailHeader } from "@/components/teams/TeamDetailHeader";
 import { TeamDetailSidebar } from "@/components/teams/TeamDetailSidebar";
 import { TeamMembersPanel } from "@/components/teams/TeamMembersPanel";
 import { TeamOverviewPanel } from "@/components/teams/TeamOverviewPanel";
+import { TeamInsightsPanel } from "@/components/teams/TeamInsightsPanel";
 import { TEAM_DETAIL_TABS, type TeamDetailTab } from "@/components/teams/team-utils";
 import { useTeamsStore } from "@/stores/teams-store";
 
@@ -51,7 +52,7 @@ function canManageTeam(
 }
 
 function parseTab(value: string | null): TeamDetailTab {
-  const match = TEAM_DETAIL_TABS.find((t) => t.id === value && t.enabled);
+  const match = TEAM_DETAIL_TABS.find((t) => t.id === value);
   return match?.id ?? "overview";
 }
 
@@ -220,7 +221,7 @@ export function TeamDetailView({ teamId }: { teamId: string }) {
               manage={manage}
               onUpdated={setTeam}
             />
-          ) : (
+          ) : tab === "team" ? (
             <TeamMembersPanel
               team={team}
               manage={manage}
@@ -228,6 +229,8 @@ export function TeamDetailView({ teamId }: { teamId: string }) {
               onAddMember={openAddMember}
               onRemoveMember={(id) => void handleRemoveMember(id)}
             />
+          ) : (
+            <TeamInsightsPanel team={team} tab={tab} />
           )}
         </div>
 

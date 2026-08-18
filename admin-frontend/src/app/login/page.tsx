@@ -31,7 +31,6 @@ function LoginForm() {
       const result = await adminLogin(email.trim(), password);
       setSession({
         accessToken: result.accessToken,
-        refreshToken: result.refreshToken ?? null,
         user: result.user,
       });
       router.replace(safeNextPath(searchParams.get("next")));

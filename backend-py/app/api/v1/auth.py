@@ -1,9 +1,11 @@
-from fastapi import APIRouter, BackgroundTasks, Cookie, File, Query, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Cookie, File, Query, Request, Response, UploadFile
 from fastapi.responses import RedirectResponse
 from urllib.parse import quote
 
 from app.api.cookies import clear_refresh_cookie, set_refresh_cookie
+from app.api.upload_limits import read_upload_limited
 from app.config import get_settings
+from app.core.rate_limit import email_account, throttle
 from app.core.errors import AppError
 from app.deps.auth import CurrentUserDep, DbSession
 from app.schemas.auth import (
@@ -11,7 +13,6 @@ from app.schemas.auth import (
     ForgotPasswordBody,
     LoginBody,
     OAuthExchangeBody,
-    RefreshBody,
     ResetPasswordBody,
     SignupBody,
     UpdateProfileBody,
@@ -24,16 +25,22 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post("/signup", status_code=201)
 async def signup(
     body: SignupBody,
+    request: Request,
     response: Response,
     session: DbSession,
 ):
+    settings = get_settings()
+    await throttle(
+        request,
+        scope="auth.signup",
+        ip_limit=settings.auth_signup_ip_limit,
+    )
     result = await auth_service.signup(session, body)
     refresh_token = result.pop("refreshToken")
     set_refresh_cookie(response, refresh_token)
     return {
         "user": result["user"],
         "accessToken": result["accessToken"],
-        "refreshToken": refresh_token,
         "flow": result["flow"],
     }
 
@@ -41,27 +48,41 @@ async def signup(
 @router.post("/login")
 async def login(
     body: LoginBody,
+    request: Request,
     response: Response,
     session: DbSession,
 ):
+    settings = get_settings()
+    await throttle(
+        request,
+        scope="auth.login",
+        ip_limit=settings.auth_login_ip_limit,
+        account_limit=settings.auth_login_account_limit,
+        account=email_account(body.email),
+    )
     result = await auth_service.login(session, body)
     refresh_token = result.pop("refreshToken")
     set_refresh_cookie(response, refresh_token)
     return {
         "user": result["user"],
         "accessToken": result["accessToken"],
-        "refreshToken": refresh_token,
     }
 
 
 @router.post("/refresh")
 async def refresh(
+    request: Request,
     response: Response,
     session: DbSession,
-    body: RefreshBody | None = None,
     riseup_refresh: str | None = Cookie(default=None),
 ):
-    refresh_token = riseup_refresh or (body.refresh_token if body else None)
+    settings = get_settings()
+    await throttle(
+        request,
+        scope="auth.refresh",
+        ip_limit=settings.auth_refresh_ip_limit,
+    )
+    refresh_token = riseup_refresh
     if not refresh_token:
         raise AppError(401, "UNAUTHORIZED", "Refresh token missing")
     result = await auth_service.refresh_session(session, refresh_token)
@@ -70,7 +91,6 @@ async def refresh(
     return {
         "user": result["user"],
         "accessToken": result["accessToken"],
-        "refreshToken": new_refresh,
     }
 
 
@@ -111,7 +131,7 @@ async def upload_avatar(
     user: CurrentUserDep,
     file: UploadFile = File(...),
 ):
-    data = await file.read()
+    data = await read_upload_limited(file, max_bytes=get_settings().avatar_max_bytes)
     return await auth_service.set_avatar(
         session, user.id, data, file.content_type or "application/octet-stream"
     )
@@ -144,8 +164,19 @@ async def post_change_password(
 
 @router.post("/forgot-password")
 async def forgot_password(
-    body: ForgotPasswordBody, session: DbSession, background_tasks: BackgroundTasks
+    body: ForgotPasswordBody,
+    request: Request,
+    session: DbSession,
+    background_tasks: BackgroundTasks,
 ):
+    settings = get_settings()
+    await throttle(
+        request,
+        scope="auth.forgot_password",
+        ip_limit=settings.auth_password_reset_ip_limit,
+        account_limit=settings.auth_password_reset_account_limit,
+        account=email_account(body.email),
+    )
     result = await auth_service.request_password_reset(
         session, body.email, background_tasks
     )
@@ -158,7 +189,13 @@ async def forgot_password(
 
 
 @router.post("/reset-password")
-async def reset_password(body: ResetPasswordBody, session: DbSession):
+async def reset_password(body: ResetPasswordBody, request: Request, session: DbSession):
+    settings = get_settings()
+    await throttle(
+        request,
+        scope="auth.reset_password",
+        ip_limit=settings.auth_password_reset_ip_limit,
+    )
     return await auth_service.reset_password(session, body.token, body.password)
 
 
@@ -179,19 +216,18 @@ async def google_start(
         return RedirectResponse(
             url=(
                 f"{frontend}/auth/oauth/callback"
-                f"?error={quote(exc.code)}&message={quote(exc.message)}"
+                f"?error={quote(exc.code)}"
             ),
             status_code=302,
         )
-    except Exception as exc:
-        import traceback
+    except Exception:
+        import logging
 
-        traceback.print_exc()
-        detail = str(exc).strip()[:240] or "Unexpected error during Google sign-in."
+        logging.getLogger(__name__).exception("Google OAuth start failed")
         return RedirectResponse(
             url=(
                 f"{frontend}/auth/oauth/callback"
-                f"?error=OAUTH_FAILED&message={quote(detail)}"
+                f"?error=OAUTH_FAILED"
             ),
             status_code=302,
         )
@@ -233,19 +269,18 @@ async def google_callback(
         return RedirectResponse(
             url=(
                 f"{frontend}/auth/oauth/callback"
-                f"?error={quote(exc.code)}&message={quote(exc.message)}"
+                f"?error={quote(exc.code)}"
             ),
             status_code=302,
         )
-    except Exception as exc:
-        import traceback
+    except Exception:
+        import logging
 
-        traceback.print_exc()
-        detail = str(exc).strip()[:240] or "Unexpected error during Google sign-in."
+        logging.getLogger(__name__).exception("Google OAuth callback failed")
         return RedirectResponse(
             url=(
                 f"{frontend}/auth/oauth/callback"
-                f"?error=OAUTH_FAILED&message={quote(detail)}"
+                f"?error=OAUTH_FAILED"
             ),
             status_code=302,
         )
@@ -263,5 +298,4 @@ async def oauth_exchange(
     return {
         "user": result["user"],
         "accessToken": result["accessToken"],
-        "refreshToken": refresh_token,
     }

@@ -52,7 +52,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const store = useAuthStore.getState();
     const {
       accessToken: token,
-      refreshToken: storedRefresh,
       user,
       workspaces,
       activeWorkspaceId,
@@ -69,11 +68,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const hasCachedSession = Boolean(token && user && hasValidWorkspace);
 
     const tryRefresh = async () => {
-      const refreshed = await refreshSession(storedRefresh);
+      const refreshed = await refreshSession();
       const me = await getMe(refreshed.accessToken);
       updateSession({
         accessToken: refreshed.accessToken,
-        refreshToken: refreshed.refreshToken ?? storedRefresh,
         user: refreshed.user,
         workspaces: me.workspaces,
       });
@@ -139,7 +137,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             throw err;
           }
         }
-      } else if (hasFrontendSessionCookie() || storedRefresh) {
+      } else if (hasFrontendSessionCookie()) {
         await tryRefresh();
       }
     } catch (err) {

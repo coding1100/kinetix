@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -163,7 +164,7 @@ def _is_database_unavailable(exc: BaseException) -> bool:
 
 @fastapi_app.exception_handler(OperationalError)
 async def db_operational_handler(_request: Request, exc: OperationalError):
-    print(exc)
+    logging.getLogger(__name__).exception("Database operation failed", exc_info=exc)
     return JSONResponse(
         status_code=503,
         content={
@@ -177,7 +178,7 @@ async def db_operational_handler(_request: Request, exc: OperationalError):
 
 @fastapi_app.exception_handler(IntegrityError)
 async def integrity_error_handler(_request: Request, exc: IntegrityError):
-    print(exc)
+    logging.getLogger(__name__).exception("Database integrity error", exc_info=exc)
     return JSONResponse(
         status_code=409,
         content={
@@ -191,7 +192,7 @@ async def integrity_error_handler(_request: Request, exc: IntegrityError):
 
 @fastapi_app.exception_handler(Exception)
 async def unhandled_handler(_request: Request, exc: Exception):
-    print(exc)
+    logging.getLogger(__name__).exception("Unhandled application error", exc_info=exc)
     if _is_database_unavailable(exc):
         return JSONResponse(
             status_code=503,

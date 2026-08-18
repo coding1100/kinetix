@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 import type { AuthUser, WorkspaceSummary } from "@/lib/api/auth";
 import {
   clearSessionCookie,
@@ -14,7 +13,6 @@ export function firstSelectableWorkspaceId(workspaces: WorkspaceSummary[]) {
 
 interface AuthState {
   accessToken: string | null;
-  refreshToken: string | null;
   user: AuthUser | null;
   workspaces: WorkspaceSummary[];
   activeWorkspaceId: string | null;
@@ -22,14 +20,12 @@ interface AuthState {
   setHydrated: () => void;
   setSession: (input: {
     accessToken: string;
-    refreshToken?: string | null;
     user: AuthUser;
     workspaces?: WorkspaceSummary[];
     activeWorkspaceId?: string;
   }) => void;
   updateSession: (input: {
     accessToken: string;
-    refreshToken?: string | null;
     user: AuthUser;
     workspaces: WorkspaceSummary[];
     activeWorkspaceId?: string;
@@ -40,28 +36,24 @@ interface AuthState {
   clearSession: () => void;
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set, get) => ({
+export const useAuthStore = create<AuthState>()((set, get) => ({
       accessToken: null,
-      refreshToken: null,
       user: null,
       workspaces: [],
       activeWorkspaceId: null,
-      hydrated: false,
+      hydrated: true,
       setHydrated: () => set({ hydrated: true }),
-      setSession: ({ accessToken, refreshToken, user, workspaces, activeWorkspaceId }) => {
+      setSession: ({ accessToken, user, workspaces, activeWorkspaceId }) => {
         setSessionCookie();
         set({
           accessToken,
-          refreshToken: refreshToken ?? get().refreshToken,
           user,
           workspaces: workspaces ?? [],
           activeWorkspaceId:
             activeWorkspaceId ?? firstSelectableWorkspaceId(workspaces ?? []),
         });
       },
-      updateSession: ({ accessToken, refreshToken, user, workspaces, activeWorkspaceId }) => {
+      updateSession: ({ accessToken, user, workspaces, activeWorkspaceId }) => {
         setSessionCookie();
         const currentActive = get().activeWorkspaceId;
         const currentIsSelectable = workspaces.find(
@@ -76,7 +68,6 @@ export const useAuthStore = create<AuthState>()(
             : firstSelectableWorkspaceId(workspaces));
         set({
           accessToken,
-          refreshToken: refreshToken ?? get().refreshToken,
           user,
           workspaces,
           activeWorkspaceId: nextActive,
@@ -89,29 +80,12 @@ export const useAuthStore = create<AuthState>()(
         clearSessionCookie();
         set({
           accessToken: null,
-          refreshToken: null,
           user: null,
           workspaces: [],
           activeWorkspaceId: null,
         });
       },
-    }),
-    {
-      name: "riseup-auth",
-      partialize: (s) => ({
-        accessToken: s.accessToken,
-        refreshToken: s.refreshToken,
-        user: s.user,
-        workspaces: s.workspaces,
-        activeWorkspaceId: s.activeWorkspaceId,
-      }),
-      onRehydrateStorage: () => (state) => {
-        if (state?.accessToken) setSessionCookie();
-        state?.setHydrated();
-      },
-    }
-  )
-);
+    }));
 
 export function selectActiveWorkspace(state: AuthState) {
   return (

@@ -10,7 +10,6 @@ export interface AdminUser {
 export interface AdminLoginResponse {
   user: AdminUser;
   accessToken: string;
-  refreshToken?: string;
 }
 
 export function adminLogin(email: string, password: string) {
@@ -20,10 +19,9 @@ export function adminLogin(email: string, password: string) {
   });
 }
 
-export function adminRefresh(refreshToken?: string | null) {
+export function adminRefresh() {
   return apiFetch<AdminLoginResponse>("/admin/auth/refresh", {
     method: "POST",
-    body: refreshToken ? JSON.stringify({ refreshToken }) : undefined,
   });
 }
 
@@ -328,14 +326,16 @@ export interface PlatformStaffMember {
   createdAt: string;
 }
 
+export type PlatformRole = "SUPER_ADMIN" | "STAFF";
+
 export function listPlatformStaff(token: string) {
   return apiFetch<{ items: PlatformStaffMember[] }>("/admin/staff", { token });
 }
 
-export function grantPlatformStaff(token: string, email: string) {
+export function grantPlatformStaff(token: string, email: string, role: PlatformRole = "STAFF") {
   return apiFetch<{ id: string; userId: string; email: string; fullName: string; role: string }>(
     "/admin/staff",
-    { method: "POST", token, body: JSON.stringify({ email }) }
+    { method: "POST", token, body: JSON.stringify({ email, role }) }
   );
 }
 

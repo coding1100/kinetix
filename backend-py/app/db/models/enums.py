@@ -17,6 +17,7 @@ class MemberStatus(str, enum.Enum):
 
 
 class PlatformRole(str, enum.Enum):
+    SUPER_ADMIN = "SUPER_ADMIN"
     STAFF = "STAFF"
 
 

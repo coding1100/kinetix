@@ -795,7 +795,12 @@ async def list_platform_staff(session: AsyncSession) -> dict:
     return {"items": items}
 
 
-async def grant_platform_staff(session: AsyncSession, actor_id: str, email: str) -> dict:
+async def grant_platform_staff(
+    session: AsyncSession,
+    actor_id: str,
+    email: str,
+    role: PlatformRole = PlatformRole.STAFF,
+) -> dict:
     normalized = email.strip().lower()
     user = await session.scalar(select(User).where(func.lower(User.email) == normalized))
     if not user:
@@ -807,9 +812,49 @@ async def grant_platform_staff(session: AsyncSession, actor_id: str, email: str)
         select(PlatformStaff).where(PlatformStaff.user_id == user.id)
     )
     if existing:
-        raise AppError(409, "ALREADY_STAFF", "That user already has platform staff access")
+        if existing.role == role:
+            raise AppError(409, "ALREADY_STAFF", "That user already has platform staff access")
+        old_role = existing.role
+        if old_role == PlatformRole.SUPER_ADMIN and role != PlatformRole.SUPER_ADMIN:
+            remaining = await session.scalar(
+                select(func.count())
+                .select_from(PlatformStaff)
+                .where(
+                    PlatformStaff.role == PlatformRole.SUPER_ADMIN,
+                    PlatformStaff.user_id != user.id,
+                )
+            )
+            if not remaining:
+                raise AppError(
+                    400,
+                    "LAST_SUPER_ADMIN",
+                    "At least one platform super admin must remain",
+                )
+        existing.role = role
+        existing.granted_by = actor_id
+        _add_audit(
+            session,
+            actor_id,
+            "platform_staff.role_change",
+            "user",
+            user.id,
+            {
+                "email": user.email,
+                "fullName": user.full_name,
+                "oldRole": old_role.value,
+                "newRole": role.value,
+            },
+        )
+        await session.commit()
+        return {
+            "id": existing.id,
+            "userId": user.id,
+            "email": user.email,
+            "fullName": user.full_name,
+            "role": existing.role.value,
+        }
 
-    staff = PlatformStaff(user_id=user.id, role=PlatformRole.STAFF, granted_by=actor_id)
+    staff = PlatformStaff(user_id=user.id, role=role, granted_by=actor_id)
     session.add(staff)
     await session.flush()
     _add_audit(
@@ -818,7 +863,7 @@ async def grant_platform_staff(session: AsyncSession, actor_id: str, email: str)
         "platform_staff.grant",
         "user",
         user.id,
-        {"email": user.email, "fullName": user.full_name},
+        {"email": user.email, "fullName": user.full_name, "role": role.value},
     )
     await session.commit()
     return {
@@ -839,8 +884,24 @@ async def revoke_platform_staff(session: AsyncSession, actor_id: str, target_use
     )
     if not staff:
         raise AppError(404, "NOT_FOUND", "That user is not platform staff")
+    if staff.role == PlatformRole.SUPER_ADMIN:
+        remaining = await session.scalar(
+            select(func.count())
+            .select_from(PlatformStaff)
+            .where(
+                PlatformStaff.role == PlatformRole.SUPER_ADMIN,
+                PlatformStaff.user_id != target_user_id,
+            )
+        )
+        if not remaining:
+            raise AppError(
+                400,
+                "LAST_SUPER_ADMIN",
+                "At least one platform super admin must remain",
+            )
 
     user = await session.get(User, target_user_id)
+    revoked_role = staff.role.value
     await session.delete(staff)
     _add_audit(
         session,
@@ -848,7 +909,11 @@ async def revoke_platform_staff(session: AsyncSession, actor_id: str, target_use
         "platform_staff.revoke",
         "user",
         target_user_id,
-        {"email": user.email if user else None, "fullName": user.full_name if user else None},
+        {
+            "email": user.email if user else None,
+            "fullName": user.full_name if user else None,
+            "role": revoked_role,
+        },
     )
     await session.commit()
     return {"ok": True}

@@ -8,7 +8,7 @@ interface LoadingState {
   resetLoading: () => void;
 }
 
-export const useLoadingStore = create<LoadingState>((set, get) => ({
+export const useLoadingStore = create<LoadingState>((set) => ({
   count: 0,
   message: "Loading…",
   showLoading: (message) =>

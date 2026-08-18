@@ -1,5 +1,5 @@
 -- Run once: per-list custom statuses + task followers.
--- StatusGroup enum is created by run_list_status_followers_migration.py if missing.
+-- StatusGroup enum is created by the versioned migration gate if missing.
 
 CREATE TABLE IF NOT EXISTS "ListStatus" (
   id VARCHAR PRIMARY KEY,

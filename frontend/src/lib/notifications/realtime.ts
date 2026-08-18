@@ -27,8 +27,10 @@ export function applyHomeNotification(
   currentWorkspaceId?: string | null
 ) {
   if (!currentUserId || !event.userIds.includes(currentUserId)) return;
-  // Never surface another workspace's notifications in this one.
-  if (currentWorkspaceId && event.workspaceId !== currentWorkspaceId) return;
+  // Never surface another workspace's notifications in this one. Do not accept
+  // events while the active workspace is unknown; the socket can connect before
+  // workspace hydration finishes.
+  if (!currentWorkspaceId || event.workspaceId !== currentWorkspaceId) return;
   const { notification } = event;
   ingestLiveNotification(notification);
 

@@ -49,7 +49,6 @@ import type { ChatSearchHit } from "@/lib/types/chat";
 import { ChannelDetailsRail } from "./channel/ChannelDetailsRail";
 import { ChannelDetailsPanel } from "./channel/ChannelDetailsPanel";
 import { useChatStore } from "@/stores/chat-store";
-import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   avatarColorClassForKey,
@@ -57,11 +56,9 @@ import {
 } from "@/lib/user-display";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import {
   applyMessageUpdate,
-  appendUniqueMessage,
   removeMessageById,
   ATTACHMENT_PLACEHOLDER,
   createOptimisticMessage,

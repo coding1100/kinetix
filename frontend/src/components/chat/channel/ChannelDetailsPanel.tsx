@@ -19,7 +19,6 @@ import {
   LockIcon,
   Share2Icon,
   UsersIcon,
-  Link2Icon,
   BellOffIcon,
   ChevronRightIcon,
   PaperclipIcon,
@@ -31,12 +30,9 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import {
-  getChannelById,
-  getChannelMeta,
-  getChannelThreadReplies,
-} from "@/lib/mocks/channel-details";
-import {
   addChannelMembers,
+  fetchChannelMessages,
+  markChannelUnread,
   removeChannelMember,
   searchChannelMessages as searchChannelMessagesApi,
   updateChannelMember,
@@ -46,7 +42,7 @@ import { filterWorkspaceMembersToAdd } from "@/lib/chat/channel-access-search";
 import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import { ChannelGlyph } from "@/lib/chat/channel-icons";
 import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
-import type { Channel, ChannelMember, ChatSearchHit } from "@/lib/types/chat";
+import type { Channel, ChannelMember, ChatMessage, ChatSearchHit } from "@/lib/types/chat";
 import { ConversationMessageSearch } from "@/components/chat/search/ConversationMessageSearch";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
@@ -190,7 +186,7 @@ function FollowersView({ channelId }: { channelId: string }) {
       (c) => c.id === channelId
     );
     return (
-      fromCache?.isPrivate ?? getChannelById(channelId)?.isPrivate ?? false
+      fromCache?.isPrivate ?? false
     );
   });
   const workspaceMembersQuery = useWorkspaceMembersQuery();
@@ -740,7 +736,36 @@ function SearchView({ channelId }: { channelId: string }) {
 }
 
 function RepliesView({ channelId }: { channelId: string }) {
-  const threads = getChannelThreadReplies(channelId);
+  const { accessToken, workspaceId, ready } = useWorkspaceApi();
+  const setActiveThread = useChatStore((state) => state.setActiveThread);
+  const setChannelDetailsView = useChatStore((state) => state.setChannelDetailsView);
+  const [threads, setThreads] = useState<ChatMessage[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    setLoading(true);
+    void fetchChannelMessages(accessToken, workspaceId, channelId, { limit: 100 })
+      .then((response) => {
+        if (!cancelled) {
+          setThreads(response.data.filter((message) => (message.threadCount ?? 0) > 0));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setThreads([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, channelId, ready, workspaceId]);
+
+  if (loading) {
+    return <p className="text-sm text-muted-foreground">Loading replies...</p>;
+  }
 
   if (threads.length === 0) {
     return (
@@ -753,30 +778,30 @@ function RepliesView({ channelId }: { channelId: string }) {
   return (
     <ul className="space-y-2">
       {threads.map((t) => (
-        <li
+        <button
           key={t.id}
-          className="rounded-lg border border-border px-3 py-2"
+          type="button"
+          className="w-full rounded-lg border border-border px-3 py-2 text-left hover:bg-muted/40"
+          onClick={() => {
+            setChannelDetailsView(null);
+            setActiveThread(t.id);
+          }}
         >
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-medium">{t.authorName}</span>
-            {t.unread && (
-              <Badge variant="default" className="h-5 px-1.5 text-[10px]">
-                New
-              </Badge>
-            )}
           </div>
           <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
-            {t.preview}
+            {t.body}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {t.replyCount}{" "}
-            {t.replyCount === 1 ? "reply" : "replies"}{" "}
-            · {formatRelativeTime(t.lastAt)}
+            {t.threadCount}{" "}
+            {t.threadCount === 1 ? "reply" : "replies"}{" "}
+            - {formatRelativeTime(new Date(t.lastReplyAt ?? t.createdAt))}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Open from the reply link on the parent message.
+            Open thread
           </p>
-        </li>
+        </button>
       ))}
     </ul>
   );
@@ -804,8 +829,7 @@ function SettingsView({
     (s) => s.channelMetaOverrides[channelId]?.starred
   );
   const channel = useMemo(() => {
-    const fallback = getChannelById(channelId);
-    const base = cachedChannel ?? fallback;
+    const base = cachedChannel;
     if (!base && overrideChannelName === undefined && overrideChannelStarred === undefined) {
       return undefined;
     }
@@ -817,7 +841,6 @@ function SettingsView({
         : {}),
     } as Channel;
   }, [cachedChannel, channelId, overrideChannelName, overrideChannelStarred]);
-  const meta = getChannelMeta(channelId);
   const { members: settingsMembers } = useChannelMembers(channelId);
   const followers = useMemo(
     () => settingsMembers.filter((m) => m.isFollowing),
@@ -833,7 +856,7 @@ function SettingsView({
     setChannelNotifications,
   } = useChatStore();
 
-  const following = channelFollowing[channelId] ?? channel?.isFollowing ?? meta.following;
+  const following = channelFollowing[channelId] ?? channel?.isFollowing ?? true;
   const notifications =
     channelNotifications[channelId] ??
     (channel?.notificationLevel === "ALL"
@@ -846,6 +869,16 @@ function SettingsView({
     channelId,
     channel?.starred ?? false
   );
+
+  const markUnread = async () => {
+    if (!ready) return;
+    try {
+      await markChannelUnread(accessToken, workspaceId, channelId);
+      toast.success("Channel marked as unread");
+    } catch {
+      toast.error("Could not mark channel as unread");
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -878,15 +911,6 @@ function SettingsView({
             <Button
               variant="outline"
               size="sm"
-              className="h-8 gap-1 rounded-full px-3"
-              onClick={() => openModal("syncup", channelId)}
-            >
-              <Link2Icon className="size-3.5" />
-              SyncUp
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
               className={cn(
                 "h-8 gap-1 rounded-full px-3",
                 following && "border-amber-300 bg-amber-50 text-amber-700"
@@ -906,7 +930,7 @@ function SettingsView({
       <section className="rounded-xl border border-border bg-card p-3">
         <Label className="text-xs text-muted-foreground">Topic</Label>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          {meta.topic ?? "Add a topic for this channel"}
+          {channel?.topic ?? "No topic has been set."}
         </p>
       </section>
 
@@ -916,7 +940,9 @@ function SettingsView({
           <CircleAlertIcon className="size-4 text-muted-foreground" />
         </div>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          {meta.description ?? "Add a short description for this channel"}
+          {channel?.spaceLabel
+            ? `Connected to ${channel.spaceLabel}`
+            : "Standalone workspace channel"}
         </p>
       </section>
 
@@ -991,7 +1017,7 @@ function SettingsView({
           icon={<MailIcon className="size-4" />}
           label="Mark as unread"
           shortcut="U"
-          onClick={() => toast.success("Marked as unread")}
+          onClick={() => void markUnread()}
         />
         <OptionRow
           icon={<PenLineIcon className="size-4" />}
@@ -1034,11 +1060,6 @@ function SettingsView({
             ) : undefined
           }
           onClick={() => void toggleFavorite()}
-        />
-        <OptionRow
-          icon={<MailIcon className="size-4" />}
-          label="Email to Channel"
-          onClick={() => toast("Email to channel — Phase 3")}
         />
         <OptionRow
           icon={<BellIcon className="size-4" />}

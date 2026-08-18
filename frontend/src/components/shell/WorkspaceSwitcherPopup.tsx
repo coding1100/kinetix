@@ -4,17 +4,14 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   AppWindowIcon,
-  BoxIcon,
   CheckIcon,
   SearchIcon,
   SettingsIcon,
   TriangleAlertIcon,
   UserPlusIcon,
   UsersIcon,
-  WandSparklesIcon,
   PlusIcon,
 } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { resetSessionScopedState } from "@/lib/auth/reset-session-scoped-state";
@@ -24,13 +21,7 @@ import {
   workspaceInitials,
 } from "@/stores/auth-store";
 import { cn } from "@/lib/utils";
-
-const manageItems = [
-  { label: "Apps", icon: AppWindowIcon },
-  { label: "Templates", icon: BoxIcon },
-  { label: "Custom Fields", icon: SettingsIcon },
-  { label: "Automations", icon: WandSparklesIcon },
-];
+import { toast } from "sonner";
 
 export function WorkspaceSwitcherPopup({
   onClose,
@@ -167,24 +158,6 @@ export function WorkspaceSwitcherPopup({
         <SettingsIcon className="size-4" />
         Workspace settings
       </Button>
-
-      <div className="space-y-1">
-        <p className="px-1 text-xs font-medium text-muted-foreground">Manage</p>
-        {manageItems.map(({ label, icon: Icon }) => (
-          <Button
-            key={label}
-            variant="ghost"
-            className="w-full justify-start"
-            onClick={() => {
-              onClose?.();
-              toast(`${label} — Phase 3`);
-            }}
-          >
-            <Icon className="size-4" />
-            {label}
-          </Button>
-        ))}
-      </div>
 
       <Button
         variant="outline"

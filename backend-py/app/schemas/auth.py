@@ -34,12 +34,6 @@ class OAuthExchangeBody(BaseModel):
     code: str = Field(min_length=1)
 
 
-class RefreshBody(BaseModel):
-    refresh_token: str | None = Field(default=None, alias="refreshToken")
-
-    model_config = {"populate_by_name": True}
-
-
 class AuthUserOut(BaseModel):
     id: str
     email: str

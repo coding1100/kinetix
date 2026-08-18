@@ -11,24 +11,21 @@ let refreshPromise: Promise<boolean> | null = null;
 
 /** Raw fetch (bypasses apiFetch) so a failed refresh can't recurse into itself. */
 async function doRefresh(): Promise<boolean> {
-  const { refreshToken, setSession } = useAdminAuthStore.getState();
+  const { setSession } = useAdminAuthStore.getState();
   try {
     const res = await fetch(`${API_BASE}/admin/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: refreshToken ? JSON.stringify({ refreshToken }) : undefined,
     });
     if (!res.ok) return false;
     const data = (await res.json().catch(() => null)) as {
       accessToken?: string;
-      refreshToken?: string;
       user?: AdminUser;
     } | null;
     if (!data?.accessToken || !data.user) return false;
     setSession({
       accessToken: data.accessToken,
-      refreshToken: data.refreshToken,
       user: data.user,
     });
     return true;

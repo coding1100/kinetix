@@ -23,7 +23,6 @@ export function AudioRecorderModal({
   onSendAudio,
 }: AudioRecorderModalProps) {
   const [recording, setRecording] = useState(false);
-  const [paused, setPaused] = useState(false);
   const [duration, setDuration] = useState(0);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -47,7 +46,6 @@ export function AudioRecorderModal({
       mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
     }
     setRecording(false);
-    setPaused(false);
     setDuration(0);
     setAudioBlob(null);
     if (audioUrl) {
@@ -86,7 +84,7 @@ export function AudioRecorderModal({
       timerRef.current = setInterval(() => {
         setDuration((prev) => prev + 1);
       }, 1000);
-    } catch (err) {
+    } catch {
       toast.error("Microphone access denied or not supported.");
     }
   }

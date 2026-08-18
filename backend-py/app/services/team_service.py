@@ -9,11 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.models.enums import MemberStatus, TeamRole, WorkspaceRole
-from app.db.models.team import Team, TeamMember
+from app.db.models.team import Team, TeamBookmark, TeamMember
 from app.db.models.workspace import WorkspaceMember
 from app.core.errors import AppError
 from app.core.utils import as_aware_utc
-from app.schemas.team import AddTeamMemberBody, CreateTeamBody, UpdateTeamBody
+from app.schemas.team import (
+    AddTeamMemberBody,
+    CreateTeamBody,
+    CreateTeamBookmarkBody,
+    UpdateTeamBody,
+)
 
 TEAM_COLORS = [
     "#7B68EE",
@@ -69,6 +74,15 @@ def _team_detail(team: Team) -> dict:
     body = _team_summary(team)
     body["members"] = [_member_preview(m) for m in (team.members or [])]
     body["updatedAt"] = as_aware_utc(team.updated_at).isoformat() if team.updated_at else None
+    body["bookmarks"] = [
+        {
+            "id": bookmark.id,
+            "title": bookmark.title,
+            "url": bookmark.url,
+            "createdAt": as_aware_utc(bookmark.created_at).isoformat(),
+        }
+        for bookmark in (team.bookmarks or [])
+    ]
     return body
 
 
@@ -81,6 +95,7 @@ async def _get_team(
         .options(
             selectinload(Team.members).selectinload(TeamMember.user),
             selectinload(Team.created_by),
+            selectinload(Team.bookmarks),
         )
         .execution_options(populate_existing=True)
     )
@@ -369,6 +384,56 @@ async def remove_team_member(
     await session.delete(row)
     await session.commit()
     return await get_team(session, workspace_id, team_id)
+
+
+async def create_team_bookmark(
+    session: AsyncSession,
+    workspace_id: str,
+    team_id: str,
+    actor_id: str,
+    actor_role: WorkspaceRole,
+    body: CreateTeamBookmarkBody,
+) -> dict:
+    team = await _get_team(session, workspace_id, team_id)
+    if not team:
+        raise AppError(404, "NOT_FOUND", "Team not found")
+    await _assert_can_manage_team(session, workspace_id, actor_id, actor_role, team_id)
+    session.add(
+        TeamBookmark(
+            id=str(uuid.uuid4()),
+            team_id=team_id,
+            title=body.title.strip(),
+            url=str(body.url),
+            created_by_id=actor_id,
+        )
+    )
+    await session.commit()
+    return await get_team(session, workspace_id, team_id)
+
+
+async def delete_team_bookmark(
+    session: AsyncSession,
+    workspace_id: str,
+    team_id: str,
+    bookmark_id: str,
+    actor_id: str,
+    actor_role: WorkspaceRole,
+) -> dict:
+    team = await _get_team(session, workspace_id, team_id)
+    if not team:
+        raise AppError(404, "NOT_FOUND", "Team not found")
+    await _assert_can_manage_team(session, workspace_id, actor_id, actor_role, team_id)
+    bookmark = await session.scalar(
+        select(TeamBookmark).where(
+            TeamBookmark.id == bookmark_id,
+            TeamBookmark.team_id == team_id,
+        )
+    )
+    if not bookmark:
+        raise AppError(404, "NOT_FOUND", "Bookmark not found")
+    await session.delete(bookmark)
+    await session.commit()
+    return {"ok": True}
 
 
 async def member_teams_map(

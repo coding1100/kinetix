@@ -45,6 +45,12 @@ class Team(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    bookmarks: Mapped[list["TeamBookmark"]] = relationship(
+        back_populates="team",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="TeamBookmark.created_at.desc()",
+    )
 
 
 class TeamMember(Base):
@@ -71,3 +77,24 @@ class TeamMember(Base):
 
     team: Mapped["Team"] = relationship(back_populates="members")
     user: Mapped["User"] = relationship()
+
+
+class TeamBookmark(Base):
+    __tablename__ = "TeamBookmark"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    team_id: Mapped[str] = mapped_column(
+        "teamId", String, ForeignKey("Team.id", ondelete="CASCADE"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by_id: Mapped[str | None] = mapped_column(
+        "createdById", String, ForeignKey("User.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        "createdAt", DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    team: Mapped["Team"] = relationship(back_populates="bookmarks")
