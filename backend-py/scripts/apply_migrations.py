@@ -50,7 +50,9 @@ MIGRATIONS: tuple[str, ...] = (
     "migrate_admin_portal.sql",
     "migrate_platform_super_admin.sql",
     "migrate_chat_canvas_huddles.sql",
+    "migrate_planning_stack.sql",
 )
+
 
 
 def _checksum(raw: str) -> str:

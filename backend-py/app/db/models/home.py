@@ -359,6 +359,9 @@ class Task(Base):
     tags: Mapped[list[str]] = mapped_column(
         "tags", ARRAY(String), nullable=False, default=list, server_default="{}"
     )
+    is_milestone: Mapped[bool] = mapped_column(
+        "isMilestone", Boolean, default=False, server_default="false"
+    )
     parent_task_id: Mapped[str | None] = mapped_column(
         "parentTaskId",
         String,

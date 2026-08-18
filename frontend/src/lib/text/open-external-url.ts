@@ -5,8 +5,19 @@ import { isTauri } from "@/lib/tauri";
 const OPENABLE_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 const EXPLICIT_EXTERNAL_SCHEME_RE = /^(?:https?:\/\/|mailto:)/i;
 
+export function normalizeExternalUrl(rawUrl: string): string {
+  let value = rawUrl.trim();
+  if (!value) return "";
+  if (!EXPLICIT_EXTERNAL_SCHEME_RE.test(value)) {
+    if (/^(?:www\.|[a-z0-9-]+(?:\.[a-z0-9-]+)+)/i.test(value)) {
+      value = `https://${value}`;
+    }
+  }
+  return value;
+}
+
 export function isOpenableExternalUrl(rawUrl: string): boolean {
-  const value = rawUrl.trim();
+  const value = normalizeExternalUrl(rawUrl);
   if (!value || !EXPLICIT_EXTERNAL_SCHEME_RE.test(value)) return false;
 
   try {
@@ -17,26 +28,60 @@ export function isOpenableExternalUrl(rawUrl: string): boolean {
   }
 }
 
+export function isExternalHref(href: string): boolean {
+  const normalized = normalizeExternalUrl(href);
+  if (!isOpenableExternalUrl(normalized)) return false;
+  if (typeof window === "undefined") return true;
+
+  try {
+    const targetUrl = new URL(normalized, window.location.href);
+    return targetUrl.origin !== window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 export async function openExternalUrl(rawUrl: string): Promise<void> {
-  const value = rawUrl.trim();
+  const normalized = normalizeExternalUrl(rawUrl);
   if (
-    !value ||
+    !normalized ||
     typeof window === "undefined" ||
-    !isOpenableExternalUrl(value)
+    !isOpenableExternalUrl(normalized)
   ) {
     return;
   }
 
+  const win = window as any;
+
   if (isTauri()) {
     try {
       const { open } = await import("@tauri-apps/plugin-shell");
-      await open(value);
+      await open(normalized);
       return;
     } catch (err) {
       console.warn("[links] failed to open via tauri shell", err);
     }
   }
 
-  const tab = window.open(value, "_blank", "noopener,noreferrer");
+  if (win.electron?.openExternal) {
+    try {
+      await win.electron.openExternal(normalized);
+      return;
+    } catch (err) {
+      console.warn("[links] failed to open via electron api", err);
+    }
+  }
+
+  if (win.ipcRenderer?.send) {
+    try {
+      win.ipcRenderer.send("open-external", normalized);
+      return;
+    } catch (err) {
+      console.warn("[links] failed to open via ipcRenderer", err);
+    }
+  }
+
+  const tab = window.open(normalized, "_blank", "noopener,noreferrer");
   if (tab) tab.opener = null;
 }
+

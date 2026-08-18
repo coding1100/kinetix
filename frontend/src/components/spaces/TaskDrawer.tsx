@@ -449,15 +449,16 @@ export function TaskDrawer({
       fetchTask(accessToken, workspaceId, taskId),
       fetchWorkspaceMembers(accessToken, workspaceId),
       fetchSpacesTree(accessToken, workspaceId),
-      fetchRecents(accessToken, workspaceId),
-      fetchTaskActivity(accessToken, workspaceId, taskId),
+      fetchRecents(accessToken, workspaceId).catch(() => ({ data: [] })),
+      fetchTaskActivity(accessToken, workspaceId, taskId).catch(() => ({ data: [] })),
     ])
       .then(async ([t, m, spacesRes, recentsRes, activityRes]) => {
         if (cancelled) return;
-        setMembers(m.data);
-        setSpaces(spacesRes.data);
-        setRecents(recentsRes.data);
+        setMembers(m.data ?? []);
+        setSpaces(spacesRes.data ?? []);
+        setRecents(recentsRes.data ?? []);
         setActivityEvents(activityRes.data ?? []);
+
         setTask(t);
         setName(t.name);
         setStatusKey(

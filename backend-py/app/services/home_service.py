@@ -2199,10 +2199,13 @@ async def _get_workspace_task(
 ) -> Task:
     task = await session.scalar(
         select(Task)
+        .options(selectinload(Task.task_list).selectinload(TaskList.space))
         .join(Task.task_list)
         .join(TaskList.space)
         .where(Task.id == task_id, Space.workspace_id == workspace_id)
     )
+
+
     if not task:
         raise AppError(404, "NOT_FOUND", "Task not found")
     if user_id is not None and role is not None:

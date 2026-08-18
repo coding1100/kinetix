@@ -787,7 +787,7 @@ async def post_task_attachment_presign(
     task_id: str,
     session: DbSession,
     user: CurrentUserDep,
-    _member: WorkspaceMemberDep,
+    member: WorkspaceMemberDep,
 ):
     return await task_attachment_service.presign_upload(
         session,
@@ -799,6 +799,7 @@ async def post_task_attachment_presign(
         mime_type=body.mime_type,
         size_bytes=body.size_bytes,
     )
+
 
 
 @router.post("/tasks/{task_id}/attachments/{attachment_id}/upload")

@@ -392,24 +392,31 @@ export function deleteList(
 }
 
 export function flattenListsFromSpaces(
-  spaces: SpaceDto[]
+  spaces: SpaceDto[] | null | undefined
 ): { id: string; label: string }[] {
   const out: { id: string; label: string }[] = [];
+  if (!Array.isArray(spaces)) return out;
   for (const space of spaces) {
+    if (!space) continue;
     for (const folder of space.folders ?? []) {
-      for (const list of folder.lists) {
+      if (!folder) continue;
+      for (const list of folder.lists ?? []) {
+        if (!list) continue;
         out.push({
           id: list.id,
-          label: `${space.name} / ${folder.name} / ${list.name}`,
+          label: `${space.name ?? ""} / ${folder.name ?? ""} / ${list.name ?? ""}`,
         });
       }
     }
-    for (const list of space.standaloneLists ?? []) {
-      out.push({ id: list.id, label: `${space.name} / ${list.name}` });
+    const standalone = space.standaloneLists ?? (space as any).lists ?? [];
+    for (const list of standalone ?? []) {
+      if (!list) continue;
+      out.push({ id: list.id, label: `${space.name ?? ""} / ${list.name ?? ""}` });
     }
   }
   return out;
 }
+
 
 export function searchWorkspaceTasks(
   token: string,

@@ -5758,6 +5758,18 @@ DATE_START: 2026-08-15
 TAG: [CHORE]
 TITLE: Production-Grade CI/CD Infrastructure Plan & Workflows
 DESC: Researched and built a production-grade CI/CD pipeline using GitHub Actions for the Kinetix monorepo (FastAPI backend-py, Next.js frontend, Next.js admin-frontend). Added multi-stage parallel CI workflows (linting with ruff/eslint, TypeScript typechecks with tsc, unit/integration testing with pytest and Vitest against a PostgreSQL service container, and production build checks) gated before EC2 staging/production deployments with post-deploy smoke tests. Tuned frontend eslint.config.mjs rules for React 19 compatibility.
-DATE_END: 2026-08-15
+DATE_START: 2026-08-18
+========================================
+
+TAG: [FEATURE]
+TITLE: Implement Production-Grade Enterprise Task Stack (Templates, Portfolios, Gantt, Workload, Automations, Whiteboards)
+DESC: Built production-grade enterprise planning stack across backend-py FastAPI service and Next.js frontend:
+1. Created Database Models & SQL Migration (migrate_planning_stack.sql): EntityTemplate, Portfolio, PortfolioList, TaskAutomationRule, Whiteboard, and Task.isMilestone column.
+2. Built FastAPI Service & Routers (app/api/v1/planning.py & app/services/planning_service.py): Template instantiation, Portfolio rollups, Gantt graph calculation with milestone markers, Workload capacity analysis, Automation trigger/action evaluation, and Whiteboard canvas persistence.
+3. Created Frontend Interactive Views: GanttView.tsx (Timeline grid with day/week scales and milestones), PortfoliosView.tsx (Executive initiative health & completion rollups), WorkloadView.tsx (Member capacity grid with over-capacity badges), TemplateLibraryModal.tsx (Template browser & 1-click apply), AutomationsBuilderModal.tsx (Visual rule builder), and WhiteboardCanvasView.tsx (Brainstorming canvas).
+4. Integrated multi-view toolbar switchers in SpacesListToolbar.tsx and ListWorkspace.tsx supporting 8 view modes.
+5. Verification: Passed 32/32 Pytest backend tests, 65/65 Vitest frontend tests, and 0 tsc typecheck errors.
+DATE_END: 2026-08-18
+
 
 

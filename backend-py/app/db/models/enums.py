@@ -85,3 +85,24 @@ class InboxItemType(str, enum.Enum):
     DRAFT = "DRAFT"
     SENT = "SENT"
     SCHEDULED = "SCHEDULED"
+
+
+class TemplateScope(str, enum.Enum):
+    TASK = "TASK"
+    LIST = "LIST"
+    FOLDER = "FOLDER"
+    SPACE = "SPACE"
+
+
+class AutomationTrigger(str, enum.Enum):
+    STATUS_CHANGED = "STATUS_CHANGED"
+    ASSIGNEE_ADDED = "ASSIGNEE_ADDED"
+    DUE_DATE_ARRIVED = "DUE_DATE_ARRIVED"
+    TASK_CREATED = "TASK_CREATED"
+
+
+class AutomationAction(str, enum.Enum):
+    CHANGE_STATUS = "CHANGE_STATUS"
+    ASSIGN_USER = "ASSIGN_USER"
+    ADD_TAG = "ADD_TAG"
+    CREATE_COMMENT = "CREATE_COMMENT"

@@ -274,30 +274,38 @@ export function CreateTaskDialog({
     if (!open || !ready || !accessToken || !workspaceId) return;
     let cancelled = false;
     Promise.all([
-      fetchSpacesTree(accessToken, workspaceId),
-      fetchRecents(accessToken, workspaceId),
+      fetchSpacesTree(accessToken, workspaceId).catch((err) => {
+        console.error("Failed to load spaces tree for create task:", err);
+        return { data: [] };
+      }),
+      fetchRecents(accessToken, workspaceId).catch((err) => {
+        console.error("Failed to load recents for create task:", err);
+        return { data: [] };
+      }),
     ])
       .then(([spacesRes, recentsRes]) => {
         if (cancelled) return;
-        const tree = spacesRes.data;
+        const tree = Array.isArray(spacesRes?.data) ? spacesRes.data : [];
         const options = flattenListsFromSpaces(tree);
         setSpaces(tree);
-        setRecents(recentsRes.data);
+        setRecents(Array.isArray(recentsRes?.data) ? recentsRes.data : []);
         const target =
           defaultListId && options.some((o) => o.id === defaultListId)
             ? defaultListId
             : options[0]?.id ?? "";
         setListId(target);
         const selected = options.find((o) => o.id === target);
-        setListName(selected?.label.split(" / ").pop() ?? "");
+        setListName(selected?.label ? (selected.label.split(" / ").pop() ?? "") : "");
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error("Error loading task creation options:", err);
         if (!cancelled) toast.error("Could not load create-task options");
       });
     return () => {
       cancelled = true;
     };
   }, [open, ready, accessToken, workspaceId, defaultListId]);
+
 
   useEffect(() => {
     if (!open || !listId || !ready || !accessToken || !workspaceId) {
