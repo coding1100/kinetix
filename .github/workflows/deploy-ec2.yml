@@ -92,6 +92,8 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/kinetix_ci
       DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/kinetix_ci
+      JWT_ACCESS_SECRET: ci-only-access-secret-not-used-outside-this-ephemeral-job
+      JWT_REFRESH_SECRET: ci-only-refresh-secret-not-used-outside-this-ephemeral-job
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
