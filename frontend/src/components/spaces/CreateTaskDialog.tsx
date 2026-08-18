@@ -61,8 +61,9 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CreateTaskListPicker } from "@/components/spaces/CreateTaskListPicker";
 import { toast } from "sonner";
-import { fetchRecents, type SpaceDto } from "@/lib/api/home";
-import { fetchWorkspaceMembers } from "@/lib/api/chat";
+import { fetchRecents, fetchSharedWithMe, type SpaceDto } from "@/lib/api/home";
+import { fetchChannels, fetchWorkspaceMembers } from "@/lib/api/chat";
+
 import { getMe } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { firstSelectableWorkspaceId, useAuthStore } from "@/stores/auth-store";
@@ -321,14 +322,60 @@ export function CreateTaskDialog({
       }
 
       let recentsData: any[] = [];
+      let sharedData: any[] = [];
+      let channelsData: any[] = [];
+
       try {
-        const recRes = await fetchRecents(accessToken, currentWsId);
+        const [recRes, sharedRes, chanRes] = await Promise.all([
+          fetchRecents(accessToken, currentWsId).catch(() => ({ data: [] })),
+          fetchSharedWithMe(accessToken, currentWsId).catch(() => ({ data: [] })),
+          fetchChannels(accessToken, currentWsId).catch(() => ({ data: [] })),
+        ]);
         recentsData = Array.isArray(recRes?.data) ? recRes.data : [];
+        sharedData = Array.isArray(sharedRes?.data) ? sharedRes.data : [];
+        channelsData = Array.isArray(chanRes?.data) ? chanRes.data : [];
       } catch {
         // non-fatal
       }
 
       if (cancelled) return;
+
+      if (sharedData.length > 0) {
+        const sharedLists = sharedData.flatMap((item) => item.lists ?? []);
+        if (sharedLists.length > 0) {
+          tree.push({
+            id: "shared-with-me-space",
+            name: "Shared with Me",
+            color: "#8B5CF6",
+            memberCount: 0,
+            listCount: sharedLists.length,
+            standaloneLists: sharedLists.map((l) => ({
+              id: l.id,
+              name: l.name,
+              taskCount: l.taskCount ?? 0,
+            })),
+            folders: [],
+          });
+        }
+      }
+
+      if (channelsData.length > 0) {
+        tree.push({
+          id: "channels-space",
+          name: "Channels",
+          color: "#10B981",
+          memberCount: 0,
+          listCount: channelsData.length,
+          standaloneLists: channelsData.map((ch) => ({
+            id: ch.id,
+            name: `# ${ch.name}`,
+            taskCount: 0,
+          })),
+          folders: [],
+        });
+      }
+
+
       let options = flattenListsFromSpaces(tree);
 
       if (options.length === 0 && tree.length === 0) {
@@ -376,6 +423,7 @@ export function CreateTaskDialog({
       setListName(
         selected?.label ? (selected.label.split(" / ").pop() ?? "") : ""
       );
+
     };
 
 

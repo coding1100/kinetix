@@ -53,11 +53,31 @@ export async function openExternalUrl(rawUrl: string): Promise<void> {
 
   const win = window as any;
 
+  // Pre-create synchronous window during the user gesture to prevent popup blocking in WebViews
+  let syncTab: Window | null = null;
+  try {
+    syncTab = window.open("about:blank", "_blank");
+    if (syncTab) syncTab.opener = null;
+  } catch {
+    syncTab = null;
+  }
+
+  const closeSyncTab = () => {
+    if (syncTab && !syncTab.closed) {
+      try {
+        syncTab.close();
+      } catch {
+        // ignore
+      }
+    }
+  };
+
   // 1. Tauri v2 Plugin Shell
   if (isTauri()) {
     try {
       const { open } = await import("@tauri-apps/plugin-shell");
       await open(normalized);
+      closeSyncTab();
       return;
     } catch (err) {
       console.warn("[links] failed to open via tauri plugin-shell", err);
@@ -68,6 +88,7 @@ export async function openExternalUrl(rawUrl: string): Promise<void> {
         await win.__TAURI_INTERNALS__.invoke("plugin:shell|open", {
           href: normalized,
         });
+        closeSyncTab();
         return;
       }
     } catch (err) {
@@ -77,6 +98,7 @@ export async function openExternalUrl(rawUrl: string): Promise<void> {
     try {
       if (win.__TAURI__?.shell?.open) {
         await win.__TAURI__.shell.open(normalized);
+        closeSyncTab();
         return;
       }
     } catch (err) {
@@ -88,6 +110,7 @@ export async function openExternalUrl(rawUrl: string): Promise<void> {
   if (win.electron?.openExternal) {
     try {
       await win.electron.openExternal(normalized);
+      closeSyncTab();
       return;
     } catch (err) {
       console.warn("[links] failed to open via electron api", err);
@@ -97,6 +120,7 @@ export async function openExternalUrl(rawUrl: string): Promise<void> {
   if (win.ipcRenderer?.send) {
     try {
       win.ipcRenderer.send("open-external", normalized);
+      closeSyncTab();
       return;
     } catch (err) {
       console.warn("[links] failed to open via ipcRenderer", err);
@@ -104,7 +128,15 @@ export async function openExternalUrl(rawUrl: string): Promise<void> {
   }
 
   // 3. Fallback for WebViews & older .exe binaries:
-  // window.open(url, "_blank") triggers WebView2 default OS browser handoff
+  if (syncTab && !syncTab.closed) {
+    try {
+      syncTab.location.href = normalized;
+      return;
+    } catch {
+      // fallback
+    }
+  }
+
   try {
     const tab = window.open(normalized, "_blank");
     if (tab) {
@@ -130,7 +162,7 @@ export async function openExternalUrl(rawUrl: string): Promise<void> {
   } catch (err) {
     console.error("[links] failed all open attempts for", normalized, err);
   }
-
 }
+
 
 
