@@ -9,6 +9,7 @@
   "permissions": [
     "core:default",
     "notification:default",
-    "notification:allow-notify"
+    "notification:allow-notify",
+    "shell:allow-open"
   ]
 }

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { isOpenableExternalUrl, openExternalUrl } from "@/lib/text/open-external-url";
 
 const URL_RE =
   /((?:https?:\/\/|www\.)[^\s<>"']+[^\s<>"'.,:;!?)\]}])/gi;
@@ -12,13 +13,20 @@ export function linkifyText(text: string, keyPrefix = ""): ReactNode[] {
   const parts = text.split(URL_RE);
   return parts.map((part, i) => {
     if (i % 2 === 1) {
+      const href = toHref(part);
       return (
         <a
           key={`${keyPrefix}${i}`}
-          href={toHref(part)}
+          href={href}
           target="_blank"
           rel="noopener noreferrer"
           className="text-[#4F8EF7] underline underline-offset-2 hover:opacity-80"
+          onClick={(e) => {
+            if (!isOpenableExternalUrl(href)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            void openExternalUrl(href);
+          }}
         >
           {part}
         </a>

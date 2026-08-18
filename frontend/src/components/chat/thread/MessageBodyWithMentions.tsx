@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import type { MouseEvent } from "react";
 import {
   displayMentionToken,
   isSpecialMention,
@@ -19,6 +20,23 @@ import { UserProfilePeek } from "@/components/chat/UserProfilePeek";
 import { useAuthStore } from "@/stores/auth-store";
 import type { ConversationType } from "@/lib/types/chat";
 import { linkifyHtml, linkifyText } from "@/lib/text/linkify";
+import {
+  isOpenableExternalUrl,
+  openExternalUrl,
+} from "@/lib/text/open-external-url";
+
+function handleLinkCapture(event: MouseEvent<HTMLDivElement>) {
+  const target = event.target as HTMLElement | null;
+  const anchor = target?.closest("a[href]") as HTMLAnchorElement | null;
+  if (!anchor) return;
+
+  const href = anchor.getAttribute("href");
+  if (!href || !isOpenableExternalUrl(href)) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  void openExternalUrl(href);
+}
 
 function RichTextPart({ html }: { html: string }) {
   const safe = sanitizeMessageHtml(html);
@@ -27,6 +45,7 @@ function RichTextPart({ html }: { html: string }) {
   return (
     <div
       className={cn(RICH_TEXT_CONTENT_CLASS, "inline")}
+      onClickCapture={handleLinkCapture}
       dangerouslySetInnerHTML={{ __html: linkifyHtml(safe) }}
     />
   );

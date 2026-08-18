@@ -5,15 +5,9 @@ import {
   requestPermission as requestTauriPermission,
   sendNotification as sendTauriNotification,
 } from "@tauri-apps/plugin-notification";
+import { isTauri } from "@/lib/tauri";
 
 const NOTIFICATION_ICON = "/riseup-mark-192.png";
-
-export function isTauri(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    ("__TAURI_INTERNALS__" in window || "__TAURI_IPC__" in window || "__TAURI__" in window)
-  );
-}
 
 function supported(): boolean {
   if (typeof window === "undefined") return false;

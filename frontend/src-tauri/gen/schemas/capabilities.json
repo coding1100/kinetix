@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default permissions capability for Kinetix app","local":true,"windows":["main"],"permissions":["core:default"]}}
+{"default":{"identifier":"default","description":"Default permissions capability for Kinetix app","remote":{"urls":["https://kinetix.mindrind.com/*"]},"local":true,"windows":["main"],"permissions":["core:default","notification:default","notification:allow-notify","shell:allow-open"]}}
