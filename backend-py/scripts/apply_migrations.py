@@ -56,6 +56,89 @@ def _checksum(raw: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _split_sql_statements(sql: str) -> list[str]:
+    """Split PostgreSQL SQL without breaking strings or dollar-quoted blocks."""
+    statements: list[str] = []
+    start = 0
+    i = 0
+    quote: str | None = None
+    dollar_tag: str | None = None
+    line_comment = False
+    block_comment = False
+
+    while i < len(sql):
+        char = sql[i]
+        next_char = sql[i + 1] if i + 1 < len(sql) else ""
+
+        if line_comment:
+            if char in "\r\n":
+                line_comment = False
+            i += 1
+            continue
+
+        if block_comment:
+            if char == "*" and next_char == "/":
+                block_comment = False
+                i += 2
+            else:
+                i += 1
+            continue
+
+        if quote:
+            if char == quote:
+                if next_char == quote:
+                    i += 2
+                    continue
+                quote = None
+            elif char == "\\" and quote == "'":
+                i += 2
+                continue
+            i += 1
+            continue
+
+        if dollar_tag:
+            if sql.startswith(dollar_tag, i):
+                i += len(dollar_tag)
+                dollar_tag = None
+            else:
+                i += 1
+            continue
+
+        if char == "-" and next_char == "-":
+            line_comment = True
+            i += 2
+            continue
+        if char == "/" and next_char == "*":
+            block_comment = True
+            i += 2
+            continue
+        if char in "'\"":
+            quote = char
+            i += 1
+            continue
+        if char == "$":
+            end = sql.find("$", i + 1)
+            if end != -1:
+                candidate = sql[i : end + 1]
+                if candidate[1:-1] == "" or all(
+                    c.isalnum() or c == "_" for c in candidate[1:-1]
+                ):
+                    dollar_tag = candidate
+                    i = end + 1
+                    continue
+        if char == ";":
+            statement = sql[start:i].strip()
+            if statement:
+                statements.append(statement)
+            start = i + 1
+        i += 1
+
+    trailing = sql[start:].strip()
+    if trailing:
+        statements.append(trailing)
+    return statements
+
+
 async def main() -> None:
     scripts_dir = Path(__file__).parent
     engine = get_engine()
@@ -91,11 +174,11 @@ async def main() -> None:
                     raise RuntimeError(f"Migration checksum changed after apply: {name}")
                 continue
 
-            # Migration files intentionally contain complete SQL scripts, including
-            # multiple statements and DO blocks. Use the driver SQL path so the
-            # database receives the script as authored instead of treating it as a
-            # single bound SQLAlchemy expression.
-            await conn.exec_driver_sql(raw)
+            # asyncpg prepares each exec_driver_sql call and rejects multiple
+            # commands in one prepared statement. Split only at top-level
+            # semicolons so strings, comments, and DO $$...$$ blocks stay intact.
+            for statement in _split_sql_statements(raw):
+                await conn.exec_driver_sql(statement)
             await conn.execute(
                 text(
                     'INSERT INTO "SchemaMigration" ("name", "checksum") '
