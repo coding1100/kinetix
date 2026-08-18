@@ -6,10 +6,9 @@ import { isExternalHref, openExternalUrl } from "@/lib/text/open-external-url";
 export function ExternalLinkProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     function handleGlobalLinkClick(e: MouseEvent) {
-      if (e.defaultPrevented) return;
-
       const target = e.target as HTMLElement | null;
       if (!target) return;
+
 
       const anchor = target.closest("a") as HTMLAnchorElement | null;
       if (!anchor) return;

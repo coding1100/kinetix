@@ -53,16 +53,38 @@ export async function openExternalUrl(rawUrl: string): Promise<void> {
 
   const win = window as any;
 
+  // 1. Tauri v2 Plugin Shell
   if (isTauri()) {
     try {
       const { open } = await import("@tauri-apps/plugin-shell");
       await open(normalized);
       return;
     } catch (err) {
-      console.warn("[links] failed to open via tauri shell", err);
+      console.warn("[links] failed to open via tauri plugin-shell", err);
+    }
+
+    try {
+      if (win.__TAURI_INTERNALS__?.invoke) {
+        await win.__TAURI_INTERNALS__.invoke("plugin:shell|open", {
+          href: normalized,
+        });
+        return;
+      }
+    } catch (err) {
+      console.warn("[links] failed to open via tauri invoke", err);
+    }
+
+    try {
+      if (win.__TAURI__?.shell?.open) {
+        await win.__TAURI__.shell.open(normalized);
+        return;
+      }
+    } catch (err) {
+      console.warn("[links] failed to open via tauri window.shell", err);
     }
   }
 
+  // 2. Electron Desktop Shell
   if (win.electron?.openExternal) {
     try {
       await win.electron.openExternal(normalized);
@@ -81,7 +103,28 @@ export async function openExternalUrl(rawUrl: string): Promise<void> {
     }
   }
 
-  const tab = window.open(normalized, "_blank", "noopener,noreferrer");
-  if (tab) tab.opener = null;
+  // 3. Fallback standard browser window / DOM anchor trigger
+  try {
+    const tab = window.open(normalized, "_blank", "noopener,noreferrer");
+    if (tab) {
+      tab.opener = null;
+      return;
+    }
+  } catch {
+    // window.open blocked
+  }
+
+  try {
+    const a = document.createElement("a");
+    a.href = normalized;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } catch (err) {
+    console.error("[links] failed all open attempts for", normalized, err);
+  }
 }
+
 
