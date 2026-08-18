@@ -10,9 +10,11 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 COPY pyproject.toml uv.lock ./
 COPY app ./app
+COPY scripts ./scripts
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 
 RUN uv sync --frozen --no-dev \
+  && test -f /app/scripts/apply_migrations.py \
   && chmod +x /docker-entrypoint.sh
 
 ENV PATH="/app/.venv/bin:$PATH"
