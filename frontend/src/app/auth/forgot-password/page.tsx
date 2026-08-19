@@ -22,12 +22,14 @@ export default function ForgotPasswordPage() {
   const navigateWithLoading = useNavigateWithLoading();
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  const [submittedEmail, setSubmittedEmail] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const result = await forgotPassword(email.trim());
+      const trimmed = email.trim();
+      const result = await forgotPassword(trimmed);
       toast.success(result.message);
       if (result.resetToken) {
         navigateWithLoading(
@@ -35,7 +37,7 @@ export default function ForgotPasswordPage() {
           "Redirecting…"
         );
       } else {
-        navigateWithLoading("/auth/login", "Redirecting…");
+        setSubmittedEmail(trimmed);
       }
     } catch (err) {
       const message =
@@ -45,6 +47,45 @@ export default function ForgotPasswordPage() {
       setLoading(false);
     }
   };
+
+  if (submittedEmail) {
+    return (
+      <AuthShell
+        title="Check your email"
+        subtitle="Password reset instructions have been sent."
+      >
+        <AuthFormCard
+          title="Reset link sent"
+          description={`If an account exists for ${submittedEmail}, we have sent a password reset link to your email address.`}
+        >
+          <div className="space-y-4 text-center">
+            <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <MailIcon className="size-6" />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Please check your inbox (and spam folder). The link will expire shortly.
+            </p>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setSubmittedEmail(null)}
+            >
+              Send link again
+            </Button>
+            <p className="text-center text-sm text-muted-foreground">
+              <Link
+                href="/auth/login"
+                className="inline-flex items-center gap-1 text-primary hover:underline"
+              >
+                <ArrowLeftIcon className="size-3.5" />
+                Back to log in
+              </Link>
+            </p>
+          </div>
+        </AuthFormCard>
+      </AuthShell>
+    );
+  }
 
   return (
     <AuthShell

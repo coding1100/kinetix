@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import BackgroundTasks
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.core.errors import AppError
 from app.core.security import (
     hash_password,
+    hash_reset_token,
     hash_token,
     sign_access_token,
     sign_refresh_token,
@@ -369,10 +370,21 @@ async def request_password_reset(
     if not user:
         return {"message": "If that email exists, a reset link was sent."}
 
+    now = datetime.now(timezone.utc)
+    # Invalidate any previous unused reset tokens for this user
+    await session.execute(
+        update(PasswordResetToken)
+        .where(
+            PasswordResetToken.user_id == user.id,
+            PasswordResetToken.used_at.is_(None),
+        )
+        .values(used_at=now)
+    )
+
     raw = generate_token()
-    token_hash = hash_token(raw)
+    token_hash = hash_reset_token(raw)
     settings = get_settings()
-    expires_at = datetime.now(timezone.utc) + timedelta(
+    expires_at = now + timedelta(
         hours=settings.reset_token_expires_hours
     )
     session.add(
@@ -391,9 +403,6 @@ async def request_password_reset(
         )
 
     result = {"message": "If that email exists, a reset link was sent."}
-    # Only expose the raw token directly when there's no email delivery to
-    # fall back on (e.g. local dev without SMTP/Resend configured) - the
-    # router still strips this in production regardless.
     if not email_configured:
         result["resetToken"] = raw
     return result
@@ -401,20 +410,31 @@ async def request_password_reset(
 
 async def reset_password(session: AsyncSession, token: str, password: str) -> dict:
     now = datetime.now(timezone.utc)
-    rows = (
-        await session.scalars(
-            select(PasswordResetToken).where(
-                PasswordResetToken.used_at.is_(None),
-                PasswordResetToken.expires_at > now,
-            )
-        )
-    ).all()
+    sha_hash = hash_reset_token(token)
 
-    matched: PasswordResetToken | None = None
-    for row in rows:
-        if verify_token_hash(token, row.token_hash):
-            matched = row
-            break
+    # Fast O(1) indexed SQL lookup for SHA-256 tokens
+    matched = await session.scalar(
+        select(PasswordResetToken).where(
+            PasswordResetToken.token_hash == sha_hash,
+            PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.expires_at > now,
+        )
+    )
+
+    # Fallback check for legacy bcrypt tokens issued prior to update
+    if not matched:
+        rows = (
+            await session.scalars(
+                select(PasswordResetToken).where(
+                    PasswordResetToken.used_at.is_(None),
+                    PasswordResetToken.expires_at > now,
+                )
+            )
+        ).all()
+        for row in rows:
+            if verify_token_hash(token, row.token_hash):
+                matched = row
+                break
 
     if not matched:
         raise AppError(400, "INVALID_TOKEN", "Reset token is invalid or expired")
