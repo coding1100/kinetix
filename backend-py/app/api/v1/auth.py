@@ -180,9 +180,6 @@ async def forgot_password(
     result = await auth_service.request_password_reset(
         session, body.email, background_tasks
     )
-    from app.config import get_settings
-
-    settings = get_settings()
     if settings.is_production:
         result.pop("resetToken", None)
     return result
