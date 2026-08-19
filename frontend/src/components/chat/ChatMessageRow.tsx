@@ -138,6 +138,14 @@ export function ChatMessageRow({
     });
   };
 
+  const handleCopyLink = () => {
+    const origin = window.location.origin;
+    const pathPrefix = conversationType === "channel" ? "/chat/c/" : "/chat/dm/";
+    const url = `${origin}${pathPrefix}${conversationId}?msg=${message.id}`;
+    void navigator.clipboard.writeText(url);
+    toast.success("Message link copied to clipboard");
+  };
+
   return (
     <article
       id={`message-${message.id}`}
@@ -228,9 +236,7 @@ export function ChatMessageRow({
                   Delete message
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem
-                onClick={() => toast.success("Link copied")}
-              >
+              <DropdownMenuItem onClick={handleCopyLink}>
                 <LinkIcon className="size-4" />
                 Copy link
               </DropdownMenuItem>

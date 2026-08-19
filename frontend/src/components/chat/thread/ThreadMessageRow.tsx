@@ -24,6 +24,7 @@ import {
   MoreHorizontalIcon,
   PencilIcon,
   Trash2Icon,
+  LinkIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatRequestError } from "@/lib/api/client";
@@ -104,6 +105,14 @@ export function ThreadMessageRow({
     });
   };
 
+  const handleCopyLink = () => {
+    const origin = window.location.origin;
+    const pathPrefix = conversationType === "channel" ? "/chat/c/" : "/chat/dm/";
+    const url = `${origin}${pathPrefix}${conversationId}?msg=${message.id}`;
+    void navigator.clipboard.writeText(url);
+    toast.success("Message link copied to clipboard");
+  };
+
   return (
     <article
       className={cn(
@@ -113,7 +122,7 @@ export function ThreadMessageRow({
         editingMessageId === message.id && "bg-primary/10 ring-1 ring-primary/30"
       )}
     >
-      {(canEdit || canDelete) && !isEditing && (
+      {!isEditing && (
         <div
           className={cn(
             "pointer-events-none absolute right-1 top-1 z-10 transition-opacity",
@@ -150,6 +159,10 @@ export function ThreadMessageRow({
                 }
               />
               <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem onClick={handleCopyLink}>
+                  <LinkIcon className="size-4" />
+                  Copy link
+                </DropdownMenuItem>
                 {canEdit && (
                   <DropdownMenuItem onClick={handleStartEdit}>
                     <PencilIcon className="size-4" />
