@@ -15,8 +15,10 @@ import {
   CopyIcon,
   MessageCircleIcon,
   MessageSquareIcon,
+  PencilIcon,
   XIcon,
 } from "lucide-react";
+import { conversationDraftKey, useDraftStore } from "@/stores/draft-store";
 import { toast } from "sonner";
 import {
   ContextMenu,
@@ -575,6 +577,8 @@ function ChannelRow({
     active,
     unreadBadgeHold
   );
+  const draftKey = conversationDraftKey("channel", channelId);
+  const hasDraft = useDraftStore((s) => Boolean(s.drafts[draftKey]?.plainText.trim()));
 
   const handleToggleRead = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -661,6 +665,9 @@ function ChannelRow({
                   ) : null}
                 </span>
                 <span className="flex items-center gap-1">
+                  {hasDraft && (
+                    <PencilIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                  )}
                   {displayUnread > 0 && (
                     <Badge className="size-5 min-w-5 justify-center rounded-full px-1 text-[10px] transition-opacity duration-300">
                       {displayUnread}
@@ -734,6 +741,8 @@ function DmRow({
     active,
     unreadBadgeHold
   );
+  const draftKey = conversationDraftKey("dm", dmId);
+  const hasDraft = useDraftStore((s) => Boolean(s.drafts[draftKey]?.plainText.trim()));
   const livePresence = useUserPresence(
     otherUserId,
     presenceFallback ?? "offline"
@@ -825,11 +834,16 @@ function DmRow({
                     ) : null}
                   </span>
                 </span>
-                {displayUnread > 0 ? (
-                  <Badge className="size-5 min-w-5 justify-center rounded-full px-1 text-[10px] transition-opacity duration-300">
-                    {displayUnread}
-                  </Badge>
-                ) : null}
+                <span className="flex items-center gap-1">
+                  {hasDraft && (
+                    <PencilIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                  )}
+                  {displayUnread > 0 ? (
+                    <Badge className="size-5 min-w-5 justify-center rounded-full px-1 text-[10px] transition-opacity duration-300">
+                      {displayUnread}
+                    </Badge>
+                  ) : null}
+                </span>
               </Button>
             }
           />
