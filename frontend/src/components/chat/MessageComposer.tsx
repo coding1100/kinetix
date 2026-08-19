@@ -51,6 +51,7 @@ import { RichComposerField } from "@/components/chat/composer/RichComposerField"
 import { useRichComposerField } from "@/hooks/use-rich-composer-field";
 import { useMentionChannels } from "@/hooks/use-mention-channels";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
+import { conversationDraftKey, useDraftStore } from "@/stores/draft-store";
 import {
   emitTypingStart,
   emitTypingStop,
@@ -141,6 +142,34 @@ export function MessageComposer({
 
   const canSend = Boolean(bodyText.trim() || attachmentIds.length > 0);
 
+  const draftKey =
+    conversationType && conversationId
+      ? conversationDraftKey(conversationType, conversationId)
+      : null;
+
+  // Restore existing draft when switching conversations or mounting
+  useEffect(() => {
+    if (!draftKey) return;
+    const existing = useDraftStore.getState().drafts[draftKey];
+    if (existing?.plainText && editorRef.current) {
+      if (existing.html) {
+        editorRef.current.innerHTML = existing.html;
+      } else {
+        editorRef.current.innerText = existing.plainText;
+      }
+      syncFromEditor();
+    } else if (!existing && editorRef.current) {
+      editorRef.current.innerHTML = "";
+      syncFromEditor();
+    }
+  }, [draftKey, syncFromEditor, editorRef]);
+
+  // Persist draft whenever text content changes
+  useEffect(() => {
+    if (!draftKey) return;
+    useDraftStore.getState().setDraft(draftKey, draftPlain);
+  }, [draftKey, draftPlain]);
+
   useEffect(() => {
     if (!workspaceId || !conversationType || !conversationId) return;
     if (!bodyText.trim()) {
@@ -197,6 +226,9 @@ export function MessageComposer({
           ? optimisticAttachments
           : undefined,
       });
+      if (draftKey) {
+        useDraftStore.getState().clearDraft(draftKey);
+      }
     } catch (err) {
       restoreMentions(messageBody);
       const detail = formatRequestError(err);

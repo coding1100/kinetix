@@ -26,6 +26,7 @@ import {
   MessageSquareIcon,
   XIcon,
 } from "lucide-react";
+import { conversationDraftKey, useDraftStore } from "@/stores/draft-store";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -776,6 +777,8 @@ function ChannelRow({
     active,
     unreadBadgeHold
   );
+  const draftKey = conversationDraftKey("channel", id);
+  const hasDraft = useDraftStore((s) => Boolean(s.drafts[draftKey]?.plainText.trim()));
 
   const handleToggleRead = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -835,6 +838,9 @@ function ChannelRow({
                 {isPrivate ? (
                   <LockIcon className="size-3 shrink-0 text-muted-foreground" />
                 ) : null}
+                {hasDraft && (
+                  <PencilIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                )}
                 {displayUnread > 0 && (
                   <Badge className="size-5 min-w-5 shrink-0 justify-center rounded-full px-1 text-[10px]">
                     {displayUnread}
@@ -901,6 +907,8 @@ function DmRow({
     active,
     unreadBadgeHold
   );
+  const draftKey = conversationDraftKey("dm", id);
+  const hasDraft = useDraftStore((s) => Boolean(s.drafts[draftKey]?.plainText.trim()));
   const livePresence = useUserPresence(otherUserId, presenceFallback ?? "offline");
   const presence = otherUserIsDisabled ? "offline" : livePresence;
   const groupParticipants = isGroup
@@ -989,6 +997,9 @@ function DmRow({
                     <span className="text-destructive"> (deactivated)</span>
                   ) : null}
                 </span>
+                {hasDraft && (
+                  <PencilIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                )}
                 {displayUnread > 0 && (
                   <Badge className="size-5 min-w-5 shrink-0 justify-center rounded-full px-1 text-[10px]">
                     {displayUnread}
