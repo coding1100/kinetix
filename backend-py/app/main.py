@@ -151,5 +151,10 @@ async def root_redirect():
     return RedirectResponse(url="/docs")
 
 
-app = fastapi_app
+from app.socket import create_asgi_app
+
+app = create_asgi_app(fastapi_app)
+
+
+
 
