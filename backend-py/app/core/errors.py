@@ -1,4 +1,4 @@
-from fastapi import HTTPException
+from fastapi.responses import JSONResponse
 
 
 class AppError(Exception):
@@ -9,8 +9,9 @@ class AppError(Exception):
         super().__init__(message)
 
 
-def app_error_to_http(exc: AppError) -> HTTPException:
-    return HTTPException(
+def app_error_to_http(exc: AppError) -> JSONResponse:
+    return JSONResponse(
         status_code=exc.status_code,
-        detail={"error": {"code": exc.code, "message": exc.message}},
+        content={"error": {"code": exc.code, "message": exc.message}},
     )
+

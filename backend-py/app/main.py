@@ -149,3 +149,7 @@ async def health_check():
 @fastapi_app.get("/", include_in_schema=False)
 async def root_redirect():
     return RedirectResponse(url="/docs")
+
+
+app = fastapi_app
+
