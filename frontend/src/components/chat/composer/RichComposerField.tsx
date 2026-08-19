@@ -74,7 +74,8 @@ export function RichComposerField({
     const el = editorRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, MAX_EDITOR_HEIGHT_PX)}px`;
+    const maxHeight = compact ? 120 : MAX_EDITOR_HEIGHT_PX;
+    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
   };
 
   useEffect(() => {
@@ -164,8 +165,8 @@ export function RichComposerField({
 
         <div
           className={cn(
-            "flex min-h-11 flex-wrap items-start gap-1 bg-card px-3 py-2.5",
-            compact ? "min-h-10 py-2" : "max-h-44 overflow-y-auto"
+            "flex min-h-11 flex-wrap items-start gap-1 overflow-y-auto bg-card px-3 py-2.5",
+            compact ? "max-h-32 min-h-10 py-2" : "max-h-44"
           )}
         >
           {leadingContent}
@@ -204,7 +205,7 @@ export function RichComposerField({
               onMouseUp={refresh}
               onKeyUp={refresh}
               className={cn(
-                "w-full min-h-[1.25rem] border-0 bg-transparent p-0 text-sm leading-5 outline-none",
+                "w-full min-h-[1.25rem] border-0 bg-transparent p-0 text-sm leading-5 outline-none break-words [overflow-wrap:anywhere]",
                 RICH_TEXT_CONTENT_CLASS
               )}
             />
