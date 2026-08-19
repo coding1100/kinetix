@@ -51,7 +51,9 @@ MIGRATIONS: tuple[str, ...] = (
     "migrate_platform_super_admin.sql",
     "migrate_chat_canvas_huddles.sql",
     "migrate_planning_stack.sql",
+    "migrate_composite_performance_indexes.sql",
 )
+
 
 
 
