@@ -65,6 +65,7 @@ import {
   mergeConfirmedMessage,
   mergeFetchedMessages,
   mergeIncomingMessage,
+  upsertChatMessage,
   normalizeMessageForViewer,
 } from "@/lib/chat/messages";
 import { optimisticToggleReaction } from "@/lib/chat/reactions";
@@ -75,6 +76,7 @@ import {
   resolveGroupDmTitle,
 } from "@/lib/chat/group-dm-display";
 import { upsertDmInSidebar } from "@/lib/chat/sidebar-dm";
+
 import { DmGroupMembersPanel } from "@/components/chat/DmGroupMembersPanel";
 import { useAuthStore } from "@/stores/auth-store";
 import { ChannelNameLabel } from "@/components/chat/ChannelNameLabel";
@@ -588,18 +590,11 @@ export function ConversationView({
     );
 
     setMessages((prev) => {
-      if (incoming.authorId === currentUserId) {
-        if (prev.some((m) => m.id === incoming.id)) return prev;
-        const hasPending = prev.some(
-          (m) =>
-            m.id.startsWith("pending-") && m.authorId === currentUserId
-        );
-        if (!hasPending) return prev;
-      }
-      const next = mergeIncomingMessage(prev, incoming);
+      const next = upsertChatMessage(prev, incoming);
       setConversationCache(workspaceId, type, id, { messages: next });
       return next;
     });
+
     setMessagesLoading(false);
     clearRealtimeEvent();
 
