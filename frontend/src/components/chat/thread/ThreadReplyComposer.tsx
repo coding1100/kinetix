@@ -219,7 +219,7 @@ export function ThreadReplyComposer({
 
       <div
         className={cn(
-          "relative rounded-md border border-border bg-card transition-shadow",
+          "relative flex flex-col rounded-md border border-border bg-card transition-shadow",
           dragActive && "ring-2 ring-primary/40"
         )}
         {...rootProps}
@@ -255,7 +255,7 @@ export function ThreadReplyComposer({
         />
 
         {alsoSendChannelLabel && (
-          <label className="flex cursor-pointer items-center gap-2 px-3 pb-1 text-xs text-muted-foreground">
+          <label className="flex cursor-pointer items-center gap-2 border-t border-border/40 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground">
             <input
               type="checkbox"
               checked={alsoSend}
