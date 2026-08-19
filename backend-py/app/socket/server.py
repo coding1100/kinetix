@@ -132,8 +132,6 @@ def _register_events(sio: socketio.AsyncServer) -> None:
             return {"ok": False}
         if not await _is_workspace_member(workspace_id, user_id):
             return {"ok": False}
-        if not await _can_type_in_conversation(kind, conversation_id, user_id):
-            return {"ok": False}
         await sio.enter_room(sid, f"ws:{workspace_id}")
 
         initial_status = (data or {}).get("status", "online")
