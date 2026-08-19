@@ -96,6 +96,47 @@ function StatusPill({
   );
 }
 
+import { useVirtualList } from "@/hooks/use-virtual-list";
+
+function VirtualizedTaskList({
+  tasks,
+  onTaskSelect,
+  onTaskDeleted,
+}: {
+  tasks: Task[];
+  onTaskSelect: (taskId: string) => void;
+  onTaskDeleted?: () => void;
+}) {
+  const ROW_HEIGHT = 40;
+  const { containerRef, startIndex, endIndex, paddingTop, paddingBottom } =
+    useVirtualList<HTMLDivElement>({
+      itemCount: tasks.length,
+      itemHeight: ROW_HEIGHT,
+      overscan: 5,
+    });
+
+  const visibleTasks = tasks.slice(startIndex, endIndex);
+
+  return (
+    <div
+      ref={containerRef}
+      className="max-h-[600px] overflow-y-auto"
+      style={{ minHeight: Math.min(tasks.length * ROW_HEIGHT, 400) }}
+    >
+      <div style={{ paddingTop: `${paddingTop}px`, paddingBottom: `${paddingBottom}px` }}>
+        {visibleTasks.map((task) => (
+          <ListTaskRow
+            key={task.id}
+            task={task}
+            onSelect={() => onTaskSelect(task.id)}
+            onDeleted={onTaskDeleted}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function ListViewGrouped({
   tasks,
   statuses,
@@ -146,14 +187,22 @@ export function ListViewGrouped({
               {group.tasks.length > 0 ? (
                 <>
                   <ListTaskColumnHeader />
-                  {group.tasks.map((task) => (
-                    <ListTaskRow
-                      key={task.id}
-                      task={task}
-                      onSelect={() => onTaskSelect(task.id)}
-                      onDeleted={onTaskDeleted}
+                  {group.tasks.length > 20 ? (
+                    <VirtualizedTaskList
+                      tasks={group.tasks}
+                      onTaskSelect={onTaskSelect}
+                      onTaskDeleted={onTaskDeleted}
                     />
-                  ))}
+                  ) : (
+                    group.tasks.map((task) => (
+                      <ListTaskRow
+                        key={task.id}
+                        task={task}
+                        onSelect={() => onTaskSelect(task.id)}
+                        onDeleted={onTaskDeleted}
+                      />
+                    ))
+                  )}
                 </>
               ) : null}
               <button
@@ -174,3 +223,4 @@ export function ListViewGrouped({
     </HomeDataState>
   );
 }
+

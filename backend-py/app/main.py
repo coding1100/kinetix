@@ -13,6 +13,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError, Timeout
 
 from app.api.v1.router import api_router
 from app.config import get_settings
+from app.core.background_queue import background_queue
 from app.core.errors import AppError, app_error_to_http
 from app.db.session import get_engine, warmup_database
 from app.services import email_service
@@ -45,10 +46,15 @@ OPENAPI_TAGS = [
     },
 ]
 
+
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     await warmup_database()
-    yield
+    await background_queue.start()
+    try:
+        yield
+    finally:
+        await background_queue.stop()
 
 
 fastapi_app = FastAPI(
@@ -65,6 +71,7 @@ fastapi_app = FastAPI(
     openapi_tags=OPENAPI_TAGS,
     lifespan=_lifespan,
 )
+
 
 def _cors_origins() -> list[str]:
     return get_settings().browser_cors_origins
@@ -88,189 +95,57 @@ async def _database_timeout_middleware(request: Request, call_next):
             status_code=503,
             content={
                 "error": {
-                    "code": "DATABASE_UNAVAILABLE",
-                    "message": "Database is temporarily unavailable. Please retry.",
+                    "message": "Database query timed out. Please try again.",
+                    "code": "DB_TIMEOUT",
                 }
             },
         )
-
-
-def custom_openapi():
-    if fastapi_app.openapi_schema:
-        return fastapi_app.openapi_schema
-    schema = get_openapi(
-        title=fastapi_app.title,
-        version=fastapi_app.version,
-        description=fastapi_app.description,
-        routes=fastapi_app.routes,
-        tags=OPENAPI_TAGS,
-    )
-    schema.setdefault("components", {}).setdefault("securitySchemes", {})[
-        "BearerAuth"
-    ] = {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "JWT",
-        "description": "Access token from POST /api/v1/auth/login",
-    }
-    fastapi_app.openapi_schema = schema
-    return fastapi_app.openapi_schema
-
-
-fastapi_app.openapi = custom_openapi
-
-
-@fastapi_app.exception_handler(AppError)
-async def app_error_handler(_request: Request, exc: AppError):
-    http_exc = app_error_to_http(exc)
-    return JSONResponse(
-        status_code=http_exc.status_code,
-        content=http_exc.detail,
-    )
-
-
-@fastapi_app.exception_handler(RequestValidationError)
-async def validation_handler(_request: Request, exc: RequestValidationError):
-    first = exc.errors()[0] if exc.errors() else {}
-    message = first.get("msg", "Invalid body")
-    return JSONResponse(
-        status_code=400,
-        content={"error": {"code": "VALIDATION_ERROR", "message": message}},
-    )
-
-
-def _is_database_unavailable(exc: BaseException) -> bool:
-    if isinstance(exc, (TimeoutError, asyncio.CancelledError, SATimeoutError)):
-        return True
-    if isinstance(exc, (OperationalError, DBAPIError)):
-        return True
-    cause = getattr(exc, "__cause__", None)
-    if cause and _is_database_unavailable(cause):
-        return True
-    msg = str(exc).lower()
-    return any(
-        token in msg
-        for token in (
-            "timeout",
-            "timed out",
-            "connection",
-            "cancelled",
-            "pool",
-            "asyncpg",
-            "prepared statement",
-        )
-    )
-
-
-@fastapi_app.exception_handler(OperationalError)
-async def db_operational_handler(_request: Request, exc: OperationalError):
-    logging.getLogger(__name__).exception("Database operation failed", exc_info=exc)
-    return JSONResponse(
-        status_code=503,
-        content={
-            "error": {
-                "code": "DATABASE_UNAVAILABLE",
-                "message": "Database is temporarily unavailable. Please retry.",
-            }
-        },
-    )
-
-
-@fastapi_app.exception_handler(IntegrityError)
-async def integrity_error_handler(_request: Request, exc: IntegrityError):
-    logging.getLogger(__name__).exception("Database integrity error", exc_info=exc)
-    return JSONResponse(
-        status_code=409,
-        content={
-            "error": {
-                "code": "CONFLICT",
-                "message": "Could not complete delete due to related records.",
-            }
-        },
-    )
-
-
-@fastapi_app.exception_handler(Exception)
-async def unhandled_handler(_request: Request, exc: Exception):
-    logging.getLogger(__name__).exception("Unhandled application error", exc_info=exc)
-    if _is_database_unavailable(exc):
+    except (OperationalError, SATimeoutError) as exc:
+        msg = str(exc).lower()
+        if "statement timeout" in msg or "canceling statement" in msg:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": {
+                        "message": "Query exceeded execution time limit.",
+                        "code": "DB_STATEMENT_TIMEOUT",
+                    }
+                },
+            )
         return JSONResponse(
             status_code=503,
             content={
                 "error": {
-                    "code": "DATABASE_UNAVAILABLE",
-                    "message": "Database is temporarily unavailable. Please retry.",
+                    "message": "Database service temporarily unavailable.",
+                    "code": "DB_UNAVAILABLE",
                 }
             },
         )
+
+
+@fastapi_app.exception_handler(AppError)
+async def _app_error_handler(_request: Request, exc: AppError):
+    return app_error_to_http(exc)
+
+
+@fastapi_app.exception_handler(RequestValidationError)
+async def _validation_error_handler(_request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    msg = errors[0]["msg"] if errors else "Invalid request data"
     return JSONResponse(
-        status_code=500,
-        content={"error": {"code": "INTERNAL_ERROR", "message": "Something went wrong"}},
+        status_code=400,
+        content={"error": {"message": msg, "code": "VALIDATION_ERROR", "details": errors}},
     )
-
-
-@fastapi_app.get("/", include_in_schema=False)
-async def root():
-    return RedirectResponse(url="/docs")
 
 
 fastapi_app.include_router(api_router, prefix="/api/v1")
 
 
-def _registered_paths() -> set[str]:
-    return {getattr(route, "path", "") for route in fastapi_app.routes}
-
-
 @fastapi_app.get("/health", tags=["meta"])
-async def health():
-    db_ok = False
-    try:
-        async with get_engine().connect() as conn:
-            await conn.execute(text("SELECT 1"))
-            db_ok = True
-    except Exception:
-        db_ok = False
-    paths = _registered_paths()
-    google_routes = {
-        "start": "/api/v1/auth/google/start" in paths,
-        "callback": "/api/v1/auth/google/callback" in paths,
-    }
-    return {
-        "status": "ok" if db_ok else "degraded",
-        "phase": "PY-5-realtime",
-        "build": "google-oauth-v1",
-        "runtime": "fastapi",
-        "database": "connected" if db_ok else "unavailable",
-        "docs": "/docs",
-        "smtp": {
-            "configured": email_service.is_smtp_configured(),
-            "host": get_settings().smtp_host or None,
-        },
-        "resend": {
-            "configured": email_service.is_resend_configured(),
-        },
-        "googleOAuth": {
-            "routesRegistered": all(google_routes.values()),
-            "configured": get_settings().google_oauth_enabled,
-            "redirectUri": get_settings().google_redirect_uri,
-            "apiPublicUrl": get_settings().api_public_url,
-        },
-    }
-
-from app.socket.server import create_asgi_app  # noqa: E402
-
-app = create_asgi_app(fastapi_app)
+async def health_check():
+    return {"status": "ok", "service": "kinetix-api-py"}
 
 
-def run():
-    s = get_settings()
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=s.port,
-        reload=s.node_env != "production",
-    )
-
-
-if __name__ == "__main__":
-    run()
+@fastapi_app.get("/", include_in_schema=False)
+async def root_redirect():
+    return RedirectResponse(url="/docs")
