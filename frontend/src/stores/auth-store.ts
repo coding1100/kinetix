@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type { AuthUser, WorkspaceSummary } from "@/lib/api/auth";
 import {
   clearSessionCookie,
@@ -36,12 +37,14 @@ interface AuthState {
   clearSession: () => void;
 }
 
-export const useAuthStore = create<AuthState>()((set, get) => ({
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set, get) => ({
       accessToken: null,
       user: null,
       workspaces: [],
       activeWorkspaceId: null,
-      hydrated: true,
+      hydrated: false,
       setHydrated: () => set({ hydrated: true }),
       setSession: ({ accessToken, user, workspaces, activeWorkspaceId }) => {
         setSessionCookie();
@@ -85,7 +88,25 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           activeWorkspaceId: null,
         });
       },
-    }));
+    }),
+    {
+      name: "kinetix_auth_storage",
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        accessToken: state.accessToken,
+        user: state.user,
+        workspaces: state.workspaces,
+        activeWorkspaceId: state.activeWorkspaceId,
+      }),
+      onRehydrateStorage: () => (state) => {
+        if (state?.user && state?.accessToken) {
+          setSessionCookie();
+        }
+        state?.setHydrated();
+      },
+    }
+  )
+);
 
 export function selectActiveWorkspace(state: AuthState) {
   return (
