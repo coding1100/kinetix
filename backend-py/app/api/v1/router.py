@@ -1,10 +1,24 @@
 from fastapi import APIRouter
 
-from app.api.v1 import admin, auth, chat, desktop, home, invites, planning, teams, workspaces
+from app.api.v1 import (
+    admin,
+    admin_knowledge,
+    ai,
+    auth,
+    chat,
+    desktop,
+    home,
+    invites,
+    planning,
+    teams,
+    workspaces,
+)
 
 api_router = APIRouter()
 
 api_router.include_router(auth.router)
+api_router.include_router(ai.router)
+api_router.include_router(admin_knowledge.router)
 api_router.include_router(admin.router)
 api_router.include_router(workspaces.router)
 api_router.include_router(teams.router)

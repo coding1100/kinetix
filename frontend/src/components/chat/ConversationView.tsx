@@ -38,6 +38,9 @@ import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
 import { ApiError } from "@/lib/api/client";
 import { PageLoader } from "@/components/ui/page-loader";
+import { Button } from "@/components/ui/button";
+import { SparklesIcon } from "lucide-react";
+import { CatchUpDialog } from "@/components/chat/CatchUpDialog";
 import { MessageList } from "./MessageList";
 import { MessageComposer } from "./MessageComposer";
 import { ThreadPanel } from "./ThreadPanel";
@@ -110,6 +113,7 @@ export function ConversationView({
   id: string;
   hideHeaderTitle?: boolean;
 }) {
+  const [catchUpOpen, setCatchUpOpen] = useState(false);
   const router = useRouter();
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const currentUserId = useAuthStore((s) => s.user?.id);
@@ -1109,6 +1113,18 @@ export function ConversationView({
             </>
           )}
         </div>
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1.5 rounded-full px-3 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
+            onClick={() => setCatchUpOpen(true)}
+            title="AI Catch Me Up"
+          >
+            <SparklesIcon className="size-3.5 text-indigo-500" />
+            <span>Catch Me Up</span>
+          </Button>
+        </div>
       </header>
       ) : null}
       {type === "channel" ? (
@@ -1243,6 +1259,13 @@ export function ConversationView({
         />
       ) : null}
       <MessageQuoteToolbar />
+      <CatchUpDialog
+        open={catchUpOpen}
+        onOpenChange={setCatchUpOpen}
+        conversationType={type}
+        conversationId={id}
+        title={title}
+      />
     </div>
   );
 }
