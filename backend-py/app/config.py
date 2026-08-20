@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     smtp_timeout_seconds: int = 30
     resend_api_key: str = ""
     resend_from: str = ""
+    gemini_api_key: str = ""
+    openai_api_key: str = ""
     aws_region: str = "us-east-1"
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
