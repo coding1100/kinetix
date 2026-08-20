@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDownIcon, PlusIcon } from "lucide-react";
+import { ChevronDownIcon, PlusIcon, SparklesIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProfileMenu } from "@/components/shell/ProfileMenu";
 import { useUiStore } from "@/stores/ui-store";
+import { useAiStore } from "@/stores/ai-store";
 import { GlobalSearch } from "@/components/search/GlobalSearch";
 import { NotificationsMenu } from "@/components/shell/topbar/NotificationsMenu";
 import { TopBarSheets } from "@/components/shell/topbar/TopBarSheets";
@@ -26,6 +27,7 @@ import { FEATURE_FLAGS } from "@/lib/feature-flags";
 export function TopBar() {
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const openModal = useUiStore((s) => s.openModal);
+  const openKnowledgeAssistant = useAiStore((s) => s.openKnowledgeAssistant);
   const activeWorkspace = useAuthStore(selectActiveWorkspace);
   const workspaceLabel = activeWorkspace?.name ?? "Workspace";
   const workspaceBadge = activeWorkspace
@@ -77,6 +79,17 @@ export function TopBar() {
         >
           <PlusIcon className="size-3.5" strokeWidth={2} />
           Create task
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1 rounded-md bg-indigo-50 dark:bg-indigo-950/40 px-2 text-xs font-semibold text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
+          onClick={() => openKnowledgeAssistant()}
+          title="Ask Company Knowledge Base AI"
+        >
+          <SparklesIcon className="size-3.5 text-indigo-500" />
+          <span>AI Assistant</span>
         </Button>
         {FEATURE_FLAGS.topBarNotifications ? <NotificationsMenu /> : null}
         <Separator orientation="vertical" className="mx-1 h-5" />

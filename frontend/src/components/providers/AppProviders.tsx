@@ -12,6 +12,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { AutoUpdateProvider } from "@/components/providers/AutoUpdateProvider";
 import { ExternalLinkProvider } from "@/components/providers/ExternalLinkProvider";
+import { KnowledgeAssistantSheet } from "@/components/shell/topbar/KnowledgeAssistantSheet";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
@@ -27,6 +28,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
               <Suspense fallback={null}>
                 <Modals />
               </Suspense>
+              <KnowledgeAssistantSheet />
               <GlobalLoader />
               <Toaster position="top-right" />
             </ExternalLinkProvider>

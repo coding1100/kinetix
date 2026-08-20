@@ -29,6 +29,7 @@ from app.db.models.home import (
     UserTaskLineup,
 )
 from app.db.models.invite import Invite
+from app.db.models.knowledge_base import CompanyDocument, CompanyDocumentChunk
 from app.db.models.oauth import OAuthAccount, OAuthExchange, OAuthState
 from app.db.models.platform import AdminAuditLog, PlatformStaff
 from app.db.models.planning import (
@@ -86,4 +87,6 @@ __all__ = [
     "PortfolioList",
     "TaskAutomationRule",
     "Whiteboard",
+    "CompanyDocument",
+    "CompanyDocumentChunk",
 ]
