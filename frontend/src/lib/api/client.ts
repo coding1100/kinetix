@@ -44,9 +44,29 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
   unauthorizedHandler = handler;
 }
 
-// De-dupes concurrent 401s: if five requests expire at once, only one
-// /auth/refresh call goes out and every caller awaits the same promise.
 let refreshPromise: Promise<string | null> | null = null;
+let refreshChannel: BroadcastChannel | null = null;
+if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+  try {
+    refreshChannel = new BroadcastChannel("kinetix_auth_refresh");
+    refreshChannel.onmessage = (event) => {
+      if (event.data?.type === "REFRESH_SUCCESS" && event.data?.token) {
+        import("@/stores/auth-store").then(({ useAuthStore }) => {
+          const store = useAuthStore.getState();
+          if (store.user) {
+            store.updateSession({
+              accessToken: event.data.token,
+              user: store.user,
+              workspaces: store.workspaces,
+            });
+          }
+        });
+      }
+    };
+  } catch {
+    // Ignore channel creation errors
+  }
+}
 
 /**
  * Silently exchanges the stored refresh token for a new access token and
@@ -68,6 +88,16 @@ async function refreshAccessToken(): Promise<string | null> {
           user: refreshed.user,
           workspaces: store.workspaces,
         });
+        if (refreshChannel) {
+          try {
+            refreshChannel.postMessage({
+              type: "REFRESH_SUCCESS",
+              token: refreshed.accessToken,
+            });
+          } catch {
+            // Ignore channel post errors
+          }
+        }
         return refreshed.accessToken;
       } catch (err) {
         // Refresh token itself is missing/expired/invalid — nothing left to
@@ -148,7 +178,19 @@ async function apiFetchInternal<T>(
   if (!isFormData) {
     headers["Content-Type"] = "application/json";
   }
-  if (init?.token) headers.Authorization = `Bearer ${init.token}`;
+
+  // Fallback to active access token in Zustand store if init.token is omitted
+  let activeToken: string | undefined = init?.token;
+  if (!activeToken && typeof window !== "undefined" && path !== "/auth/refresh") {
+    try {
+      const { useAuthStore } = await import("@/stores/auth-store");
+      activeToken = useAuthStore.getState().accessToken ?? undefined;
+    } catch {
+      // Ignore dynamic import error
+    }
+  }
+
+  if (activeToken) headers.Authorization = `Bearer ${activeToken}`;
 
   const method = (init?.method ?? "GET").toUpperCase();
   let lastError: unknown;
@@ -173,7 +215,7 @@ async function apiFetchInternal<T>(
           // and replay this exact request — user never sees the error.
           const canRefreshAndRetry =
             !isRetryAfterRefresh &&
-            Boolean(init?.token) &&
+            Boolean(activeToken) &&
             apiError.code === "UNAUTHORIZED" &&
             path !== "/auth/refresh";
           if (canRefreshAndRetry) {

@@ -56,6 +56,9 @@ class RefreshToken(Base):
     )
     token_hash: Mapped[str] = mapped_column("tokenHash", String, unique=True, nullable=False)
     expires_at: Mapped[datetime] = mapped_column("expiresAt", DateTime(timezone=True))
+    rotated_at: Mapped[datetime | None] = mapped_column(
+        "rotatedAt", DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         "createdAt", DateTime(timezone=True), server_default=func.now()
     )
