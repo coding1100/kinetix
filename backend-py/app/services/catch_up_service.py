@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import html
 import json
 import re
 from typing import Any
@@ -10,15 +11,26 @@ from sqlalchemy.orm import selectinload
 from app.core.errors import AppError
 from app.db.models.chat import ChatChannel, ChatMessage, DirectConversation
 from app.db.models.user import User
-from app.services.ai_service import get_llm_completion
+from app.services.ai_service import get_llm_completion, remove_em_dashes
 
 
 def _format_time(dt: datetime) -> str:
     return dt.strftime("%H:%M")
 
 
-def _clean_text(text: str) -> str:
-    return re.sub(r"\s+", " ", text or "").strip()
+def strip_html_tags(text: str) -> str:
+    """Strips all HTML tags and unescapes entities to produce clean plain text."""
+    if not text:
+        return ""
+    # Replace block tags with a space
+    cleaned = re.sub(r"<(br|div|p|li|tr|h[1-6])[^>]*\/?>", " ", text, flags=re.IGNORECASE)
+    # Remove remaining tags
+    cleaned = re.sub(r"<[^>]+>", "", cleaned)
+    # Unescape HTML entities (&nbsp;, &lt;, &gt;, &amp;, &quot;)
+    cleaned = html.unescape(cleaned)
+    # Remove em dashes and extra spaces
+    cleaned = remove_em_dashes(cleaned)
+    return re.sub(r"\s+", " ", cleaned).strip()
 
 
 async def generate_conversation_catch_up(
@@ -29,7 +41,7 @@ async def generate_conversation_catch_up(
     conversation_id: str,
     limit: int = 50,
 ) -> dict[str, Any]:
-    """Generates a production-grade Catch Me Up summary for a Channel or DM conversation."""
+    """Generates an executive, humanized Catch Me Up status summary for a Channel or DM."""
     target_user = await session.get(User, user_id)
     current_user_name = target_user.full_name if target_user else "You"
 
@@ -42,7 +54,6 @@ async def generate_conversation_catch_up(
             raise AppError(404, "NOT_FOUND", "Channel not found in active workspace")
         title = f"#{channel.name}"
 
-        # Optimized query with eager author load to prevent N+1 queries
         query = (
             select(ChatMessage)
             .options(selectinload(ChatMessage.author))
@@ -80,15 +91,15 @@ async def generate_conversation_catch_up(
 
     if not messages:
         return {
-            "title": title,
+            "title": remove_em_dashes(title),
             "messageCount": 0,
-            "summary": "No recent messages in this conversation yet. All caught up!",
+            "summary": "No recent activity in this conversation. All caught up!",
             "keyDecisions": [],
             "actionItems": [],
             "mentions": [],
         }
 
-    # Prepare message log entries
+    # Prepare cleaned message logs
     log_entries: list[str] = []
     author_names: set[str] = set()
 
@@ -100,7 +111,7 @@ async def generate_conversation_catch_up(
         author_name = msg.author.full_name if msg.author else "User"
         author_names.add(author_name)
         time_str = _format_time(msg.created_at)
-        text = _clean_text(msg.body)
+        text = strip_html_tags(msg.body)
 
         if not text:
             continue
@@ -108,92 +119,104 @@ async def generate_conversation_catch_up(
         entry_line = f"[{time_str}] {author_name}: {text}"
         log_entries.append(entry_line)
 
-        # NLP pattern extractions
         lower_text = text.lower()
 
-        # Decision patterns
+        # Decision detection
         if any(
-            pattern in lower_text
-            for pattern in [
+            p in lower_text
+            for p in [
                 "decided", "agreed", "let's go with", "approved", "finalized",
-                "resolved", "conclusion", "confirmed that", "we will use", "moving forward with"
+                "resolved", "conclusion", "confirmed", "moving forward with"
             ]
         ):
-            decisions.append(f"📌 {author_name}: {text}")
+            decisions.append(f"{author_name}: {text}")
 
-        # Action item patterns
+        # Action item / Issue detection
         if any(
-            pattern in lower_text
-            for pattern in [
-                "todo", "task", "action item", "please fix", "will do", "assigned",
-                "can you", "need to", "make sure to", "i'll handle", "work on"
+            p in lower_text
+            for p in [
+                "todo", "task", "issue", "bug", "not working", "problem", "please fix",
+                "will do", "assigned", "can you", "need to", "make sure to", "facing this issue"
             ]
         ):
-            actions.append(f"⚡ {author_name}: {text}")
+            actions.append(f"{author_name}: {text}")
 
-        # Mention & direct relevance patterns
+        # Direct mentions & highlights
         if (
             current_user_name.lower() in lower_text
             or f"@{current_user_name.lower()}" in lower_text
             or "@everyone" in lower_text
             or "@here" in lower_text
         ):
-            mentions.append(f"🙋 {author_name} ({time_str}): {text}")
+            mentions.append(f"{author_name} ({time_str}): {text}")
 
-    # Attempt LLM completion if API key is active
     raw_log = "\n".join(log_entries)
-    prompt = f"""Summarize the following recent chat conversation for user '{current_user_name}' in '{title}'.
-Conversation Log:
+
+    # Gemini Prompt for Humanized Executive Channel Status Report
+    prompt = f"""You are an executive AI assistant creating a clear, humanized status update for {current_user_name} on recent activity in {title}.
+
+RULES:
+1. DO NOT use em dashes (— or –). Use normal hyphens (-) or colons (:).
+2. DO NOT include any HTML tags like <div>, <br>, <b>, or CSS styles in your output.
+3. Tone: Direct, humanized, concise, and to-the-point.
+4. Executive Summary: Explain clearly: (a) what is currently happening, (b) what has been done or resolved, and (c) the overall current status of this channel/project.
+
+Chat Messages Log:
 {raw_log}
 
-Respond ONLY in JSON with the structure:
+Respond ONLY in valid JSON format:
 {{
-  "summary": "Executive summary paragraph",
+  "summary": "Clear executive status summary answering what is happening, what is done, and overall status",
   "keyDecisions": ["Decision 1", "Decision 2"],
-  "actionItems": ["Action 1", "Action 2"],
+  "actionItems": ["Action/Issue 1", "Action/Issue 2"],
   "mentions": ["Mention 1"]
 }}
 """
-    llm_result = await get_llm_completion(prompt, system_instruction="You are an AI workspace summarizer. Return valid JSON only.")
+
+    llm_result = await get_llm_completion(prompt, system_instruction="You are a humanized workspace status summarizer. Output valid JSON only.")
 
     if llm_result:
         try:
-            # Strip markdown code blocks if returned
             cleaned_json = re.sub(r"^```json\s*", "", llm_result.strip(), flags=re.MULTILINE)
             cleaned_json = re.sub(r"\s*```$", "", cleaned_json, flags=re.MULTILINE)
             data = json.loads(cleaned_json)
-            return {
-                "title": title,
-                "messageCount": len(messages),
-                "summary": data.get("summary", ""),
-                "keyDecisions": data.get("keyDecisions", []),
-                "actionItems": data.get("actionItems", []),
-                "mentions": data.get("mentions", []),
-            }
+
+            clean_summary = remove_em_dashes(strip_html_tags(data.get("summary", "")))
+            clean_decisions = [remove_em_dashes(strip_html_tags(d)) for d in data.get("keyDecisions", [])]
+            clean_actions = [remove_em_dashes(strip_html_tags(a)) for a in data.get("actionItems", [])]
+            clean_mentions = [remove_em_dashes(strip_html_tags(m)) for m in data.get("mentions", [])]
+
+            if clean_summary:
+                return {
+                    "title": remove_em_dashes(title),
+                    "messageCount": len(messages),
+                    "summary": clean_summary,
+                    "keyDecisions": clean_decisions[:5],
+                    "actionItems": clean_actions[:5],
+                    "mentions": clean_mentions[:5],
+                }
         except Exception:
             pass
 
-    # Heuristic NLP Summary Generator (Offline / Production Fallback)
+    # Heuristic Fallback
     authors_str = ", ".join(list(author_names)[:3])
     if len(author_names) > 3:
         authors_str += f" and {len(author_names) - 3} others"
 
-    summary_paragraph = (
-        f"Discussion in {title} covering {len(messages)} recent messages from {authors_str}. "
-        f"The conversation covers project updates, technical coordination, and immediate next steps."
+    fallback_summary = (
+        f"Active status in {title}: {len(messages)} recent updates logged by {authors_str}. "
+        f"Team is coordinating on testing, feedback review, and resolving active issues."
     )
 
-    if not decisions and len(messages) >= 3:
-        # Fallback highlight from latest message
-        last_msg = messages[-1]
-        last_author = last_msg.author.full_name if last_msg.author else "User"
-        decisions.append(f"📌 Latest update from {last_author}: \"{_clean_text(last_msg.body)}\"")
+    clean_decisions = [remove_em_dashes(strip_html_tags(d)) for d in decisions]
+    clean_actions = [remove_em_dashes(strip_html_tags(a)) for a in actions]
+    clean_mentions = [remove_em_dashes(strip_html_tags(m)) for m in mentions]
 
     return {
-        "title": title,
+        "title": remove_em_dashes(title),
         "messageCount": len(messages),
-        "summary": summary_paragraph,
-        "keyDecisions": decisions[:5],
-        "actionItems": actions[:5],
-        "mentions": mentions[:5],
+        "summary": remove_em_dashes(fallback_summary),
+        "keyDecisions": clean_decisions[:5],
+        "actionItems": clean_actions[:5],
+        "mentions": clean_mentions[:5],
     }

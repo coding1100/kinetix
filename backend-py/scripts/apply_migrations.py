@@ -54,6 +54,7 @@ MIGRATIONS: tuple[str, ...] = (
     "migrate_composite_performance_indexes.sql",
     "migrate_inam_password.sql",
     "migrate_refresh_token_grace_period.sql",
+    "migrate_knowledge_base.sql",
 )
 
 
