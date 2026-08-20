@@ -30,7 +30,8 @@ async def _workspace_id(client: AsyncClient, token: str) -> str:
 
 
 async def _create_task(client: AsyncClient, token: str, workspace_id: str) -> str:
-    suffix = int(time.time())
+    import uuid
+    suffix = f"{time.time()}_{uuid.uuid4().hex[:6]}"
     space = await client.post(
         f"/api/v1/workspaces/{workspace_id}/spaces",
         headers=_auth(token),

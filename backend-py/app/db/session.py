@@ -9,6 +9,7 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 _engine = None
+_engine_loop = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 _db_semaphore: asyncio.Semaphore | None = None
 
@@ -20,7 +21,18 @@ _DB_CONCURRENCY_LIMIT = _POOL_SIZE + _MAX_OVERFLOW
 
 
 def get_engine():
-    global _engine
+    global _engine, _engine_loop, _session_factory
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+
+    if _engine is not None and current_loop is not None:
+        if _engine_loop is not None and _engine_loop is not current_loop:
+            _engine = None
+            _engine_loop = None
+            _session_factory = None
+
     if _engine is None:
         settings = get_settings()
         _engine = create_async_engine(
@@ -32,6 +44,8 @@ def get_engine():
             pool_timeout=60,
             pool_recycle=300,
         )
+        _engine_loop = current_loop
+        _session_factory = None
     return _engine
 
 

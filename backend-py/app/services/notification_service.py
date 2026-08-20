@@ -234,6 +234,39 @@ async def create_channel_access_notifications(
     return created
 
 
+async def create_channel_remove_notification(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    target_user_id: str,
+    actor_user_id: str,
+    channel: ChatChannel,
+) -> list[tuple[str, InboxItem]]:
+    if target_user_id == actor_user_id:
+        return []
+
+    users = await _load_users(session, [actor_user_id, target_user_id])
+    actor_name = users.get(actor_user_id).full_name if users.get(actor_user_id) else "Someone"
+    channel_label = channel.name
+
+    item = InboxItem(
+        workspace_id=workspace_id,
+        user_id=target_user_id,
+        type=InboxItemType.CHAT,
+        title=f"Removed from #{channel_label}",
+        preview=f"{actor_name} removed you from #{channel_label}",
+        source=channel_label,
+        unread=True,
+        bucket=InboxBucket.ALL,
+        time_group=InboxTimeGroup.TODAY,
+        href="/chat",
+        activity_kind="channel_access_removed",
+    )
+    session.add(item)
+    await session.flush()
+    return [(target_user_id, item)]
+
+
 async def create_invite_accepted_notification(
     session: AsyncSession,
     *,
