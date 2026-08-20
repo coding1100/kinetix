@@ -75,6 +75,7 @@ def _validate_icon(icon: str | None) -> str | None:
     return icon
 from app.services.notification_service import (
     create_channel_access_notifications,
+    create_channel_remove_notification,
     create_channel_broadcast_notifications,
     create_mention_notifications,
     create_reaction_notification,
@@ -2201,8 +2202,18 @@ async def remove_channel_member(
             "Cannot remove the last channel member",
         )
 
+    remove_notifs = await create_channel_remove_notification(
+        session,
+        workspace_id=workspace_id,
+        target_user_id=target_user_id,
+        actor_user_id=user_id,
+        channel=actor.channel,
+    )
     await session.delete(target)
     await session.commit()
+
+    if remove_notifs:
+        await emit_home_notifications(remove_notifs)
 
     fire_and_forget(
         broadcast_channel_removed(
