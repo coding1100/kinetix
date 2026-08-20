@@ -535,41 +535,16 @@ export function ConversationView({
 
   useEffect(() => {
     if (!conversationContentReady || error || !ready) return;
-
-    const key = `${type}:${id}`;
-    if (readDelayKeyRef.current === key) return;
-    readDelayKeyRef.current = key;
-
-    const lists = useChatStore.getState().sidebarListsCache;
-    const currentUnread =
-      type === "channel"
-        ? (lists?.channels.find((c) => c.id === id)?.unread ?? 0)
-        : (lists?.dms.find((d) => d.id === id)?.unread ?? 0);
-
-    if (currentUnread > 0) {
-      setUnreadBadgeHold({
-        kind: type,
-        id,
-        count: currentUnread,
-        expiresAt: Date.now() + UNREAD_BADGE_HIDE_DELAY_MS,
-      });
-    }
-
-    const timer = window.setTimeout(() => {
-      void markConversationReadRef.current();
-      clearUnreadBadgeHold();
-    }, UNREAD_BADGE_HIDE_DELAY_MS);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
+    setConversationUnread(type, id, 0);
+    clearUnreadBadgeHold();
+    void markConversationReadRef.current();
   }, [
     conversationContentReady,
     error,
     ready,
     type,
     id,
-    setUnreadBadgeHold,
+    setConversationUnread,
     clearUnreadBadgeHold,
   ]);
 

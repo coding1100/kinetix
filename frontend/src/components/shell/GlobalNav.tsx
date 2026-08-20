@@ -8,8 +8,6 @@ import {
   MessageSquareIcon,
   UsersIcon,
   UsersRoundIcon,
-  LayoutGridIcon,
-  BoxesIcon,
   UserPlusIcon,
   ChevronsRightIcon,
 } from "lucide-react";
@@ -27,14 +25,12 @@ type NavItem = {
   href?: string;
   badge?: number | "dot";
   disabled?: boolean;
-  /** Hidden from rail — kept in config for future phases */
   hidden?: boolean;
 };
 
 const BASE_NAV_ITEMS: NavItem[] = [
   { label: "Home", icon: HomeIcon, href: "/home/inbox" },
   { label: "Chat", icon: MessageSquareIcon, href: "/chat" },
-  { label: "Spaces", icon: BoxesIcon, href: "/spaces" },
   { label: "Teams", icon: UsersRoundIcon, href: "/teams", hidden: !FEATURE_FLAGS.teams },
   { label: "People", icon: UsersIcon, href: "/people" },
 ];
@@ -45,8 +41,6 @@ export function GlobalNav() {
   const { secondaryPanelOpen, setSecondaryPanelOpen } = useShellStore();
   const { unreadCount } = useNotificationsUnread();
   const homeUnread = unreadCount > 0 ? unreadCount : undefined;
-  // Chat dot lights up only when there's an actual unread channel/group-DM/DM,
-  // rather than showing permanently.
   const chatHasUnread = useChatStore((s) => {
     const cache = s.sidebarListsCache;
     if (!cache) return false;
@@ -71,7 +65,6 @@ export function GlobalNav() {
     if (!item.href) return false;
     if (item.label === "Home") return pathname.startsWith("/home");
     if (item.label === "Chat") return pathname.startsWith("/chat");
-    if (item.label === "Spaces") return pathname.startsWith("/spaces");
     if (item.label === "Teams") return pathname.startsWith("/teams");
     if (item.label === "People") return pathname.startsWith("/people");
     return pathname === item.href;

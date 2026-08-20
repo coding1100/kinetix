@@ -137,7 +137,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             throw err;
           }
         }
-      } else if (hasFrontendSessionCookie()) {
+      } else {
         await tryRefresh();
       }
     } catch (err) {
