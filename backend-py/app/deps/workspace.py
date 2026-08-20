@@ -31,6 +31,7 @@ async def get_workspace_member(
             WorkspaceMember.user_id == user.id,
         )
         .options(selectinload(WorkspaceMember.workspace))
+        .execution_options(populate_existing=True)
     )
     if not membership or membership.status != MemberStatus.ACTIVE:
         raise AppError(403, "FORBIDDEN", "You are not a member of this workspace")

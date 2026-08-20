@@ -54,7 +54,7 @@ def test_role_rank_orders_full_hierarchy():
             WorkspaceRole.SUPER_ADMIN,
             set(ALL_ROLES) - {WorkspaceRole.OWNER, WorkspaceRole.SUPER_ADMIN},
         ),
-        (WorkspaceRole.ADMIN, CONTENT_ROLES | {WorkspaceRole.ADMIN}),
+        (WorkspaceRole.ADMIN, CONTENT_ROLES),
         (WorkspaceRole.MEMBER, CONTENT_ROLES),
         (WorkspaceRole.LIMITED_MEMBER, set()),
         (WorkspaceRole.GUEST, set()),

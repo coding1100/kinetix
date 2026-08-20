@@ -64,6 +64,16 @@ export function formatChatMessageTime(date: Date, now = new Date()): string {
   return `${datePart} at ${timePart}`;
 }
 
+export function formatCompactMessageTime(date: Date): string {
+  return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: PKT_TIME_ZONE,
+  });
+}
+
+
 /** Completed calendar months between two dates (e.g. 30 days into month 2 is still 1, not 0). */
 function completedMonthsBetween(from: Date, to: Date): number {
   let months =

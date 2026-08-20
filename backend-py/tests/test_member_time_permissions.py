@@ -3,6 +3,7 @@ Guest/Limited Member "individual permissions")."""
 
 from __future__ import annotations
 
+import time
 import pytest
 from httpx import AsyncClient
 
@@ -27,8 +28,37 @@ async def test_time_permission_toggle_blocks_and_restores(api_client: AsyncClien
     ws_id = await workspace_id(api_client, owner_token)
     member_user_id = await user_id(api_client, member_token)
 
-    _, list_id = await create_space_list(api_client, owner_token, ws_id)
-    task = await create_task(api_client, owner_token, ws_id, list_id)
+    suffix = int(time.time() * 1000)
+    space = await api_client.post(
+        f"/api/v1/workspaces/{ws_id}/spaces",
+        headers=owner_headers,
+        json={"name": f"Time Space {suffix}"},
+    )
+    assert space.status_code == 201, space.text
+    space_id = space.json()["id"]
+
+    add_mem = await api_client.post(
+        f"/api/v1/workspaces/{ws_id}/spaces/{space_id}/members",
+        headers=owner_headers,
+        json={"userId": member_user_id, "permissionLevel": "EDIT"},
+    )
+    assert add_mem.status_code in (200, 201), add_mem.text
+
+    lst = await api_client.post(
+        f"/api/v1/workspaces/{ws_id}/spaces/{space_id}/lists",
+        headers=owner_headers,
+        json={"name": "Time List"},
+    )
+    assert lst.status_code == 201, lst.text
+    list_id = lst.json()["id"]
+
+    res = await api_client.post(
+        f"/api/v1/workspaces/{ws_id}/lists/{list_id}/tasks",
+        headers=owner_headers,
+        json={"name": "Time permission test task", "assigneeIds": [member_user_id]},
+    )
+    assert res.status_code == 201, res.text
+    task = res.json()
     task_id = task["id"]
 
     try:
