@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { ChatMessage, UpdateMessagePayload } from "@/lib/types/chat";
-import { formatChatMessageTime } from "@/lib/chat/dates";
+import { formatChatMessageTime, formatCompactMessageTime } from "@/lib/chat/dates";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 import { useChatStore } from "@/stores/chat-store";
@@ -208,8 +208,18 @@ export function ThreadMessageRow({
               </AvatarFallback>
             </Avatar>
           </MessageAuthorButton>
-        ) : null}
-        <div className={cn("min-w-0 flex-1", !showHeader && "ml-9")}>
+        ) : (
+          <div className="w-8 shrink-0 relative flex items-center justify-end pr-0.5 pt-0.5 pointer-events-none">
+            <time
+              className="text-[10px] font-medium text-muted-foreground/70 opacity-0 group-hover:opacity-100 transition-opacity select-none whitespace-nowrap"
+              dateTime={message.createdAt}
+              title={formatChatMessageTime(created)}
+            >
+              {formatCompactMessageTime(created)}
+            </time>
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
           {showHeader && (
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
               <MessageAuthorButton

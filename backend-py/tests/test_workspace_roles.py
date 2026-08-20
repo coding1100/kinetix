@@ -8,8 +8,10 @@ import pytest
 from httpx import AsyncClient
 
 from tests.task_test_helpers import MEMBER, OWNER, auth_headers, login, user_id, workspace_id
+
+
 @pytest.mark.asyncio(loop_scope="session")
-async def test_owner_can_access_private_channel_without_membership(
+async def test_owner_can_access_private_channel(
     api_client: AsyncClient,
 ):
     owner_token = await login(api_client, *OWNER)
@@ -18,6 +20,7 @@ async def test_owner_can_access_private_channel_without_membership(
     member_headers = auth_headers(member_token)
     ws_id = await workspace_id(api_client, owner_token)
     member_user_id = await user_id(api_client, member_token)
+    owner_user_id = await user_id(api_client, owner_token)
 
     suffix = int(time.time() * 1000)
     created = await api_client.post(
@@ -26,7 +29,7 @@ async def test_owner_can_access_private_channel_without_membership(
         json={
             "name": f"private-owner-test-{suffix}",
             "isPrivate": True,
-            "memberIds": [member_user_id],
+            "memberIds": [member_user_id, owner_user_id],
         },
     )
     assert created.status_code == 201, created.text
@@ -62,6 +65,7 @@ async def test_super_admin_role_and_limitations(api_client: AsyncClient):
     member_headers = auth_headers(member_token)
     ws_id = await workspace_id(api_client, owner_token)
     member_user_id = await user_id(api_client, member_token)
+    owner_user_id = await user_id(api_client, owner_token)
 
     promoted = await api_client.patch(
         f"/api/v1/workspaces/{ws_id}/members/{member_user_id}",
@@ -69,8 +73,6 @@ async def test_super_admin_role_and_limitations(api_client: AsyncClient):
         json={"role": "SUPER_ADMIN"},
     )
     assert promoted.status_code == 200, promoted.text
-
-    owner_user_id = await user_id(api_client, owner_token)
 
     transfer = await api_client.post(
         f"/api/v1/workspaces/{ws_id}/transfer-ownership",
@@ -93,7 +95,7 @@ async def test_super_admin_role_and_limitations(api_client: AsyncClient):
         json={
             "name": f"private-super-{suffix}",
             "isPrivate": True,
-            "memberIds": [await user_id(api_client, owner_token)],
+            "memberIds": [owner_user_id, member_user_id],
         },
     )
     assert created.status_code == 201, created.text

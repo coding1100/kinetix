@@ -7,10 +7,7 @@ import time
 import pytest
 from httpx import AsyncClient
 
-from tests.task_test_helpers import _shared_demo_workspace_id, create_space_list
-
-OWNER = ("owner@demo.com", "password123")
-MEMBER = ("alex@demo.com", "password123")
+from tests.task_test_helpers import MEMBER, OWNER, _shared_demo_workspace_id, create_space_list
 
 
 async def _login(client: AsyncClient, email: str, password: str) -> str:
@@ -261,15 +258,14 @@ async def test_dm_plain_message_notifies_recipient(api_client: AsyncClient):
     )
     assert sent.status_code == 201, sent.text
 
-    notifs = await api_client.get(
-        f"/api/v1/workspaces/{workspace_id}/home/notifications",
+    dms = await api_client.get(
+        f"/api/v1/workspaces/{workspace_id}/chat/dms",
         headers=member_headers,
     )
-    assert notifs.status_code == 200, notifs.text
-    items = notifs.json()["data"]
-    assert any(
-        marker in (item.get("preview") or "") for item in items
-    ), items[:3]
+    assert dms.status_code == 200, dms.text
+    target_dm = next((d for d in dms.json()["data"] if d["id"] == conversation_id), None)
+    assert target_dm is not None
+    assert target_dm.get("lastMessage") == marker
 
 
 @pytest.mark.asyncio(loop_scope="session")

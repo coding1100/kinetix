@@ -68,7 +68,6 @@ def can_assign_role(actor_role: WorkspaceRole, new_role: WorkspaceRole) -> bool:
         return new_role not in (WorkspaceRole.OWNER, WorkspaceRole.SUPER_ADMIN)
     if actor_role == WorkspaceRole.ADMIN:
         return new_role in (
-            WorkspaceRole.ADMIN,
             WorkspaceRole.MEMBER,
             WorkspaceRole.GUEST,
             WorkspaceRole.LIMITED_MEMBER,

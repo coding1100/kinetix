@@ -6,7 +6,11 @@ import type {
   ConversationType,
   UpdateMessagePayload,
 } from "@/lib/types/chat";
-import { formatChatMessageTime, formatThreadReplyTime } from "@/lib/chat/dates";
+import {
+  formatChatMessageTime,
+  formatCompactMessageTime,
+  formatThreadReplyTime,
+} from "@/lib/chat/dates";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 import { useChatStore } from "@/stores/chat-store";
@@ -291,7 +295,17 @@ export function ChatMessageRow({
                 </AvatarFallback>
               </Avatar>
             </MessageAuthorButton>
-          ) : null}
+          ) : (
+            <div className="absolute top-0.5 right-0 flex items-center justify-end pr-1 pointer-events-none">
+              <time
+                className="text-[10px] font-medium text-muted-foreground/70 opacity-0 group-hover:opacity-100 transition-opacity select-none whitespace-nowrap"
+                dateTime={message.createdAt}
+                title={formatChatMessageTime(created)}
+              >
+                {formatCompactMessageTime(created)}
+              </time>
+            </div>
+          )}
           {showHeader && repliesLabel ? (
             <span
               aria-hidden

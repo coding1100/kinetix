@@ -151,13 +151,17 @@ async def send_workspace_invite_email(
         expires_at=expires_at,
     )
     if is_resend_configured():
-        await _send_via_resend(
-            to=to,
-            subject=subject,
-            text_body=text_body,
-            html_body=html_body,
-        )
-        return
+        try:
+            await _send_via_resend(
+                to=to,
+                subject=subject,
+                text_body=text_body,
+                html_body=html_body,
+            )
+            return
+        except Exception:
+            if not is_smtp_configured():
+                raise
     await asyncio.to_thread(
         _send_sync,
         to=to,
@@ -196,13 +200,17 @@ async def send_password_reset_email(
         reset_url=reset_url, expires_hours=expires_hours
     )
     if is_resend_configured():
-        await _send_via_resend(
-            to=to,
-            subject=subject,
-            text_body=text_body,
-            html_body=html_body,
-        )
-        return
+        try:
+            await _send_via_resend(
+                to=to,
+                subject=subject,
+                text_body=text_body,
+                html_body=html_body,
+            )
+            return
+        except Exception:
+            if not is_smtp_configured():
+                raise
     await asyncio.to_thread(
         _send_sync,
         to=to,
