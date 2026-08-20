@@ -120,6 +120,9 @@ async def login(session: AsyncSession, body: LoginBody) -> dict:
     return {**_auth_response(user, access_token), "refreshToken": refresh_token}
 
 
+ROTATION_GRACE_PERIOD = timedelta(seconds=30)
+
+
 async def refresh_session(session: AsyncSession, refresh_token: str) -> dict:
     try:
         payload = verify_refresh_token(refresh_token)
@@ -128,6 +131,8 @@ async def refresh_session(session: AsyncSession, refresh_token: str) -> dict:
 
     user_id = payload["sub"]
     now = datetime.now(timezone.utc)
+    cutoff = now - ROTATION_GRACE_PERIOD
+
     rows = (
         await session.scalars(
             select(RefreshToken).where(
@@ -152,7 +157,26 @@ async def refresh_session(session: AsyncSession, refresh_token: str) -> dict:
     if user.is_disabled:
         raise AppError(403, "ACCOUNT_DISABLED", "This account is disabled")
 
-    await session.delete(matched)
+    # If this token was already rotated within the last 30 seconds (grace period reuse across tabs),
+    # return a valid access token and current session instead of logging out!
+    if matched.rotated_at is not None:
+        if matched.rotated_at >= cutoff:
+            access_token = sign_access_token(sub=str(user.id), email=user.email)
+            return {
+                **_auth_response(user, access_token),
+                "refreshToken": refresh_token,
+            }
+        else:
+            raise AppError(401, "INVALID_REFRESH", "Refresh token has expired or been replaced")
+
+    # Mark current token as rotated
+    matched.rotated_at = now
+
+    # Clean up old rotated tokens older than 30s
+    for r in rows:
+        if r.rotated_at is not None and r.rotated_at < cutoff:
+            await session.delete(r)
+
     access_token = sign_access_token(sub=str(user.id), email=user.email)
     new_refresh = await issue_refresh_for_user(session, user.id)
     await session.commit()
