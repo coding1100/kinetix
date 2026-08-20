@@ -4,6 +4,8 @@ import os
 import re
 from typing import Any
 
+from app.config import get_settings
+
 logger = logging.getLogger(__name__)
 
 # Stopwords set for text analysis
@@ -31,6 +33,12 @@ STOPWORDS = {
 }
 
 
+def remove_em_dashes(text: str) -> str:
+    if not text:
+        return ""
+    return text.replace("—", " - ").replace("–", " - ")
+
+
 def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
     """Computes cosine similarity between two numeric vectors with dimension validation."""
     if not vec1 or not vec2 or len(vec1) != len(vec2):
@@ -50,15 +58,12 @@ def generate_vector_embedding(text: str, dim: int = 156) -> list[float]:
     if not words:
         return vec
 
-    # Term frequency hash projection
     for word in words:
-        # Dual hash for feature distribution across dimensions
         h1 = abs(hash(word)) % dim
         h2 = abs(hash(word[::-1] + "_k")) % dim
         vec[h1] += 1.0
         vec[h2] += 0.5
 
-    # Sublinear scaling & L2 normalization
     for i in range(dim):
         if vec[i] > 0:
             vec[i] = 1.0 + math.log(vec[i])
@@ -84,22 +89,40 @@ async def get_llm_completion(
     prompt: str,
     system_instruction: str = "You are an executive AI workspace assistant for Kinetix.",
 ) -> str | None:
-    """Attempts completion using available LLM API providers (Gemini or OpenAI).
-    Returns None if no API key is set or call fails, enabling offline engine fallback."""
-    gemini_key = os.getenv("GEMINI_API_KEY")
-    openai_key = os.getenv("OPENAI_API_KEY")
+    """Invokes Google Gemini API for text completion. Enforces no em dashes and clean text output."""
+    settings = get_settings()
+    gemini_key = (settings.gemini_api_key or os.getenv("GEMINI_API_KEY") or "").strip()
+    openai_key = (settings.openai_api_key or os.getenv("OPENAI_API_KEY") or "").strip()
 
     if gemini_key:
+        # Try google-genai SDK (new) or google.generativeai (legacy)
+        try:
+            from google import genai
+            client = genai.Client(api_key=gemini_key)
+            full_prompt = f"{system_instruction}\n\nIMPORTANT: DO NOT use em dashes (— or –). Use normal hyphens (-) or colons (:).\n\n{prompt}"
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=full_prompt,
+            )
+            if response and response.text:
+                return remove_em_dashes(response.text.strip())
+        except Exception as e1:
+            logger.info(f"New Google GenAI SDK fallback: {e1}")
+
         try:
             import google.generativeai as genai
             genai.configure(api_key=gemini_key)
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            full_prompt = f"{system_instruction}\n\n{prompt}"
-            response = await model.generate_content_async(full_prompt)
-            if response and response.text:
-                return response.text.strip()
-        except Exception as e:
-            logger.warning(f"Gemini API invocation failed: {e}")
+            for model_name in ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-pro"]:
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    full_prompt = f"{system_instruction}\n\nIMPORTANT: DO NOT use em dashes (— or –). Use normal hyphens (-) or colons (:).\n\n{prompt}"
+                    response = await model.generate_content_async(full_prompt)
+                    if response and response.text:
+                        return remove_em_dashes(response.text.strip())
+                except Exception as model_err:
+                    logger.debug(f"Model {model_name} failed: {model_err}")
+        except Exception as e2:
+            logger.warning(f"Google GenerativeAI SDK invocation failed: {e2}")
 
     if openai_key:
         try:
@@ -108,13 +131,13 @@ async def get_llm_completion(
             completion = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": system_instruction},
+                    {"role": "system", "content": f"{system_instruction}\nDO NOT use em dashes (— or –)."},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.3,
             )
             if completion.choices and completion.choices[0].message.content:
-                return completion.choices[0].message.content.strip()
+                return remove_em_dashes(completion.choices[0].message.content.strip())
         except Exception as e:
             logger.warning(f"OpenAI API invocation failed: {e}")
 

@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 import re
@@ -15,7 +16,10 @@ from app.services.ai_service import (
     extract_key_phrases,
     generate_vector_embedding,
     get_llm_completion,
+    remove_em_dashes,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _chunk_text_sentence_aware(
@@ -28,7 +32,6 @@ def _chunk_text_sentence_aware(
     if len(cleaned) <= target_chunk_size:
         return [cleaned]
 
-    # Split by paragraph/sentence delimiters
     sentences = re.split(r"(?<=[.!?\n])\s+", cleaned)
     chunks: list[str] = []
     current_chunk: list[str] = []
@@ -44,7 +47,6 @@ def _chunk_text_sentence_aware(
             chunk_str = " ".join(current_chunk)
             chunks.append(chunk_str)
 
-            # Build overlap from tail sentences
             overlap_chunk: list[str] = []
             overlap_len = 0
             for s in reversed(current_chunk):
@@ -76,68 +78,84 @@ async def create_company_document(
     file_type: str = "text",
 ) -> CompanyDocument:
     """Ingests a company policy document, chunks it semantically, and indexes vector embeddings."""
-    title_str = title.strip()
-    content_str = content.strip()
+    title_str = remove_em_dashes(title.strip())
+    content_str = remove_em_dashes(content.strip())
 
     if not title_str:
         raise AppError(400, "BAD_REQUEST", "Document title is required")
     if not content_str:
         raise AppError(400, "BAD_REQUEST", "Document content cannot be empty")
 
-    doc = CompanyDocument(
-        workspace_id=workspace_id,
-        title=title_str,
-        category=category.strip() or "General",
-        file_path=file_path,
-        file_type=file_type,
-        created_by_id=user_id,
-    )
-    session.add(doc)
-    await session.flush()
-
-    raw_chunks = _chunk_text_sentence_aware(content_str)
-    for idx, chunk_text in enumerate(raw_chunks):
-        embedding_vec = generate_vector_embedding(chunk_text)
-        chunk = CompanyDocumentChunk(
-            document_id=doc.id,
-            chunk_index=idx,
-            content=chunk_text,
-            embedding=embedding_vec,
-            metadata_json={
-                "title": doc.title,
-                "category": doc.category,
-                "chunk_size": len(chunk_text),
-            },
+    try:
+        doc = CompanyDocument(
+            workspace_id=workspace_id,
+            title=title_str,
+            category=category.strip() or "General",
+            file_path=file_path,
+            file_type=file_type,
+            created_by_id=user_id,
         )
-        session.add(chunk)
+        session.add(doc)
+        await session.flush()
 
-    await session.commit()
-    await session.refresh(doc)
-    return doc
+        raw_chunks = _chunk_text_sentence_aware(content_str)
+        for idx, chunk_text in enumerate(raw_chunks):
+            embedding_vec = generate_vector_embedding(chunk_text)
+            chunk = CompanyDocumentChunk(
+                document_id=doc.id,
+                chunk_index=idx,
+                content=chunk_text,
+                embedding=embedding_vec,
+                metadata_json={
+                    "title": doc.title,
+                    "category": doc.category,
+                    "chunk_size": len(chunk_text),
+                },
+            )
+            session.add(chunk)
+
+        await session.commit()
+        await session.refresh(doc)
+        return doc
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Error creating company document: {e}")
+        raise AppError(500, "INTERNAL_SERVER_ERROR", f"Failed to save document: {e}")
 
 
 async def list_company_documents(
     session: AsyncSession, workspace_id: str
 ) -> list[CompanyDocument]:
     """Lists all company policy documents in the workspace ordered by creation date."""
-    return (
-        await session.scalars(
-            select(CompanyDocument)
-            .where(CompanyDocument.workspace_id == workspace_id)
-            .order_by(CompanyDocument.created_at.desc())
-        )
-    ).all()
+    try:
+        return (
+            await session.scalars(
+                select(CompanyDocument)
+                .where(CompanyDocument.workspace_id == workspace_id)
+                .order_by(CompanyDocument.created_at.desc())
+            )
+        ).all()
+    except Exception as e:
+        logger.warning(f"Failed to list company documents (tables may be uninitialized): {e}")
+        return []
 
 
 async def delete_company_document(
     session: AsyncSession, workspace_id: str, document_id: str
 ) -> None:
     """Deletes a company policy document and cascades deletion of vector chunks."""
-    doc = await session.get(CompanyDocument, document_id)
-    if not doc or doc.workspace_id != workspace_id:
-        raise AppError(404, "NOT_FOUND", "Document not found in active workspace")
-    await session.delete(doc)
-    await session.commit()
+    try:
+        doc = await session.get(CompanyDocument, document_id)
+        if not doc or doc.workspace_id != workspace_id:
+            raise AppError(404, "NOT_FOUND", "Document not found in active workspace")
+        await session.delete(doc)
+        await session.commit()
+    except AppError:
+        raise
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Error deleting company document: {e}")
+        raise AppError(500, "INTERNAL_SERVER_ERROR", f"Failed to delete document: {e}")
 
 
 def _infer_action_chips(query: str, answer: str) -> list[dict[str, str]]:
@@ -167,28 +185,32 @@ async def query_company_knowledge_base(
     top_k: int = 4,
 ) -> dict[str, Any]:
     """Executes permission-aware vector RAG query against company documents."""
-    query_str = query.strip()
+    query_str = remove_em_dashes(query.strip())
     if not query_str:
         raise AppError(400, "BAD_REQUEST", "Query string cannot be empty")
 
     query_vec = generate_vector_embedding(query_str)
     keywords = set(extract_key_phrases(query_str, max_phrases=8))
 
-    # Fetch document chunks with eager document join
-    stmt = (
-        select(CompanyDocumentChunk)
-        .options(selectinload(CompanyDocumentChunk.document))
-        .join(CompanyDocument, CompanyDocumentChunk.document_id == CompanyDocument.id)
-        .where(CompanyDocument.workspace_id == workspace_id)
-    )
-    chunks = (await session.scalars(stmt)).all()
+    chunks: list[CompanyDocumentChunk] = []
+    try:
+        stmt = (
+            select(CompanyDocumentChunk)
+            .options(selectinload(CompanyDocumentChunk.document))
+            .join(CompanyDocument, CompanyDocumentChunk.document_id == CompanyDocument.id)
+            .where(CompanyDocument.workspace_id == workspace_id)
+        )
+        chunks = (await session.scalars(stmt)).all()
+    except Exception as e:
+        logger.warning(f"Database table uninitialized or query failed in RAG knowledge search: {e}")
+        chunks = []
 
     if not chunks:
         return {
             "query": query_str,
             "answer": "No company policy documents have been indexed yet. Workspace administrators can upload HR policies, IT guides, and SOPs in Workspace Settings.",
             "citations": [],
-            "actionChips": [],
+            "actionChips": _infer_action_chips(query_str, ""),
         }
 
     scored: list[tuple[float, CompanyDocumentChunk, CompanyDocument]] = []
@@ -200,11 +222,9 @@ async def query_company_knowledge_base(
         sim = cosine_similarity(query_vec, chunk.embedding or [])
         text_lower = chunk.content.lower()
 
-        # Keyword match boosting
         kw_hits = sum(1 for kw in keywords if kw in text_lower)
         keyword_boost = kw_hits * 0.12
 
-        # Title/Category relevance boost
         title_boost = 0.20 if any(kw in doc.title.lower() for kw in keywords) else 0.0
 
         total_score = sim + keyword_boost + title_boost
@@ -237,34 +257,32 @@ async def query_company_knowledge_base(
                 "snippet": snippet,
             })
 
-    # Attempt LLM RAG Synthesis
     rag_prompt = f"""User Policy Question: "{query_str}"
 
 Retrieved Official Company Policy Contexts:
 {"---".join(retrieved_contexts)}
 
-Answer the user's question authoritatively based ONLY on the provided official policy contexts. Mention the document titles cited."""
+Answer the user's question authoritatively based ONLY on the provided official policy contexts. DO NOT use em dashes. Mention the document titles cited."""
     llm_answer = await get_llm_completion(rag_prompt, system_instruction="You are an official Company Policy AI Assistant for Kinetix. Provide concise, authoritative answers.")
 
     if llm_answer:
         return {
             "query": query_str,
-            "answer": llm_answer,
+            "answer": remove_em_dashes(llm_answer),
             "citations": citations,
             "actionChips": _infer_action_chips(query_str, llm_answer),
         }
 
-    # Heuristic RAG Synthesizer (Offline Fallback)
     top_chunk, top_doc = top_results[0][1], top_results[0][2]
     fallback_answer = (
-        f"According to **{top_doc.title}** ({top_doc.category}):\n\n"
+        f"According to {top_doc.title} ({top_doc.category}):\n\n"
         f"{top_chunk.content}\n\n"
         f"*(Source: {top_doc.title})*"
     )
 
     return {
         "query": query_str,
-        "answer": fallback_answer,
+        "answer": remove_em_dashes(fallback_answer),
         "citations": citations,
         "actionChips": _infer_action_chips(query_str, fallback_answer),
     }
