@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH?.trim() ?? "";
-const targetApi = process.env.NEXT_PUBLIC_API_URL?.startsWith("http")
+const targetApi = process.env.INTERNAL_API_URL?.trim()
+  ? process.env.INTERNAL_API_URL.trim()
+  : process.env.NEXT_PUBLIC_API_URL?.startsWith("http")
   ? new URL(process.env.NEXT_PUBLIC_API_URL).origin
   : "https://kinetix.mindrind.com";
 

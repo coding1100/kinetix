@@ -5769,7 +5769,25 @@ DESC: Built production-grade enterprise planning stack across backend-py FastAPI
 3. Created Frontend Interactive Views: GanttView.tsx (Timeline grid with day/week scales and milestones), PortfoliosView.tsx (Executive initiative health & completion rollups), WorkloadView.tsx (Member capacity grid with over-capacity badges), TemplateLibraryModal.tsx (Template browser & 1-click apply), AutomationsBuilderModal.tsx (Visual rule builder), and WhiteboardCanvasView.tsx (Brainstorming canvas).
 4. Integrated multi-view toolbar switchers in SpacesListToolbar.tsx and ListWorkspace.tsx supporting 8 view modes.
 5. Verification: Passed 32/32 Pytest backend tests, 65/65 Vitest frontend tests, and 0 tsc typecheck errors.
-DATE_END: 2026-08-18
+DATE_START: 2026-08-23
+========================================
+
+TAG: [CHORE]
+TITLE: Single Command Docker Compose Setup
+DESC: Configured docker-compose.yml at the repository root to support running the full Kinetix platform (PostgreSQL 16, FastAPI backend-py, Next.js frontend, and Next.js admin-frontend) via a single `docker compose up --build` command locally out-of-the-box. Added default fallback values for environment variables and optional env files so local setup works cleanly on fresh clones. Updated frontend/next.config.ts to support INTERNAL_API_URL for Next.js server rewrites inside Docker networks, and updated README.md with usage documentation.
+
+TAG: [SUBTASK]
+PARENT: Single Command Docker Setup
+TITLE: Optimize Docker build context transfer with comprehensive .dockerignore rules
+DESC: Added/updated .dockerignore files across frontend/, admin-frontend/, backend-py/, and repository root to exclude heavy build output directories (frontend/src-tauri/target Rust build target, .next, node_modules, .cache, .turbo). This reduced the Docker context transfer size from 3.00 GB down to <5 MB, eliminating a 15-minute build context bottleneck during `docker compose up --build`.
+
+TAG: [SUBTASK]
+PARENT: Single Command Docker Setup
+TITLE: Fix CRLF line endings in Dockerfiles and add automatic base schema initialization
+DESC: Sanitized docker-entrypoint.sh line endings across all Dockerfiles using `sed -i 's/\r$//'` to prevent Windows CRLF execution failures inside Alpine Linux containers. Updated backend-py/scripts/apply_migrations.py to run Base.metadata.create_all before incremental SQL migration scripts, enabling automatic table creation on fresh empty database containers. All 4 containers (postgres, api, web, admin) verified active and healthy.
+
+DATE_END: 2026-08-23
+
 
 
 

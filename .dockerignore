@@ -1,0 +1,13 @@
+.git
+.github
+*.md
+.venv
+__pycache__
+node_modules
+.next
+frontend/src-tauri/target
+frontend/node_modules
+frontend/.next
+admin-frontend/node_modules
+admin-frontend/.next
+*.log

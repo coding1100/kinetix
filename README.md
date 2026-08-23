@@ -28,6 +28,21 @@ clickup/
 | PY-5 | Python API — real-time chat (Socket.IO) | Done |
 | **3** | Spaces hub, List/Board/Calendar, hierarchy CRUD, link task, mark unread | Done |
 
+## Running with Docker (Local)
+
+Run the entire platform (PostgreSQL, Backend API, Frontend Web, and Admin Portal) with a single command:
+
+```bash
+docker compose up --build
+```
+
+- **Web App:** [http://localhost:3000](http://localhost:3000)
+- **Admin Portal:** [http://localhost:3002](http://localhost:3002)
+- **API Health & Docs:** [http://localhost:4000/health](http://localhost:4000/health) | [http://localhost:4000/docs](http://localhost:4000/docs)
+- **PostgreSQL:** `localhost:5432` (`riseup` / `riseup`)
+
+Database migrations apply automatically when the backend API container starts up.
+
 ## Frontend
 
 ```bash

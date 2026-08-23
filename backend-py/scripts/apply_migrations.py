@@ -151,7 +151,11 @@ async def main() -> None:
     scripts_dir = Path(__file__).parent
     engine = get_engine()
 
+    from app.db import models  # noqa: F401
+    from app.db.base import Base
+
     async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
         await conn.execute(
             text(
                 """
