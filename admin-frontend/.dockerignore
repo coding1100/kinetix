@@ -10,5 +10,4 @@ coverage
 dist
 out
 .venv
-src-tauri/target
 *.log

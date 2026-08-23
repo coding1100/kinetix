@@ -4,4 +4,8 @@ __pycache__
 .ruff_cache
 tests
 *.pyc
-.env
+.env*
+.git
+*.md
+.cache
+*.log

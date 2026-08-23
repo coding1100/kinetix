@@ -15,6 +15,7 @@ COPY docker-entrypoint.sh /docker-entrypoint.sh
 
 RUN uv sync --frozen --no-dev \
   && test -f /app/scripts/apply_migrations.py \
+  && sed -i 's/\r$//' /docker-entrypoint.sh \
   && chmod +x /docker-entrypoint.sh
 
 ENV PATH="/app/.venv/bin:$PATH"
