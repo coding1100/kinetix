@@ -46,10 +46,9 @@ export function fetchCatchUp(
   workspaceId: string,
   body: { conversationType: "channel" | "dm"; conversationId: string; limit?: number }
 ) {
-  return apiFetch<CatchUpResponse>("/ai/catch-up", {
+  return apiFetch<CatchUpResponse>(wsPath(workspaceId, "/ai/catch-up"), {
     method: "POST",
     token,
-    headers: { "x-workspace-id": workspaceId },
     body: JSON.stringify(body),
   });
 }
@@ -59,10 +58,9 @@ export function queryKnowledgeBase(
   workspaceId: string,
   body: { query: string; topK?: number }
 ) {
-  return apiFetch<KnowledgeQueryResponse>("/ai/knowledge-query", {
+  return apiFetch<KnowledgeQueryResponse>(wsPath(workspaceId, "/ai/knowledge-query"), {
     method: "POST",
     token,
-    headers: { "x-workspace-id": workspaceId },
     body: JSON.stringify(body),
   });
 }
@@ -72,21 +70,20 @@ export function createCompanyDocument(
   workspaceId: string,
   body: { title: string; category?: string; content: string; fileType?: string }
 ) {
-  return apiFetch<CompanyDocumentDto>("/admin/knowledge-base/documents", {
-    method: "POST",
-    token,
-    headers: { "x-workspace-id": workspaceId },
-    body: JSON.stringify(body),
-  });
+  return apiFetch<CompanyDocumentDto>(
+    wsPath(workspaceId, "/admin/knowledge-base/documents"),
+    {
+      method: "POST",
+      token,
+      body: JSON.stringify(body),
+    }
+  );
 }
 
 export function listCompanyDocuments(token: string, workspaceId: string) {
   return apiFetch<{ data: CompanyDocumentDto[] }>(
-    "/admin/knowledge-base/documents",
-    {
-      token,
-      headers: { "x-workspace-id": workspaceId },
-    }
+    wsPath(workspaceId, "/admin/knowledge-base/documents"),
+    { token }
   );
 }
 
@@ -96,11 +93,10 @@ export function deleteCompanyDocument(
   documentId: string
 ) {
   return apiFetch<{ ok: boolean }>(
-    `/admin/knowledge-base/documents/${documentId}`,
+    wsPath(workspaceId, `/admin/knowledge-base/documents/${documentId}`),
     {
       method: "DELETE",
       token,
-      headers: { "x-workspace-id": workspaceId },
     }
   );
 }

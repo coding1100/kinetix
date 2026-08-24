@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import html
 import json
+import logging
 import re
 from typing import Any
 
@@ -12,6 +13,9 @@ from app.core.errors import AppError
 from app.db.models.chat import ChatChannel, ChatMessage, DirectConversation
 from app.db.models.user import User
 from app.services.ai_service import get_llm_completion, remove_em_dashes
+from app.services.chat_service import _assert_channel_member, _assert_dm_participant
+
+logger = logging.getLogger(__name__)
 
 
 def _format_time(dt: datetime) -> str:
@@ -49,7 +53,8 @@ async def generate_conversation_catch_up(
     messages: list[ChatMessage] = []
 
     if conversation_type == "channel":
-        channel = await session.get(ChatChannel, conversation_id)
+        member = await _assert_channel_member(session, conversation_id, user_id)
+        channel = member.channel
         if not channel or channel.workspace_id != workspace_id:
             raise AppError(404, "NOT_FOUND", "Channel not found in active workspace")
         title = f"#{channel.name}"
@@ -68,7 +73,8 @@ async def generate_conversation_catch_up(
         messages = list(reversed(res.all()))
 
     elif conversation_type == "dm":
-        dm = await session.get(DirectConversation, conversation_id)
+        participant = await _assert_dm_participant(session, conversation_id, user_id)
+        dm = participant.conversation
         if not dm or dm.workspace_id != workspace_id:
             raise AppError(404, "NOT_FOUND", "Direct conversation not found in workspace")
         title = "Direct Message"
@@ -196,17 +202,36 @@ Respond ONLY in valid JSON format:
                     "mentions": clean_mentions[:5],
                 }
         except Exception:
-            pass
+            logger.warning(
+                "Failed to parse LLM catch-up response as JSON, falling back to heuristic summary: %r",
+                llm_result[:500],
+            )
 
-    # Heuristic Fallback
+    # Heuristic fallback - built only from what was actually observed in the
+    # message log (counts, participants, time span, detected decisions/action
+    # items), never a fabricated claim about what the conversation is about.
     authors_str = ", ".join(list(author_names)[:3])
     if len(author_names) > 3:
         authors_str += f" and {len(author_names) - 3} others"
 
-    fallback_summary = (
-        f"Active status in {title}: {len(messages)} recent updates logged by {authors_str}. "
-        f"Team is coordinating on testing, feedback review, and resolving active issues."
-    )
+    span_str = ""
+    if len(messages) > 1:
+        span_str = f" between {_format_time(messages[0].created_at)} and {_format_time(messages[-1].created_at)}"
+
+    message_word = "message" if len(messages) == 1 else "messages"
+    summary_parts = [
+        f"{len(messages)} {message_word} in {title} from {authors_str}{span_str}."
+    ]
+    if decisions:
+        decision_word = "decision" if len(decisions) == 1 else "decisions"
+        summary_parts.append(f"{len(decisions)} {decision_word} flagged.")
+    if actions:
+        action_word = "action item" if len(actions) == 1 else "action items"
+        summary_parts.append(f"{len(actions)} {action_word} or open issues noted.")
+    if not decisions and not actions:
+        summary_parts.append("No clear decisions or action items detected in this range.")
+
+    fallback_summary = " ".join(summary_parts)
 
     clean_decisions = [remove_em_dashes(strip_html_tags(d)) for d in decisions]
     clean_actions = [remove_em_dashes(strip_html_tags(a)) for a in actions]
