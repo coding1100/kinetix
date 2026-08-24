@@ -120,7 +120,7 @@ async def login(session: AsyncSession, body: LoginBody) -> dict:
     return {**_auth_response(user, access_token), "refreshToken": refresh_token}
 
 
-ROTATION_GRACE_PERIOD = timedelta(seconds=30)
+ROTATION_GRACE_PERIOD = timedelta(seconds=120)
 
 
 async def refresh_session(session: AsyncSession, refresh_token: str) -> dict:
@@ -157,14 +157,20 @@ async def refresh_session(session: AsyncSession, refresh_token: str) -> dict:
     if user.is_disabled:
         raise AppError(403, "ACCOUNT_DISABLED", "This account is disabled")
 
-    # If this token was already rotated within the last 30 seconds (grace period reuse across tabs),
-    # return a valid access token and current session instead of logging out!
+    # If this token was already rotated within the grace period (reuse across
+    # concurrent tabs/requests), return a valid access token instead of
+    # logging out — but signal that the cookie should NOT be re-set. Re-
+    # echoing the stale token used to flip the browser's cookie back onto a
+    # value that's already scheduled for cleanup, so a later refresh attempt
+    # (after grace-period cleanup ran) would hit the "expired or been
+    # replaced" branch below and force a hard logout even though the session
+    # was never actually expired.
     if matched.rotated_at is not None:
         if matched.rotated_at >= cutoff:
             access_token = sign_access_token(sub=str(user.id), email=user.email)
             return {
                 **_auth_response(user, access_token),
-                "refreshToken": refresh_token,
+                "refreshToken": None,
             }
         else:
             raise AppError(401, "INVALID_REFRESH", "Refresh token has expired or been replaced")
@@ -172,7 +178,7 @@ async def refresh_session(session: AsyncSession, refresh_token: str) -> dict:
     # Mark current token as rotated
     matched.rotated_at = now
 
-    # Clean up old rotated tokens older than 30s
+    # Clean up old rotated tokens outside the grace period
     for r in rows:
         if r.rotated_at is not None and r.rotated_at < cutoff:
             await session.delete(r)
