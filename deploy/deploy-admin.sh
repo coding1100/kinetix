@@ -48,7 +48,7 @@ rollback_service() {
   if docker image inspect "${image}-rollback" >/dev/null 2>&1; then
     echo "==> Rolling back $service to last-known-good image"
     docker tag "${image}-rollback" "$image"
-    compose up -d --no-build "$service"
+    compose up -d --no-build --no-deps --force-recreate "$service"
   else
     echo "==> No previous image available to roll back $service to"
   fi
@@ -58,7 +58,9 @@ log "Snapshot current admin image for rollback"
 snapshot_image kinetix-admin
 
 log "Build and start admin"
-compose up -d --build admin
+# --no-deps: never let an admin deploy recreate postgres/api as a side
+# effect of walking admin's depends_on graph.
+compose up -d --build --no-deps admin
 
 if ! container_running admin; then
   echo "ERROR: admin container is not running"
