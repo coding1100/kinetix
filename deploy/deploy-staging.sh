@@ -18,28 +18,61 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.staging.yml}"
 
 log() { echo "==> $*"; }
 
-# staging_up_retry <service> [extra compose up args...]
-#
-# Recreating a container that publishes a host port is racy: Docker's
-# teardown of the old container's docker-proxy (which owns the host socket)
-# is asynchronous, so a new container's bind can arrive first and fail with
-# "address already in use" even though the port frees itself moments later.
-# Staging api/web publish 4010/3010 and are equally exposed. Mirrors
-# compose_up_retry in deploy.sh.
+# A container that fails to start remains in `Created` state and keeps its
+# host port reservation in Docker's internal allocator, even though nothing
+# is listening - the next `up` then fails with "address already in use"
+# against a free port. Only removing the stale container clears it.
+# Safe: a `Created`/`Exited` container never ran and holds no state; no -v
+# is used so named volumes are never removed. Mirrors deploy.sh.
+staging_clear_stale_container() {
+  local service="$1"
+  local cid state mounts
+
+  # Guard 1 (by name): never a candidate for removal, in any state.
+  case "$service" in
+    *postgres*|*db*|*database*)
+      return 0
+      ;;
+  esac
+
+  cid="$(docker compose -f "$COMPOSE_FILE" ps -aq "$service" 2>/dev/null | head -n1 || true)"
+  [ -n "$cid" ] || return 0
+
+  # Guard 2 (by state): running containers are left strictly alone.
+  state="$(docker inspect -f '{{.State.Status}}' "$cid" 2>/dev/null || true)"
+  case "$state" in
+    created|exited|dead) ;;
+    *) return 0 ;;
+  esac
+
+  # Guard 3 (by mount): anything carrying a named volume is left alone.
+  mounts="$(docker inspect -f '{{range .Mounts}}{{.Name}} {{end}}' "$cid" 2>/dev/null || true)"
+  if [ -n "$(echo "$mounts" | tr -d '[:space:]')" ]; then
+    log "Leaving $service container ($cid, $state) alone - it has named volumes attached: $mounts"
+    return 0
+  fi
+
+  log "Removing stale '$state' $service container ($cid) holding a port reservation"
+  # NOTE: deliberately NO -v.
+  docker rm "$cid" >/dev/null 2>&1 || true
+}
+
 staging_up_retry() {
   local service="$1"
   shift
   local attempt
-  for attempt in 1 2 3 4 5; do
+  for attempt in 1 2 3; do
+    staging_clear_stale_container "$service"
     if docker compose -f "$COMPOSE_FILE" up -d "$@" "$service"; then
       return 0
     fi
-    if [ "$attempt" -lt 5 ]; then
-      log "$service failed to start (attempt $attempt/5) - host port likely still releasing, retrying in $((attempt * 3))s"
-      sleep "$((attempt * 3))"
+    if [ "$attempt" -lt 3 ]; then
+      log "$service failed to start (attempt $attempt/3), clearing stale container and retrying"
+      sleep 3
     fi
   done
-  echo "ERROR: $service failed to start after 5 attempts"
+  echo "ERROR: $service failed to start after 3 attempts"
+  docker ps -a --format '{{.ID}} {{.Names}} {{.Status}} {{.Ports}}' || true
   docker compose -f "$COMPOSE_FILE" logs "$service" --tail 50 2>/dev/null || true
   return 1
 }
