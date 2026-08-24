@@ -145,7 +145,9 @@ cd "$PROD_ROOT"
 # --no-recreate: a staging deploy must never recreate a running production
 # container. Without it this bare `up -d` can tear down and re-bind prod
 # postgres's published 127.0.0.1:5432 socket and take production down.
-docker compose --env-file docker-compose.env -f docker-compose.yml -f docker-compose.app.yml up -d --no-recreate
+# BIND_ADDR must match deploy.sh so that if this ever does create a prod
+# container, it publishes on loopback like the rest of the prod stack.
+BIND_ADDR="127.0.0.1:" docker compose --env-file docker-compose.env -f docker-compose.yml -f docker-compose.app.yml up -d --no-recreate
 
 log "Build and start staging Docker stack"
 cd "$APP_ROOT"

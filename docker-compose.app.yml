@@ -5,13 +5,20 @@
 # nginx runs on the host (apt), not as a container — see deploy/nginx/host.conf
 # and deploy/NGINX_HOST_MIGRATION.md. api/web/admin publish to 127.0.0.1 so
 # host nginx can proxy_pass to them directly.
+#
+# NOTE: this file deliberately declares NO `ports:` entries. Compose APPENDS
+# port lists across files rather than replacing them, so re-declaring a port
+# here with a different bind address would leave each container with BOTH
+# 0.0.0.0:PORT (from the base file) and 127.0.0.1:PORT - the second bind then
+# collides with the first and the container dies at creation with
+# "address already in use", against a port `ss` reports as completely free.
+# The loopback binding is selected by BIND_ADDR=127.0.0.1: instead, set in
+# deploy/deploy.sh - see the ports comment in docker-compose.yml.
 
 services:
   postgres:
     env_file:
       - docker-compose.env
-    ports:
-      - "127.0.0.1:5432:5432"
 
   api:
     build: ./backend-py
@@ -26,8 +33,6 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-riseup}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-riseup}
       API_PUBLIC_URL: ${PUBLIC_APP_URL:-https://kinetix.mindrind.com}
       FRONTEND_URL: ${PUBLIC_APP_URL:-https://kinetix.mindrind.com}
-    ports:
-      - "127.0.0.1:4000:4000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -50,8 +55,6 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
-    ports:
-      - "127.0.0.1:3000:3000"
     depends_on:
       - api
 
@@ -67,7 +70,5 @@ services:
       NODE_ENV: production
       PORT: "3002"
       NEXT_PUBLIC_BASE_PATH: /admin-portal
-    ports:
-      - "127.0.0.1:3002:3002"
     depends_on:
       - api
