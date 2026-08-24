@@ -83,7 +83,10 @@ fi
 
 log "Ensure production stack is up ($PROD_ROOT)"
 cd "$PROD_ROOT"
-docker compose --env-file docker-compose.env -f docker-compose.yml -f docker-compose.app.yml up -d
+# --no-recreate: a staging deploy must never recreate a running production
+# container. Without it this bare `up -d` can tear down and re-bind prod
+# postgres's published 127.0.0.1:5432 socket and take production down.
+docker compose --env-file docker-compose.env -f docker-compose.yml -f docker-compose.app.yml up -d --no-recreate
 
 log "Build and start staging Docker stack"
 cd "$APP_ROOT"
@@ -111,7 +114,7 @@ for i in $(seq 1 30); do
 done
 
 log "Start api"
-docker compose -f "$COMPOSE_FILE" up -d --build api
+docker compose -f "$COMPOSE_FILE" up -d --build --no-deps api
 for i in $(seq 1 45); do
   api_id=$(docker compose -f "$COMPOSE_FILE" ps -q api 2>/dev/null || true)
   if [ -n "$api_id" ] && docker exec "$api_id" python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health')" >/dev/null 2>&1; then
@@ -127,7 +130,7 @@ for i in $(seq 1 45); do
 done
 
 log "Start web"
-docker compose -f "$COMPOSE_FILE" up -d --build web
+docker compose -f "$COMPOSE_FILE" up -d --build --no-deps web
 
 log "Wait for staging containers"
 sleep 8
