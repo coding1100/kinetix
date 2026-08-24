@@ -169,6 +169,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [hydrated, bootstrap]);
 
   useEffect(() => {
+    // Proactively refresh the access token before it expires (well ahead of
+    // the backend's jwt_access_expires_minutes) so a tab left open and idle
+    // never has to wait for a 401 to notice — it silently rides on the
+    // still-valid refresh cookie instead. Without this, a tab with no user-
+    // triggered API calls for a few hours only discovers the stale access
+    // token on its next request, which is the normal 401-then-refresh path
+    // but leaves a window where that refresh could lose a race (see
+    // auth_service.refresh_session's grace-period handling).
+    const PROACTIVE_REFRESH_INTERVAL_MS = 60 * 60 * 1000; // 1 hour, well under the 4h access token TTL
+
+    const proactiveRefresh = () => {
+      if (!useAuthStore.getState().accessToken) return;
+      void refreshSession()
+        .then((refreshed) => {
+          useAuthStore.getState().updateSession({
+            accessToken: refreshed.accessToken,
+            user: refreshed.user,
+            workspaces: useAuthStore.getState().workspaces,
+          });
+        })
+        .catch((err) => {
+          if (
+            err instanceof ApiError &&
+            (err.status === 401 || err.code === "INVALID_REFRESH")
+          ) {
+            forceLogout();
+          }
+        });
+    };
+
+    const interval = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      proactiveRefresh();
+    }, PROACTIVE_REFRESH_INTERVAL_MS);
+
+    // A backgrounded tab's timers can be throttled or paused by the browser
+    // for far longer than PROACTIVE_REFRESH_INTERVAL_MS, so also refresh
+    // immediately on refocus rather than waiting for the next tick.
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") proactiveRefresh();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [forceLogout]);
+
+  useEffect(() => {
     // Non-recoverable 401s force an immediate logout from wherever the user
     // is, instead of waiting for the next hard refresh to notice via
     // bootstrap(): account disabled, or apiFetch's silent access-token

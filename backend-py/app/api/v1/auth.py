@@ -87,7 +87,8 @@ async def refresh(
         raise AppError(401, "UNAUTHORIZED", "Refresh token missing")
     result = await auth_service.refresh_session(session, refresh_token)
     new_refresh = result.pop("refreshToken")
-    set_refresh_cookie(response, new_refresh)
+    if new_refresh is not None:
+        set_refresh_cookie(response, new_refresh)
     return {
         "user": result["user"],
         "accessToken": result["accessToken"],
