@@ -42,6 +42,28 @@ def remove_em_dashes(text: str) -> str:
     return text.replace("—", " - ").replace("–", " - ")
 
 
+def cap_sentences(text: str, max_sentences: int = 4) -> str:
+    """Hard-truncates text to at most max_sentences, so LLM output stays a
+    quick-glance update instead of ballooning past the prompt's length ask."""
+    if not text:
+        return ""
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    sentences = [s for s in sentences if s]
+    return " ".join(sentences[:max_sentences]).strip()
+
+
+def keyword_overlap_score(query_keywords: set[str], text: str) -> float:
+    """Fraction of query keywords that actually appear in the candidate text.
+    Used as a second, independent signal alongside cosine similarity so a
+    RAG answer isn't generated from contexts that merely hash-collide with
+    the query but share no real vocabulary with it."""
+    if not query_keywords:
+        return 0.0
+    text_lower = text.lower()
+    hits = sum(1 for kw in query_keywords if kw in text_lower)
+    return hits / len(query_keywords)
+
+
 def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
     """Computes cosine similarity between two numeric vectors with dimension validation."""
     if not vec1 or not vec2 or len(vec1) != len(vec2):
