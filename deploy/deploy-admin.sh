@@ -33,12 +33,38 @@ if [ -f "$APP_ROOT/docker-compose.env" ]; then
   log "Synced docker-compose.env -> .env for compose variable substitution"
 fi
 
+# Rollback safety net: if the freshly built admin image fails to come up
+# healthy, restore the last-known-good image rather than leaving the admin
+# portal down or crash-looping in production.
+snapshot_image() {
+  local image="$1"
+  if docker image inspect "$image" >/dev/null 2>&1; then
+    docker tag "$image" "${image}-rollback"
+  fi
+}
+
+rollback_service() {
+  local service="$1" image="$2"
+  if docker image inspect "${image}-rollback" >/dev/null 2>&1; then
+    echo "==> Rolling back $service to last-known-good image"
+    docker tag "${image}-rollback" "$image"
+    compose up -d --no-build "$service"
+  else
+    echo "==> No previous image available to roll back $service to"
+  fi
+}
+
+log "Snapshot current admin image for rollback"
+snapshot_image kinetix-admin
+
 log "Build and start admin"
 compose up -d --build admin
 
 if ! container_running admin; then
   echo "ERROR: admin container is not running"
   compose logs admin --tail 80 2>/dev/null || true
+  rollback_service admin kinetix-admin
+  echo "ERROR: deploy failed, rolled back admin to previous version."
   exit 1
 fi
 
@@ -56,6 +82,8 @@ if ! curl -fsS http://127.0.0.1/admin-portal/login >/dev/null 2>&1; then
   echo "ERROR: admin portal not responding via nginx"
   sudo journalctl -u nginx --no-pager --lines 30 2>/dev/null || true
   compose logs admin --tail 40
+  rollback_service admin kinetix-admin
+  echo "ERROR: deploy failed, rolled back admin to previous version."
   exit 1
 fi
 

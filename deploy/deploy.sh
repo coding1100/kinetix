@@ -91,21 +91,51 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
+# Rollback safety net: if a freshly built service fails its health check,
+# the platform must not go down — restore the last-known-good image for
+# that service and restart from it, rather than leaving a broken/crashing
+# container as the only thing running in production.
+snapshot_image() {
+  local image="$1"
+  if docker image inspect "$image" >/dev/null 2>&1; then
+    docker tag "$image" "${image}-rollback"
+  fi
+}
+
+rollback_service() {
+  local service="$1" image="$2"
+  if docker image inspect "${image}-rollback" >/dev/null 2>&1; then
+    echo "==> Rolling back $service to last-known-good image"
+    docker tag "${image}-rollback" "$image"
+    compose up -d --no-build "$service"
+  else
+    echo "==> No previous image available to roll back $service to"
+  fi
+}
+
+log "Snapshot current images for rollback"
+snapshot_image kinetix-api
+snapshot_image kinetix-web
+
 log "Build and start api"
 compose up -d --build api
+api_healthy=false
 for i in $(seq 1 45); do
   api_id="$(compose ps -q api 2>/dev/null || true)"
   if [ -n "$api_id" ] && docker exec "$api_id" python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health')" >/dev/null 2>&1; then
     log "api healthy"
+    api_healthy=true
     break
-  fi
-  if [ "$i" -eq 45 ]; then
-    echo "ERROR: api not healthy"
-    compose logs api --tail 80
-    exit 1
   fi
   sleep 2
 done
+if [ "$api_healthy" != true ]; then
+  echo "ERROR: api not healthy after deploy"
+  compose logs api --tail 80
+  rollback_service api kinetix-api
+  echo "ERROR: deploy failed, rolled back api to previous version. Not proceeding with web deploy."
+  exit 1
+fi
 
 log "Build and start web"
 compose up -d --build web
@@ -114,14 +144,24 @@ log "Wait for containers"
 sleep 8
 compose ps
 
+web_ok=true
 if ! container_running web; then
   echo "ERROR: web container is not running"
   compose logs web --tail 80 2>/dev/null || true
-  exit 1
+  web_ok=false
 fi
 if ! container_running api; then
   echo "ERROR: api container is not running"
   compose logs api --tail 80 2>/dev/null || true
+  web_ok=false
+fi
+
+if [ "$web_ok" != true ]; then
+  # Roll back both api and web together so production never ends up running
+  # a new/old version mismatch across the two - always a known-good pair.
+  rollback_service web kinetix-web
+  rollback_service api kinetix-api
+  echo "ERROR: deploy failed, rolled back api and web to previous versions."
   exit 1
 fi
 
@@ -134,6 +174,9 @@ if ! curl -fsS http://127.0.0.1/auth/login >/dev/null 2>&1; then
   echo "ERROR: prod site not responding via nginx"
   sudo journalctl -u nginx --no-pager --lines 30 2>/dev/null || true
   compose logs web --tail 40
+  rollback_service web kinetix-web
+  rollback_service api kinetix-api
+  echo "ERROR: deploy failed, rolled back api and web to previous versions."
   exit 1
 fi
 
