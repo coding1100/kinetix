@@ -51,33 +51,70 @@ log "Stop postgres explicitly first (avoids an in-place recreate racing the port
 compose stop postgres 2>/dev/null || true
 compose rm -f postgres 2>/dev/null || true
 
-if command -v ss >/dev/null 2>&1; then
-  for i in $(seq 1 15); do
-    if ! ss -ltnH "sport = :5432" 2>/dev/null | grep -q .; then
-      break
-    fi
-    if [ "$i" -eq 15 ]; then
-      conflicting_container="$(docker ps --filter "publish=5432" --format '{{.ID}} {{.Names}}' || true)"
-      if [ -n "$conflicting_container" ]; then
-        log "Port 5432 still held by another Docker container after waiting — removing it: $conflicting_container"
-        echo "$conflicting_container" | awk '{print $1}' | xargs -r docker rm -f
-      else
-        echo "ERROR: port 5432 is still in use by a non-Docker process (e.g. a native postgres service) after waiting 30s."
-        echo "Refusing to guess — inspect and stop it manually, then re-run deploy:"
-        sudo ss -ltnp "sport = :5432" 2>/dev/null || true
-        exit 1
-      fi
-    fi
-    sleep 2
-  done
-else
-  # No ss available to confirm the port actually cleared - give the old
-  # container's teardown a moment before attempting the bind anyway.
-  sleep 3
+# port_5432_in_use: portable check, does NOT rely on `ss`'s newer expression
+# filter syntax (`sport = :5432`), which silently errors out to nothing (and
+# was silently swallowed by 2>/dev/null) on older/minimal iproute2 builds -
+# that false "free" reading is exactly what let the bind race through
+# undetected on the last two deploy attempts. Every fallback here treats "I
+# can't tell" as "still in use", never as "free", since a wrong "free"
+# reading is what caused this bug twice already.
+port_5432_in_use() {
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE '(^|[.:])5432$' && return 0
+    return 1
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -iTCP:5432 -sTCP:LISTEN -P -n >/dev/null 2>&1 && return 0
+    return 1
+  fi
+  if [ -r /proc/net/tcp ]; then
+    # 5432 = 0x1538; local address field is hex IP:hex port, state 0A = LISTEN
+    awk 'NR>1 { split($2,a,":"); if (a[2]=="1538" && $4=="0A") found=1 } END { exit !found }' /proc/net/tcp && return 0
+    return 1
+  fi
+  # No way to check at all - assume still in use so we wait it out rather
+  # than racing the bind blind.
+  return 0
+}
+
+port_still_busy=true
+for i in $(seq 1 20); do
+  if ! port_5432_in_use; then
+    port_still_busy=false
+    break
+  fi
+  sleep 2
+done
+
+if [ "$port_still_busy" = true ]; then
+  conflicting_container="$(docker ps --filter "publish=5432" --format '{{.ID}} {{.Names}}' || true)"
+  if [ -n "$conflicting_container" ]; then
+    log "Port 5432 still held by another Docker container after waiting — removing it: $conflicting_container"
+    echo "$conflicting_container" | awk '{print $1}' | xargs -r docker rm -f
+  else
+    echo "ERROR: port 5432 is still in use by a non-Docker process (e.g. a native 'postgresql' systemd service) after waiting 40s."
+    echo "Refusing to guess or kill an unidentified process — inspect and stop it manually, then re-run deploy. Diagnostics:"
+    (sudo ss -ltnp 2>/dev/null | grep ':5432' ) || (sudo lsof -iTCP:5432 -sTCP:LISTEN -P -n 2>/dev/null) || echo "(no ss/lsof available to identify the owning process)"
+    systemctl is-active postgresql 2>/dev/null && echo "NOTE: a native 'postgresql' systemd service is active - this is almost certainly the conflict. Stop it with: sudo systemctl stop postgresql && sudo systemctl disable postgresql"
+    exit 1
+  fi
 fi
 
 log "Start postgres"
-compose up -d postgres
+postgres_started=false
+for attempt in 1 2 3; do
+  if compose up -d postgres; then
+    postgres_started=true
+    break
+  fi
+  log "postgres failed to start (attempt $attempt/3), waiting before retry"
+  sleep 3
+done
+if [ "$postgres_started" != true ]; then
+  echo "ERROR: postgres container failed to start after 3 attempts"
+  exit 1
+fi
+
 for i in $(seq 1 30); do
   if compose ps postgres 2>/dev/null | grep -q "(healthy)"; then
     log "postgres healthy"
