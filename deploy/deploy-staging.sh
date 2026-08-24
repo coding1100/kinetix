@@ -18,6 +18,32 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.staging.yml}"
 
 log() { echo "==> $*"; }
 
+# staging_up_retry <service> [extra compose up args...]
+#
+# Recreating a container that publishes a host port is racy: Docker's
+# teardown of the old container's docker-proxy (which owns the host socket)
+# is asynchronous, so a new container's bind can arrive first and fail with
+# "address already in use" even though the port frees itself moments later.
+# Staging api/web publish 4010/3010 and are equally exposed. Mirrors
+# compose_up_retry in deploy.sh.
+staging_up_retry() {
+  local service="$1"
+  shift
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if docker compose -f "$COMPOSE_FILE" up -d "$@" "$service"; then
+      return 0
+    fi
+    if [ "$attempt" -lt 5 ]; then
+      log "$service failed to start (attempt $attempt/5) - host port likely still releasing, retrying in $((attempt * 3))s"
+      sleep "$((attempt * 3))"
+    fi
+  done
+  echo "ERROR: $service failed to start after 5 attempts"
+  docker compose -f "$COMPOSE_FILE" logs "$service" --tail 50 2>/dev/null || true
+  return 1
+}
+
 wait_for_http() {
   local url="$1"
   local label="$2"
@@ -99,7 +125,7 @@ chmod +x "$APP_ROOT/deploy/reset-staging-docker.sh"
 "$APP_ROOT/deploy/reset-staging-docker.sh"
 
 log "Start postgres first"
-docker compose -f "$COMPOSE_FILE" up -d --build postgres
+staging_up_retry postgres --build || exit 1
 for i in $(seq 1 30); do
   if docker compose -f "$COMPOSE_FILE" ps postgres 2>/dev/null | grep -q "(healthy)"; then
     log "postgres healthy"
@@ -114,7 +140,7 @@ for i in $(seq 1 30); do
 done
 
 log "Start api"
-docker compose -f "$COMPOSE_FILE" up -d --build --no-deps api
+staging_up_retry api --build --no-deps || exit 1
 for i in $(seq 1 45); do
   api_id=$(docker compose -f "$COMPOSE_FILE" ps -q api 2>/dev/null || true)
   if [ -n "$api_id" ] && docker exec "$api_id" python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health')" >/dev/null 2>&1; then
@@ -130,7 +156,7 @@ for i in $(seq 1 45); do
 done
 
 log "Start web"
-docker compose -f "$COMPOSE_FILE" up -d --build --no-deps web
+staging_up_retry web --build --no-deps || exit 1
 
 log "Wait for staging containers"
 sleep 8

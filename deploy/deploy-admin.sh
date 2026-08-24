@@ -21,6 +21,38 @@ container_running() {
   [ -n "$id" ] && [ "$(docker inspect -f '{{.State.Running}}' "$id" 2>/dev/null)" = "true" ]
 }
 
+# compose_up_retry <service> [extra compose up args...]
+#
+# Recreating a container that publishes a host port is racy: Docker's
+# teardown of the old container's docker-proxy (which owns the host socket)
+# is asynchronous, so a new container's bind can arrive first and fail with
+# "address already in use" even though nothing foreign holds the port and it
+# frees itself moments later. Bounded retry of the same idempotent
+# `compose up`; nothing is force-removed and no volume is touched.
+# Mirrors the helper in deploy.sh - admin publishes 3002 and is equally
+# exposed to this.
+compose_up_retry() {
+  local service="$1"
+  shift
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if compose up -d "$@" "$service"; then
+      return 0
+    fi
+    if [ "$attempt" -lt 5 ]; then
+      log "$service failed to start (attempt $attempt/5) - host port likely still releasing, retrying in $((attempt * 3))s"
+      sleep "$((attempt * 3))"
+    fi
+  done
+
+  echo "ERROR: $service failed to start after 5 attempts"
+  echo "Diagnostics - listening sockets and containers publishing ports:"
+  (sudo ss -ltnp 2>/dev/null) || (sudo lsof -iTCP -sTCP:LISTEN -P -n 2>/dev/null) || echo "(no ss/lsof available)"
+  docker ps -a --format '{{.ID}} {{.Names}} {{.Status}} {{.Ports}}' || true
+  compose logs "$service" --tail 50 2>/dev/null || true
+  return 1
+}
+
 log "App root: $APP_ROOT"
 cd "$APP_ROOT"
 
@@ -48,7 +80,7 @@ rollback_service() {
   if docker image inspect "${image}-rollback" >/dev/null 2>&1; then
     echo "==> Rolling back $service to last-known-good image"
     docker tag "${image}-rollback" "$image"
-    compose up -d --no-build --no-deps --force-recreate "$service"
+    compose_up_retry "$service" --no-build --no-deps --force-recreate
   else
     echo "==> No previous image available to roll back $service to"
   fi
@@ -60,7 +92,12 @@ snapshot_image kinetix-admin
 log "Build and start admin"
 # --no-deps: never let an admin deploy recreate postgres/api as a side
 # effect of walking admin's depends_on graph.
-compose up -d --build --no-deps admin
+if ! compose_up_retry admin --build --no-deps; then
+  echo "ERROR: admin container could not be started"
+  rollback_service admin kinetix-admin
+  echo "ERROR: deploy failed, rolled back admin to previous version."
+  exit 1
+fi
 
 if ! container_running admin; then
   echo "ERROR: admin container is not running"
