@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.core.errors import AppError
 from app.db.models.chat import ChatChannel, ChatMessage, DirectConversation
 from app.db.models.user import User
-from app.services.ai_service import get_llm_completion, remove_em_dashes
+from app.services.ai_service import cap_sentences, get_llm_completion, remove_em_dashes
 from app.services.chat_service import _assert_channel_member, _assert_dm_participant
 
 logger = logging.getLogger(__name__)
@@ -20,6 +20,33 @@ logger = logging.getLogger(__name__)
 
 def _format_time(dt: datetime) -> str:
     return dt.strftime("%H:%M")
+
+
+_NAME_COLON_PREFIX = re.compile(r"^\s*[A-Za-z][A-Za-z .'-]{0,40}:\s*")
+
+
+def _is_near_verbatim(item: str, source_texts: list[str]) -> bool:
+    """Detects an LLM output line that is really just a copy of a source
+    message (optionally with a 'Name:' prefix) instead of a paraphrase."""
+    body = _NAME_COLON_PREFIX.sub("", item).strip().lower()
+    if len(body) < 15:
+        return False
+    for src in source_texts:
+        if body in src or src in body:
+            return True
+        # Long common substring implies near-verbatim copying rather than
+        # independent paraphrasing.
+        shorter, longer = (body, src) if len(body) <= len(src) else (src, body)
+        if len(shorter) >= 20 and shorter[:40] in longer:
+            return True
+    return False
+
+
+def _paraphrased_only(items: list[str], source_texts: list[str]) -> list[str]:
+    """Drops any LLM-generated item that still reads as a verbatim/near-
+    verbatim copy of a source message, so the UI never shows raw chat text
+    even if the model ignores the paraphrasing instructions."""
+    return [item for item in items if item and not _is_near_verbatim(item, source_texts)]
 
 
 def strip_html_tags(text: str) -> str:
@@ -126,6 +153,10 @@ async def generate_conversation_catch_up(
         log_entries.append(entry_line)
 
         lower_text = text.lower()
+        # Fallback-only items must never read as a raw quoted log line, so
+        # cap the snippet length and lead with the name in a sentence shape
+        # instead of the "Name: message" transcript format.
+        snippet = text if len(text) <= 100 else text[:97].rstrip() + "..."
 
         # Decision detection
         if any(
@@ -135,7 +166,7 @@ async def generate_conversation_catch_up(
                 "resolved", "conclusion", "confirmed", "moving forward with"
             ]
         ):
-            decisions.append(f"{author_name}: {text}")
+            decisions.append(f"{author_name} flagged a decision: {snippet}")
 
         # Action item / Issue detection
         if any(
@@ -145,7 +176,7 @@ async def generate_conversation_catch_up(
                 "will do", "assigned", "can you", "need to", "make sure to", "facing this issue"
             ]
         ):
-            actions.append(f"{author_name}: {text}")
+            actions.append(f"{author_name} raised an action item: {snippet}")
 
         # Direct mentions & highlights
         if (
@@ -154,32 +185,51 @@ async def generate_conversation_catch_up(
             or "@everyone" in lower_text
             or "@here" in lower_text
         ):
-            mentions.append(f"{author_name} ({time_str}): {text}")
+            mentions.append(f"{author_name} mentioned you at {time_str}: {snippet}")
 
     raw_log = "\n".join(log_entries)
+    source_texts = [strip_html_tags(msg.body).lower() for msg in messages if strip_html_tags(msg.body)]
 
     # Gemini Prompt for Humanized Executive Channel Status Report
-    prompt = f"""You are an executive AI assistant creating a clear, humanized status update for {current_user_name} on recent activity in {title}.
+    prompt = f"""You are an executive assistant writing a short status briefing for {current_user_name} about recent activity in {title}. Someone who has NOT read the chat should be able to read your briefing and understand everything important in under 15 seconds.
 
-RULES:
-1. DO NOT use em dashes (— or –). Use normal hyphens (-) or colons (:).
-2. DO NOT include any HTML tags like <div>, <br>, <b>, or CSS styles in your output.
-3. Tone: Direct, humanized, concise, and to-the-point.
-4. Executive Summary: Explain clearly: (a) what is currently happening, (b) what has been done or resolved, and (c) the overall current status of this channel/project.
-
-Chat Messages Log:
+Chat Messages Log (raw transcript, for your reference only, NEVER copy from it):
 {raw_log}
 
-Respond ONLY in valid JSON format:
+HOW TO WRITE THE BRIEFING:
+- Read the whole log, understand the actual conversation, then explain it in your own words like you are briefing a manager who missed the discussion.
+- Every sentence and every list item must be a NEW sentence you write, describing what happened, not a copy of any line from the log above.
+- Always refer to people by their real first name from the log (e.g. "Umair", "Faraz"), and describe what they did or reported ("Faraz reported UI stability issues after login") rather than repeating their exact wording.
+- Merge related messages from the same person or topic into one clean point instead of listing every message separately.
+- If two people discuss the same topic, describe it as one point ("Umair asked the team to log UAT issues; Arbab reported he can't create tasks from the Task section").
+
+STRICT FORMAT RULES:
+1. No em dashes (— or –). Use hyphens (-) or colons (:).
+2. No HTML tags or markdown symbols (no <div>, **, #, etc).
+3. "summary": 2 to 4 sentences. This alone must let the reader understand the whole channel's current state without reading anything else.
+4. "keyDecisions", "actionItems", "mentions": each entry is ONE clean sentence, 12 to 18 words, written by you. Maximum 5 entries each. Combine duplicates/near-duplicates into a single entry.
+5. If there is nothing genuinely decided, or no real open issue, or no direct mention, return an empty list for that field instead of forcing a weak entry.
+6. Never invent people, events, or facts not present in the log.
+
+Respond ONLY with this JSON shape, nothing else, no markdown fences:
 {{
-  "summary": "Clear executive status summary answering what is happening, what is done, and overall status",
-  "keyDecisions": ["Decision 1", "Decision 2"],
-  "actionItems": ["Action/Issue 1", "Action/Issue 2"],
-  "mentions": ["Mention 1"]
+  "summary": "2 to 4 sentence plain-English briefing of the whole conversation",
+  "keyDecisions": ["One clean sentence per decision, naming who decided"],
+  "actionItems": ["One clean sentence per open issue/task, naming who is involved"],
+  "mentions": ["One clean sentence per direct mention of {current_user_name}, naming who and why"]
 }}
 """
 
-    llm_result = await get_llm_completion(prompt, system_instruction="You are a humanized workspace status summarizer. Output valid JSON only.")
+    llm_result = await get_llm_completion(
+        prompt,
+        system_instruction=(
+            "You are an executive workspace briefing writer. You never copy text from the "
+            "source transcript you are given; every word in your output is your own "
+            "paraphrase. You write like a person summarizing a meeting for someone who "
+            "missed it, not like a search engine returning matched lines. Output valid "
+            "JSON only, no markdown fences. Be maximally concise and easy to skim."
+        ),
+    )
 
     if llm_result:
         try:
@@ -187,10 +237,16 @@ Respond ONLY in valid JSON format:
             cleaned_json = re.sub(r"\s*```$", "", cleaned_json, flags=re.MULTILINE)
             data = json.loads(cleaned_json)
 
-            clean_summary = remove_em_dashes(strip_html_tags(data.get("summary", "")))
-            clean_decisions = [remove_em_dashes(strip_html_tags(d)) for d in data.get("keyDecisions", [])]
-            clean_actions = [remove_em_dashes(strip_html_tags(a)) for a in data.get("actionItems", [])]
-            clean_mentions = [remove_em_dashes(strip_html_tags(m)) for m in data.get("mentions", [])]
+            clean_summary = cap_sentences(remove_em_dashes(strip_html_tags(data.get("summary", ""))), max_sentences=4)
+            clean_decisions = _paraphrased_only(
+                [remove_em_dashes(strip_html_tags(d)) for d in data.get("keyDecisions", [])], source_texts
+            )
+            clean_actions = _paraphrased_only(
+                [remove_em_dashes(strip_html_tags(a)) for a in data.get("actionItems", [])], source_texts
+            )
+            clean_mentions = _paraphrased_only(
+                [remove_em_dashes(strip_html_tags(m)) for m in data.get("mentions", [])], source_texts
+            )
 
             if clean_summary:
                 return {

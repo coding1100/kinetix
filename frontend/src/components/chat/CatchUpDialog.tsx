@@ -160,16 +160,16 @@ export function CatchUpDialog({
           </div>
         ) : data ? (
           <ScrollArea className="max-h-[70vh] p-6">
-            <div className="space-y-6">
+            <div className="space-y-5">
               {/* Executive Overview Box */}
               <div className="rounded-xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50/80 via-card to-purple-50/40 p-5 dark:border-indigo-900/50 dark:from-indigo-950/40 dark:to-purple-950/30 shadow-sm">
                 <div className="flex items-center justify-between mb-2.5">
                   <span className="text-xs font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
                     <SparklesIcon className="size-3.5" />
-                    Channel Status & Overview
+                    Summary
                   </span>
                   <Badge variant="secondary" className="text-[10px] font-semibold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                    {data.messageCount} messages analyzed
+                    {data.messageCount} messages
                   </Badge>
                 </div>
                 <p className="text-sm leading-relaxed text-foreground font-normal">
@@ -177,75 +177,74 @@ export function CatchUpDialog({
                 </p>
               </div>
 
-              {/* Two-Column Layout for Decisions & Action Items */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {/* Key Decisions */}
-                <div className="space-y-3">
-                  <h4 className="flex items-center gap-2 text-xs font-bold text-foreground">
-                    <CheckCircle2Icon className="size-4 text-emerald-500" />
-                    Key Decisions ({data.keyDecisions.length})
-                  </h4>
-                  {data.keyDecisions.length > 0 ? (
-                    <div className="space-y-2.5">
-                      {data.keyDecisions.map((decision, i) => (
-                        <div
-                          key={i}
-                          className="rounded-lg border border-emerald-200/60 bg-emerald-50/30 dark:border-emerald-900/40 dark:bg-emerald-950/20 p-3.5 text-xs leading-relaxed text-foreground shadow-sm"
-                        >
-                          {cleanString(decision)}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground italic">
-                      No explicit decisions recorded in recent messages.
-                    </div>
-                  )}
-                </div>
+              {/* Key Decisions - compact scannable list */}
+              <div className="space-y-2">
+                <h4 className="flex items-center gap-2 text-xs font-bold text-foreground">
+                  <CheckCircle2Icon className="size-3.5 text-emerald-500" />
+                  Key Decisions
+                </h4>
+                {data.keyDecisions.length > 0 ? (
+                  <ul className="space-y-1.5">
+                    {data.keyDecisions.map((decision, i) => (
+                      <li
+                        key={i}
+                        className="flex items-start gap-2 text-xs leading-relaxed text-foreground"
+                      >
+                        <span className="shrink-0 mt-1.5 size-1.5 rounded-full bg-emerald-500" />
+                        <span className="flex-1">{cleanString(decision)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic">
+                    No explicit decisions in this range.
+                  </p>
+                )}
+              </div>
 
-                {/* Action Items / Issues */}
-                <div className="space-y-3">
-                  <h4 className="flex items-center gap-2 text-xs font-bold text-foreground">
-                    <AlertCircleIcon className="size-4 text-amber-500" />
-                    Action Items & Active Issues ({data.actionItems.length})
-                  </h4>
-                  {data.actionItems.length > 0 ? (
-                    <div className="space-y-2.5">
-                      {data.actionItems.map((action, i) => (
-                        <div
-                          key={i}
-                          className="rounded-lg border border-amber-200/60 bg-amber-50/30 dark:border-amber-900/40 dark:bg-amber-950/20 p-3.5 text-xs leading-relaxed text-foreground shadow-sm flex items-start gap-2.5"
-                        >
-                          <span className="shrink-0 mt-1 size-2 rounded-full bg-amber-500" />
-                          <span className="flex-1">{cleanString(action)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground italic">
-                      No action items or active issues logged.
-                    </div>
-                  )}
-                </div>
+              {/* Action Items / Issues - compact scannable list */}
+              <div className="space-y-2">
+                <h4 className="flex items-center gap-2 text-xs font-bold text-foreground">
+                  <AlertCircleIcon className="size-3.5 text-amber-500" />
+                  Action Items & Open Issues
+                </h4>
+                {data.actionItems.length > 0 ? (
+                  <ul className="space-y-1.5">
+                    {data.actionItems.map((action, i) => (
+                      <li
+                        key={i}
+                        className="flex items-start gap-2 text-xs leading-relaxed text-foreground"
+                      >
+                        <span className="shrink-0 mt-1.5 size-1.5 rounded-full bg-amber-500" />
+                        <span className="flex-1">{cleanString(action)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic">
+                    No open action items logged.
+                  </p>
+                )}
               </div>
 
               {/* Mentions & Direct Highlights */}
               {data.mentions.length > 0 && (
-                <div className="space-y-3 pt-1">
+                <div className="space-y-2">
                   <h4 className="flex items-center gap-2 text-xs font-bold text-foreground">
-                    <MessageSquareIcon className="size-4 text-blue-500" />
-                    Direct Mentions & Highlights ({data.mentions.length})
+                    <MessageSquareIcon className="size-3.5 text-blue-500" />
+                    Mentioned You
                   </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  <ul className="space-y-1.5">
                     {data.mentions.map((mention, i) => (
-                      <div
+                      <li
                         key={i}
-                        className="rounded-lg border border-blue-200/60 bg-blue-50/40 dark:border-blue-900/40 dark:bg-blue-950/20 p-3.5 text-xs leading-relaxed text-foreground"
+                        className="flex items-start gap-2 text-xs leading-relaxed text-foreground"
                       >
-                        {cleanString(mention)}
-                      </div>
+                        <span className="shrink-0 mt-1.5 size-1.5 rounded-full bg-blue-500" />
+                        <span className="flex-1">{cleanString(mention)}</span>
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 </div>
               )}
             </div>
