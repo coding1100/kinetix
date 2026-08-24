@@ -141,13 +141,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await tryRefresh();
       }
     } catch (err) {
+      // Only a definitive rejection from the server (refresh token itself
+      // is invalid/expired/revoked) should end the session. Anything else —
+      // a network blip, a cold-starting backend, a transient 5xx — means we
+      // simply couldn't verify the session this time; the httponly refresh
+      // cookie (the actual 7-day credential) is untouched, so leave the
+      // cached session in place and let the next load/retry succeed instead
+      // of forcing the user to log in again.
       if (
         err instanceof ApiError &&
         (err.status === 401 || err.code === "INVALID_REFRESH")
       ) {
-        forceLogout();
-      } else if (!token) {
-        clearSession();
+        if (token) {
+          forceLogout();
+        } else {
+          clearSession();
+        }
       }
     } finally {
       setReady(true);

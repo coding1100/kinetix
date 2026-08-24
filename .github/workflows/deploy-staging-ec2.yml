@@ -27,7 +27,6 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           envs: APP_ROOT,DEPLOY_BRANCH
-          script_stop: true
           command_timeout: 20m
           script: |
             set -euo pipefail

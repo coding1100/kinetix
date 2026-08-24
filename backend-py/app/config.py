@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     auth_refresh_ip_limit: int = 120
     auth_password_reset_ip_limit: int = 20
     auth_password_reset_account_limit: int = 5
+    ai_rate_limit_window_seconds: int = 60
+    ai_catch_up_ip_limit: int = 20
+    ai_catch_up_account_limit: int = 10
+    ai_knowledge_query_ip_limit: int = 20
+    ai_knowledge_query_account_limit: int = 10
 
     @property
     def s3_configured(self) -> bool:

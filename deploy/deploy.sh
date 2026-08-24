@@ -40,6 +40,20 @@ if [ -f "$APP_ROOT/docker-compose.env" ]; then
   log "Synced docker-compose.env -> .env for compose variable substitution"
 fi
 
+log "Ensure host port 5432 is free before (re)creating postgres"
+if command -v ss >/dev/null 2>&1 && ss -ltnH "sport = :5432" 2>/dev/null | grep -q .; then
+  conflicting_container="$(docker ps --filter "publish=5432" --format '{{.ID}} {{.Names}}' | grep -v "$(compose ps -q postgres 2>/dev/null || true)" || true)"
+  if [ -n "$conflicting_container" ]; then
+    log "Port 5432 held by another Docker container — removing it: $conflicting_container"
+    echo "$conflicting_container" | awk '{print $1}' | xargs -r docker rm -f
+  else
+    echo "ERROR: port 5432 is already in use by a non-Docker process (e.g. a native postgres service)."
+    echo "Refusing to guess — inspect and stop it manually, then re-run deploy:"
+    sudo ss -ltnp "sport = :5432" 2>/dev/null || true
+    exit 1
+  fi
+fi
+
 log "Start postgres first"
 compose up -d postgres
 for i in $(seq 1 30); do

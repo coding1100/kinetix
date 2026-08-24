@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import math
 import os
@@ -7,6 +8,8 @@ from typing import Any
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+LLM_TIMEOUT_SECONDS = 20
 
 # Stopwords set for text analysis
 STOPWORDS = {
@@ -100,12 +103,18 @@ async def get_llm_completion(
             from google import genai
             client = genai.Client(api_key=gemini_key)
             full_prompt = f"{system_instruction}\n\nIMPORTANT: DO NOT use em dashes (— or –). Use normal hyphens (-) or colons (:).\n\n{prompt}"
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=full_prompt,
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    client.models.generate_content,
+                    model="gemini-2.5-flash",
+                    contents=full_prompt,
+                ),
+                timeout=LLM_TIMEOUT_SECONDS,
             )
             if response and response.text:
                 return remove_em_dashes(response.text.strip())
+        except TimeoutError:
+            logger.warning("New Google GenAI SDK timed out after %ss", LLM_TIMEOUT_SECONDS)
         except Exception as e1:
             logger.info(f"New Google GenAI SDK fallback: {e1}")
 
@@ -116,9 +125,14 @@ async def get_llm_completion(
                 try:
                     model = genai.GenerativeModel(model_name)
                     full_prompt = f"{system_instruction}\n\nIMPORTANT: DO NOT use em dashes (— or –). Use normal hyphens (-) or colons (:).\n\n{prompt}"
-                    response = await model.generate_content_async(full_prompt)
+                    response = await asyncio.wait_for(
+                        model.generate_content_async(full_prompt),
+                        timeout=LLM_TIMEOUT_SECONDS,
+                    )
                     if response and response.text:
                         return remove_em_dashes(response.text.strip())
+                except TimeoutError:
+                    logger.warning("Model %s timed out after %ss", model_name, LLM_TIMEOUT_SECONDS)
                 except Exception as model_err:
                     logger.debug(f"Model {model_name} failed: {model_err}")
         except Exception as e2:
@@ -127,7 +141,7 @@ async def get_llm_completion(
     if openai_key:
         try:
             from openai import AsyncOpenAI
-            client = AsyncOpenAI(api_key=openai_key)
+            client = AsyncOpenAI(api_key=openai_key, timeout=LLM_TIMEOUT_SECONDS)
             completion = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[

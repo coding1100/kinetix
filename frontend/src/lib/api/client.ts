@@ -100,10 +100,16 @@ async function refreshAccessToken(): Promise<string | null> {
         }
         return refreshed.accessToken;
       } catch (err) {
-        // Refresh token itself is missing/expired/invalid — nothing left to
-        // retry with, caller falls back to the unauthorized handler.
-        const code = err instanceof ApiError ? err.code : "INVALID_REFRESH";
-        unauthorizedHandler?.(code);
+        // Only a definitive rejection means the refresh token itself is
+        // missing/expired/invalid/revoked — nothing left to retry with, so
+        // fall back to the unauthorized handler (forces logout). A network
+        // error, timeout, or transient 5xx from a flaky connection or a
+        // momentarily-down backend is NOT proof the refresh token is bad —
+        // treating it as such would log the user out mid-session even
+        // though their 7-day refresh cookie is still perfectly valid.
+        if (err instanceof ApiError && (err.status === 401 || err.code === "INVALID_REFRESH")) {
+          unauthorizedHandler?.(err.code);
+        }
         return null;
       } finally {
         refreshPromise = null;
@@ -227,7 +233,9 @@ async function apiFetchInternal<T>(
                 true
               );
             }
-            // refreshAccessToken() already fired unauthorizedHandler.
+            // refreshAccessToken() already fired unauthorizedHandler if the
+            // refresh token itself was rejected; for a transient failure it
+            // didn't, and we just surface the original 401 to the caller.
             throw apiError;
           }
           unauthorizedHandler?.(apiError.code);

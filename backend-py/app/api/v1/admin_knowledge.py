@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from app.deps.auth import CurrentUserDep, DbSession
+from app.deps.workspace import WorkspaceMemberDep
 from app.services import rag_knowledge_service
 
-router = APIRouter(prefix="/admin/knowledge-base", tags=["admin-knowledge"])
+router = APIRouter(prefix="/workspaces/{workspace_id}/admin/knowledge-base", tags=["admin-knowledge"])
 
 
 class CreateDocumentBody(BaseModel):
@@ -17,17 +18,14 @@ class CreateDocumentBody(BaseModel):
 @router.post("/documents", status_code=201)
 async def create_document(
     body: CreateDocumentBody,
-    request: Request,
+    workspace_id: str,
     session: DbSession,
     user: CurrentUserDep,
+    member: WorkspaceMemberDep,
 ):
-    workspace_id = request.headers.get("x-workspace-id")
-    if not workspace_id and user.workspaces:
-        workspace_id = user.workspaces[0].id
-
     doc = await rag_knowledge_service.create_company_document(
         session=session,
-        workspace_id=workspace_id or "",
+        workspace_id=member.id,
         user_id=user.id,
         title=body.title,
         category=body.category,
@@ -45,16 +43,13 @@ async def create_document(
 
 @router.get("/documents")
 async def list_documents(
-    request: Request,
+    workspace_id: str,
     session: DbSession,
     user: CurrentUserDep,
+    member: WorkspaceMemberDep,
 ):
-    workspace_id = request.headers.get("x-workspace-id")
-    if not workspace_id and user.workspaces:
-        workspace_id = user.workspaces[0].id
-
     docs = await rag_knowledge_service.list_company_documents(
-        session=session, workspace_id=workspace_id or ""
+        session=session, workspace_id=member.id
     )
     return {
         "data": [
@@ -73,17 +68,14 @@ async def list_documents(
 @router.delete("/documents/{document_id}")
 async def delete_document(
     document_id: str,
-    request: Request,
+    workspace_id: str,
     session: DbSession,
     user: CurrentUserDep,
+    member: WorkspaceMemberDep,
 ):
-    workspace_id = request.headers.get("x-workspace-id")
-    if not workspace_id and user.workspaces:
-        workspace_id = user.workspaces[0].id
-
     await rag_knowledge_service.delete_company_document(
         session=session,
-        workspace_id=workspace_id or "",
+        workspace_id=member.id,
         document_id=document_id,
     )
     return {"ok": True}
