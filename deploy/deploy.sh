@@ -24,6 +24,43 @@ container_running() {
   [ -n "$id" ] && [ "$(docker inspect -f '{{.State.Running}}' "$id" 2>/dev/null)" = "true" ]
 }
 
+# compose_up_retry <service> [extra compose up args...]
+#
+# Recreating a container that publishes a host port is inherently racy on
+# this host: compose does stop-old -> REMOVE-old -> create-new -> start-new
+# -> bind-port, and Docker's teardown of the old container's docker-proxy
+# (which owns the host socket) is asynchronous. If the new container's bind
+# lands before that teardown completes, Docker returns a generic
+# "address already in use" and the deploy dies - even though nothing
+# foreign holds the port and it frees itself moments later (confirmed in
+# production: a failed attempt succeeded on the very next retry).
+#
+# This is a property of publishing host ports, not of any one service, so
+# every port-publishing `up` goes through here rather than being special
+# cased. Retries are bounded and only ever re-run the same idempotent
+# `compose up`; nothing is force-removed and no volume is touched.
+compose_up_retry() {
+  local service="$1"
+  shift
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if compose up -d "$@" "$service"; then
+      return 0
+    fi
+    if [ "$attempt" -lt 5 ]; then
+      log "$service failed to start (attempt $attempt/5) - host port likely still releasing, retrying in $((attempt * 3))s"
+      sleep "$((attempt * 3))"
+    fi
+  done
+
+  echo "ERROR: $service failed to start after 5 attempts"
+  echo "Diagnostics - listening sockets and containers publishing ports:"
+  (sudo ss -ltnp 2>/dev/null) || (sudo lsof -iTCP -sTCP:LISTEN -P -n 2>/dev/null) || echo "(no ss/lsof available)"
+  docker ps -a --format '{{.ID}} {{.Names}} {{.Status}} {{.Ports}}' || true
+  compose logs "$service" --tail 50 2>/dev/null || true
+  return 1
+}
+
 log "App root: $APP_ROOT"
 cd "$APP_ROOT"
 
@@ -49,23 +86,7 @@ fi
 # --no-deps below). Data lives in the named riseup_pg_data volume; nothing
 # here touches it.
 log "Ensure postgres is up (never recreated - it holds the published 5432 socket)"
-postgres_started=false
-for attempt in 1 2 3; do
-  if compose up -d --no-recreate postgres; then
-    postgres_started=true
-    break
-  fi
-  log "postgres failed to start (attempt $attempt/3), waiting before retry"
-  sleep 5
-done
-if [ "$postgres_started" != true ]; then
-  echo "ERROR: postgres container failed to start after 3 attempts"
-  echo "Diagnostics - what currently holds 127.0.0.1:5432:"
-  (sudo ss -ltnp 2>/dev/null | grep ':5432') || (sudo lsof -iTCP:5432 -sTCP:LISTEN -P -n 2>/dev/null) || echo "(no ss/lsof available)"
-  docker ps -a --filter "publish=5432" --format '{{.ID}} {{.Names}} {{.Status}}' || true
-  compose logs postgres --tail 50 2>/dev/null || true
-  exit 1
-fi
+compose_up_retry postgres --no-recreate || exit 1
 
 for i in $(seq 1 30); do
   if compose ps postgres 2>/dev/null | grep -q "(healthy)"; then
@@ -109,7 +130,10 @@ rollback_service() {
   if docker image inspect "${image}-rollback" >/dev/null 2>&1; then
     echo "==> Rolling back $service to last-known-good image"
     docker tag "${image}-rollback" "$image"
-    compose up -d --no-build --no-deps --force-recreate "$service"
+    # Same port-release race applies here - a rollback that loses it would
+    # leave production down, which is the exact thing rollback exists to
+    # prevent, so it gets the same bounded retry.
+    compose_up_retry "$service" --no-build --no-deps --force-recreate
   else
     echo "==> No previous image available to roll back $service to"
   fi
@@ -124,7 +148,12 @@ log "Build and start api"
 # graph and will happily recreate the healthy postgres container (observed
 # in production - it tore down postgres mid-deploy and then failed to
 # re-bind 127.0.0.1:5432). postgres is already confirmed healthy above.
-compose up -d --build --no-deps api
+if ! compose_up_retry api --build --no-deps; then
+  echo "ERROR: api container could not be started"
+  rollback_service api kinetix-api
+  echo "ERROR: deploy failed, rolled back api to previous version."
+  exit 1
+fi
 api_healthy=false
 for i in $(seq 1 45); do
   api_id="$(compose ps -q api 2>/dev/null || true)"
@@ -144,7 +173,13 @@ if [ "$api_healthy" != true ]; then
 fi
 
 log "Build and start web"
-compose up -d --build --no-deps web
+if ! compose_up_retry web --build --no-deps; then
+  echo "ERROR: web container could not be started"
+  rollback_service web kinetix-web
+  rollback_service api kinetix-api
+  echo "ERROR: deploy failed, rolled back api and web to previous versions."
+  exit 1
+fi
 
 log "Wait for containers"
 sleep 8
