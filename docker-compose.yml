@@ -12,7 +12,16 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-riseup}
       POSTGRES_DB: ${POSTGRES_DB:-riseup}
     ports:
-      - "${POSTGRES_HOST_PORT:-5432}:5432"
+      # BIND_ADDR selects the publish interface. Empty (local dev default)
+      # publishes on all interfaces; production sets BIND_ADDR=127.0.0.1: so
+      # host nginx reaches these over loopback and nothing is exposed
+      # publicly. Doing it with a variable rather than a second `ports:` entry
+      # in the prod override is deliberate - Compose APPENDS port lists across
+      # files instead of replacing them, so an override entry would leave the
+      # container with BOTH 0.0.0.0:PORT and 127.0.0.1:PORT and the second
+      # bind would collide with the first ("address already in use" against a
+      # port that ss shows as free).
+      - "${BIND_ADDR:-}${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - riseup_pg_data:/var/lib/postgresql/data
     healthcheck:
@@ -51,7 +60,7 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       ADMIN_FRONTEND_URL: ${ADMIN_FRONTEND_URL:-http://localhost:3002}
     ports:
-      - "4000:4000"
+      - "${BIND_ADDR:-}4000:4000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -79,7 +88,7 @@ services:
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL:-http://localhost:4000}
     ports:
-      - "3000:3000"
+      - "${BIND_ADDR:-}3000:3000"
     depends_on:
       api:
         condition: service_healthy
@@ -100,7 +109,7 @@ services:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000/api/v1}
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3002}
     ports:
-      - "3002:3002"
+      - "${BIND_ADDR:-}3002:3002"
     depends_on:
       api:
         condition: service_healthy

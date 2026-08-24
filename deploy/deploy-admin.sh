@@ -9,6 +9,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_ROOT="${APP_ROOT:-$ROOT}"
 COMPOSE_FILES="-f $APP_ROOT/docker-compose.yml -f $APP_ROOT/docker-compose.app.yml"
 
+# Loopback-only publishing - must match deploy.sh, otherwise this script would
+# recreate admin with a different bind address than the rest of the stack.
+export BIND_ADDR="127.0.0.1:"
+
 log() { echo "==> $*"; }
 
 compose() {

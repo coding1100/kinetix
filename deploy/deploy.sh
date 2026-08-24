@@ -12,6 +12,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_ROOT="${APP_ROOT:-$ROOT}"
 COMPOSE_FILES="-f $APP_ROOT/docker-compose.yml -f $APP_ROOT/docker-compose.app.yml"
 
+# Publish every container port on loopback only - host nginx proxies to them.
+# Note the trailing colon: it is part of the "IP:PORT:PORT" form, and this is
+# substituted into the base compose file's ports entries. See the ports
+# comment in docker-compose.yml for why this is a variable rather than a
+# second `ports:` entry in the prod override.
+export BIND_ADDR="127.0.0.1:"
+
 log() { echo "==> $*"; }
 
 compose() {
