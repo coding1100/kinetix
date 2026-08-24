@@ -21,32 +21,68 @@ container_running() {
   [ -n "$id" ] && [ "$(docker inspect -f '{{.State.Running}}' "$id" 2>/dev/null)" = "true" ]
 }
 
-# compose_up_retry <service> [extra compose up args...]
+# clear_stale_container <service>
 #
-# Recreating a container that publishes a host port is racy: Docker's
-# teardown of the old container's docker-proxy (which owns the host socket)
-# is asynchronous, so a new container's bind can arrive first and fail with
-# "address already in use" even though nothing foreign holds the port and it
-# frees itself moments later. Bounded retry of the same idempotent
-# `compose up`; nothing is force-removed and no volume is touched.
-# Mirrors the helper in deploy.sh - admin publishes 3002 and is equally
-# exposed to this.
+# A container that fails to start remains in `Created` state and keeps its
+# host port reservation in Docker's internal allocator, even though no
+# docker-proxy is listening. The next `up` then fails with "address already
+# in use" against a port nothing is bound to. Observed in production with
+# kinetix-admin-1 stuck in `Created` across runs. Waiting/retrying cannot
+# clear it - only removing the stale container does.
+#
+# Safe: a `Created`/`Exited` container never ran and holds no state. No -v
+# anywhere, so named volumes are never removed. Running containers are left
+# alone. Mirrors the helper in deploy.sh.
+clear_stale_container() {
+  local service="$1"
+  local cid state mounts
+
+  # Guard 1 (by name): never a candidate for removal, in any state.
+  case "$service" in
+    *postgres*|*db*|*database*)
+      return 0
+      ;;
+  esac
+
+  cid="$(compose ps -aq "$service" 2>/dev/null | head -n1 || true)"
+  [ -n "$cid" ] || return 0
+
+  # Guard 2 (by state): running containers are left strictly alone.
+  state="$(docker inspect -f '{{.State.Status}}' "$cid" 2>/dev/null || true)"
+  case "$state" in
+    created|exited|dead) ;;
+    *) return 0 ;;
+  esac
+
+  # Guard 3 (by mount): anything carrying a named volume is left alone.
+  mounts="$(docker inspect -f '{{range .Mounts}}{{.Name}} {{end}}' "$cid" 2>/dev/null || true)"
+  if [ -n "$(echo "$mounts" | tr -d '[:space:]')" ]; then
+    log "Leaving $service container ($cid, $state) alone - it has named volumes attached: $mounts"
+    return 0
+  fi
+
+  log "Removing stale '$state' $service container ($cid) holding a port reservation"
+  # NOTE: deliberately NO -v.
+  docker rm "$cid" >/dev/null 2>&1 || true
+}
+
 compose_up_retry() {
   local service="$1"
   shift
   local attempt
-  for attempt in 1 2 3 4 5; do
+  for attempt in 1 2 3; do
+    clear_stale_container "$service"
     if compose up -d "$@" "$service"; then
       return 0
     fi
-    if [ "$attempt" -lt 5 ]; then
-      log "$service failed to start (attempt $attempt/5) - host port likely still releasing, retrying in $((attempt * 3))s"
-      sleep "$((attempt * 3))"
+    if [ "$attempt" -lt 3 ]; then
+      log "$service failed to start (attempt $attempt/3), clearing stale container and retrying"
+      sleep 3
     fi
   done
 
-  echo "ERROR: $service failed to start after 5 attempts"
-  echo "Diagnostics - listening sockets and containers publishing ports:"
+  echo "ERROR: $service failed to start after 3 attempts"
+  echo "Diagnostics - listening sockets and all containers:"
   (sudo ss -ltnp 2>/dev/null) || (sudo lsof -iTCP -sTCP:LISTEN -P -n 2>/dev/null) || echo "(no ss/lsof available)"
   docker ps -a --format '{{.ID}} {{.Names}} {{.Status}} {{.Ports}}' || true
   compose logs "$service" --tail 50 2>/dev/null || true

@@ -24,37 +24,90 @@ container_running() {
   [ -n "$id" ] && [ "$(docker inspect -f '{{.State.Running}}' "$id" 2>/dev/null)" = "true" ]
 }
 
+# clear_stale_container <service>
+#
+# THE actual cause of the repeated "failed to bind host port ... address
+# already in use" deploys. Production diagnostics showed `ss -ltnp` with NO
+# listener on 4000 at all, while `docker ps -a` showed kinetix-api-1 (and
+# kinetix-admin-1 from an earlier failed run) sitting in state `Created`.
+#
+# A container that fails to start still exists in `Created` state, and it
+# has ALREADY reserved its host port mapping in Docker's internal port
+# allocator - even though no docker-proxy was ever spawned and nothing is
+# actually listening. The next `up` creates another container, and the
+# allocator refuses the reservation because the stale `Created` container
+# still holds it. Waiting cannot help (nothing is releasing), and retrying
+# makes it strictly worse by stacking up more stale reservations - which is
+# exactly what the previous retry-with-backoff attempt did.
+#
+# Removing a `Created`/`Exited` container is safe: it never ran, so it holds
+# no application state. Volumes are separate objects and are never removed
+# here (no -v anywhere) - postgres data lives in the named riseup_pg_data
+# volume and is untouched. A RUNNING container is deliberately left alone.
+clear_stale_container() {
+  local service="$1"
+  local cid state mounts
+
+  # Guard 1 (by name): postgres is never a candidate for removal, in any
+  # state, full stop. It is the only stateful service here and it is not
+  # what gets stuck - api/admin are. Refusing by name means no future edit
+  # to the state logic below can ever put the database at risk.
+  case "$service" in
+    *postgres*|*db*|*database*)
+      return 0
+      ;;
+  esac
+
+  cid="$(compose ps -aq "$service" 2>/dev/null | head -n1 || true)"
+  [ -n "$cid" ] || return 0
+
+  # Guard 2 (by state): only containers that never ran (or already stopped)
+  # are removable. A running container is left strictly alone.
+  state="$(docker inspect -f '{{.State.Status}}' "$cid" 2>/dev/null || true)"
+  case "$state" in
+    created|exited|dead) ;;
+    *) return 0 ;;
+  esac
+
+  # Guard 3 (by mount): if the container has any named volume attached, do
+  # not touch it - that is the signature of a stateful service. `docker rm`
+  # without -v would not delete the volume anyway, but this makes it
+  # impossible to remove a data-carrying container by accident.
+  mounts="$(docker inspect -f '{{range .Mounts}}{{.Name}} {{end}}' "$cid" 2>/dev/null || true)"
+  if [ -n "$(echo "$mounts" | tr -d '[:space:]')" ]; then
+    log "Leaving $service container ($cid, $state) alone - it has named volumes attached: $mounts"
+    return 0
+  fi
+
+  log "Removing stale '$state' $service container ($cid) holding a port reservation"
+  # NOTE: deliberately NO -v. Named volumes are separate objects and are
+  # never removed by this script.
+  docker rm "$cid" >/dev/null 2>&1 || true
+}
+
 # compose_up_retry <service> [extra compose up args...]
 #
-# Recreating a container that publishes a host port is inherently racy on
-# this host: compose does stop-old -> REMOVE-old -> create-new -> start-new
-# -> bind-port, and Docker's teardown of the old container's docker-proxy
-# (which owns the host socket) is asynchronous. If the new container's bind
-# lands before that teardown completes, Docker returns a generic
-# "address already in use" and the deploy dies - even though nothing
-# foreign holds the port and it frees itself moments later (confirmed in
-# production: a failed attempt succeeded on the very next retry).
-#
-# This is a property of publishing host ports, not of any one service, so
-# every port-publishing `up` goes through here rather than being special
-# cased. Retries are bounded and only ever re-run the same idempotent
-# `compose up`; nothing is force-removed and no volume is touched.
+# Clears any stale port reservation first (see above), then brings the
+# service up. The bounded retry is kept only as a guard against genuinely
+# transient daemon hiccups, and re-clears the stale container each pass so
+# a failed attempt cannot poison the next one.
 compose_up_retry() {
   local service="$1"
   shift
   local attempt
-  for attempt in 1 2 3 4 5; do
+  for attempt in 1 2 3; do
+    clear_stale_container "$service"
     if compose up -d "$@" "$service"; then
       return 0
     fi
-    if [ "$attempt" -lt 5 ]; then
-      log "$service failed to start (attempt $attempt/5) - host port likely still releasing, retrying in $((attempt * 3))s"
-      sleep "$((attempt * 3))"
+    if [ "$attempt" -lt 3 ]; then
+      log "$service failed to start (attempt $attempt/3), clearing stale container and retrying"
+      sleep 3
     fi
   done
 
-  echo "ERROR: $service failed to start after 5 attempts"
-  echo "Diagnostics - listening sockets and containers publishing ports:"
+  echo "ERROR: $service failed to start after 3 attempts"
+  echo "Diagnostics - listening sockets and all containers:"
   (sudo ss -ltnp 2>/dev/null) || (sudo lsof -iTCP -sTCP:LISTEN -P -n 2>/dev/null) || echo "(no ss/lsof available)"
   docker ps -a --format '{{.ID}} {{.Names}} {{.Status}} {{.Ports}}' || true
   compose logs "$service" --tail 50 2>/dev/null || true
