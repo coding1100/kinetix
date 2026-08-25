@@ -158,19 +158,17 @@ async def refresh_session(session: AsyncSession, refresh_token: str) -> dict:
         raise AppError(403, "ACCOUNT_DISABLED", "This account is disabled")
 
     # If this token was already rotated within the grace period (reuse across
-    # concurrent tabs/requests), return a valid access token instead of
-    # logging out — but signal that the cookie should NOT be re-set. Re-
-    # echoing the stale token used to flip the browser's cookie back onto a
-    # value that's already scheduled for cleanup, so a later refresh attempt
-    # (after grace-period cleanup ran) would hit the "expired or been
-    # replaced" branch below and force a hard logout even though the session
-    # was never actually expired.
+    # concurrent tabs/requests), return a valid access token and re-arm the
+    # cookie with the same token instead of logging out. Re-echoing the token
+    # is deliberate: the value is already what sits in the browser's jar, so
+    # writing it back is a no-op for the value but refreshes the cookie's
+    # Max-Age, which is what keeps a losing-race tab's session alive.
     if matched.rotated_at is not None:
         if matched.rotated_at >= cutoff:
             access_token = sign_access_token(sub=str(user.id), email=user.email)
             return {
                 **_auth_response(user, access_token),
-                "refreshToken": None,
+                "refreshToken": refresh_token,
             }
         else:
             raise AppError(401, "INVALID_REFRESH", "Refresh token has expired or been replaced")
