@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, BackgroundTasks, Cookie, File, Query, Request, Response, UploadFile
 from fastapi.responses import RedirectResponse
 from urllib.parse import quote
@@ -84,6 +86,11 @@ async def refresh(
     )
     refresh_token = riseup_refresh
     if not refresh_token:
+        logging.getLogger(__name__).warning(
+            "auth/refresh: request arrived with no riseup_refresh cookie "
+            "(cookies present: %s)",
+            list(request.cookies.keys()),
+        )
         raise AppError(401, "UNAUTHORIZED", "Refresh token missing")
     result = await auth_service.refresh_session(session, refresh_token)
     new_refresh = result.pop("refreshToken")
