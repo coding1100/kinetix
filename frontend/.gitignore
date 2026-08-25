@@ -43,3 +43,13 @@ next-env.d.ts
 
 # tauri
 src-tauri/target/
+
+# tauri android (Gradle/Kotlin build outputs and local caches - the gen/android
+# project source itself is committed, these generated artifacts are not)
+src-tauri/gen/android/.gradle/
+src-tauri/gen/android/build/
+src-tauri/gen/android/app/build/
+src-tauri/gen/android/app/src/main/jniLibs/
+src-tauri/gen/android/buildSrc/build/
+src-tauri/gen/android/buildSrc/.gradle/
+src-tauri/gen/android/local.properties
