@@ -351,6 +351,19 @@ async def test_only_admin_can_toggle_privacy(api_client: AsyncClient):
     assert lst.status_code == 201, lst.text
     list_id = lst.json()["id"]
 
+    # Content access has no ambient default for any role (see
+    # space_permissions.py's module docstring) - MEMBER needs an explicit
+    # share to have EDIT on this space/list at all. Without this, the
+    # rename assertion below can't distinguish "blocked because privacy
+    # changes need admin" from "blocked because this MEMBER was never
+    # granted access to the space in the first place".
+    share = await api_client.post(
+        f"/api/v1/workspaces/{ws_id}/spaces/{space_id}/members",
+        headers=owner_headers,
+        json={"userId": member_user_id, "permissionLevel": "EDIT"},
+    )
+    assert share.status_code == 201, share.text
+
     space_toggle = await api_client.patch(
         f"/api/v1/workspaces/{ws_id}/spaces/{space_id}",
         headers=member_headers,

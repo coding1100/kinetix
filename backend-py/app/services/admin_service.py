@@ -15,10 +15,9 @@ from sqlalchemy.orm import selectinload
 
 from app.core.errors import AppError
 from app.core.security import (
+    hash_reset_token,
     sign_access_token,
     verify_password,
-    verify_refresh_token,
-    verify_token_hash,
 )
 from app.core.utils import as_aware_utc
 from app.db.models.enums import MemberStatus, PlatformRole, WorkspaceRole, WorkspaceStatus
@@ -106,30 +105,22 @@ async def admin_login(session: AsyncSession, body: AdminLoginBody) -> dict:
 
 
 async def admin_refresh_session(session: AsyncSession, refresh_token: str) -> dict:
-    try:
-        payload = verify_refresh_token(refresh_token)
-    except Exception:
-        raise AppError(401, "INVALID_REFRESH", "Invalid refresh token") from None
-
-    user_id = payload["sub"]
+    # issue_refresh_for_user (auth_service.py) issues an opaque random token
+    # hashed with hash_reset_token, not a self-expiring JWT - see that
+    # function's docstring. Looked up directly by hash rather than via
+    # verify_refresh_token (JWT decode), which this token is no longer one of.
     now = datetime.now(timezone.utc)
-    rows = (
-        await session.scalars(
-            select(RefreshToken).where(
-                RefreshToken.user_id == user_id,
-                RefreshToken.expires_at > now,
-            )
+    token_hash = hash_reset_token(refresh_token)
+    matched = await session.scalar(
+        select(RefreshToken).where(
+            RefreshToken.token_hash == token_hash,
+            RefreshToken.expires_at > now,
         )
-    ).all()
-
-    matched: RefreshToken | None = None
-    for row in rows:
-        if verify_token_hash(refresh_token, row.token_hash):
-            matched = row
-            break
+    )
     if not matched:
         raise AppError(401, "INVALID_REFRESH", "Refresh token not found or expired")
 
+    user_id = matched.user_id
     user = await session.get(User, user_id)
     if not user or user.is_disabled:
         raise AppError(401, "UNAUTHORIZED", "User not found")
