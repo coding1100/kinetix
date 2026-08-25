@@ -179,8 +179,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // auth_service.refresh_session's grace-period handling).
     const PROACTIVE_REFRESH_INTERVAL_MS = 60 * 60 * 1000; // 1 hour, well under the 4h access token TTL
 
+    // Never refresh more often than this, no matter what triggers it. Tab
+    // focus fires on every window switch, and a redirect remounts this
+    // effect, so an unthrottled refresh-on-visible turns into a request
+    // storm that can rotate the refresh token out from under itself.
+    const MIN_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+    let lastRefreshAt = Date.now();
+    let inFlight = false;
+
     const proactiveRefresh = () => {
+      if (inFlight) return;
+      if (Date.now() - lastRefreshAt < MIN_REFRESH_INTERVAL_MS) return;
       if (!useAuthStore.getState().accessToken) return;
+      inFlight = true;
+      lastRefreshAt = Date.now();
       void refreshSession()
         .then((refreshed) => {
           useAuthStore.getState().updateSession({
@@ -189,13 +201,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             workspaces: useAuthStore.getState().workspaces,
           });
         })
-        .catch((err) => {
-          if (
-            err instanceof ApiError &&
-            (err.status === 401 || err.code === "INVALID_REFRESH")
-          ) {
-            forceLogout();
-          }
+        .catch(() => {
+          // A failed proactive refresh is never a reason to end the session
+          // on its own. The access token in the store is still whatever it
+          // was, and the next real API call goes through apiFetch's
+          // 401 -> refresh -> retry path, which owns the logout decision via
+          // unauthorizedHandler. Forcing a logout from here instead raced
+          // that path and bounced users to the login screen on any blip.
+        })
+        .finally(() => {
+          inFlight = false;
         });
     };
 
@@ -205,8 +220,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, PROACTIVE_REFRESH_INTERVAL_MS);
 
     // A backgrounded tab's timers can be throttled or paused by the browser
-    // for far longer than PROACTIVE_REFRESH_INTERVAL_MS, so also refresh
-    // immediately on refocus rather than waiting for the next tick.
+    // for far longer than PROACTIVE_REFRESH_INTERVAL_MS, so also refresh on
+    // refocus — but only if MIN_REFRESH_INTERVAL_MS has actually elapsed.
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") proactiveRefresh();
     };
@@ -216,7 +231,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [forceLogout]);
+  }, []);
 
   useEffect(() => {
     // Non-recoverable 401s force an immediate logout from wherever the user
