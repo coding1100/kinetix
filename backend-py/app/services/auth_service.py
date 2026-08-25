@@ -126,7 +126,8 @@ ROTATION_GRACE_PERIOD = timedelta(minutes=10)
 async def refresh_session(session: AsyncSession, refresh_token: str) -> dict:
     try:
         payload = verify_refresh_token(refresh_token)
-    except Exception:
+    except Exception as exc:
+        logger.warning("refresh_session: token failed to decode/verify (%s)", exc)
         raise AppError(401, "INVALID_REFRESH", "Invalid refresh token") from None
 
     user_id = payload["sub"]
@@ -149,6 +150,12 @@ async def refresh_session(session: AsyncSession, refresh_token: str) -> dict:
             break
 
     if not matched:
+        logger.warning(
+            "refresh_session: no matching non-expired RefreshToken row for "
+            "user_id=%s (candidate rows=%d)",
+            user_id,
+            len(rows),
+        )
         raise AppError(401, "INVALID_REFRESH", "Refresh token not found or expired")
 
     user = await session.get(User, user_id)
@@ -171,6 +178,14 @@ async def refresh_session(session: AsyncSession, refresh_token: str) -> dict:
                 "refreshToken": refresh_token,
             }
         else:
+            logger.warning(
+                "refresh_session: user_id=%s reused a rotated token outside "
+                "the grace period (rotated_at=%s, cutoff=%s, now=%s)",
+                user_id,
+                matched.rotated_at,
+                cutoff,
+                now,
+            )
             raise AppError(401, "INVALID_REFRESH", "Refresh token has expired or been replaced")
 
     # Mark current token as rotated
