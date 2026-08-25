@@ -120,7 +120,7 @@ async def login(session: AsyncSession, body: LoginBody) -> dict:
     return {**_auth_response(user, access_token), "refreshToken": refresh_token}
 
 
-ROTATION_GRACE_PERIOD = timedelta(seconds=120)
+ROTATION_GRACE_PERIOD = timedelta(minutes=10)
 
 
 async def refresh_session(session: AsyncSession, refresh_token: str) -> dict:
