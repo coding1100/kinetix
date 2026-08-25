@@ -12,12 +12,9 @@ from app.core.errors import AppError
 from app.core.security import (
     hash_password,
     hash_reset_token,
-    hash_token,
     sign_access_token,
-    sign_refresh_token,
     verify_access_token,
     verify_password,
-    verify_refresh_token,
     verify_token_hash,
 )
 from app.core.utils import as_aware_utc, generate_token, unique_workspace_slug
@@ -47,8 +44,24 @@ def _auth_response(user: User, access_token: str) -> dict:
 
 
 async def issue_refresh_for_user(session: AsyncSession, user_id: str) -> str:
-    raw = sign_refresh_token(str(user_id))
-    token_hash = hash_token(raw)
+    # Opaque random token, not a self-expiring JWT: this device's session
+    # lifetime is tracked ONLY by this row's expires_at, which slides
+    # forward on every use of THIS SAME token (see refresh_session). A JWT's
+    # baked-in `exp` claim would freeze this device's expiry at issuance
+    # time forever, no matter how often it's actually used - the previous
+    # design papered over that by minting a brand-new JWT+row on every
+    # refresh and invalidating the old one, which is exactly what let one
+    # device's refresh strand every other concurrently-logged-in device's
+    # still-in-date token as "superseded".
+    #
+    # Hashed with SHA-256 (hash_reset_token), not bcrypt: the token is
+    # already a high-entropy random value (generate_token, 32 bytes) so the
+    # hash's own brute-force resistance isn't load-bearing the way it is for
+    # a password, and a deterministic hash lets refresh_session look the row
+    # up directly by token_hash (a unique-indexed column) instead of loading
+    # every non-expired row in the table and bcrypt-comparing each one.
+    raw = generate_token()
+    token_hash = hash_reset_token(raw)
     settings = get_settings()
     expires_at = datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_expires_days)
     session.add(
@@ -120,103 +133,56 @@ async def login(session: AsyncSession, body: LoginBody) -> dict:
     return {**_auth_response(user, access_token), "refreshToken": refresh_token}
 
 
-ROTATION_GRACE_PERIOD = timedelta(minutes=10)
-
-
 async def refresh_session(session: AsyncSession, refresh_token: str) -> dict:
-    try:
-        payload = verify_refresh_token(refresh_token)
-    except Exception as exc:
-        logger.warning("refresh_session: token failed to decode/verify (%s)", exc)
-        raise AppError(401, "INVALID_REFRESH", "Invalid refresh token") from None
-
-    user_id = payload["sub"]
+    # Per-device token, not rotated: each browser/app instance keeps the
+    # SAME refresh token value for its whole 7-day-sliding lifetime. Looked
+    # up directly by its hash (unique-indexed column) rather than by
+    # decoding a JWT or scanning every row for this user - see
+    # issue_refresh_for_user for why.
     now = datetime.now(timezone.utc)
-    cutoff = now - ROTATION_GRACE_PERIOD
-
-    rows = (
-        await session.scalars(
-            select(RefreshToken).where(
-                RefreshToken.user_id == user_id,
-                RefreshToken.expires_at > now,
-            )
+    token_hash = hash_reset_token(refresh_token)
+    matched = await session.scalar(
+        select(RefreshToken).where(
+            RefreshToken.token_hash == token_hash,
+            RefreshToken.expires_at > now,
         )
-    ).all()
-
-    matched: RefreshToken | None = None
-    for row in rows:
-        if verify_token_hash(refresh_token, row.token_hash):
-            matched = row
-            break
+    )
 
     if not matched:
         logger.warning(
             "refresh_session: no matching non-expired RefreshToken row for "
-            "user_id=%s (candidate rows=%d)",
-            user_id,
-            len(rows),
+            "this token"
         )
         raise AppError(401, "INVALID_REFRESH", "Refresh token not found or expired")
 
-    user = await session.get(User, user_id)
+    user = await session.get(User, matched.user_id)
     if not user:
         raise AppError(401, "UNAUTHORIZED", "User not found")
     if user.is_disabled:
         raise AppError(403, "ACCOUNT_DISABLED", "This account is disabled")
 
-    # If this token was already rotated within the grace period (reuse across
-    # concurrent tabs/requests), return a valid access token and re-arm the
-    # cookie with the same token instead of logging out. Re-echoing the token
-    # is deliberate: the value is already what sits in the browser's jar, so
-    # writing it back is a no-op for the value but refreshes the cookie's
-    # Max-Age, which is what keeps a losing-race tab's session alive.
-    if matched.rotated_at is not None:
-        if matched.rotated_at >= cutoff:
-            access_token = sign_access_token(sub=str(user.id), email=user.email)
-            return {
-                **_auth_response(user, access_token),
-                "refreshToken": refresh_token,
-            }
-        else:
-            logger.warning(
-                "refresh_session: user_id=%s reused a rotated token outside "
-                "the grace period (rotated_at=%s, cutoff=%s, now=%s)",
-                user_id,
-                matched.rotated_at,
-                cutoff,
-                now,
-            )
-            raise AppError(401, "INVALID_REFRESH", "Refresh token has expired or been replaced")
-
-    # Mark current token as rotated
-    matched.rotated_at = now
-
-    # Clean up old rotated tokens outside the grace period
-    for r in rows:
-        if r.rotated_at is not None and r.rotated_at < cutoff:
-            await session.delete(r)
-
+    # Slide this device's own expiry forward by another full window. The
+    # token value itself never changes, so no other device's session is
+    # ever affected by this device refreshing (and vice versa) - each
+    # device's login is independently valid until ITS OWN 7 days of disuse.
+    settings = get_settings()
+    matched.expires_at = now + timedelta(days=settings.jwt_refresh_expires_days)
     access_token = sign_access_token(sub=str(user.id), email=user.email)
-    new_refresh = await issue_refresh_for_user(session, user.id)
     await session.commit()
 
-    return {**_auth_response(user, access_token), "refreshToken": new_refresh}
+    return {**_auth_response(user, access_token), "refreshToken": refresh_token}
 
 
 async def logout(session: AsyncSession, refresh_token: str | None) -> None:
     if not refresh_token:
         return
-    now = datetime.now(timezone.utc)
-    rows = (
-        await session.scalars(
-            select(RefreshToken).where(RefreshToken.expires_at > now)
-        )
-    ).all()
-    for row in rows:
-        if verify_token_hash(refresh_token, row.token_hash):
-            await session.delete(row)
-            await session.commit()
-            return
+    token_hash = hash_reset_token(refresh_token)
+    matched = await session.scalar(
+        select(RefreshToken).where(RefreshToken.token_hash == token_hash)
+    )
+    if matched:
+        await session.delete(matched)
+        await session.commit()
 
 
 async def get_me(
