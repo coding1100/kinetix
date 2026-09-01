@@ -38,7 +38,7 @@ def presign_get(storage_key: str, file_name: str) -> str:
         Params={
             "Bucket": settings.s3_attachments_bucket,
             "Key": storage_key,
-            "ResponseContentDisposition": f'inline; filename="{file_name}"',
+            "ResponseContentDisposition": f'attachment; filename="{file_name}"',
         },
         ExpiresIn=settings.s3_presign_expires_seconds,
     )
