@@ -12,12 +12,18 @@ tauri-build = { version = "^2.6", features = [] }
 tauri = { version = "^2.11", features = [] }
 tauri-plugin-notification = "2"
 tauri-plugin-shell = "2"
-tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
 serde = { version = "1.0", features = ["derive"] }
 
 
 serde_json = "1.0"
+
+# Desktop-only: tauri-plugin-single-instance does not support mobile targets.
+# Usage is already gated behind #[cfg(desktop)] in src/lib.rs; the dependency
+# itself must be gated the same way or `cargo build` for an Android/iOS
+# target fails to resolve/compile it.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"
 
 [lib]
 name = "kinetix_desktop_lib"

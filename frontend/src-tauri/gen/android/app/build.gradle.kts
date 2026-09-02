@@ -13,6 +13,19 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// Release signing config, read from key.properties (gitignored — never
+// committed). CI writes this file from GitHub Secrets before building; for
+// a local release build, create android/app/key.properties yourself with
+// storeFile/storePassword/keyAlias/keyPassword. Without it, `release` falls
+// back to no signingConfig and Gradle produces an unsigned APK, which
+// Android refuses to install ("app not installed" / looks "corrupted").
+val keystoreProperties = Properties().apply {
+    val propFile = file("key.properties")
+    if (propFile.exists()) {
+        propFile.inputStream().use { load(it) }
+    }
+}
+
 android {
     compileSdk = 36
     namespace = "com.kinetix.desktop"
@@ -23,6 +36,16 @@ android {
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+    }
+    signingConfigs {
+        if (keystoreProperties.containsKey("storeFile")) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -38,6 +61,9 @@ android {
         }
         getByName("release") {
             isMinifyEnabled = true
+            if (signingConfigs.findByName("release") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
                     .plus(getDefaultProguardFile("proguard-android-optimize.txt"))
