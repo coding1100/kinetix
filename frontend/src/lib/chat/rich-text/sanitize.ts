@@ -26,7 +26,7 @@ const ALLOWED_TAGS = [
   "div",
 ];
 
-const ALLOWED_ATTR = ["href", "target", "rel", "style", "data-banner"];
+const ALLOWED_ATTR = ["href", "target", "rel", "data-banner"];
 
 const FORMATTING_SELECTOR =
   "b,strong,i,em,u,s,strike,del,code,pre,a,ul,ol,li,h1,h2,h3,h4,blockquote,[data-banner]";
@@ -113,14 +113,11 @@ function plainTextFromHtmlFallback(html: string): string {
     .trimEnd();
 }
 
-/** Ensure block siblings in rich HTML render on separate lines in message view. */
+/** Clean up HTML structure without inserting extra <br> elements between block elements. */
 function normalizeRichMessageLineBreaks(root: HTMLElement): string {
   const out = document.createElement("div");
 
-  root.childNodes.forEach((node, index) => {
-    if (index > 0 && isBlockElement(node)) {
-      out.appendChild(document.createElement("br"));
-    }
+  root.childNodes.forEach((node) => {
     out.appendChild(node.cloneNode(true));
   });
 

@@ -198,6 +198,15 @@ export function InlineMessageEdit({
   const handleSave = async () => {
     if (!canSave || saving || uploading) return;
     const nextBody = getBodyText().trim();
+
+    if (nextBody.length > 10000) {
+      toast.error(
+        `Message exceeds maximum 10,000 character limit (${nextBody.length.toLocaleString()} characters). Please shorten your message.`,
+        { duration: 6000 }
+      );
+      return;
+    }
+
     const attachmentIds = [
       ...remainingAttachments.map((attachment) => attachment.id),
       ...pending.map((item) => item.id),
