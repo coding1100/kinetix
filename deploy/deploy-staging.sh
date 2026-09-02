@@ -134,6 +134,17 @@ git fetch origin "$DEPLOY_BRANCH"
 git reset --hard "origin/$DEPLOY_BRANCH"
 log "Deployed commit: $(git rev-parse --short HEAD) — $(git log -1 --format='%s')"
 
+# See deploy.sh for the full rationale: every deploy leaves the image it
+# replaces behind as a dangling, untagged image, and nothing was pruning
+# them - staging shares the same disk/Docker daemon as the prod app and
+# admin deploys, so builds here can be starved by images any of them left
+# behind. `docker image prune -f` (no -a) only removes genuinely dangling
+# images, never a running container's image, so nothing currently in use
+# (prod or staging) is affected.
+log "Prune dangling images and build cache (keeps anything running)"
+docker image prune -f >/dev/null 2>&1 || true
+docker builder prune -f --filter "until=72h" >/dev/null 2>&1 || true
+
 disable_staging_systemd
 if ! docker network inspect edge >/dev/null 2>&1; then
   log "Create shared edge Docker network"
