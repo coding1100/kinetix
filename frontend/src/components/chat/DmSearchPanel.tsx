@@ -70,8 +70,8 @@ export function DmSearchPanel({
 
   return (
     <PanelCardShell
-      widthClass="w-[340px]"
-      marginClassName="box-border flex h-full shrink-0 py-3 pl-2 pr-1"
+      widthClass="md:w-[340px]"
+      marginSpacingClassName="md:py-3 md:pl-2 md:pr-1"
     >
       <div className="flex h-12 shrink-0 items-center justify-between px-4 pt-1">
         <span className="text-sm font-semibold">Search messages</span>

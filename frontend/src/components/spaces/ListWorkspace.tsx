@@ -25,6 +25,8 @@ type ListWorkspaceProps = {
   error: string | null;
   onTasksChange: () => void;
   basePath?: string;
+  /** Where the mobile-only back button in the toolbar returns to. */
+  backHref?: string;
   defaultView?: ViewMode;
 };
 
@@ -36,6 +38,7 @@ export function ListWorkspace({
   error,
   onTasksChange,
   basePath,
+  backHref,
   defaultView = "list",
 }: ListWorkspaceProps) {
   const router = useRouter();
@@ -133,6 +136,7 @@ export function ListWorkspace({
         onSearchQueryChange={setSearchQuery}
         onCreateTask={openCreateTask}
         canShare={meta.canShare}
+        {...(backHref ? { backHref } : {})}
       />
 
       {view === "channel" ? (

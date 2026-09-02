@@ -249,11 +249,11 @@ export function InboxFeedRow({
       <div className="relative flex h-7 items-center justify-end">
         <time
           dateTime={item.createdAt}
-          className="text-xs whitespace-nowrap text-muted-foreground transition-opacity group-hover:opacity-0"
+          className="text-xs whitespace-nowrap text-muted-foreground transition-opacity group-hover:opacity-0 pointer-coarse:opacity-0"
         >
           {formatNotificationDate(item.createdAt)}
         </time>
-        <div className="absolute inset-y-0 right-0 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="absolute inset-y-0 right-0 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100">
           <button
             type="button"
             className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"

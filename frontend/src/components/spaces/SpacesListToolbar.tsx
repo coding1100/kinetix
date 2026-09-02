@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import {
+  ArrowLeftIcon,
   CalendarIcon,
   ChartGanttIcon,
   FolderKanbanIcon,
@@ -62,6 +63,7 @@ export function SpacesListToolbar({
   onCreateTask,
   canShare,
   className,
+  backHref = "/spaces",
 }: {
   listId: string;
   listName: string;
@@ -81,12 +83,21 @@ export function SpacesListToolbar({
   onCreateTask: () => void;
   canShare?: boolean;
   className?: string;
+  /** Where the mobile-only back button returns to (list origin, not the space). */
+  backHref?: string;
 }) {
   const [shareOpen, setShareOpen] = useState(false);
 
   return (
     <div className={cn("shrink-0 border-b border-border bg-background", className)}>
       <div className="flex items-center gap-2 px-3 py-1">
+        <Link
+          href={backHref}
+          className="flex shrink-0 items-center justify-center rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground md:hidden"
+          aria-label="Back"
+        >
+          <ArrowLeftIcon className="size-4" />
+        </Link>
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
           <span
             className="size-1.5 shrink-0 rounded-sm"
@@ -119,7 +130,8 @@ export function SpacesListToolbar({
         />
       ) : null}
 
-      <div className="flex items-center justify-between border-b border-border px-3 overflow-x-auto no-scrollbar max-w-full">
+      <div className="flex items-center justify-between gap-2 border-b border-border px-3">
+        <div className="min-w-0 overflow-x-auto no-scrollbar">
         <UnderlineTabBar
           className="border-b-0 px-0"
           size="default"
@@ -169,6 +181,7 @@ export function SpacesListToolbar({
           active={view}
           onChange={(v) => onViewChange(v as ViewMode)}
         />
+        </div>
         <div className="flex shrink-0 items-center gap-2">
           {view !== "channel" ? (
             <Button

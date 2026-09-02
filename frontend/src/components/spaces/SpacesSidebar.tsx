@@ -171,11 +171,21 @@ export function SpacesSidebar() {
 
   if (!secondaryPanelOpen) return null;
 
+  // Unlike Home/Chat, /spaces itself immediately redirects to the first
+  // list (see spaces/page.tsx) rather than being a real landing page, so
+  // "root" here means "not yet drilled into a specific list" — the
+  // moment a listId is in the URL, this sidebar hides on mobile so the
+  // list content is usable instead of being squeezed by a 260px panel.
+  const isSpacesRoot = !pathname.startsWith("/spaces/l/");
+
   return (
     <>
       <aside
-        className="relative flex min-h-0 shrink-0 flex-col border-r border-sidebar-border bg-sidebar"
-        style={{ width: secondaryPanelWidth }}
+        className={cn(
+          "relative min-h-0 shrink-0 flex-col border-r border-sidebar-border bg-sidebar",
+          isSpacesRoot ? "flex w-full md:w-[var(--sidebar-width)]" : "hidden md:flex md:w-[var(--sidebar-width)]"
+        )}
+        style={{ "--sidebar-width": `${secondaryPanelWidth}px` } as React.CSSProperties}
       >
         <div className="flex items-center justify-between border-b border-sidebar-border px-4 py-3">
           <div className="flex items-center gap-2">

@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { HomeSidebar } from "@/components/shell/HomeSidebar";
+import { HomeMobileBackBar } from "@/components/shell/HomeMobileBackBar";
 import { PageLoader } from "@/components/ui/page-loader";
 
 export default function HomeLayout({
@@ -13,6 +14,7 @@ export default function HomeLayout({
         <HomeSidebar />
       </Suspense>
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+        <HomeMobileBackBar />
         {children}
       </main>
     </div>
