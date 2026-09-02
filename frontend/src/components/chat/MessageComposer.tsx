@@ -202,6 +202,14 @@ export function MessageComposer({
     if (!canSend || sending || uploading) return;
     const messageBody = getBodyText().trim();
 
+    if (messageBody.length > 10000) {
+      toast.error(
+        `Message exceeds maximum 10,000 character limit (${messageBody.length.toLocaleString()} characters). Please shorten your message.`,
+        { duration: 6000 }
+      );
+      return;
+    }
+
     setSending(true);
     const ids = [...attachmentIds];
     const optimisticAttachments = pending.map(

@@ -171,7 +171,7 @@ function renderBlock(block: Block): string {
  */
 export function buildMarkdownHtml(markdown: string): string {
   const blocks = parseBlocks(markdown.replace(/\r\n/g, "\n").split("\n"));
-  return blocks.map(renderBlock).join("<br>");
+  return blocks.map(renderBlock).join("");
 }
 
 /**
