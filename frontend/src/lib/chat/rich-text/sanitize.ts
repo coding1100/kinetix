@@ -142,15 +142,14 @@ export function messageBodyHasHtml(body: string): boolean {
 
 /** Load a stored message body into the contenteditable composer without losing line breaks. */
 export function bodyToComposerHtml(body: string): string {
-  const decoded = decodeMessageEntities(body);
-  if (!decoded.trim()) return "";
+  if (!body.trim()) return "";
 
-  if (messageBodyHasHtml(decoded)) {
-    return sanitizeMessageHtml(decoded);
+  if (messageBodyHasHtml(body)) {
+    return sanitizeMessageHtml(body);
   }
 
   if (typeof document === "undefined") {
-    return decoded
+    return body
       .split("\n")
       .map((line) =>
         line
@@ -162,7 +161,7 @@ export function bodyToComposerHtml(body: string): string {
   }
 
   const div = document.createElement("div");
-  decoded.split("\n").forEach((line, index) => {
+  body.split("\n").forEach((line, index) => {
     if (index > 0) {
       div.appendChild(document.createElement("br"));
     }
@@ -175,17 +174,17 @@ export function bodyToComposerHtml(body: string): string {
 export function normalizeComposerHtml(html: string): string {
   if (!html) return "";
 
-  const decoded = decodeMessageEntities(html);
+  const cleanHtml = html.replace(/&nbsp;/gi, " ").replace(/\u00A0/g, " ");
 
   if (typeof document === "undefined") {
-    if (!messageBodyHasHtml(decoded)) {
-      return plainTextFromHtmlFallback(decoded);
+    if (!messageBodyHasHtml(cleanHtml)) {
+      return plainTextFromHtmlFallback(cleanHtml);
     }
-    return sanitizeMessageHtml(decoded).replace(/&nbsp;/gi, " ");
+    return sanitizeMessageHtml(cleanHtml).replace(/&nbsp;/gi, " ");
   }
 
   const div = document.createElement("div");
-  div.innerHTML = decoded;
+  div.innerHTML = cleanHtml;
 
   const hasFormatting = div.querySelector(FORMATTING_SELECTOR) !== null;
   if (!hasFormatting) {
@@ -197,12 +196,18 @@ export function normalizeComposerHtml(html: string): string {
 
 export function sanitizeMessageHtml(html: string): string {
   if (!html.trim()) return "";
-  return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS,
-    ALLOWED_ATTR,
-    ALLOWED_URI_REGEXP:
-      /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
-  }).trim();
+  const purify = (DOMPurify as unknown as { default?: typeof DOMPurify }).default ?? DOMPurify;
+  if (typeof purify?.sanitize === "function") {
+    return purify
+      .sanitize(html, {
+        ALLOWED_TAGS,
+        ALLOWED_ATTR,
+        ALLOWED_URI_REGEXP:
+          /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
+      })
+      .trim();
+  }
+  return html.trim();
 }
 
 export function stripMessageHtml(html: string): string {

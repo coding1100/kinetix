@@ -13,6 +13,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { AutoUpdateProvider } from "@/components/providers/AutoUpdateProvider";
 import { ExternalLinkProvider } from "@/components/providers/ExternalLinkProvider";
+import { UnreadBadgeSync } from "@/components/providers/UnreadBadgeSync";
 import { KnowledgeAssistantSheet } from "@/components/shell/topbar/KnowledgeAssistantSheet";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
@@ -26,6 +27,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
               <ChatSocketProvider>
                 {children}
               </ChatSocketProvider>
+              <UnreadBadgeSync />
               <DesktopNotificationPrompt />
               <Suspense fallback={null}>
                 <Modals />
