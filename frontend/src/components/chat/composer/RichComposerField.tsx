@@ -17,6 +17,9 @@ import type { TurnIntoBlockType } from "@/lib/chat/rich-text/block-types";
 import { applyTurnInto } from "@/lib/chat/rich-text/commands";
 import { RICH_TEXT_CONTENT_CLASS } from "@/lib/chat/rich-text/rich-text-styles";
 import { extractFilesFromClipboard } from "@/lib/chat/composer-image-files";
+import { normalizePastedText } from "@/lib/chat/rich-text/sanitize";
+import { insertHtmlAtCursor } from "@/lib/chat/rich-text/dom";
+import { looksLikeMarkdown, markdownToComposerHtml } from "@/lib/chat/rich-text/markdown-paste";
 
 const MAX_EDITOR_HEIGHT_PX = 160;
 
@@ -115,7 +118,13 @@ export function RichComposerField({
     const text = e.clipboardData.getData("text/plain");
     if (!text) return;
     e.preventDefault();
-    document.execCommand("insertText", false, text);
+
+    if (looksLikeMarkdown(text)) {
+      insertHtmlAtCursor(markdownToComposerHtml(text));
+    } else {
+      document.execCommand("insertText", false, normalizePastedText(text));
+    }
+
     onInput();
     resizeEditor();
   };

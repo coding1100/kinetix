@@ -7,6 +7,7 @@ import type { MentionSelection } from "@/lib/chat/mention-types";
 import { cn } from "@/lib/utils";
 import { MentionChip } from "./MentionChip";
 import { MentionAutocompleteDropdown } from "./MentionAutocompleteDropdown";
+import { normalizePastedText } from "@/lib/chat/rich-text/sanitize";
 
 const MAX_TEXTAREA_HEIGHT_PX = 112;
 
@@ -54,9 +55,10 @@ export function MentionComposerField({
   }, [draft, inputRef]);
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const text = e.clipboardData.getData("text/plain");
-    if (!text) return;
+    const rawText = e.clipboardData.getData("text/plain");
+    if (!rawText) return;
     e.preventDefault();
+    const text = normalizePastedText(rawText);
     const el = e.currentTarget;
     const start = el.selectionStart ?? draft.length;
     const end = el.selectionEnd ?? draft.length;

@@ -74,7 +74,33 @@ export function extractPlainTextWithLineBreaks(root: HTMLElement): string {
   };
 
   root.childNodes.forEach((child) => walk(child, true));
-  return chunks.join("").replace(/\n+$/g, "").trimEnd();
+  return collapseBlankLines(chunks.join("")).replace(/\n+$/g, "").trimEnd();
+}
+
+/**
+ * Collapse runs of 3+ newlines down to a single blank line (2 newlines).
+ * Pasted text from Word/Google Docs/Notion often inserts a blank line after
+ * every paragraph, which otherwise survives untouched and makes messages
+ * look multiple times longer than the original.
+ */
+function collapseBlankLines(text: string): string {
+  return text.replace(/\n{3,}/g, "\n\n");
+}
+
+/**
+ * Normalize clipboard plain text before inserting it into the composer.
+ * Word/Google Docs/Notion frequently emit a blank line after every
+ * paragraph and trailing whitespace per line in their text/plain payload,
+ * which otherwise makes a pasted message look 2-3x longer than the source.
+ */
+export function normalizePastedText(text: string): string {
+  return collapseBlankLines(
+    text
+      .replace(/\r\n/g, "\n")
+      .split("\n")
+      .map((line) => line.replace(/[ \t]+$/g, ""))
+      .join("\n")
+  );
 }
 
 function plainTextFromHtmlFallback(html: string): string {
