@@ -119,7 +119,7 @@ export function SpacesListToolbar({
         />
       ) : null}
 
-      <div className="flex items-center justify-between border-b border-border px-3">
+      <div className="flex items-center justify-between border-b border-border px-3 overflow-x-auto no-scrollbar max-w-full">
         <UnderlineTabBar
           className="border-b-0 px-0"
           size="default"
