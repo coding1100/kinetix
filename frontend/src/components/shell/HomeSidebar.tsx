@@ -1217,10 +1217,15 @@ export function HomeSidebar() {
     cacheValid ? sidebarListsCache?.dms : undefined
   );
 
+  const isHomeRoot = pathname === "/home" || pathname === "/home/inbox";
+
   return (
     <aside
-      className="relative flex min-h-0 shrink-0 flex-col border-r border-sidebar-border bg-sidebar"
-      style={{ width: secondaryPanelWidth }}
+      className={cn(
+        "relative min-h-0 shrink-0 flex-col border-r border-sidebar-border bg-sidebar",
+        isHomeRoot ? "flex w-full md:w-[var(--sidebar-width)]" : "hidden md:flex md:w-[var(--sidebar-width)]"
+      )}
+      style={{ "--sidebar-width": `${secondaryPanelWidth}px` } as React.CSSProperties}
     >
       <div className="flex items-center justify-between border-b border-sidebar-border px-3 py-2.5">
         <span className="text-[13px] font-semibold tracking-tight text-sidebar-foreground">

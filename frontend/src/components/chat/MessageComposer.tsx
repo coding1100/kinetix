@@ -316,8 +316,8 @@ export function MessageComposer({
 
       <div
         className={cn(
-          "shrink-0 bg-card",
-          compact ? "px-2 py-2" : "border-t border-border px-34 py-3",
+          "shrink-0 bg-card pb-safe",
+          compact ? "px-2 py-2" : "border-t border-border px-2 sm:px-4 py-2 sm:py-3",
           className
         )}
       >

@@ -144,7 +144,7 @@ export function BoardView({
         onDragEnd={(e) => void handleDragEnd(e)}
         onDragCancel={() => setActiveId(null)}
       >
-        <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-4">
+        <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto snap-x touch-pan-x p-2 sm:p-4">
           {columns.map((col) => (
             <BoardColumn
               key={col.id}
@@ -185,7 +185,7 @@ function BoardColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        "flex w-[240px] shrink-0 flex-col rounded-xl border border-border bg-muted/30",
+        "flex w-[82vw] sm:w-[240px] snap-center shrink-0 flex-col rounded-xl border border-border bg-muted/30",
         isOver && "ring-2 ring-primary/40"
       )}
     >

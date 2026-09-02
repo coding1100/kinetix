@@ -253,10 +253,15 @@ export function ChatSidebar() {
       />
     );
 
+  const isChatRoot = pathname === "/chat";
+
   return (
     <aside
-      className="relative flex min-h-0 shrink-0 flex-col border-r border-sidebar-border bg-sidebar"
-      style={{ width: secondaryPanelWidth }}
+      className={cn(
+        "relative min-h-0 shrink-0 flex-col border-r border-sidebar-border bg-sidebar",
+        isChatRoot ? "flex w-full md:w-[var(--sidebar-width)]" : "hidden md:flex md:w-[var(--sidebar-width)]"
+      )}
+      style={{ "--sidebar-width": `${secondaryPanelWidth}px` } as React.CSSProperties}
     >
       <div className="flex items-center justify-between px-3 py-3">
         <span className="text-sm font-semibold">Chat</span>
