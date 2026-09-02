@@ -81,4 +81,34 @@ describe("buildMarkdownHtml", () => {
     expect(out).not.toContain("<a ");
     expect(out).not.toContain('href="javascript:');
   });
+
+  it("does not corrupt numbers when inline code blocks are present", () => {
+    const input = "5 - 3 = 2 and `code1` and `code2` with 12 tests and 0 items";
+    const out = buildMarkdownHtml(input);
+    expect(out).toContain("5 - 3 = 2");
+    expect(out).toContain("12 tests");
+    expect(out).toContain("0 items");
+    expect(out).toContain("<code>code1</code>");
+    expect(out).toContain("<code>code2</code>");
+  });
+
+  it("does not turn intraword underscores into italics", () => {
+    const input = "file_name.test.ts and say_push are identifiers";
+    const out = buildMarkdownHtml(input);
+    expect(out).not.toContain("<em>");
+    expect(out).toContain("file_name.test.ts");
+    expect(out).toContain("say_push");
+  });
+
+  it("safely escapes raw HTML tag descriptions without creating active DOM tags", () => {
+    const input =
+      "allow-lists (<strong>, <em>, <del>, <code>, <pre>, <h1-4>, <blockquote>, <ul>/<ol>/<li>, <a>)";
+    const out = buildMarkdownHtml(input);
+    expect(out).toContain("&lt;strong&gt;");
+    expect(out).toContain("&lt;em&gt;");
+    expect(out).toContain("&lt;a&gt;");
+    expect(out).not.toContain("<strong>");
+    expect(out).not.toContain("<em>");
+    expect(out).not.toContain("<a>");
+  });
 });
