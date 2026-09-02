@@ -43,11 +43,17 @@ export function TeamsSidebar({
         : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
     );
 
+  const isTeamsRoot = pathname === "/teams";
+
   return (
     <aside
       className={cn(
-        "flex h-full w-[260px] shrink-0 flex-col border-r border-border bg-muted/20",
-        !secondaryPanelOpen && "hidden lg:flex"
+        "h-full min-h-0 shrink-0 flex-col border-r border-border bg-muted/20",
+        !secondaryPanelOpen
+          ? "hidden lg:flex lg:w-[260px]"
+          : isTeamsRoot
+            ? "flex w-full lg:w-[260px]"
+            : "hidden lg:flex lg:w-[260px]"
       )}
     >
       <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-3">

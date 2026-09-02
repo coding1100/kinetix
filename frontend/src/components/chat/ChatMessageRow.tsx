@@ -176,7 +176,9 @@ export function ChatMessageRow({
       <div
         className={cn(
           "pointer-events-none absolute right-2 top-1 z-10 transition-opacity",
-          actionsActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          actionsActive
+            ? "opacity-100"
+            : "opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100"
         )}
       >
         <div className="pointer-events-auto flex items-center gap-1 rounded-md border border-border bg-card px-1.5 py-0.5 shadow-sm">

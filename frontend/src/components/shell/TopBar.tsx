@@ -36,7 +36,7 @@ export function TopBar() {
 
   return (
     <>
-    <div className="grid h-11 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-border bg-card px-3">
+    <div className="grid min-h-11 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-border bg-card px-3 pt-safe">
       <div className="flex items-center gap-1.5">
         <DropdownMenu open={workspaceMenuOpen} onOpenChange={setWorkspaceMenuOpen}>
           <DropdownMenuTrigger

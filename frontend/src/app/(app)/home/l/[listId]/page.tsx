@@ -60,6 +60,7 @@ export default function HomeListPage({
         error={tasksQuery.error}
         onTasksChange={onTasksChange}
         basePath={`/home/l/${listId}`}
+        backHref="/home"
       />
     </Suspense>
   ) : null;

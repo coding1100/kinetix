@@ -439,7 +439,7 @@ export function ThreadPanel({
 
   if (loading) {
     return (
-      <PanelCardShell widthClass="w-[380px]" marginClassName="box-border flex h-full shrink-0 py-3 pr-2 pl-2">
+      <PanelCardShell widthClass="md:w-[380px]" marginSpacingClassName="md:py-3 md:pr-2 md:pl-2">
         <PageLoader label="Loading thread…" />
       </PanelCardShell>
     );
@@ -447,7 +447,7 @@ export function ThreadPanel({
 
   if (error || !bundle) {
     return (
-      <PanelCardShell widthClass="w-[380px]" marginClassName="box-border flex h-full shrink-0 py-3 pr-2 pl-2">
+      <PanelCardShell widthClass="md:w-[380px]" marginSpacingClassName="md:py-3 md:pr-2 md:pl-2">
         <div className="flex items-center justify-between px-4 pt-3 pb-2">
           <span className="text-sm font-semibold">Thread</span>
           <Button
@@ -490,7 +490,7 @@ export function ThreadPanel({
   }
 
   return (
-    <PanelCardShell widthClass="w-[380px]" marginClassName="box-border flex h-full shrink-0 py-3 pr-2 pl-2">
+    <PanelCardShell widthClass="md:w-[380px]" marginSpacingClassName="md:py-3 md:pr-2 md:pl-2">
       <header className="shrink-0 px-4 pt-3 pb-2">
         <div className="flex items-start justify-between gap-2">
           <h2 className="text-base font-semibold leading-tight text-foreground">

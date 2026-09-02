@@ -1415,8 +1415,8 @@ export function TaskDrawer({
               Loading…
             </div>
           ) : task ? (
-            <div className="flex min-h-0 flex-1">
-              <div className="min-w-0 flex-[1.4] overflow-y-auto px-8 py-6">
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
+              <div className="min-w-0 flex-[1.4] px-8 py-6 md:overflow-y-auto">
                 <div className="mb-5 flex items-start gap-1">
                   <CreateTaskListPicker
                     spaces={spaces}
@@ -2573,7 +2573,7 @@ export function TaskDrawer({
                 </div>
               </div>
 
-              <div className="flex w-[min(42%,520px)] min-w-[400px] shrink-0 flex-col border-l border-border bg-muted/20">
+              <div className="flex min-h-[50vh] w-full shrink-0 flex-col border-t border-border bg-muted/20 md:min-h-0 md:w-[min(42%,520px)] md:min-w-[320px] md:border-l md:border-t-0">
                 <div className="flex items-center justify-between border-b border-border px-6 py-3.5">
                   <span className="text-sm font-semibold">Activity</span>
                   <div className="flex items-center gap-2">
@@ -2868,7 +2868,7 @@ export function TaskDrawer({
       />
 
       <Dialog open={shareOpen} onOpenChange={setShareOpen}>
-        <DialogContent className="min-w-[600px] gap-0 p-0" showCloseButton>
+        <DialogContent className="md:min-w-[600px] gap-0 p-0" showCloseButton>
           <div className="border-b border-border px-5 py-4">
             <DialogTitle>Share task</DialogTitle>
             <p className="mt-1 text-xs text-muted-foreground">
