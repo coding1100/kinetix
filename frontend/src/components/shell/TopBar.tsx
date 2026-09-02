@@ -49,7 +49,7 @@ export function TopBar() {
                 <span className="grid size-5 place-items-center rounded bg-gradient-to-br from-violet-600 to-primary text-[9px] font-bold text-white">
                   {workspaceBadge}
                 </span>
-                <span className="max-w-[140px] truncate">{workspaceLabel}</span>
+                <span className="max-w-[80px] sm:max-w-[140px] truncate">{workspaceLabel}</span>
                 <ChevronDownIcon
                   className={cn(
                     "size-3.5 text-muted-foreground transition-transform duration-200",
@@ -69,16 +69,17 @@ export function TopBar() {
         <GlobalSearch />
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5 sm:gap-2">
         <Button
           type="button"
           variant="ghost"
           size="sm"
           className="h-7 gap-1 border-neutral-200 bg-white px-2 text-xs text-black hover:bg-neutral-100 hover:text-black dark:bg-white dark:text-black dark:hover:bg-neutral-100 dark:hover:text-black"
           onClick={() => openModal("create-task")}
+          title="Create task"
         >
           <PlusIcon className="size-3.5" strokeWidth={2} />
-          Create task
+          <span className="hidden sm:inline">Create task</span>
         </Button>
         <Button
           type="button"
@@ -89,10 +90,10 @@ export function TopBar() {
           title="Ask Company Knowledge Base AI"
         >
           <SparklesIcon className="size-3.5 text-indigo-500" />
-          <span>AI Assistant</span>
+          <span className="hidden sm:inline">AI Assistant</span>
         </Button>
         {FEATURE_FLAGS.topBarNotifications ? <NotificationsMenu /> : null}
-        <Separator orientation="vertical" className="mx-1 h-5" />
+        <Separator orientation="vertical" className="mx-0.5 sm:mx-1 h-5" />
         <ProfileMenu />
       </div>
     </div>

@@ -72,7 +72,7 @@ export function GlobalNav() {
 
   return (
     <nav
-      className="flex h-full w-[70px] shrink-0 flex-col py-2 pl-2"
+      className="hidden md:flex h-full w-[70px] shrink-0 flex-col py-2 pl-2"
       aria-label="Global navigation"
     >
       <div

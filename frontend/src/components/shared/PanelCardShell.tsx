@@ -14,13 +14,13 @@ type PanelCardShellProps = {
 
 export function PanelCardShell({
   children,
-  widthClass = "w-[320px]",
+  widthClass = "w-full md:w-[320px]",
   className,
-  marginClassName = "box-border flex h-full shrink-0 py-3 pr-2 pl-2",
+  marginClassName = "box-border flex h-full shrink-0 p-2 md:py-3 md:pr-2 md:pl-2 w-full md:w-auto",
 }: PanelCardShellProps) {
   return (
-    <div className={marginClassName}>
-      <aside className={cn(cardBase, widthClass, className)}>{children}</aside>
+    <div className={cn("fixed inset-0 z-50 bg-background/95 p-2 md:static md:z-auto md:bg-transparent md:p-0", marginClassName)}>
+      <aside className={cn(cardBase, "w-full h-full", widthClass, className)}>{children}</aside>
     </div>
   );
 }

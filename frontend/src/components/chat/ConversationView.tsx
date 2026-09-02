@@ -39,7 +39,7 @@ import { useWorkspaceMembersQuery } from "@/hooks/use-workspace-members-query";
 import { ApiError } from "@/lib/api/client";
 import { PageLoader } from "@/components/ui/page-loader";
 import { Button } from "@/components/ui/button";
-import { SparklesIcon } from "lucide-react";
+import { ChevronLeftIcon, SparklesIcon } from "lucide-react";
 import { CatchUpDialog } from "@/components/chat/CatchUpDialog";
 import { MessageList } from "./MessageList";
 import { MessageComposer } from "./MessageComposer";
@@ -1053,8 +1053,17 @@ export function ConversationView({
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-card">
       {showHeader ? (
-      <header className="flex h-14 shrink-0 items-center justify-between px-4">
-        <div className="flex min-w-0 items-center gap-2">
+      <header className="flex h-14 shrink-0 items-center justify-between px-3 md:px-4">
+        <div className="flex min-w-0 items-center gap-1.5 md:gap-2">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="flex md:hidden shrink-0"
+            onClick={() => router.push("/chat")}
+            aria-label="Back to chat list"
+          >
+            <ChevronLeftIcon className="size-5" />
+          </Button>
           {type === "channel" ? (
             <div className="min-w-0">
               <h2 className="truncate text-sm font-semibold leading-tight">
