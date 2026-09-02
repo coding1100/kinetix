@@ -154,6 +154,26 @@ export function insertTextAtCursor(text: string): void {
   sel.addRange(range);
 }
 
+/** Insert already-sanitized HTML at the cursor, replacing any selection. */
+export function insertHtmlAtCursor(html: string): void {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  const range = sel.getRangeAt(0);
+  range.deleteContents();
+
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  const fragment = template.content;
+  const lastNode = fragment.lastChild;
+  if (!lastNode) return;
+
+  range.insertNode(fragment);
+  range.setStartAfter(lastNode);
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
 /** Splice an atomic (contenteditable=false) chip node in at the cursor,
  * followed by a plain space, then collapse the cursor right after that
  * space - same "insert exactly where the caret is" contract as

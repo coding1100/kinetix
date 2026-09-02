@@ -8,11 +8,13 @@ interface SettingsState {
   theme: ThemePreference;
   emailNotifications: boolean;
   desktopNotifications: boolean;
+  desktopNotificationPromptDismissed: boolean;
   soundEnabled: boolean;
   soundPreset: SoundPreset;
   setTheme: (theme: ThemePreference) => void;
   setEmailNotifications: (v: boolean) => void;
   setDesktopNotifications: (v: boolean) => void;
+  setDesktopNotificationPromptDismissed: (v: boolean) => void;
   setSoundEnabled: (v: boolean) => void;
   setSoundPreset: (preset: SoundPreset) => void;
 }
@@ -23,12 +25,15 @@ export const useSettingsStore = create<SettingsState>()(
       theme: "system",
       emailNotifications: true,
       desktopNotifications: false,
+      desktopNotificationPromptDismissed: false,
       soundEnabled: true,
       soundPreset: "chime",
       setTheme: (theme) => set({ theme }),
       setEmailNotifications: (emailNotifications) => set({ emailNotifications }),
       setDesktopNotifications: (desktopNotifications) =>
         set({ desktopNotifications }),
+      setDesktopNotificationPromptDismissed: (desktopNotificationPromptDismissed) =>
+        set({ desktopNotificationPromptDismissed }),
       setSoundEnabled: (soundEnabled) => set({ soundEnabled }),
       setSoundPreset: (soundPreset) => set({ soundPreset }),
     }),
