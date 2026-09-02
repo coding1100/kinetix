@@ -17,7 +17,7 @@ import type { TurnIntoBlockType } from "@/lib/chat/rich-text/block-types";
 import { applyTurnInto } from "@/lib/chat/rich-text/commands";
 import { RICH_TEXT_CONTENT_CLASS } from "@/lib/chat/rich-text/rich-text-styles";
 import { extractFilesFromClipboard } from "@/lib/chat/composer-image-files";
-import { normalizePastedText } from "@/lib/chat/rich-text/sanitize";
+import { normalizePastedText, sanitizeMessageHtml } from "@/lib/chat/rich-text/sanitize";
 import { insertHtmlAtCursor } from "@/lib/chat/rich-text/dom";
 import { looksLikeMarkdown, markdownToComposerHtml } from "@/lib/chat/rich-text/markdown-paste";
 
@@ -115,13 +115,27 @@ export function RichComposerField({
       }
     }
 
+    const html = e.clipboardData.getData("text/html");
     const text = e.clipboardData.getData("text/plain");
-    if (!text) return;
+
+    if (!html && !text) return;
     e.preventDefault();
 
-    if (looksLikeMarkdown(text)) {
+    // 1. Rich HTML content copied from Slack, Notion, GitHub, Web pages, etc.
+    if (html && /<(b|strong|i|em|u|s|strike|del|code|pre|a|ul|ol|li|h[1-4]|blockquote|p|br|div)[^>]*>/i.test(html)) {
+      const sanitized = sanitizeMessageHtml(html);
+      if (sanitized) {
+        insertHtmlAtCursor(sanitized);
+        onInput();
+        resizeEditor();
+        return;
+      }
+    }
+
+    // 2. Plain text with Markdown syntax
+    if (text && looksLikeMarkdown(text)) {
       insertHtmlAtCursor(markdownToComposerHtml(text));
-    } else {
+    } else if (text) {
       document.execCommand("insertText", false, normalizePastedText(text));
     }
 

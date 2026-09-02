@@ -38,15 +38,70 @@ function handleLinkCapture(event: MouseEvent<HTMLDivElement>) {
   void openExternalUrl(href);
 }
 
-function RichTextPart({ html }: { html: string }) {
+function processRichTextHtml(html: string): string {
   const safe = sanitizeMessageHtml(html);
-  if (!safe) return null;
+  if (!safe) return "";
+
+  const linkified = linkifyHtml(safe);
+  if (typeof document === "undefined") return linkified;
+
+  const root = document.createElement("div");
+  root.innerHTML = linkified;
+
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as HTMLElement;
+      if (el.tagName === "A" || el.tagName === "BUTTON") return;
+      Array.from(node.childNodes).forEach(walk);
+      return;
+    }
+    if (node.nodeType !== Node.TEXT_NODE) return;
+
+    const text = node.textContent ?? "";
+    MESSAGE_TOKEN_RE.lastIndex = 0;
+    if (!MESSAGE_TOKEN_RE.test(text)) return;
+    MESSAGE_TOKEN_RE.lastIndex = 0;
+
+    const frag = document.createDocumentFragment();
+    let lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = MESSAGE_TOKEN_RE.exec(text)) !== null) {
+      if (m.index > lastIndex) {
+        frag.appendChild(document.createTextNode(text.slice(lastIndex, m.index)));
+      }
+      const token = m[0];
+      if (token.startsWith("#")) {
+        const span = document.createElement("span");
+        span.className = "font-medium text-sky-700";
+        span.textContent = token;
+        frag.appendChild(span);
+      } else if (token.startsWith("@")) {
+        const span = document.createElement("span");
+        span.className = "font-medium text-[#4F8EF7]";
+        span.textContent = displayMentionToken(token);
+        frag.appendChild(span);
+      }
+      lastIndex = m.index + m[0].length;
+    }
+    if (lastIndex < text.length) {
+      frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+    }
+    node.parentNode?.replaceChild(frag, node);
+  };
+
+  Array.from(root.childNodes).forEach(walk);
+  return root.innerHTML;
+}
+
+function RichTextPart({ html }: { html: string }) {
+  const processed = processRichTextHtml(html);
+  if (!processed) return null;
 
   return (
     <div
-      className={cn(RICH_TEXT_CONTENT_CLASS, "inline")}
+      className={cn(RICH_TEXT_CONTENT_CLASS, "block")}
       onClickCapture={handleLinkCapture}
-      dangerouslySetInnerHTML={{ __html: linkifyHtml(safe) }}
+      dangerouslySetInnerHTML={{ __html: processed }}
     />
   );
 }
@@ -97,7 +152,6 @@ export function MessageBodyWithMentions({
   conversationType?: ConversationType;
   conversationId?: string;
 }) {
-  const parts = body.split(MESSAGE_TOKEN_RE);
   const hasHtml = messageBodyHasHtml(body);
   const { members } = useMentionMembers(conversationType, conversationId);
   const channelId = conversationType === "channel" ? conversationId : undefined;
@@ -112,50 +166,15 @@ export function MessageBodyWithMentions({
   const resolveMentionMember = (part: string) =>
     memberByName.get(displayMentionToken(part).slice(1).trim().toLowerCase());
 
-  if (!hasHtml) {
-    return (
-      <p className="text-sm leading-relaxed whitespace-pre-wrap text-foreground">
-        {parts.map((part, i) => {
-          if (part.startsWith("@")) {
-            if (isSpecialMention(part)) {
-              return (
-                <span key={i} className={MENTION_CHIP_SPECIAL_CLASS}>
-                  {displayMentionToken(part)}
-                </span>
-              );
-            }
-            return (
-              <PersonMentionToken
-                key={i}
-                part={part}
-                member={resolveMentionMember(part)}
-                channelId={channelId}
-                isSelf={
-                  !!currentUserId &&
-                  resolveMentionMember(part)?.id === currentUserId
-                }
-              />
-            );
-          }
-          if (part.startsWith("#")) {
-            return (
-              <span key={i} className="font-medium text-sky-700">
-                {part}
-              </span>
-            );
-          }
-          return (
-            <span key={i}>{linkifyText(decodeMessageEntities(part), `${i}-`)}</span>
-          );
-        })}
-      </p>
-    );
+  if (hasHtml) {
+    return <RichTextPart html={body} />;
   }
 
+  const parts = body.split(MESSAGE_TOKEN_RE);
+
   return (
-    <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground">
+    <p className="text-sm leading-relaxed whitespace-pre-wrap text-foreground">
       {parts.map((part, i) => {
-        if (!part) return null;
         if (part.startsWith("@")) {
           if (isSpecialMention(part)) {
             return (
@@ -171,7 +190,8 @@ export function MessageBodyWithMentions({
               member={resolveMentionMember(part)}
               channelId={channelId}
               isSelf={
-                !!currentUserId && resolveMentionMember(part)?.id === currentUserId
+                !!currentUserId &&
+                resolveMentionMember(part)?.id === currentUserId
               }
             />
           );
@@ -183,8 +203,10 @@ export function MessageBodyWithMentions({
             </span>
           );
         }
-        return <RichTextPart key={i} html={part} />;
+        return (
+          <span key={i}>{linkifyText(decodeMessageEntities(part), `${i}-`)}</span>
+        );
       })}
-    </div>
+    </p>
   );
 }
