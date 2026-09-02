@@ -100,6 +100,17 @@ log "Pull latest code"
 git fetch origin main
 git reset --hard origin/main
 
+# See deploy.sh for the full rationale: every deploy leaves the image it
+# replaces behind as a dangling, untagged image, and nothing was pruning
+# them - this shares a disk with the main app/staging deploys, so an admin
+# deploy can be starved by images the app deploy left behind (and vice
+# versa). `docker image prune -f` (no -a) only removes genuinely dangling
+# images, never a running container's image or the just-tagged -rollback
+# image, so this cannot affect the rollback safety net below.
+log "Prune dangling images and build cache (keeps rollback images and anything running)"
+docker image prune -f >/dev/null 2>&1 || true
+docker builder prune -f --filter "until=72h" >/dev/null 2>&1 || true
+
 if [ -f "$APP_ROOT/docker-compose.env" ]; then
   cp "$APP_ROOT/docker-compose.env" "$APP_ROOT/.env"
   log "Synced docker-compose.env -> .env for compose variable substitution"

@@ -128,6 +128,20 @@ log "Pull latest code"
 git fetch origin main
 git reset --hard origin/main
 
+# Each deploy tags a new -rollback image and leaves the image it replaces
+# behind, untagged (dangling). Nothing was ever pruning those, so build
+# cache and dangling images accumulated for weeks until the disk filled up
+# and containerd couldn't create new snapshot dirs, taking down `web` on a
+# deploy that otherwise had nothing wrong with it. `docker image prune -f`
+# (no -a) only removes genuinely dangling, unreferenced images - it never
+# touches a running container's image, the just-tagged `-rollback` images,
+# or any other tagged image, so this cannot break the rollback safety net
+# below. Runs before the build so a near-full disk doesn't already block
+# building the new api/web images this run needs.
+log "Prune dangling images and build cache (keeps rollback images and anything running)"
+docker image prune -f >/dev/null 2>&1 || true
+docker builder prune -f --filter "until=72h" >/dev/null 2>&1 || true
+
 log "Disable legacy systemd services (superseded by Docker - avoids two prod builds silently coexisting)"
 sudo systemctl stop kinetix-api kinetix-web 2>/dev/null || true
 sudo systemctl disable kinetix-api kinetix-web 2>/dev/null || true
