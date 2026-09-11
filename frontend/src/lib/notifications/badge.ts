@@ -5,6 +5,23 @@ import { isTauri } from "@/lib/tauri";
 const APP_NAME = "Kinetix";
 let originalFaviconHref: string | null = null;
 
+// TEMPORARY diagnostic: surfaces exactly what happened with the Windows
+// taskbar overlay icon call as an in-app toast, since production builds
+// have DevTools disabled and console.warn output isn't otherwise visible
+// to the user. Fires once per app session. Remove once the Windows badge
+// issue is confirmed resolved.
+let badgeDiagnosticShown = false;
+function reportBadgeDiagnostic(message: string): void {
+  if (badgeDiagnosticShown) return;
+  badgeDiagnosticShown = true;
+  console.warn("[badge]", message);
+  import("sonner")
+    .then(({ toast }) => {
+      toast.info(`[Badge diagnostic] ${message}`, { duration: 15000 });
+    })
+    .catch(() => {});
+}
+
 function updateFaviconBadge(doc: Document, count: number): void {
   try {
     if (typeof doc.createElement !== "function") return;
@@ -87,12 +104,20 @@ async function buildOverlayIconBytes(count: number): Promise<ArrayBuffer | null>
 
     drawBadgeCircle(ctx, count, size / 2, size / 2, size / 2 - 2);
 
-    const blob: Blob | null = await new Promise((resolve) =>
-      canvas.toBlob(resolve, "image/png")
-    );
-    if (!blob) return null;
-    return await blob.arrayBuffer();
-  } catch {
+    // toDataURL (synchronous) rather than toBlob (async callback) - more
+    // universally reliable across WebView engines for a canvas that was
+    // never attached to the DOM, and easier to decode by hand without
+    // depending on Blob.arrayBuffer() support.
+    const dataUrl = canvas.toDataURL("image/png");
+    const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+  } catch (err) {
+    console.warn("[badge] failed to build overlay icon bytes", err);
     return null;
   }
 }
@@ -174,18 +199,24 @@ export function updateAppUnreadBadge(count: number): void {
           if ("setOverlayIcon" in appWindow && typeof (appWindow as any).setOverlayIcon === "function") {
             if (validCount > 0) {
               const pngBytes = await buildOverlayIconBytes(validCount);
-              if (pngBytes) {
-                try {
-                  const { Image } = await import("@tauri-apps/api/image");
-                  const icon = await Image.fromBytes(new Uint8Array(pngBytes));
-                  await (appWindow as any).setOverlayIcon(icon);
-                } catch (err) {
-                  console.warn("[badge] failed to set Windows taskbar overlay icon", err);
-                }
+              if (!pngBytes) {
+                reportBadgeDiagnostic("Failed to build overlay icon PNG bytes (canvas step failed)");
+                return;
+              }
+              try {
+                const { Image } = await import("@tauri-apps/api/image");
+                const icon = await Image.fromBytes(new Uint8Array(pngBytes));
+                await (appWindow as any).setOverlayIcon(icon);
+                reportBadgeDiagnostic(`setOverlayIcon called successfully (count=${validCount}, bytes=${pngBytes.byteLength})`);
+              } catch (err) {
+                console.warn("[badge] failed to set Windows taskbar overlay icon", err);
+                reportBadgeDiagnostic(`setOverlayIcon threw: ${err instanceof Error ? err.message : String(err)}`);
               }
             } else {
               (appWindow as any).setOverlayIcon(undefined).catch(() => {});
             }
+          } else {
+            reportBadgeDiagnostic("setOverlayIcon is not available on this window object");
           }
         })
         .catch(() => {});
