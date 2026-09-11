@@ -5,23 +5,6 @@ import { isTauri } from "@/lib/tauri";
 const APP_NAME = "Kinetix";
 let originalFaviconHref: string | null = null;
 
-// TEMPORARY diagnostic: surfaces exactly what happened with the Windows
-// taskbar overlay icon call as an in-app toast, since production builds
-// have DevTools disabled and console.warn output isn't otherwise visible
-// to the user. Fires once per app session. Remove once the Windows badge
-// issue is confirmed resolved.
-let badgeDiagnosticShown = false;
-function reportBadgeDiagnostic(message: string): void {
-  if (badgeDiagnosticShown) return;
-  badgeDiagnosticShown = true;
-  console.warn("[badge]", message);
-  import("sonner")
-    .then(({ toast }) => {
-      toast.info(`[Badge diagnostic] ${message}`, { duration: 15000 });
-    })
-    .catch(() => {});
-}
-
 function updateFaviconBadge(doc: Document, count: number): void {
   try {
     if (typeof doc.createElement !== "function") return;
@@ -199,24 +182,18 @@ export function updateAppUnreadBadge(count: number): void {
           if ("setOverlayIcon" in appWindow && typeof (appWindow as any).setOverlayIcon === "function") {
             if (validCount > 0) {
               const pngBytes = await buildOverlayIconBytes(validCount);
-              if (!pngBytes) {
-                reportBadgeDiagnostic("Failed to build overlay icon PNG bytes (canvas step failed)");
-                return;
-              }
-              try {
-                const { Image } = await import("@tauri-apps/api/image");
-                const icon = await Image.fromBytes(new Uint8Array(pngBytes));
-                await (appWindow as any).setOverlayIcon(icon);
-                reportBadgeDiagnostic(`setOverlayIcon called successfully (count=${validCount}, bytes=${pngBytes.byteLength})`);
-              } catch (err) {
-                console.warn("[badge] failed to set Windows taskbar overlay icon", err);
-                reportBadgeDiagnostic(`setOverlayIcon threw: ${err instanceof Error ? err.message : String(err)}`);
+              if (pngBytes) {
+                try {
+                  const { Image } = await import("@tauri-apps/api/image");
+                  const icon = await Image.fromBytes(new Uint8Array(pngBytes));
+                  await (appWindow as any).setOverlayIcon(icon);
+                } catch (err) {
+                  console.warn("[badge] failed to set Windows taskbar overlay icon", err);
+                }
               }
             } else {
               (appWindow as any).setOverlayIcon(undefined).catch(() => {});
             }
-          } else {
-            reportBadgeDiagnostic("setOverlayIcon is not available on this window object");
           }
         })
         .catch(() => {});
