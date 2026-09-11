@@ -72,6 +72,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useOffScreenUnread } from "@/hooks/use-off-screen-unread";
+import { UnreadJumpPill } from "@/components/shared/UnreadJumpPill";
 import { Separator } from "@/components/ui/separator";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { DeleteHierarchyModal, type DeleteHierarchyTarget } from "@/components/spaces/DeleteHierarchyModal";
@@ -195,8 +197,12 @@ function HomeNavItem({
   expanded?: boolean;
   onToggleExpand?: () => void;
 }) {
+  const showUnreadBadge = item.id === "inbox" && Boolean(unreadCount) && unreadCount! > 0;
+
   return (
     <div
+      id={`sidebar-unread-nav-${item.id}`}
+      data-unread-anchor={showUnreadBadge ? "true" : undefined}
       className={cn(
         navItemClass,
         "h-8",
@@ -220,12 +226,12 @@ function HomeNavItem({
       <Link href={item.href} className="flex min-w-0 flex-1 items-center gap-2">
         <SidebarNavIcon itemId={item.id} active={active} />
         <span className="min-w-0 flex-1 truncate">{item.label}</span>
-        {item.id === "inbox" && unreadCount && unreadCount > 0 ? (
+        {showUnreadBadge ? (
           <Badge
             variant="default"
             className="h-4 min-w-4 shrink-0 rounded-full px-1 text-[10px] font-semibold leading-none"
           >
-            {formatUnreadCount(unreadCount)}
+            {formatUnreadCount(unreadCount!)}
           </Badge>
         ) : null}
       </Link>
@@ -808,7 +814,11 @@ function ChannelRow({
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger className="block w-full">
+      <ContextMenuTrigger
+        className="block w-full"
+        id={`sidebar-unread-channel-${id}`}
+        data-unread-anchor={displayUnread > 0 ? "true" : undefined}
+      >
         <Tooltip>
           <TooltipTrigger
             render={
@@ -958,7 +968,11 @@ function DmRow({
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger className="block w-full">
+      <ContextMenuTrigger
+        className="block w-full"
+        id={`sidebar-unread-dm-${id}`}
+        data-unread-anchor={displayUnread > 0 ? "true" : undefined}
+      >
         <Tooltip>
           <TooltipTrigger
             render={
@@ -1041,6 +1055,8 @@ export function HomeSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const sidebarScrollRef = useRef<HTMLDivElement>(null);
+  const offScreenUnread = useOffScreenUnread(sidebarScrollRef);
   const inboxTab = pathname === "/home/inbox" ? searchParams.get("tab") : null;
   const currentUserId = useAuthStore((s) => s.user?.id);
   // Subscribed reactively (not just fetched once) so a live chat:message
@@ -1266,7 +1282,8 @@ export function HomeSidebar() {
           </Tooltip>
         </div>
       </div>
-      <ScrollArea className="min-h-0 flex-1 px-2 pt-1">
+      <div className="relative min-h-0 flex-1">
+      <ScrollArea viewportRef={sidebarScrollRef} className="size-full px-2 pt-1">
         <nav className="flex flex-col gap-px pb-2">
           {mainItems.map((item) => {
             const active =
@@ -1508,6 +1525,8 @@ export function HomeSidebar() {
           </p>
         ) : null}
       </ScrollArea>
+      <UnreadJumpPill state={offScreenUnread} />
+      </div>
 
       <div className="shrink-0 border-t border-sidebar-border p-2">
         <Button

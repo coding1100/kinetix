@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -78,6 +78,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useOffScreenUnread } from "@/hooks/use-off-screen-unread";
+import { UnreadJumpPill } from "@/components/shared/UnreadJumpPill";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { matchesQuery } from "@/lib/search/match-query";
@@ -127,6 +129,8 @@ const FILTERS: { id: ChatFilter; label: string }[] = [
 export function ChatSidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const sidebarScrollRef = useRef<HTMLDivElement>(null);
+  const offScreenUnread = useOffScreenUnread(sidebarScrollRef);
   const [listSearchOpen, setListSearchOpen] = useState(false);
   const [listQuery, setListQuery] = useState("");
   const { filter, layout, setFilter, setLayout } = useChatStore();
@@ -354,26 +358,29 @@ export function ChatSidebar() {
         active={filter}
         onChange={setFilter}
       />
-      <ScrollArea className="min-h-0 flex-1 px-2 py-4">
-        <HomeDataState
-          loading={loading}
-          error={error}
-          empty={
-            workspaceReady &&
-            !loading &&
-            !error &&
-            channels.length === 0 &&
-            dms.length === 0
-          }
-          emptyMessage={
-            listSearchTerm
-              ? `No channels or DMs match "${listSearchTerm}".`
-              : "No channels or DMs yet. Create a channel or start a DM."
-          }
-        >
-          {content}
-        </HomeDataState>
-      </ScrollArea>
+      <div className="relative min-h-0 flex-1">
+        <ScrollArea viewportRef={sidebarScrollRef} className="size-full px-2 py-4">
+          <HomeDataState
+            loading={loading}
+            error={error}
+            empty={
+              workspaceReady &&
+              !loading &&
+              !error &&
+              channels.length === 0 &&
+              dms.length === 0
+            }
+            emptyMessage={
+              listSearchTerm
+                ? `No channels or DMs match "${listSearchTerm}".`
+                : "No channels or DMs yet. Create a channel or start a DM."
+            }
+          >
+            {content}
+          </HomeDataState>
+        </ScrollArea>
+        <UnreadJumpPill state={offScreenUnread} />
+      </div>
       <Separator />
       <div className="hidden">
         <Tooltip>
@@ -625,7 +632,11 @@ function ChannelRow({
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger className="block w-full">
+      <ContextMenuTrigger
+        className="block w-full"
+        id={`sidebar-unread-channel-${channelId}`}
+        data-unread-anchor={displayUnread > 0 ? "true" : undefined}
+      >
         <Tooltip>
           <TooltipTrigger
             render={
@@ -798,7 +809,11 @@ function DmRow({
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger className="block w-full">
+      <ContextMenuTrigger
+        className="block w-full"
+        id={`sidebar-unread-dm-${dmId}`}
+        data-unread-anchor={displayUnread > 0 ? "true" : undefined}
+      >
         <Tooltip>
           <TooltipTrigger
             render={
