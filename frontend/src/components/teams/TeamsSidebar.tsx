@@ -50,10 +50,10 @@ export function TeamsSidebar({
       className={cn(
         "h-full min-h-0 shrink-0 flex-col border-r border-border bg-muted/20",
         !secondaryPanelOpen
-          ? "hidden lg:flex lg:w-[260px]"
+          ? "hidden md:flex md:w-[260px]"
           : isTeamsRoot
-            ? "flex w-full lg:w-[260px]"
-            : "hidden lg:flex lg:w-[260px]"
+            ? "flex w-full md:w-[260px]"
+            : "hidden md:flex md:w-[260px]"
       )}
     >
       <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-3">

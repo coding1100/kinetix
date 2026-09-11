@@ -37,7 +37,7 @@ function priorityLabel(priority?: TaskPriority) {
 
 export function MyTasksColumnHeader() {
   return (
-    <div className="grid grid-cols-[minmax(0,1.4fr)_100px_110px_100px_88px] gap-3 border-b border-border bg-muted/30 px-4 py-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+    <div className="hidden grid-cols-[minmax(0,1.4fr)_100px_110px_100px_88px] gap-3 border-b border-border bg-muted/30 px-4 py-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase md:grid">
       <span>Name</span>
       <span>Priority</span>
       <span>Due date</span>
@@ -61,10 +61,10 @@ export function MyTasksTaskRow({
     <button
       type="button"
       onClick={onSelect}
-      className="group grid w-full grid-cols-[minmax(0,1.4fr)_100px_110px_100px_88px] items-center gap-3 border-b border-border/60 px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted/40"
+      className="group grid w-full grid-cols-1 gap-2 border-b border-border/60 px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted/40 md:grid-cols-[minmax(0,1.4fr)_100px_110px_100px_88px] md:items-center md:gap-3"
     >
       <div className="flex min-w-0 items-center gap-2">
-        <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground/40 opacity-0 group-hover:opacity-100" />
+        <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground/40 opacity-0 group-hover:opacity-100 hidden md:block" />
         <TaskStatusIcon task={task} className="size-4 shrink-0" />
         <div className="min-w-0">
           <p className="truncate font-medium">{task.name}</p>
@@ -74,56 +74,58 @@ export function MyTasksTaskRow({
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5">
-        <FlagIcon
-          className={cn("size-3.5 shrink-0", priorityFlagClass(task.priority))}
-        />
-        <span className="truncate text-xs text-muted-foreground capitalize">
-          {priorityLabel(task.priority) ?? "—"}
-        </span>
-      </div>
-
-      <span
-        className={cn(
-          "text-xs",
-          task.overdue
-            ? "font-medium text-destructive"
-            : task.dueDate
-              ? "text-foreground"
-              : "text-muted-foreground"
-        )}
-      >
-        {task.dueDate ?? "—"}
-      </span>
-
-      <div className="flex items-center gap-1">
-        {task.assigneeIds?.length ? (
-          task.assigneeIds.slice(0, 2).map((id, index) => (
-            <Avatar key={id} className="size-6 border border-background">
-              <AvatarFallback
-                className={cn(
-                  "text-[10px] text-white",
-                  avatarColorClassForKey(id)
-                )}
-              >
-                {avatarInitialFromName(task.assignees[index] ?? id)}
-              </AvatarFallback>
-            </Avatar>
-          ))
-        ) : (
-          <span className="text-xs text-muted-foreground">—</span>
-        )}
-      </div>
-
-      <div className="flex justify-center">
-        {commentCount > 0 ? (
-          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-            <MessageSquareIcon className="size-3.5" />
-            {commentCount}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pl-6 text-xs md:contents md:pl-0">
+        <div className="flex items-center gap-1.5">
+          <FlagIcon
+            className={cn("size-3.5 shrink-0", priorityFlagClass(task.priority))}
+          />
+          <span className="truncate text-xs text-muted-foreground capitalize">
+            {priorityLabel(task.priority) ?? "—"}
           </span>
-        ) : (
-          <span className="text-xs text-muted-foreground">—</span>
-        )}
+        </div>
+
+        <span
+          className={cn(
+            "text-xs",
+            task.overdue
+              ? "font-medium text-destructive"
+              : task.dueDate
+                ? "text-foreground"
+                : "text-muted-foreground"
+          )}
+        >
+          {task.dueDate ?? "—"}
+        </span>
+
+        <div className="flex items-center gap-1">
+          {task.assigneeIds?.length ? (
+            task.assigneeIds.slice(0, 2).map((id, index) => (
+              <Avatar key={id} className="size-6 border border-background">
+                <AvatarFallback
+                  className={cn(
+                    "text-[10px] text-white",
+                    avatarColorClassForKey(id)
+                  )}
+                >
+                  {avatarInitialFromName(task.assignees[index] ?? id)}
+                </AvatarFallback>
+              </Avatar>
+            ))
+          ) : (
+            <span className="text-xs text-muted-foreground">—</span>
+          )}
+        </div>
+
+        <div className="flex items-center md:justify-center">
+          {commentCount > 0 ? (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <MessageSquareIcon className="size-3.5" />
+              {commentCount}
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground md:inline hidden">—</span>
+          )}
+        </div>
       </div>
     </button>
   );

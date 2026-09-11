@@ -204,7 +204,8 @@ export function InboxFeedRow({
   return (
     <div
       className={cn(
-        "group grid w-full grid-cols-[minmax(0,1.1fr)_minmax(0,1.6fr)_150px] items-center gap-4 px-4 py-2.5 transition-all",
+        "group grid w-full grid-cols-1 gap-1.5 px-4 py-2.5 transition-all",
+        "md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.6fr)_150px] md:items-center md:gap-4 md:gap-y-0",
         "hover:bg-muted/50 hover:opacity-100",
         item.unread ? "bg-muted/20" : "bg-transparent opacity-55 grayscale-[35%]"
       )}
@@ -245,15 +246,15 @@ export function InboxFeedRow({
         </span>
       </button>
 
-      {/* Column C: fixed width so hover actions overlay the date without reflow */}
-      <div className="relative flex h-7 items-center justify-end">
+      {/* Column C: fixed width on md+ so hover actions overlay the date without reflow; on mobile it's a normal row below B, actions always visible (no hover on touch) */}
+      <div className="flex h-7 items-center justify-between md:relative md:justify-end">
         <time
           dateTime={item.createdAt}
-          className="text-xs whitespace-nowrap text-muted-foreground transition-opacity group-hover:opacity-0 pointer-coarse:opacity-0"
+          className="text-xs whitespace-nowrap text-muted-foreground md:transition-opacity md:group-hover:opacity-0"
         >
           {formatNotificationDate(item.createdAt)}
         </time>
-        <div className="absolute inset-y-0 right-0 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100">
+        <div className="flex items-center gap-1.5 md:absolute md:inset-y-0 md:right-0 md:opacity-0 md:transition-opacity md:group-hover:opacity-100">
           <button
             type="button"
             className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"

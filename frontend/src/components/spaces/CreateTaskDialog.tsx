@@ -1296,7 +1296,7 @@ export function CreateTaskDialog({
                     <button
                       type="button"
                       onClick={() => removeSubtask(subtask.id)}
-                      className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                      className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100 pointer-coarse:opacity-100"
                       aria-label="Remove subtask"
                     >
                       <Trash2Icon className="size-3.5" />
@@ -1567,7 +1567,7 @@ export function CreateTaskDialog({
                                 render={
                                   <button
                                     type="button"
-                                    className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                                    className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100 pointer-coarse:opacity-100"
                                     aria-label="Item options"
                                   >
                                     <MoreHorizontalIcon className="size-3" />

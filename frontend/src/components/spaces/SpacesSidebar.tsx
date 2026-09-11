@@ -771,7 +771,7 @@ function ListNavItem({
                         <Button
                           variant="ghost"
                           size="icon-sm"
-                          className="size-6 shrink-0 opacity-0 group-hover:opacity-100 data-[popup-open]:opacity-100"
+                          className="size-6 shrink-0 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 data-[popup-open]:opacity-100"
                           aria-label={`Actions for ${name}`}
                         >
                           <MoreHorizontalIcon className="size-3" />
