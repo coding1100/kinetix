@@ -9,6 +9,8 @@
   "permissions": [
     "core:default",
     "core:window:default",
+    "core:window:allow-set-badge-count",
+    "core:window:allow-set-overlay-icon",
     "notification:default",
     "notification:allow-notify",
     "shell:default",

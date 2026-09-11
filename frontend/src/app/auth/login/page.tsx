@@ -22,6 +22,7 @@ import { useNavigateWithLoading } from "@/hooks/use-navigate-with-loading";
 import { login, getMe } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { FEATURE_FLAGS } from "@/lib/feature-flags";
+import { playLoginSound } from "@/lib/notifications/sound";
 import { useAuthStore } from "@/stores/auth-store";
 
 function safeNextPath(next: string | null) {
@@ -52,6 +53,7 @@ function LoginForm() {
         workspaces: me.workspaces,
       });
       toast.success("Welcome back!");
+      playLoginSound();
       const destination = safeNextPath(searchParams.get("next"));
       navigateWithLoading(destination, "Signing you in…");
     } catch (err) {

@@ -34,20 +34,7 @@ function updateFaviconBadge(doc: Document, count: number): void {
         if (!ctx) return;
 
         ctx.drawImage(img, 0, 0, 32, 32);
-
-        // Draw red badge circle on top right
-        ctx.beginPath();
-        ctx.arc(24, 8, 7.5, 0, 2 * Math.PI);
-        ctx.fillStyle = "#ef4444";
-        ctx.fill();
-
-        // Draw white text count
-        ctx.fillStyle = "#ffffff";
-        ctx.font = "bold 9px sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        const text = count > 9 ? "9+" : String(count);
-        ctx.fillText(text, 24, 8.5);
+        drawBadgeCircle(ctx, count, 24, 8, 7.5);
 
         favicon.href = canvas.toDataURL("image/png");
       } catch {
@@ -56,6 +43,57 @@ function updateFaviconBadge(doc: Document, count: number): void {
     };
   } catch {
     // Ignore errors in non-browser/test contexts
+  }
+}
+
+/** Draws a red circle with a white count label - shared by the favicon badge and the Windows taskbar overlay icon. */
+function drawBadgeCircle(
+  ctx: CanvasRenderingContext2D,
+  count: number,
+  cx: number,
+  cy: number,
+  radius: number
+): void {
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
+  ctx.fillStyle = "#ef4444";
+  ctx.fill();
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = `bold ${Math.round(radius * 1.2)}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const text = count > 9 ? "9+" : String(count);
+  ctx.fillText(text, cx, cy + radius * 0.05);
+}
+
+/**
+ * Builds a standalone badge-only PNG (transparent background, just the red
+ * count circle) as PNG bytes, for the Windows taskbar overlay icon - unlike
+ * the favicon badge, this isn't drawn on top of the app icon since
+ * setOverlayIcon renders its own icon layered on top of the taskbar icon.
+ */
+async function buildOverlayIconBytes(count: number): Promise<ArrayBuffer | null> {
+  if (typeof document === "undefined" || typeof document.createElement !== "function") {
+    return null;
+  }
+  try {
+    const size = 64;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    drawBadgeCircle(ctx, count, size / 2, size / 2, size / 2 - 2);
+
+    const blob: Blob | null = await new Promise((resolve) =>
+      canvas.toBlob(resolve, "image/png")
+    );
+    if (!blob) return null;
+    return await blob.arrayBuffer();
+  } catch {
+    return null;
   }
 }
 
@@ -115,12 +153,39 @@ export function updateAppUnreadBadge(count: number): void {
   if (isTauri()) {
     try {
       import("@tauri-apps/api/window")
-        .then(({ getCurrentWindow }) => {
+        .then(async ({ getCurrentWindow }) => {
           const appWindow = getCurrentWindow();
+
+          // setBadgeCount is macOS dock / Linux only - Tauri's own docs say
+          // it is unsupported on Windows and to use setOverlayIcon instead
+          // (which is why the Windows taskbar badge never appeared before:
+          // this was the only call being made). Left in place since it's
+          // still correct for macOS/Linux; it's a no-op/silently ignored on
+          // Windows rather than actively harmful.
           if ("setBadgeCount" in appWindow && typeof (appWindow as any).setBadgeCount === "function") {
             (appWindow as any)
               .setBadgeCount(validCount > 0 ? validCount : undefined)
               .catch(() => {});
+          }
+
+          // setOverlayIcon is the Windows-only equivalent - draws a small
+          // icon over the taskbar app icon. No-ops/rejects harmlessly on
+          // macOS/Linux, so no platform check is needed beyond that.
+          if ("setOverlayIcon" in appWindow && typeof (appWindow as any).setOverlayIcon === "function") {
+            if (validCount > 0) {
+              const pngBytes = await buildOverlayIconBytes(validCount);
+              if (pngBytes) {
+                try {
+                  const { Image } = await import("@tauri-apps/api/image");
+                  const icon = await Image.fromBytes(new Uint8Array(pngBytes));
+                  await (appWindow as any).setOverlayIcon(icon);
+                } catch (err) {
+                  console.warn("[badge] failed to set Windows taskbar overlay icon", err);
+                }
+              }
+            } else {
+              (appWindow as any).setOverlayIcon(undefined).catch(() => {});
+            }
           }
         })
         .catch(() => {});

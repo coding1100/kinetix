@@ -9,6 +9,7 @@ import { PageLoader } from "@/components/ui/page-loader";
 import { useNavigateWithLoading } from "@/hooks/use-navigate-with-loading";
 import { exchangeOAuthCode, getMe } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
+import { playLoginSound } from "@/lib/notifications/sound";
 import { useAuthStore } from "@/stores/auth-store";
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -90,6 +91,7 @@ function OAuthCallbackForm() {
           sessionStorage.setItem(exchangeKey, "done");
         }
         toast.success("Signed in with Google");
+        playLoginSound();
         const destination = safeNextPath(searchParams.get("next"));
         const target =
           me.workspaces.length === 0 ? "/onboarding/welcome" : destination;
