@@ -314,3 +314,14 @@ body {
 .mb-safe {
   margin-bottom: env(safe-area-inset-bottom, 0px);
 }
+
+/* Brief highlight flash for a sidebar row scrolled to via the
+   "jump to unread" pill (see use-off-screen-unread.ts). */
+@keyframes sidebar-unread-jump-flash {
+  0%, 100% { background-color: transparent; }
+  25% { background-color: var(--sidebar-accent); }
+}
+.sidebar-unread-jump-highlight {
+  animation: sidebar-unread-jump-flash 1.4s ease-out;
+  border-radius: var(--radius-md);
+}

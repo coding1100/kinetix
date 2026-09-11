@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     ai_catch_up_account_limit: int = 10
     ai_knowledge_query_ip_limit: int = 20
     ai_knowledge_query_account_limit: int = 10
+    github_repo: str = "coding1100/kinetix"
+    github_token: str = ""
+    desktop_update_cache_seconds: int = 300
 
     @property
     def s3_configured(self) -> bool:

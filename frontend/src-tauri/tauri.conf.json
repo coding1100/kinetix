@@ -37,7 +37,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUzNzk1RjYwMkM1ODE0MzMKUldRekZGZ3NZRjk1VTVoVjFrRmsxandSZEMraUVhUVo2MS93ZXZOVFJtMkV0Q0NBUWllb0dJaDYK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJGQjNCNkVGNEQzN0M1NUEKUldSYXhUZE43N2F6TDB6NkpBaURQZVFpS0g2eng1QW50NHRyU0c3QjZIU1JkUTVNR2YyZ2VvNlYK",
       "endpoints": [
         "https://kinetix.mindrind.com/api/v1/desktop/update/{{target}}/{{current_version}}"
       ]
