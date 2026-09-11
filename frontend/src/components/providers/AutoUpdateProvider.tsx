@@ -85,11 +85,12 @@ export function AutoUpdateProvider({
     // for this install, so this is the one thing that can actually reach
     // these users: a persistent, non-dismissible notice with a direct link
     // to the real installer (not the updater's .zip-wrapped artifact).
-    function showManualUpdateRequired() {
+    function showManualUpdateRequired(reason?: string) {
       toast.error("A required Kinetix update is available", {
         id: MANUAL_UPDATE_TOAST_ID,
-        description:
-          "This installation can no longer update itself automatically. Please download and run the latest installer once - after that, updates will resume working automatically.",
+        description: `This installation can no longer update itself automatically. Please download and run the latest installer once - after that, updates will resume working automatically.${
+          reason ? ` (${reason})` : ""
+        }`,
         duration: Infinity,
         closeButton: false,
         action: {
@@ -106,57 +107,77 @@ export function AutoUpdateProvider({
     }
 
     // 2. Option B: Native Desktop Binary Auto-Updater (Tauri Plugin-Updater)
+    //
+    // Every failure path here ends in showManualUpdateRequired() rather than
+    // a silent console.warn. The whole point of this provider is that a
+    // desktop build which cannot update itself must still TELL the user so
+    // they can install manually - a silently-swallowed error leaves them
+    // stranded on an old build forever with no signal at all, which is
+    // exactly what happened before.
     async function checkNativeBinaryUpdate() {
       if (!isTauri() || nativeCheckedRef.current) return;
       nativeCheckedRef.current = true;
+
+      let update: Awaited<ReturnType<typeof import("@tauri-apps/plugin-updater").check>>;
       try {
         const { check } = await import("@tauri-apps/plugin-updater");
-        const update = await check();
-        if (update?.available) {
-          console.log(
-            `[native-updater] Found native binary update: v${update.version}`
-          );
-          toast.info(`Downloading native desktop update (v${update.version})...`);
-          try {
-            await update.downloadAndInstall();
-          } catch (installErr) {
-            // A manifest was found (network/endpoint side is fine) but the
-            // install step itself failed - almost always signature
-            // verification failing against this binary's old public key,
-            // since that's the only step downloadAndInstall performs after
-            // an already-successful check(). Surface the manual fallback
-            // instead of leaving the user with nothing.
-            console.warn(
-              "[native-updater] Update found but install failed (likely a signature/key mismatch):",
-              installErr
-            );
-            showManualUpdateRequired();
-            return;
-          }
-          toast("Native Desktop Update Ready", {
-            description: `Version v${update.version} installed. Click to restart Kinetix and apply native update.`,
-            duration: Infinity,
-            action: {
-              label: "Restart Now",
-              onClick: () => {
-                const win = window as any;
-                if (win.__TAURI_INTERNALS__?.invoke) {
-                  void win.__TAURI_INTERNALS__.invoke("plugin:process|restart").catch(() => {
-                    window.location.reload();
-                  });
-                } else {
-                  window.location.reload();
-                }
-              },
-            },
-          });
-        }
-      } catch (err) {
-        console.warn(
-          "[native-updater] Native binary check skipped or up-to-date:",
-          err
+        update = await check();
+      } catch (checkErr) {
+        // check() itself failing means the plugin couldn't even reach or
+        // parse the endpoint (permission denied, network, bad manifest).
+        // Can't distinguish "no update" from "broken" here, so surface the
+        // manual path - worst case the user downloads a build they're
+        // already on, which is harmless.
+        console.warn("[native-updater] check() failed:", checkErr);
+        showManualUpdateRequired(
+          `Update check failed: ${checkErr instanceof Error ? checkErr.message : String(checkErr)}`
         );
+        return;
       }
+
+      if (!update?.available) {
+        console.log("[native-updater] No update available - already current.");
+        return;
+      }
+
+      console.log(`[native-updater] Found native binary update: v${update.version}`);
+      toast.info(`Downloading native desktop update (v${update.version})...`);
+
+      try {
+        await update.downloadAndInstall();
+      } catch (installErr) {
+        // A manifest was found (network/endpoint side is fine) but the
+        // install step itself failed - most often signature verification
+        // against this binary's old public key, but it can also be a
+        // download or file-permission failure. Either way the user needs
+        // the manual path.
+        console.warn(
+          "[native-updater] Update found but install failed:",
+          installErr
+        );
+        showManualUpdateRequired(
+          `Automatic install failed: ${installErr instanceof Error ? installErr.message : String(installErr)}`
+        );
+        return;
+      }
+
+      toast("Native Desktop Update Ready", {
+        description: `Version v${update.version} installed. Click to restart Kinetix and apply native update.`,
+        duration: Infinity,
+        action: {
+          label: "Restart Now",
+          onClick: () => {
+            const win = window as any;
+            if (win.__TAURI_INTERNALS__?.invoke) {
+              void win.__TAURI_INTERNALS__.invoke("plugin:process|restart").catch(() => {
+                window.location.reload();
+              });
+            } else {
+              window.location.reload();
+            }
+          },
+        },
+      });
     }
 
     void checkVersion();
