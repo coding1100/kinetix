@@ -135,7 +135,7 @@ export function CommentAttachmentCard({
               href={attachment.downloadUrl}
               download={attachment.fileName}
               onClick={(e) => e.stopPropagation()}
-              className="absolute top-1.5 right-1.5 rounded-md bg-black/50 p-1.5 text-white opacity-0 transition-opacity hover:bg-black/70 group-hover/image:opacity-100"
+              className="absolute top-1.5 right-1.5 rounded-md bg-black/50 p-1.5 text-white opacity-0 transition-opacity hover:bg-black/70 group-hover/image:opacity-100 pointer-coarse:opacity-100"
               aria-label={`Download ${attachment.fileName}`}
             >
               <DownloadIcon className="size-3.5" />

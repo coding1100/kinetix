@@ -324,7 +324,7 @@ function SpaceListLink({
               <Button
                 variant="ghost"
                 size="icon-xs"
-                className="size-5 shrink-0 text-muted-foreground opacity-0 group-hover/list:opacity-100 data-[popup-open]:opacity-100"
+                className="size-5 shrink-0 text-muted-foreground opacity-0 group-hover/list:opacity-100 pointer-coarse:opacity-100 data-[popup-open]:opacity-100"
                 aria-label={`Actions for ${name}`}
               >
                 <MoreHorizontalIcon className="size-3.5" />
@@ -489,7 +489,7 @@ function SpaceRow({
             >
               {space.name.slice(0, 1).toUpperCase()}
             </span>
-            <span className="absolute inset-0 grid place-items-center rounded text-muted-foreground opacity-0 transition-opacity group-hover/space:opacity-100">
+            <span className="absolute inset-0 grid place-items-center rounded text-muted-foreground opacity-0 transition-opacity group-hover/space:opacity-100 pointer-coarse:opacity-100">
               {expanded ? (
                 <ChevronDownIcon className="size-3.5" />
               ) : (
@@ -519,7 +519,7 @@ function SpaceRow({
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  className="size-5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/space:opacity-100 data-[popup-open]:opacity-100"
+                  className="size-5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/space:opacity-100 pointer-coarse:opacity-100 data-[popup-open]:opacity-100"
                   aria-label={`Actions for ${space.name}`}
                 >
                   <MoreHorizontalIcon className="size-3.5" />
@@ -619,7 +619,7 @@ function SpaceRow({
                         <Button
                           variant="ghost"
                           size="icon-xs"
-                          className="size-5 shrink-0 opacity-0 group-hover/folder:opacity-100 data-[popup-open]:opacity-100"
+                          className="size-5 shrink-0 opacity-0 group-hover/folder:opacity-100 pointer-coarse:opacity-100 data-[popup-open]:opacity-100"
                           aria-label={`Actions for ${folder.name}`}
                         >
                           <MoreHorizontalIcon className="size-3.5" />

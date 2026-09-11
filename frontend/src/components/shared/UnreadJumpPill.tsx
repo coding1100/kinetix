@@ -12,7 +12,7 @@ import type { OffScreenUnreadState } from "@/hooks/use-off-screen-unread";
  */
 export function UnreadJumpPill({
   state,
-  label = "Unread messages",
+  label = "Unread",
 }: {
   state: OffScreenUnreadState;
   label?: string;
@@ -24,13 +24,13 @@ export function UnreadJumpPill({
           type="button"
           onClick={state.scrollToNearestAbove}
           className={cn(
-            "absolute left-1/2 top-2 z-10 flex -translate-x-1/2 items-center gap-1.5",
-            "rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-md",
-            "transition-transform hover:scale-105 active:scale-95"
+            "absolute left-1/2 top-1.5 z-10 inline-flex w-max -translate-x-1/2 items-center gap-1 whitespace-nowrap",
+            "rounded-full bg-primary/95 px-2 py-0.5 text-[10px] leading-none font-medium text-primary-foreground shadow-sm backdrop-blur-sm",
+            "transition-all hover:bg-primary hover:shadow-md active:scale-95"
           )}
         >
-          <ArrowUpIcon className="size-3.5" />
-          {label}
+          <ArrowUpIcon className="size-2.5 shrink-0" strokeWidth={2.5} />
+          <span className="whitespace-nowrap">{label}</span>
         </button>
       ) : null}
       {state.hasUnreadBelow ? (
@@ -38,13 +38,13 @@ export function UnreadJumpPill({
           type="button"
           onClick={state.scrollToNearestBelow}
           className={cn(
-            "absolute bottom-2 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5",
-            "rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-md",
-            "transition-transform hover:scale-105 active:scale-95"
+            "absolute bottom-1.5 left-1/2 z-10 inline-flex w-max -translate-x-1/2 items-center gap-1 whitespace-nowrap",
+            "rounded-full bg-primary/95 px-2 py-0.5 text-[10px] leading-none font-medium text-primary-foreground shadow-sm backdrop-blur-sm",
+            "transition-all hover:bg-primary hover:shadow-md active:scale-95"
           )}
         >
-          <ArrowDownIcon className="size-3.5" />
-          {label}
+          <ArrowDownIcon className="size-2.5 shrink-0" strokeWidth={2.5} />
+          <span className="whitespace-nowrap">{label}</span>
         </button>
       ) : null}
     </>

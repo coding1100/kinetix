@@ -142,7 +142,7 @@ function CommentActivityItem({
                   type="button"
                   variant="ghost"
                   size="icon-sm"
-                  className="size-7 text-muted-foreground opacity-0 transition-opacity group-hover/comment:opacity-100"
+                  className="size-7 text-muted-foreground opacity-0 transition-opacity group-hover/comment:opacity-100 pointer-coarse:opacity-100"
                   aria-label="Comment actions"
                 />
               }

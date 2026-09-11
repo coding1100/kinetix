@@ -2029,7 +2029,7 @@ export function TaskDrawer({
                                   {checklist.checkedCount} of {checklist.itemCount}
                                 </span>
                               </div>
-                              <div className="relative opacity-0 group-hover:opacity-100">
+                              <div className="relative opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100">
                                 <DropdownMenu>
                               <DropdownMenuTrigger
                                 render={
@@ -2223,7 +2223,7 @@ export function TaskDrawer({
                                         render={
                                           <button
                                             type="button"
-                                            className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                                            className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100 pointer-coarse:opacity-100"
                                             aria-label="Item options"
                                           >
                                             <MoreHorizontalIcon className="size-3" />
@@ -2701,7 +2701,7 @@ export function TaskDrawer({
                                   <span className="text-destructive"> (deactivated)</span>
                                 ) : null}
                               </span>
-                              <UserMinusIcon className="size-3.5 shrink-0 text-muted-foreground opacity-0 group-hover/follower:opacity-100" />
+                              <UserMinusIcon className="size-3.5 shrink-0 text-muted-foreground opacity-0 group-hover/follower:opacity-100 pointer-coarse:opacity-100" />
                             </button>
                           ))}
                         </div>

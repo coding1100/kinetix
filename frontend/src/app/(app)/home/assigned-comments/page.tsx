@@ -54,7 +54,7 @@ export default function AssignedCommentsPage() {
               </div>
               <button
                 type="button"
-                className="mt-2 text-xs text-primary opacity-0 group-hover:opacity-100"
+                className="mt-2 text-xs text-primary opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100"
                 onClick={() => handleResolve(c.id)}
               >
                 Resolve
