@@ -43,6 +43,7 @@ import {
 } from "@/lib/chat/messages";
 import type { ChatMessage, SendMessagePayload } from "@/lib/types/chat";
 import { buildMessageRuns } from "@/lib/chat/message-groups";
+import { playSendSound } from "@/lib/notifications/sound";
 import { useAuthStore } from "@/stores/auth-store";
 import { createTaskFromThreadMessage } from "@/lib/spaces/create-task-from-thread";
 import { fetchSpacesTree, flattenListsFromSpaces } from "@/lib/api/spaces";
@@ -396,6 +397,7 @@ export function ThreadPanel({
       if (!prev) return prev;
       return { ...prev, replies: [...prev.replies, optimistic] };
     });
+    playSendSound();
     try {
       const confirmed =
         type === "channel"
