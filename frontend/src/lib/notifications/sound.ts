@@ -292,3 +292,43 @@ export function playLoginSound() {
     console.warn("[login sound] failed to play sound", err);
   }
 }
+
+/**
+ * Plays a minimal "sent" tick when the user sends a chat message - a subtle
+ * confirmation cue (same idea as Slack/iMessage/Telegram), not a
+ * notification. Deliberately its own tiny synthesized blip rather than the
+ * loud-alert file: sending your own message should never compete with the
+ * volume of an incoming-message alert. Respects the sound on/off toggle
+ * (soundEnabled) since it's a routine action sound, not a critical alert,
+ * but ignores the user's chosen notification preset/volume - always quiet.
+ */
+export function playSendSound() {
+  if (typeof window === "undefined") return;
+  const { soundEnabled } = useSettingsStore.getState();
+  if (!soundEnabled) return;
+
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  try {
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(1400, now);
+    osc.frequency.exponentialRampToValueAtTime(1900, now + 0.045);
+
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.exponentialRampToValueAtTime(0.09, now + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.07);
+  } catch (err) {
+    console.warn("[send sound] failed to play sound", err);
+  }
+}

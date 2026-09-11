@@ -72,6 +72,7 @@ import {
   normalizeMessageForViewer,
 } from "@/lib/chat/messages";
 import { optimisticToggleReaction } from "@/lib/chat/reactions";
+import { playSendSound } from "@/lib/notifications/sound";
 import { GroupDmAvatarStack } from "@/components/chat/GroupDmAvatarStack";
 import {
   enrichGroupDm,
@@ -988,6 +989,7 @@ export function ConversationView({
       setConversationCache(workspaceId, type, id, { messages: next });
       return next;
     });
+    playSendSound();
     try {
       const msg =
         type === "channel"
