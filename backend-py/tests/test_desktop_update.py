@@ -6,9 +6,11 @@ from app.api.v1 import desktop
 @pytest.fixture(autouse=True)
 def reset_cache():
     desktop._cache["manifest"] = None
+    desktop._cache["assets"] = None
     desktop._cache["fetched_at"] = 0.0
     yield
     desktop._cache["manifest"] = None
+    desktop._cache["assets"] = None
     desktop._cache["fetched_at"] = 0.0
 
 
@@ -162,3 +164,55 @@ async def test_fetch_skips_draft_and_prerelease_releases(monkeypatch):
     manifest = await desktop._fetch_latest_manifest()
     assert manifest is not None
     assert manifest["version"] == "0.1.4"
+
+
+def _set_release_assets(names: list[str]):
+    desktop._cache["assets"] = [
+        {"name": name, "browser_download_url": f"https://example.com/{name}"}
+        for name in names
+    ]
+    desktop._cache["manifest"] = {"version": "0.1.4"}
+    desktop._cache["fetched_at"] = desktop.time.monotonic()
+
+
+@pytest.mark.asyncio
+async def test_download_redirects_to_windows_installer(monkeypatch):
+    _set_release_assets(
+        ["Kinetix_0.1.4_x64-setup.exe", "Kinetix_0.1.4_x64-setup.exe.sig", "Kinetix_0.1.4_x64_en-US.msi.zip"]
+    )
+
+    async def noop_fetch():
+        return None
+
+    monkeypatch.setattr(desktop, "_fetch_latest_release", noop_fetch)
+
+    result = await desktop.download_desktop_installer("windows-x86_64")
+    assert result.status_code == 307
+    assert result.headers["location"] == "https://example.com/Kinetix_0.1.4_x64-setup.exe"
+
+
+@pytest.mark.asyncio
+async def test_download_redirects_to_mac_dmg(monkeypatch):
+    _set_release_assets(["Kinetix_0.1.4_universal.dmg", "Kinetix_universal.app.tar.gz"])
+
+    async def noop_fetch():
+        return None
+
+    monkeypatch.setattr(desktop, "_fetch_latest_release", noop_fetch)
+
+    result = await desktop.download_desktop_installer("darwin-aarch64")
+    assert result.status_code == 307
+    assert result.headers["location"] == "https://example.com/Kinetix_0.1.4_universal.dmg"
+
+
+@pytest.mark.asyncio
+async def test_download_returns_404_when_no_matching_asset(monkeypatch):
+    _set_release_assets(["Kinetix_0.1.4_x64-setup.exe"])
+
+    async def noop_fetch():
+        return None
+
+    monkeypatch.setattr(desktop, "_fetch_latest_release", noop_fetch)
+
+    result = await desktop.download_desktop_installer("linux-x86_64")
+    assert result.status_code == 404

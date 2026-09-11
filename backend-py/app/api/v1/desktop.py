@@ -3,17 +3,18 @@ from typing import Any, Optional
 
 import httpx
 from fastapi import APIRouter, Response, status
+from fastapi.responses import RedirectResponse
 
 from app.config import get_settings
 
 router = APIRouter(prefix="/desktop", tags=["desktop"])
 
-# In-process cache of the parsed latest.json from the most recent published
-# (non-draft) GitHub release. Avoids hitting the GitHub API on every desktop
-# client's update check (the updater checks on every app launch) and keeps
-# this endpoint resilient to brief GitHub API outages by serving the last
-# good manifest until the TTL forces a refresh.
-_cache: dict[str, Any] = {"manifest": None, "fetched_at": 0.0}
+# In-process cache of the parsed latest.json AND raw asset list from the
+# most recent published (non-draft) GitHub release. Avoids hitting the
+# GitHub API on every desktop client's update check (the updater checks on
+# every app launch) and keeps this endpoint resilient to brief GitHub API
+# outages by serving the last good manifest until the TTL forces a refresh.
+_cache: dict[str, Any] = {"manifest": None, "assets": None, "fetched_at": 0.0}
 
 
 def _parse_version(v_str: str) -> tuple[int, ...]:
@@ -27,19 +28,20 @@ def _parse_version(v_str: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
-async def _fetch_latest_manifest() -> Optional[dict[str, Any]]:
+async def _fetch_latest_release() -> None:
     """
-    Finds the most recent published (non-draft) GitHub release that has a
-    latest.json updater manifest attached (uploaded automatically by
-    tauri-action when release-desktop.yml runs), and returns that manifest
-    as-is. Draft releases are never surfaced here - publishing the draft on
-    GitHub IS the rollout gate for this endpoint, matching how releases are
-    already reviewed before going out.
+    Refreshes the module cache from the most recent published (non-draft)
+    GitHub release: its latest.json updater manifest (uploaded automatically
+    by tauri-action when release-desktop.yml runs) and its raw asset list
+    (used to resolve a human-installable download link, not just the
+    updater's own .zip-wrapped artifacts). Draft releases are never
+    surfaced here - publishing the draft on GitHub IS the rollout gate for
+    this endpoint, matching how releases are already reviewed before going out.
     """
     settings = get_settings()
     now = time.monotonic()
     if _cache["manifest"] is not None and (now - _cache["fetched_at"]) < settings.desktop_update_cache_seconds:
-        return _cache["manifest"]
+        return
 
     headers = {"Accept": "application/vnd.github+json"}
     if settings.github_token:
@@ -60,14 +62,15 @@ async def _fetch_latest_manifest() -> Optional[dict[str, Any]]:
                 None,
             )
             if not published:
-                return _cache["manifest"]
+                return
 
+            assets = published.get("assets", [])
             manifest_asset = next(
-                (a for a in published.get("assets", []) if a.get("name") == "latest.json"),
+                (a for a in assets if a.get("name") == "latest.json"),
                 None,
             )
             if not manifest_asset:
-                return _cache["manifest"]
+                return
 
             manifest_res = await client.get(
                 manifest_asset["browser_download_url"],
@@ -77,13 +80,18 @@ async def _fetch_latest_manifest() -> Optional[dict[str, Any]]:
             manifest_res.raise_for_status()
             manifest = manifest_res.json()
     except (httpx.HTTPError, ValueError):
-        # Serve the last known-good manifest rather than breaking every
+        # Keep serving the last known-good state rather than breaking every
         # desktop client's update check over a transient GitHub hiccup.
-        return _cache["manifest"]
+        return
 
     _cache["manifest"] = manifest
+    _cache["assets"] = assets
     _cache["fetched_at"] = now
-    return manifest
+
+
+async def _fetch_latest_manifest() -> Optional[dict[str, Any]]:
+    await _fetch_latest_release()
+    return _cache["manifest"]
 
 
 # Maps Tauri's {{target}} URL placeholder (its own platform identifiers) to
@@ -132,3 +140,44 @@ async def check_desktop_update(
             }
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# Maps a platform key to the substrings that identify its human-installable
+# asset (the plain installer a user double-clicks - NOT the .zip-wrapped
+# copy the updater manifest points at, which isn't meant to be run directly).
+_DOWNLOAD_ASSET_PATTERNS: dict[str, list[str]] = {
+    "windows-x86_64": ["-setup.exe"],
+    "darwin-aarch64": [".dmg"],
+    "darwin-x86_64": [".dmg"],
+    "darwin-universal": [".dmg"],
+    "linux-x86_64": [".AppImage"],
+    "linux-x86_64-deb": [".deb"],
+    "linux-x86_64-rpm": [".rpm"],
+}
+
+
+@router.get("/download/{target}")
+async def download_desktop_installer(target: str):
+    """
+    Resolves to the actual (human-installable, not updater-wrapped) asset
+    for the given platform on the most recently published release, and
+    redirects there. Used as a manual-install fallback for anyone whose
+    installed app predates the current signing key and can therefore never
+    self-update via the plugin - see the in-app notice that links here.
+    """
+    await _fetch_latest_release()
+    assets = _cache["assets"] or []
+    patterns = _DOWNLOAD_ASSET_PATTERNS.get(target, _DOWNLOAD_ASSET_PATTERNS["windows-x86_64"])
+
+    for pattern in patterns:
+        match = next(
+            (a for a in assets if pattern.lower() in a.get("name", "").lower()),
+            None,
+        )
+        if match:
+            return RedirectResponse(match["browser_download_url"])
+
+    return Response(
+        content="No installer available for this platform yet.",
+        status_code=status.HTTP_404_NOT_FOUND,
+    )

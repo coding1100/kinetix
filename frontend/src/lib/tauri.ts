@@ -23,3 +23,29 @@ export function isDesktopApp(): boolean {
   );
 }
 
+/**
+ * Best-effort target key matching the ones backend-py's /desktop/download
+ * and /desktop/update endpoints expect - inferred from the UA/platform
+ * since no OS-detection Tauri plugin is installed and adding one just for
+ * this would be new surface area for a single lookup. Only needs to be
+ * "close enough" to point a human at the right installer; it isn't used
+ * for the update-signature verification path itself.
+ */
+export function desktopUpdateTarget(): string {
+  if (typeof navigator === "undefined") return "windows-x86_64";
+  const ua = navigator.userAgent || "";
+  const platform = (navigator as unknown as { userAgentData?: { platform?: string } })
+    .userAgentData?.platform;
+  const combined = `${ua} ${platform ?? ""}`.toLowerCase();
+
+  if (combined.includes("mac")) {
+    return /arm|apple silicon/.test(combined) ? "darwin-aarch64" : "darwin-x86_64";
+  }
+  if (combined.includes("linux")) {
+    if (combined.includes("ubuntu") || combined.includes("debian")) return "linux-x86_64-deb";
+    if (combined.includes("fedora") || combined.includes("red hat")) return "linux-x86_64-rpm";
+    return "linux-x86_64";
+  }
+  return "windows-x86_64";
+}
+
