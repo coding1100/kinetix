@@ -3,6 +3,7 @@
 import { useSettingsStore, type SoundPreset } from "@/stores/settings-store";
 
 export const SOUND_PRESETS: { id: SoundPreset; label: string; description: string }[] = [
+  { id: "loud-alert", label: "Loud Alert", description: "Attention-grabbing alert tone (default)" },
   { id: "chime", label: "Default Chime", description: "Clean, bright workspace dual chime" },
   { id: "pop", label: "Pop", description: "Quick, subtle rubber pop" },
   { id: "ping", label: "Crystal Ping", description: "High-pitch crisp bell ping" },
@@ -10,6 +11,57 @@ export const SOUND_PRESETS: { id: SoundPreset; label: string; description: strin
   { id: "bell", label: "Classic Bell", description: "Resonant brass bell chime" },
   { id: "breeze", label: "Breeze Chord", description: "Elegant ascending 3-note chord" },
 ];
+
+// Recorded audio files play through the same AudioContext as the
+// synthesized presets (rather than a plain <audio> element) so a per-sound
+// GainNode can push the level above the file's own recorded peak when it
+// has headroom, without the browser's separate <audio>.volume cap of 1.0.
+// Gain values were computed from each file's actual peak sample (via a
+// one-off script measuring peak dBFS) - loud-alert.wav and login-sound.wav
+// both already peak at/near 0dBFS, so they get no boost (1.0) since any
+// boost would clip; notification-sound.wav peaks at -1dBFS, so it gets a
+// small boost to bring it to the same effective loudness without clipping.
+const FILE_SOUNDS: Record<string, { url: string; gain: number }> = {
+  "loud-alert": { url: "/sounds/notification-sound.wav", gain: 1.12 },
+};
+
+const LOGIN_SOUND_URL = "/sounds/login-sound.wav";
+
+const audioBufferCache = new Map<string, Promise<AudioBuffer | null>>();
+
+async function loadAudioBuffer(ctx: AudioContext, url: string): Promise<AudioBuffer | null> {
+  let pending = audioBufferCache.get(url);
+  if (!pending) {
+    pending = fetch(url)
+      .then((res) => res.arrayBuffer())
+      .then((buf) => ctx.decodeAudioData(buf))
+      .catch((err) => {
+        console.warn("[notification sound] failed to load audio file", url, err);
+        audioBufferCache.delete(url);
+        return null;
+      });
+    audioBufferCache.set(url, pending);
+  }
+  return pending;
+}
+
+async function playAudioFile(url: string, gain: number) {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  const buffer = await loadAudioBuffer(ctx, url);
+  if (!buffer) return;
+
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+
+  const gainNode = ctx.createGain();
+  gainNode.gain.value = gain;
+
+  source.connect(gainNode);
+  gainNode.connect(ctx.destination);
+  source.start();
+}
 
 let audioCtx: AudioContext | null = null;
 let lastPlayedAt = 0;
@@ -213,10 +265,30 @@ export function playNotificationSound(targetPreset?: SoundPreset, ignoreEnabled 
   }
   lastPlayedAt = now;
 
-  const preset = targetPreset ?? soundPreset ?? "chime";
+  const preset = targetPreset ?? soundPreset ?? "loud-alert";
   try {
-    synthesizeSound(preset);
+    const fileSound = FILE_SOUNDS[preset];
+    if (fileSound) {
+      void playAudioFile(fileSound.url, fileSound.gain);
+    } else {
+      synthesizeSound(preset);
+    }
   } catch (err) {
     console.warn("[notification sound] failed to play sound", err);
+  }
+}
+
+/**
+ * Plays the fixed login-success sound. Not tied to the notification sound
+ * preset/toggle - login is a distinct, always-on confirmation cue, not a
+ * "new message" notification - and works identically in the web app and
+ * the desktop (Tauri) build since both load audio from the same origin.
+ */
+export function playLoginSound() {
+  if (typeof window === "undefined") return;
+  try {
+    void playAudioFile(LOGIN_SOUND_URL, 1.0);
+  } catch (err) {
+    console.warn("[login sound] failed to play sound", err);
   }
 }
