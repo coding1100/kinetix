@@ -23,6 +23,32 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      // HTML documents must always revalidate. Without this, Next.js serves
+      // prerendered pages with `s-maxage=31536000` (a year), so the desktop
+      // app's WebView2 can pin the app shell - and the hashed JS bundle URLs
+      // it references - effectively forever, leaving users on stale code
+      // long after a deploy. The /_next/static assets below are content-
+      // hashed so they stay immutable; it's only the shell that must be
+      // re-fetched to learn about new hashes.
+      {
+        source: "/:path*",
+        missing: [{ type: "header", key: "next-router-prefetch" }],
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "no-cache, must-revalidate",
+          },
+        ],
+      },
+      {
+        source: "/_next/static/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
     ];
   },
   async rewrites() {
