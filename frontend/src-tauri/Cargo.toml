@@ -1,6 +1,6 @@
 [package]
 name = "kinetix-desktop"
-version = "0.1.4"
+version = "0.1.5"
 description = "Kinetix Desktop & Mobile App"
 authors = ["Kinetix Team"]
 edition = "2021"
@@ -9,7 +9,10 @@ edition = "2021"
 tauri-build = { version = "^2.6", features = [] }
 
 [dependencies]
-tauri = { version = "^2.11", features = ["image-png"] }
+# devtools: TEMPORARY, to allow right-click > Inspect in this release build
+# while diagnosing the Windows taskbar overlay-icon issue (production builds
+# disable this by default). Remove once resolved.
+tauri = { version = "^2.11", features = ["image-png", "devtools"] }
 tauri-plugin-notification = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-updater = "2"
