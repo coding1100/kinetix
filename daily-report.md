@@ -6033,3 +6033,16 @@ Frontend (lib/tauri.ts, components/providers/AutoUpdateProvider.tsx): added desk
 Verified: `tsc --noEmit` clean, full frontend vitest suite 87/90 passing (same 3 pre-existing unrelated failures throughout this session), backend test_desktop_update.py 10/10 passing.
 
 DATE_END: 2026-09-11
+
+DATE_START: 2026-09-12
+========================================
+
+TAG: [BUG]
+TITLE: Fix mobile sidebar/toggle disappearing entirely below 768px (only visible at 50% zoom)
+DESC: User reported that on kinetix.mindrind.com/home/inbox in real mobile browser width, neither the sidebar nor any toggle to open it was visible - it only reappeared when zooming the desktop browser out to 50%.
+Root cause: GlobalNav (frontend/src/components/shell/GlobalNav.tsx) - the purple icon rail that hosts the ONLY "open sidebar" control (a ChevronsRightIcon button that calls setSecondaryPanelOpen(true)) - is rendered with `hidden md:flex`, so it doesn't exist in the DOM at all below the 768px md breakpoint. Separately, HomeSidebar's own "Collapse sidebar" button sets secondaryPanelOpen to false in useShellStore, which is persisted to localStorage (key "riseup-shell") via zustand's persist middleware. Combined effect: any mobile user (or anyone whose persisted state defaults/ends up collapsed) has zero UI on mobile to ever reopen it again - GlobalNav, the only reopen control, never renders below md. Zooming to 50% works only because it makes the effective CSS layout width cross back over 768px, letting GlobalNav mount again - not a real fix, just an artifact of the breakpoint check.
+Confirmed this wasn't already handled: HomeMobileBackBar (frontend/src/components/shell/HomeMobileBackBar.tsx) exists specifically because HomeSidebar hides itself on mobile for every /home/* route except /home and /home/inbox, but it only gives a "Back to Home" link for those drilled-in routes - it does not address the root case (collapsing the sidebar while already on /home or /home/inbox).
+Fix (frontend/src/components/shell/HomeSidebar.tsx, ~line 1215): replaced the unconditional `if (!secondaryPanelOpen) return null` with logic that, when collapsed AND on the home root routes, renders a small `md:hidden` bar containing an "Open sidebar" icon button (mirrors GlobalNav's desktop chevron, calls the same setSecondaryPanelOpen(true)) instead of rendering nothing - so mobile users always retain a way back in regardless of the persisted collapsed state. Non-root routes still correctly return null (HomeMobileBackBar already covers those).
+Was not able to visually verify via Playwright in this session - the browser instance was already in use by another session (likely the user's own, from the screenshots supplied). Asked the user to confirm at mobile width that the reopen button now appears after collapsing the sidebar.
+
+DATE_END: 2026-09-12

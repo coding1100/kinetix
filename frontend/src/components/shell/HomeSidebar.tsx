@@ -1212,7 +1212,34 @@ export function HomeSidebar() {
     [sidebarRefreshKey]
   );
 
-  if (!secondaryPanelOpen) return null;
+  if (!secondaryPanelOpen) {
+    // On desktop, GlobalNav's "Open sidebar" chevron (hidden md:flex) is the
+    // reopen control. That component doesn't render at all below md, so
+    // mobile users who collapse Home's sidebar need their own way back in -
+    // otherwise the collapsed state (persisted via useShellStore) leaves them
+    // permanently stuck with no sidebar and no toggle.
+    if (!isHomeRoot) return null;
+    return (
+      <div className="flex shrink-0 items-center border-r border-sidebar-border bg-sidebar px-1 py-2 md:hidden">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="size-7"
+                aria-label="Open sidebar"
+                onClick={() => setSecondaryPanelOpen(true)}
+              >
+                <PanelLeftCloseIcon className="size-3.5 rotate-180" />
+              </Button>
+            }
+          />
+          <TooltipContent side="right">Open sidebar</TooltipContent>
+        </Tooltip>
+      </div>
+    );
+  }
 
   // Home's preview lists are recency-sorted (most recently active first) -
   // distinct from SpacesSidebar's alphabetical/personal-first order, which
