@@ -86,10 +86,16 @@ export function AutoUpdateProvider({
     // these users: a persistent, non-dismissible notice with a direct link
     // to the real installer (not the updater's .zip-wrapped artifact).
     function showManualUpdateRequired(reason?: string) {
+      // Cap the underlying error text - some failure sources (Rust error
+      // strings passed through as-is) can be much longer than a toast
+      // should ever try to hold, regardless of the toast's own responsive
+      // width/wrap fixes.
+      const trimmedReason =
+        reason && reason.length > 140 ? `${reason.slice(0, 140)}…` : reason;
       toast.error("A required Kinetix update is available", {
         id: MANUAL_UPDATE_TOAST_ID,
         description: `This installation can no longer update itself automatically. Please download and run the latest installer once - after that, updates will resume working automatically.${
-          reason ? ` (${reason})` : ""
+          trimmedReason ? ` (${trimmedReason})` : ""
         }`,
         duration: Infinity,
         closeButton: false,
