@@ -23,15 +23,31 @@ def test_parse_version():
 @pytest.mark.asyncio
 async def test_resolves_bare_os_name_from_real_updater_plugin(monkeypatch):
     """
-    Regression test for the actual production bug: tauri-plugin-updater's
-    {{target}} placeholder resolves to a BARE os name ("windows", "linux",
-    "darwin") via its own updater_os() - never "windows-x86_64" - since
-    arch is a separate {{arch}} placeholder our endpoint URL never uses.
-    Before this fix, every real desktop client's check() request looked up
-    "windows" against _TARGET_ALIASES/platforms keyed by "windows-x86_64",
-    missed, and got 204 - so updates were NEVER offered to any real client,
-    while manual curl testing with an explicit "windows-x86_64" in the URL
-    looked completely fine and masked the bug for a long time.
+    Regression test for TWO stacked production bugs, both confirmed by
+    reading tauri-plugin-updater's own Rust source (and, for the second
+    one, by a live client's console literally throwing the error this
+    test asserts against):
+
+    1. The {{target}} URL placeholder (what arrives as `target` here)
+       resolves to a BARE os name via updater_os() - "windows"/"linux"/
+       "darwin" - never "windows-x86_64". Arch is a separate {{arch}}
+       placeholder our endpoint URL template never uses. A first fix
+       attempt handled this by echoing the response back keyed by
+       whatever bare name arrived...
+
+    2. ...but that's wrong too: get_urls() in the plugin - called AFTER a
+       successful check(), to actually pick the download URL/signature -
+       ignores the request's target entirely and searches the RESPONSE
+       BODY's platforms object for ["{os}-{arch}-{installer}", "{os}-{arch}"]
+       (e.g. "windows-x86_64-nsis" then "windows-x86_64") directly. Echoing
+       "windows" in the response satisfied neither of those, and threw
+       "None of the fallback platforms... were found in the response
+       platforms object" - visible directly in a live app's DevTools
+       console once check() was fixed to stop returning null.
+
+    The only response shape that satisfies both is the manifest's own,
+    untouched "{os}-{arch}[-installer]" keys - never remapped to the bare
+    name from the URL.
     """
     async def fake_fetch():
         return {
@@ -48,7 +64,10 @@ async def test_resolves_bare_os_name_from_real_updater_plugin(monkeypatch):
     # This is the literal request shape a real Windows client sends.
     result = await desktop.check_desktop_update(target="windows", current_version="0.1.5")
     assert result["version"] == "0.1.6"
-    assert result["platforms"]["windows"]["signature"] == "winsig"
+    # Must be the manifest's canonical key, NOT "windows" (the request's
+    # bare target) - that's exactly what get_urls() searches for.
+    assert result["platforms"]["windows-x86_64"]["signature"] == "winsig"
+    assert "windows" not in result["platforms"]
 
 
 @pytest.mark.asyncio
@@ -114,7 +133,11 @@ async def test_resolves_darwin_alias_to_universal_build(monkeypatch):
     monkeypatch.setattr(desktop, "_fetch_latest_manifest", fake_fetch)
 
     result = await desktop.check_desktop_update(target="darwin-aarch64", current_version="0.1.0")
-    assert result["platforms"]["darwin-aarch64"]["signature"] == "macsig"
+    # Returned key is the manifest's own "darwin-universal", not the
+    # request's "darwin-aarch64" - get_urls() looks for "{os}-{arch}..."
+    # keys in the response body itself, so the real manifest key must be
+    # preserved rather than remapped to whatever the request asked for.
+    assert result["platforms"]["darwin-universal"]["signature"] == "macsig"
 
 
 @pytest.mark.asyncio
