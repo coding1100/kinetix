@@ -1212,6 +1212,8 @@ export function HomeSidebar() {
     [sidebarRefreshKey]
   );
 
+  const isHomeRoot = pathname === "/home" || pathname === "/home/inbox";
+
   if (!secondaryPanelOpen) {
     // On desktop, GlobalNav's "Open sidebar" chevron (hidden md:flex) is the
     // reopen control. That component doesn't render at all below md, so
@@ -1259,8 +1261,6 @@ export function HomeSidebar() {
     chatListsQuery.data?.dms,
     cacheValid ? sidebarListsCache?.dms : undefined
   );
-
-  const isHomeRoot = pathname === "/home" || pathname === "/home/inbox";
 
   return (
     <aside
