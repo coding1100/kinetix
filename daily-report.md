@@ -6046,3 +6046,16 @@ Fix (frontend/src/components/shell/HomeSidebar.tsx, ~line 1215): replaced the un
 Was not able to visually verify via Playwright in this session - the browser instance was already in use by another session (likely the user's own, from the screenshots supplied). Asked the user to confirm at mobile width that the reopen button now appears after collapsing the sidebar.
 
 DATE_END: 2026-09-12
+
+DATE_START: 2026-09-13
+========================================
+
+TAG: [TASK]
+PARENT: Fix mobile sidebar/toggle disappearing entirely below 768px (only visible at 50% zoom)
+TITLE: Ship the mobile-sidebar fix; fix a production build break it caused
+DESC: User asked to ship the mobile-sidebar-reopen fix from 2026-09-12. Committed and pushed just that fix plus its daily-report entry (left the unrelated untracked screenshots/.playwright-mcp/ out of the commit). User confirmed push (asked first via AskUserQuestion since no prior standing push authorization for this session).
+Push triggered the deploy pipeline, which failed: `npm run build` hit `TS2448`/`TS2454` in frontend/src/components/shell/HomeSidebar.tsx(1221) - `isHomeRoot` was referenced (in the new early-return branch added by the previous fix) before its actual declaration further down the component (originally just above the `return (<aside...`). tsc's dev-mode `next dev` doesn't catch this (no static ordering check at runtime), only the production `tsc --noEmit` pass in `next build` does - explains why it wasn't caught locally before pushing. The deploy pipeline correctly rolled back both web and api containers to the last-known-good image automatically; no user-facing downtime.
+Fixed by moving the `const isHomeRoot = pathname === "/home" || pathname === "/home/inbox"` declaration up to right before the `if (!secondaryPanelOpen)` block instead of leaving it after. Verified clean with `npx tsc --noEmit` (after clearing a stale `.next/dev/types` cache that was throwing an unrelated pre-existing generated-file syntax error unrelated to this change). Committed and pushed as a separate fix-up commit (4a79d9c) rather than amending, per the standing rule to never amend once a commit has been pushed.
+Lesson worth remembering going forward: `next dev`'s hot reload does NOT run the full type-check that `next build` does, so a variable-ordering bug like this can look fine in local dev and only surface at deploy time - worth running `tsc --noEmit` (or `next build`) before pushing any change to this repo, not just relying on dev-server behavior looking correct.
+
+DATE_END: 2026-09-13
