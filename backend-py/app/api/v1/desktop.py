@@ -94,12 +94,29 @@ async def _fetch_latest_manifest() -> Optional[dict[str, Any]]:
     return _cache["manifest"]
 
 
-# Maps Tauri's {{target}} URL placeholder (its own platform identifiers) to
-# the target keys tauri-action writes into latest.json's "platforms" object.
+# Maps Tauri's {{target}} URL placeholder to the target keys tauri-action
+# writes into latest.json's "platforms" object.
+#
+# IMPORTANT: the updater plugin's {{target}} placeholder resolves to a bare
+# OS name ONLY - "windows", "linux", or "darwin" (see updater_os() in
+# tauri-plugin-updater's source). Arch is a SEPARATE {{arch}} placeholder
+# ("x86_64", "aarch64", etc.) that this endpoint's URL template in
+# tauri.conf.json never includes. This was the actual root cause of updates
+# silently never being offered: the endpoint was only ever called as
+# /update/windows/<version>, never /update/windows-x86_64/<version> - every
+# lookup against these "-x86_64"-suffixed keys missed, every response was
+# 204, and the plugin's check() correctly (from its perspective) reported
+# "no update available" with zero indication anything was wrong.
+# Handles both the bare OS name (what actually arrives) and the fuller
+# "<os>-<arch>" form (in case the endpoint URL is ever updated to include
+# {{arch}}), so this keeps working either way.
 _TARGET_ALIASES: dict[str, list[str]] = {
+    "windows": ["windows-x86_64"],
     "windows-x86_64": ["windows-x86_64"],
+    "darwin": ["darwin-x86_64", "darwin-aarch64", "darwin-universal"],
     "darwin-x86_64": ["darwin-x86_64", "darwin-universal"],
     "darwin-aarch64": ["darwin-aarch64", "darwin-universal"],
+    "linux": ["linux-x86_64"],
     "linux-x86_64": ["linux-x86_64"],
 }
 
