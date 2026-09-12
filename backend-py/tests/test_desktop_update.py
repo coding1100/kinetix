@@ -21,6 +21,37 @@ def test_parse_version():
 
 
 @pytest.mark.asyncio
+async def test_resolves_bare_os_name_from_real_updater_plugin(monkeypatch):
+    """
+    Regression test for the actual production bug: tauri-plugin-updater's
+    {{target}} placeholder resolves to a BARE os name ("windows", "linux",
+    "darwin") via its own updater_os() - never "windows-x86_64" - since
+    arch is a separate {{arch}} placeholder our endpoint URL never uses.
+    Before this fix, every real desktop client's check() request looked up
+    "windows" against _TARGET_ALIASES/platforms keyed by "windows-x86_64",
+    missed, and got 204 - so updates were NEVER offered to any real client,
+    while manual curl testing with an explicit "windows-x86_64" in the URL
+    looked completely fine and masked the bug for a long time.
+    """
+    async def fake_fetch():
+        return {
+            "version": "0.1.6",
+            "notes": "",
+            "pub_date": "2026-01-01T00:00:00Z",
+            "platforms": {
+                "windows-x86_64": {"signature": "winsig", "url": "https://example.com/win.msi.zip"},
+            },
+        }
+
+    monkeypatch.setattr(desktop, "_fetch_latest_manifest", fake_fetch)
+
+    # This is the literal request shape a real Windows client sends.
+    result = await desktop.check_desktop_update(target="windows", current_version="0.1.5")
+    assert result["version"] == "0.1.6"
+    assert result["platforms"]["windows"]["signature"] == "winsig"
+
+
+@pytest.mark.asyncio
 async def test_returns_204_when_no_manifest_available(monkeypatch):
     async def fake_fetch():
         return None
