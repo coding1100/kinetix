@@ -94,30 +94,34 @@ async def _fetch_latest_manifest() -> Optional[dict[str, Any]]:
     return _cache["manifest"]
 
 
-# Maps Tauri's {{target}} URL placeholder to the target keys tauri-action
-# writes into latest.json's "platforms" object.
+# Maps a bare OS name (what actually arrives in the request URL) to the
+# "{os}-{arch}[-installer]" keys tauri-action writes into latest.json's
+# "platforms" object, and that the updater plugin ITSELF separately expects
+# to find in the response body.
 #
-# IMPORTANT: the updater plugin's {{target}} placeholder resolves to a bare
-# OS name ONLY - "windows", "linux", or "darwin" (see updater_os() in
-# tauri-plugin-updater's source). Arch is a SEPARATE {{arch}} placeholder
-# ("x86_64", "aarch64", etc.) that this endpoint's URL template in
-# tauri.conf.json never includes. This was the actual root cause of updates
-# silently never being offered: the endpoint was only ever called as
-# /update/windows/<version>, never /update/windows-x86_64/<version> - every
-# lookup against these "-x86_64"-suffixed keys missed, every response was
-# 204, and the plugin's check() correctly (from its perspective) reported
-# "no update available" with zero indication anything was wrong.
-# Handles both the bare OS name (what actually arrives) and the fuller
-# "<os>-<arch>" form (in case the endpoint URL is ever updated to include
-# {{arch}}), so this keeps working either way.
-_TARGET_ALIASES: dict[str, list[str]] = {
-    "windows": ["windows-x86_64"],
-    "windows-x86_64": ["windows-x86_64"],
-    "darwin": ["darwin-x86_64", "darwin-aarch64", "darwin-universal"],
-    "darwin-x86_64": ["darwin-x86_64", "darwin-universal"],
-    "darwin-aarch64": ["darwin-aarch64", "darwin-universal"],
-    "linux": ["linux-x86_64"],
-    "linux-x86_64": ["linux-x86_64"],
+# Two independent "target" concepts collide here, both undocumented in one
+# place - confirmed by reading tauri-plugin-updater's own Rust source:
+#   1. The {{target}} URL placeholder (what shows up in THIS request) comes
+#      from updater_os() and is a BARE OS name only: "windows"/"linux"/
+#      "darwin". Arch is a separate {{arch}} placeholder our endpoint URL
+#      template never uses - this was root cause #1 (fixed): our old
+#      _TARGET_ALIASES only had "-x86_64"-suffixed keys, so every real
+#      request's lookup missed and always got 204.
+#   2. Separately, get_urls() in the plugin (called AFTER a successful
+#      check()) ignores the request's target entirely and looks up
+#      ["{os}-{arch}-{installer}", "{os}-{arch}"] (e.g.
+#      "windows-x86_64-nsis", then "windows-x86_64") directly in the
+#      RESPONSE BODY's platforms object - this is root cause #2: even after
+#      fixing #1, echoing the response back keyed by the bare "windows" from
+#      the request still didn't contain what get_urls() was looking for,
+#      surfacing as "None of the fallback platforms... were found".
+# The fix for both: never remap the platforms object's keys at all - always
+# return the manifest's own canonical "{os}-{arch}..." keys, and just
+# restrict the response to the ones relevant to the requesting OS.
+_OS_PLATFORM_PREFIXES: dict[str, str] = {
+    "windows": "windows-",
+    "darwin": "darwin-",
+    "linux": "linux-",
 }
 
 
@@ -146,17 +150,19 @@ async def check_desktop_update(
             return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     platforms = manifest.get("platforms", {})
-    target_key = target or "windows-x86_64"
-    for candidate in _TARGET_ALIASES.get(target_key, [target_key]):
-        if candidate in platforms:
-            return {
-                "version": latest_version,
-                "notes": manifest.get("notes", ""),
-                "pub_date": manifest.get("pub_date", ""),
-                "platforms": {target_key: platforms[candidate]},
-            }
+    os_key = (target or "windows").split("-", 1)[0]
+    prefix = _OS_PLATFORM_PREFIXES.get(os_key, "windows-")
+    matching = {k: v for k, v in platforms.items() if k.startswith(prefix)}
 
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    if not matching:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    return {
+        "version": latest_version,
+        "notes": manifest.get("notes", ""),
+        "pub_date": manifest.get("pub_date", ""),
+        "platforms": matching,
+    }
 
 
 # Maps a platform key to the substrings that identify its human-installable
