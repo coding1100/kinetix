@@ -7,11 +7,44 @@ import {
   messageBodyHasHtml,
   normalizeComposerHtml,
 } from "@/lib/chat/rich-text/sanitize";
+import { EMOJI_IMAGE_DATA_ATTR } from "@/lib/chat/emoji/apple-emoji";
 
 // Wrapped in \x01 control chars, written here as the escape sequence so the
 // source file stays plain ASCII - not typeable, so this can't collide with
 // real message content.
 const MENTION_MARKER_RE = /\x01MENTION(\d+)\x01/g;
+const EMOJI_MARKER_RE = /\x01EMOJI(\d+)\x01/g;
+
+/** Emoji picked in the composer are inserted as atomic Apple-style <img>
+ * nodes (see insertEmojiImageAtCursor) purely for display while typing -
+ * sanitizeMessageHtml's ALLOWED_TAGS deliberately excludes <img> (an open
+ * XSS vector for arbitrary pasted markup), so these must never reach it.
+ * Swap each one for a marker before normalizeComposerHtml/sanitization run,
+ * then restore the real Unicode emoji character afterward - same
+ * marker-and-restore lifecycle as extractMentionChips below. */
+function extractEmojiImages(html: string): { html: string; emojis: string[] } {
+  const emojis: string[] = [];
+  if (!html || typeof document === "undefined" || !html.includes(EMOJI_IMAGE_DATA_ATTR)) {
+    return { html, emojis };
+  }
+
+  const div = document.createElement("div");
+  div.innerHTML = html;
+  div.querySelectorAll<HTMLElement>(`[${EMOJI_IMAGE_DATA_ATTR}]`).forEach((img) => {
+    const index = emojis.length;
+    emojis.push(img.getAttribute(EMOJI_IMAGE_DATA_ATTR) ?? "");
+    img.replaceWith(document.createTextNode(`\x01EMOJI${index}\x01`));
+  });
+  return { html: div.innerHTML, emojis };
+}
+
+function restoreEmojiTokens(text: string, emojis: string[]): string {
+  if (emojis.length === 0) return text;
+  return text.replace(
+    EMOJI_MARKER_RE,
+    (_match, index: string) => emojis[Number(index)] ?? ""
+  );
+}
 
 /** Mention chips carry a non-breaking space joining a two-word name into
  * one @token, but normalizeComposerHtml's entity-decoding (needed for the
@@ -68,10 +101,11 @@ export function serializeRichComposerBody(
     })
     .join("");
 
-  const { html: htmlWithPlaceholders, tokens } = extractMentionChips(draftHtml);
-  const html = restoreMentionTokens(
-    normalizeComposerHtml(htmlWithPlaceholders),
-    tokens
+  const { html: htmlWithoutChips, tokens } = extractMentionChips(draftHtml);
+  const { html: htmlWithPlaceholders, emojis } = extractEmojiImages(htmlWithoutChips);
+  const html = restoreEmojiTokens(
+    restoreMentionTokens(normalizeComposerHtml(htmlWithPlaceholders), tokens),
+    emojis
   );
   const combined = `${prefix}${html}`.trim();
   if (!combined) return "";

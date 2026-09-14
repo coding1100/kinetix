@@ -16,6 +16,7 @@ import { MessageBodyWithMentions } from "@/components/chat/thread/MessageBodyWit
 import { CommentAttachmentCard } from "@/components/tasks/CommentAttachmentCard";
 import { TaskCommentComposer } from "@/components/tasks/TaskCommentComposer";
 import { EmojiPickerPopover } from "@/components/chat/emoji/EmojiPickerPopover";
+import { AppleEmoji } from "@/components/chat/emoji/AppleEmoji";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -226,7 +227,7 @@ function CommentActivityItem({
                 className="flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-xs text-primary hover:bg-primary/20"
                 onClick={() => toggleReaction(emoji)}
               >
-                <span>{emoji}</span>
+                <AppleEmoji emoji={emoji} size={14} />
                 <span>1</span>
               </button>
             ))}

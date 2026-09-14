@@ -47,7 +47,7 @@ export function useComposerFormat(editorRef: React.RefObject<HTMLElement | null>
 
   const openLinkPopover = useCallback(() => {
     const editor = editorRef.current;
-    if (!editor || !saveEditorSelection(editor)) return;
+    if (!editor || !saveEditorSelection(editor, true)) return;
 
     const rect = getSelectionRect(editor);
     if (!rect) {

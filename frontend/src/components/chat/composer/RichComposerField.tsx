@@ -20,6 +20,7 @@ import { extractFilesFromClipboard } from "@/lib/chat/composer-image-files";
 import { normalizePastedText, sanitizeMessageHtml } from "@/lib/chat/rich-text/sanitize";
 import { insertHtmlAtCursor } from "@/lib/chat/rich-text/dom";
 import { looksLikeMarkdown, markdownToComposerHtml } from "@/lib/chat/rich-text/markdown-paste";
+import { EMOJI_IMAGE_DATA_ATTR } from "@/lib/chat/emoji/apple-emoji";
 
 const MAX_EDITOR_HEIGHT_PX = 160;
 
@@ -69,7 +70,16 @@ export function RichComposerField({
     closeLinkPopover,
     submitLink,
   } = useComposerFormat(editorRef);
-  const showPlaceholder = segments.length === 0 && !draftPlain.trim();
+  // draftPlain (editor.innerText) is empty for an editor holding ONLY an
+  // emoji image - <img> contributes nothing to innerText, same reason
+  // isEmptyComposerHtml checks for "<img" separately from stripped text.
+  // Check the live DOM for an emoji image too, or the placeholder renders
+  // on top of it (both are absolutely positioned over the same spot).
+  const hasEmojiImage = Boolean(
+    editorRef.current?.querySelector(`[${EMOJI_IMAGE_DATA_ATTR}]`)
+  );
+  const showPlaceholder =
+    segments.length === 0 && !draftPlain.trim() && !hasEmojiImage;
   const mentionHoverPeek = useMentionHoverPeek(editorRef);
   const channelId = conversationType === "channel" ? conversationId : undefined;
 
