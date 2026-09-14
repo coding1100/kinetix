@@ -3,6 +3,7 @@
 import type { ReactElement } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuthStore } from "@/stores/auth-store";
+import { AppleEmoji } from "@/components/chat/emoji/AppleEmoji";
 
 function formatReactionNames(
   users: { id: string; fullName: string }[],
@@ -37,7 +38,7 @@ export function ReactionTooltip({
         className="inline-flex w-auto max-w-56 flex-col items-center gap-1 border border-border bg-popover px-3 py-2 text-center text-popover-foreground"
         arrowClassName="border border-border bg-popover fill-popover"
       >
-        <span className="text-2xl leading-none">{emoji}</span>
+        <AppleEmoji emoji={emoji} size={28} />
         <span className="text-xs font-semibold">
           {formatReactionNames(users, currentUserId)}
         </span>

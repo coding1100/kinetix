@@ -18,9 +18,12 @@ import {
   focusEditorEnd,
   getPlainTextBeforeCursorInBlock,
   insertChipAtCursor,
-  insertTextAtCursor,
+  insertEmojiImageAtCursor,
   repairMentionChipOverflow,
+  restoreEditorSelection,
+  saveEditorSelection,
 } from "@/lib/chat/rich-text/dom";
+import { createAppleEmojiImage, emojifyElement } from "@/lib/chat/emoji/apple-emoji";
 import {
   bodyToComposerHtml,
   decodeMessageEntities,
@@ -132,12 +135,25 @@ export function useRichComposerField() {
     [syncFromEditor]
   );
 
+  // The emoji picker opens in a popover, which steals DOM focus/selection
+  // away from the contenteditable the moment it opens - by the time the user
+  // actually clicks an emoji, window.getSelection() no longer points at
+  // wherever their cursor was, so a naive insert always lands at whatever
+  // stale/default position is left (observed: always the start of the
+  // text). Save the real cursor position the instant the popover opens
+  // (before focus moves), then restore it right before inserting.
+  const saveEmojiInsertPoint = useCallback(() => {
+    const el = editorRef.current;
+    if (el) saveEditorSelection(el);
+  }, []);
+
   const insertEmoji = useCallback(
     (emoji: string) => {
       const el = editorRef.current;
       if (el) {
         el.focus();
-        insertTextAtCursor(emoji);
+        restoreEditorSelection();
+        insertEmojiImageAtCursor(createAppleEmojiImage(emoji));
         syncFromEditor();
       }
     },
@@ -170,6 +186,7 @@ export function useRichComposerField() {
       if (el) {
         const existing = el.innerHTML.trim();
         el.innerHTML = existing ? `${quoteHtml}${existing}` : quoteHtml;
+        emojifyElement(el);
         focusEditorEnd(el);
         syncFromEditor();
       } else {
@@ -189,6 +206,7 @@ export function useRichComposerField() {
       : decoded;
     if (editorRef.current) {
       editorRef.current.innerHTML = content;
+      emojifyElement(editorRef.current);
       setDraftHtml(editorRef.current.innerHTML);
       setDraftPlain(editorRef.current.innerText);
       setMentionQuery(getDraftMentionQuery(editorRef.current.innerText));
@@ -262,6 +280,7 @@ export function useRichComposerField() {
     insertMention,
     insertQuote,
     insertEmoji,
+    saveEmojiInsertPoint,
     handleInputKeyDown,
     syncFromEditor,
     clear,

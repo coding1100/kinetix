@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { MouseEvent } from "react";
 import {
   displayMentionToken,
@@ -24,6 +24,7 @@ import {
   isOpenableExternalUrl,
   openExternalUrl,
 } from "@/lib/text/open-external-url";
+import { emojifyElement } from "@/lib/chat/emoji/apple-emoji";
 
 function handleLinkCapture(event: MouseEvent<HTMLDivElement>) {
   const target = event.target as HTMLElement | null;
@@ -94,11 +95,18 @@ function processRichTextHtml(html: string): string {
 }
 
 function RichTextPart({ html }: { html: string }) {
+  const ref = useRef<HTMLDivElement>(null);
   const processed = processRichTextHtml(html);
+
+  useEffect(() => {
+    if (ref.current) emojifyElement(ref.current);
+  }, [processed]);
+
   if (!processed) return null;
 
   return (
     <div
+      ref={ref}
       className={cn(RICH_TEXT_CONTENT_CLASS, "block")}
       onClickCapture={handleLinkCapture}
       dangerouslySetInnerHTML={{ __html: processed }}

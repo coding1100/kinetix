@@ -16,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmojiPickerPopover } from "@/components/chat/emoji/EmojiPickerPopover";
+import { AppleEmoji } from "@/components/chat/emoji/AppleEmoji";
 import { ReactionTooltip } from "@/components/chat/ReactionTooltip";
 import { MessageBodyWithMentions } from "./MessageBodyWithMentions";
 import { MessageAttachmentList } from "@/components/chat/attachments/MessageAttachmentList";
@@ -283,7 +284,7 @@ export function ThreadMessageRow({
                       className="inline-flex h-6 items-center gap-1 rounded-full border border-border bg-muted/40 px-2 text-xs hover:bg-muted"
                       onClick={() => void onToggleReaction(message.id, r.emoji)}
                     >
-                      <span className="text-base leading-none">{r.emoji}</span>
+                      <AppleEmoji emoji={r.emoji} size={16} />
                       <span className="text-muted-foreground">{r.count}</span>
                     </button>
                   }

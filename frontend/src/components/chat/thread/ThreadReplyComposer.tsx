@@ -69,6 +69,7 @@ export function ThreadReplyComposer({
     insertMention,
     insertQuote,
     insertEmoji,
+    saveEmojiInsertPoint,
     handleInputKeyDown,
     syncFromEditor,
     clear: clearMentions,
@@ -319,6 +320,9 @@ export function ThreadReplyComposer({
             </div>
             <EmojiPickerPopover
               onSelectEmoji={insertEmoji}
+              onOpenChange={(open) => {
+                if (open) saveEmojiInsertPoint();
+              }}
               trigger={
                 <Button
                   type="button"

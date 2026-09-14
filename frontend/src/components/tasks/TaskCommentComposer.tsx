@@ -56,6 +56,7 @@ export function TaskCommentComposer({
     dismissMentionAutocomplete,
     insertMention,
     insertEmoji,
+    saveEmojiInsertPoint,
     handleInputKeyDown,
     syncFromEditor,
     clear: clearComposer,
@@ -199,6 +200,9 @@ export function TaskCommentComposer({
 
             <EmojiPickerPopover
               onSelectEmoji={insertEmoji}
+              onOpenChange={(open) => {
+                if (open) saveEmojiInsertPoint();
+              }}
               trigger={
                 <Button
                   type="button"

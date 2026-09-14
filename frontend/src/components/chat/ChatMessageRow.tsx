@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmojiPickerPopover } from "@/components/chat/emoji/EmojiPickerPopover";
+import { AppleEmoji } from "@/components/chat/emoji/AppleEmoji";
 import { ReactionTooltip } from "@/components/chat/ReactionTooltip";
 import {
   MessageCircleIcon,
@@ -380,7 +381,7 @@ export function ChatMessageRow({
                       className="h-6 cursor-pointer gap-1 px-2"
                       onClick={() => void onToggleReaction(message.id, r.emoji)}
                     >
-                      <span className="text-base leading-none">{r.emoji}</span>
+                      <AppleEmoji emoji={r.emoji} size={16} />
                       <span>{r.count}</span>
                     </Badge>
                   }

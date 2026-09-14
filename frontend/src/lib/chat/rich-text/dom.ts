@@ -7,9 +7,17 @@ type CharRef = { node: Text; offset: number };
 
 let savedEditorRange: Range | null = null;
 
-export function saveEditorSelection(root: HTMLElement): boolean {
+/** Saves the current selection/cursor position if it's inside root, whether
+ * it's a real text selection (formatting toolbar) or just a collapsed
+ * caret (emoji picker) - `requireRange` opts into the stricter
+ * non-collapsed-only behavior the formatting toolbar relies on. */
+export function saveEditorSelection(
+  root: HTMLElement,
+  requireRange = false
+): boolean {
   const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
+  if (!sel || sel.rangeCount === 0) return false;
+  if (requireRange && sel.isCollapsed) return false;
   const range = sel.getRangeAt(0);
   if (!root.contains(range.commonAncestorContainer)) return false;
   savedEditorRange = range.cloneRange();
@@ -199,6 +207,23 @@ export function insertChipAtCursor(chip: HTMLElement): void {
   // caret, so the next keystroke extends this text node instead of the
   // browser folding it into the chip's run.
   range.setStart(space, space.length);
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+/** Splice an atomic (contenteditable=false) emoji <img> in at the cursor -
+ * same "insert exactly where the caret is" contract as insertChipAtCursor,
+ * minus the trailing-space requirement (mention tokens need a separator so
+ * the next word doesn't fuse into "@Namefoo"; an emoji image has no text run
+ * to fuse with, so typing right after it just starts a fresh text node). */
+export function insertEmojiImageAtCursor(img: HTMLImageElement): void {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  const range = sel.getRangeAt(0);
+  range.deleteContents();
+  range.insertNode(img);
+  range.setStartAfter(img);
   range.collapse(true);
   sel.removeAllRanges();
   sel.addRange(range);

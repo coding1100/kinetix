@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { isOpenableExternalUrl, openExternalUrl } from "@/lib/text/open-external-url";
+import { emojifyText } from "@/lib/chat/emoji/apple-emoji";
 
 const URL_RE =
   /((?:https?:\/\/|www\.)[^\s<>"']+[^\s<>"'.,:;!?)\]}])/gi;
@@ -32,7 +33,9 @@ export function linkifyText(text: string, keyPrefix = ""): ReactNode[] {
         </a>
       );
     }
-    return part ? <span key={`${keyPrefix}${i}`}>{part}</span> : null;
+    return part
+      ? <span key={`${keyPrefix}${i}`}>{emojifyText(part, `${keyPrefix}${i}-`)}</span>
+      : null;
   });
 }
 

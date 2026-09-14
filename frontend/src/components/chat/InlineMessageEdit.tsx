@@ -151,6 +151,7 @@ export function InlineMessageEdit({
     dismissMentionAutocomplete,
     insertMention,
     insertEmoji,
+    saveEmojiInsertPoint,
     handleInputKeyDown,
     syncFromEditor,
     restore,
@@ -375,6 +376,9 @@ export function InlineMessageEdit({
           />
           <EmojiPickerPopover
             onSelectEmoji={insertEmoji}
+            onOpenChange={(open) => {
+              if (open) saveEmojiInsertPoint();
+            }}
             trigger={
               <Button
                 type="button"
