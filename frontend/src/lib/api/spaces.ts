@@ -71,11 +71,31 @@ export function fetchListTasks(
   );
 }
 
+export type CreateTaskInput = {
+  name: string;
+  description?: string;
+  tags?: string[];
+  priority?: Task["priority"] | null;
+  status?: "OPEN" | "TODO" | "IN_PROGRESS" | "DONE";
+  statusId?: string;
+  dueDate?: string;
+  startDate?: string;
+  timeEstimateMinutes?: number | null;
+  assigneeIds?: string[];
+  followerIds?: string[];
+  subtasks?: { name: string }[];
+  checklists?: {
+    name: string;
+    items?: { text: string; assigneeId?: string | null; isChecked?: boolean }[];
+  }[];
+  dependencies?: { relatedTaskId: string; type: "blocking" | "blocked_by" | "linked" }[];
+};
+
 export function createListTask(
   token: string,
   workspaceId: string,
   listId: string,
-  input: { name: string; description?: string }
+  input: CreateTaskInput
 ) {
   return apiFetch<Task>(wsPath(workspaceId, `/lists/${listId}/tasks`), {
     method: "POST",
@@ -83,6 +103,7 @@ export function createListTask(
     body: JSON.stringify(input),
   });
 }
+
 
 export type UpdateTaskInput = {
   name?: string;

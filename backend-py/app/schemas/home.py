@@ -7,11 +7,53 @@ class CreatePostBody(BaseModel):
     channel: str = Field(min_length=1, max_length=80)
     content: str = Field(min_length=1, max_length=5000)
 
+class CreateSubtaskNested(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(min_length=1, max_length=500)
+
+
+class CreateChecklistItemNested(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    text: str = Field(min_length=1, max_length=500)
+    assignee_id: str | None = Field(default=None, alias="assigneeId")
+    is_checked: bool = Field(default=False, alias="isChecked")
+
+
+class CreateChecklistNested(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(min_length=1, max_length=255)
+    items: list[CreateChecklistItemNested] = Field(default_factory=list)
+
+
+class CreateTaskDependencyNested(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    related_task_id: str = Field(min_length=1, alias="relatedTaskId")
+    type: Literal["blocking", "blocked_by", "linked"]
+
 
 class CreateTaskBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     name: str = Field(min_length=1, max_length=500)
     description: str | None = Field(default=None, max_length=5000)
     tags: list[str] | None = None
+    priority: Literal["urgent", "high", "normal", "low"] | None = None
+    status: Literal["OPEN", "TODO", "IN_PROGRESS", "DONE"] | None = None
+    status_id: str | None = Field(default=None, alias="statusId")
+    due_date: str | None = Field(default=None, alias="dueDate")
+    start_date: str | None = Field(default=None, alias="startDate")
+    time_estimate_minutes: int | None = Field(
+        default=None, alias="timeEstimateMinutes", ge=0, le=60 * 24 * 365
+    )
+    assignee_ids: list[str] | None = Field(default=None, alias="assigneeIds")
+    follower_ids: list[str] | None = Field(default=None, alias="followerIds")
+    subtasks: list[CreateSubtaskNested] | None = None
+    checklists: list[CreateChecklistNested] | None = None
+    dependencies: list[CreateTaskDependencyNested] | None = None
 
 
 class CreateSubtaskBody(BaseModel):

@@ -833,25 +833,42 @@ export function CreateTaskDialog({
   }
 
   async function createOneTask(): Promise<Task> {
-    const created = await createListTask(accessToken!, workspaceId!, listId, {
+    const dueDate = toDueDateIso(dueInput);
+    return await createListTask(accessToken!, workspaceId!, listId, {
       name: name.trim(),
       description: description.trim() || undefined,
+      ...(statusId ? { statusId } : {}),
+      ...(priority !== NO_PRIORITY ? { priority } : {}),
+      ...(assigneeIds.length > 0 ? { assigneeIds } : {}),
+      ...(followerIds.length > 0 ? { followerIds } : {}),
+      ...(dueDate ? { dueDate } : {}),
+      ...(subtasks.length > 0
+        ? { subtasks: subtasks.map((s) => ({ name: s.name })) }
+        : {}),
+      ...(checklists.length > 0
+        ? {
+            checklists: checklists.map((cl) => ({
+              name: cl.name,
+              items: cl.items.map((it) => ({
+                text: it.text,
+                assigneeId: it.assigneeId || null,
+                isChecked: it.checked,
+              })),
+            })),
+          }
+        : {}),
+      ...(dependencies.length > 0
+        ? {
+            dependencies: dependencies.map((d) => ({
+              relatedTaskId: d.task.id,
+              type: d.type,
+            })),
+          }
+        : {}),
     });
-    const payload: Parameters<typeof patchTask>[3] = {};
-    if (statusId) payload.statusId = statusId;
-    if (priority !== NO_PRIORITY) payload.priority = priority;
-    if (assigneeIds.length > 0) payload.assigneeIds = assigneeIds;
-    if (followerIds.length > 0) payload.followerIds = followerIds;
-    const dueDate = toDueDateIso(dueInput);
-    if (dueDate) payload.dueDate = dueDate;
-
-    const shouldPatch = Object.keys(payload).length > 0;
-    return shouldPatch
-      ? await patchTask(accessToken!, workspaceId!, created.id, payload)
-      : created;
   }
 
-  async function attachStagedExtras(task: Task, accessToken: string, workspaceId: string) {
+  async function attachStagedAttachments(task: Task, accessToken: string, workspaceId: string) {
     for (const { file } of pendingAttachments) {
       try {
         await uploadTaskAttachment(accessToken, workspaceId, task.id, file);
@@ -863,71 +880,6 @@ export function CreateTaskDialog({
         );
       }
     }
-
-    for (const dep of dependencies) {
-      try {
-        await addTaskDependency(accessToken, workspaceId, task.id, {
-          relatedTaskId: dep.task.id,
-          type: dep.type,
-        });
-      } catch (e) {
-        toast.error(
-          e instanceof Error
-            ? `Failed to link ${dep.task.name}: ${e.message}`
-            : `Failed to link ${dep.task.name}`
-        );
-      }
-    }
-
-    for (const subtask of subtasks) {
-      try {
-        await createSubtask(accessToken, workspaceId, task.id, subtask.name);
-      } catch (e) {
-        toast.error(
-          e instanceof Error
-            ? `Failed to add subtask "${subtask.name}": ${e.message}`
-            : `Failed to add subtask "${subtask.name}"`
-        );
-      }
-    }
-
-    for (const checklist of checklists) {
-      try {
-        const createdChecklist = await addChecklist(
-          accessToken,
-          workspaceId,
-          task.id,
-          { name: checklist.name }
-        );
-        for (const item of checklist.items) {
-          try {
-            await addChecklistItem(
-              accessToken,
-              workspaceId,
-              task.id,
-              createdChecklist.id,
-              {
-                text: item.text,
-                assigneeId: item.assigneeId,
-                isChecked: item.checked,
-              }
-            );
-          } catch (e) {
-            toast.error(
-              e instanceof Error
-                ? `Failed to add item "${item.text}": ${e.message}`
-                : `Failed to add item "${item.text}"`
-            );
-          }
-        }
-      } catch (e) {
-        toast.error(
-          e instanceof Error
-            ? `Failed to create checklist "${checklist.name}": ${e.message}`
-            : `Failed to create checklist "${checklist.name}"`
-        );
-      }
-    }
   }
 
   async function handleCreate(action: CreateAction = "default") {
@@ -935,10 +887,13 @@ export function CreateTaskDialog({
     setSaving(true);
     try {
       const finalTask = await createOneTask();
-      await attachStagedExtras(finalTask, accessToken, workspaceId);
+      if (pendingAttachments.length > 0) {
+        await attachStagedAttachments(finalTask, accessToken, workspaceId);
+      }
       toast.success("Task created");
 
       onCreated(finalTask, { open: action === "open" });
+
 
       if (action === "start-another") {
         resetState();

@@ -475,16 +475,18 @@ async def broadcast_task_event(
     task_id: str,
     list_id: str | None = None,
     task: dict | None = None,
+    user_ids: list[str] | None = None,
 ) -> None:
-    sio = get_sio()
-    await sio.emit(
-        "task:event",
-        {
+    await _emit_workspace_or_users(
+        event="task:event",
+        payload={
             "workspaceId": workspace_id,
             "action": action,
             "taskId": task_id,
             "listId": list_id,
             "task": task,
         },
-        room=f"ws:{workspace_id}",
+        workspace_id=workspace_id,
+        user_ids=user_ids,
     )
+

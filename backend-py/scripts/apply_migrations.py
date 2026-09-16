@@ -56,6 +56,7 @@ MIGRATIONS: tuple[str, ...] = (
     "migrate_refresh_token_grace_period.sql",
     "migrate_knowledge_base.sql",
     "migrate_task_tags.sql",
+    "migrate_task_status_consistency.sql",
 )
 
 

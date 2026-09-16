@@ -31,3 +31,4 @@ docker-compose.env
 # Cursor / local assets
 .cursor/
 assets/
+.playwright-mcp/

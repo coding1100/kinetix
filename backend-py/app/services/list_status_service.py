@@ -111,11 +111,53 @@ async def ensure_list_statuses(session: AsyncSession, list_id: str) -> list[List
         # back to TODO-equivalent via the tasks_without_status pass below.
         desired_names = {name.strip().lower() for _, name, _, _, _ in default_statuses}
         stale = [row for row in existing if row.name.strip().lower() not in desired_names]
-        for row in stale:
-            await session.execute(
-                update(Task).where(Task.status_id == row.id).values(status_id=None)
-            )
-            await session.delete(row)
+        if stale:
+            await session.flush()
+            all_statuses = (
+                await session.scalars(
+                    select(ListStatus).where(ListStatus.list_id == list_id)
+                )
+            ).all()
+            stale_ids = {r.id for r in stale}
+            active_statuses = [r for r in all_statuses if r.id not in stale_ids]
+
+            for row in stale:
+                replacement = next(
+                    (s for s in active_statuses if s.status_group == row.status_group),
+                    None,
+                )
+                if not replacement:
+                    replacement = next(
+                        (s for s in active_statuses if s.status_group == StatusGroup.NOT_STARTED),
+                        active_statuses[0] if active_statuses else None,
+                    )
+
+                if replacement:
+                    new_status = (
+                        TaskStatus(replacement.legacy_key)
+                        if replacement.legacy_key
+                        else (
+                            TaskStatus.DONE
+                            if replacement.status_group in (StatusGroup.DONE, StatusGroup.CLOSED)
+                            else TaskStatus.IN_PROGRESS
+                            if replacement.status_group == StatusGroup.ACTIVE
+                            else TaskStatus.TODO
+                        )
+                    )
+                    await session.execute(
+                        update(Task)
+                        .where(Task.status_id == row.id)
+                        .values(
+                            status_id=replacement.id,
+                            status_color=replacement.color,
+                            status=new_status,
+                        )
+                    )
+                else:
+                    await session.execute(
+                        update(Task).where(Task.status_id == row.id).values(status_id=None)
+                    )
+                await session.delete(row)
             changed = True
         if changed:
             await session.flush()
