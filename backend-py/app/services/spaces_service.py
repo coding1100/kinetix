@@ -1201,6 +1201,7 @@ async def delete_task_comment(
     user_id: str,
     task_id: str,
     comment_id: str,
+    role: WorkspaceRole | None = None,
 ) -> dict:
     comment = await session.scalar(
         select(TaskComment)
@@ -1215,8 +1216,15 @@ async def delete_task_comment(
     )
     if not comment:
         raise AppError(404, "NOT_FOUND", "Comment not found")
-    if comment.user_id != user_id:
+    if comment.user_id != user_id and not (role and is_workspace_admin(role)):
         raise AppError(403, "FORBIDDEN", "You can only delete your own comments")
+
+    await session.execute(
+        delete(TaskAttachment).where(
+            TaskAttachment.comment_id == comment.id,
+            TaskAttachment.workspace_id == workspace_id,
+        )
+    )
 
     await session.delete(comment)
     await session.commit()

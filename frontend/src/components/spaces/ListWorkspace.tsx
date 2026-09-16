@@ -109,12 +109,21 @@ export function ListWorkspace({
         const matchDesc = t.description?.toLowerCase().includes(query) ?? false;
         if (!matchName && !matchDesc) return false;
       }
+      if (statusFilter !== "all") {
+        if (
+          t.statusId !== statusFilter &&
+          t.statusKey?.toLowerCase() !== statusFilter.toLowerCase() &&
+          t.status?.toLowerCase() !== statusFilter.toLowerCase()
+        ) {
+          return false;
+        }
+      }
       if (priorityFilter !== "all") {
         if (t.priority?.toLowerCase() !== priorityFilter.toLowerCase()) return false;
       }
       return true;
     });
-  }, [tasks, searchQuery, priorityFilter]);
+  }, [tasks, searchQuery, statusFilter, priorityFilter]);
 
   return (
     <>

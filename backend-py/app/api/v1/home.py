@@ -727,10 +727,10 @@ async def delete_task_comment(
     comment_id: str,
     session: DbSession,
     user: CurrentUserDep,
-    _member: WorkspaceMemberDep,
+    member: WorkspaceMemberDep,
 ):
     return await spaces_service.delete_task_comment(
-        session, workspace_id, user.id, task_id, comment_id
+        session, workspace_id, user.id, task_id, comment_id, member.role
     )
 
 

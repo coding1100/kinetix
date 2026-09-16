@@ -2,25 +2,37 @@ from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.errors import AppError
 from app.core.utils import as_aware_utc
-from app.db.models.enums import WorkspaceRole
+from app.db.models.enums import PermissionLevel, WorkspaceRole
 from app.db.models.home import Space, Task, TaskList, TaskTimeEntry
+from app.services.folder_list_permissions import require_list_permission
 from app.services.workspace_permissions import get_member_time_flags
 
 
 async def _assert_task_in_workspace(
-    session: AsyncSession, workspace_id: str, task_id: str
+    session: AsyncSession,
+    workspace_id: str,
+    task_id: str,
+    user_id: str | None = None,
+    role: WorkspaceRole | None = None,
+    permission: PermissionLevel = PermissionLevel.VIEW,
 ) -> Task:
     task = await session.scalar(
         select(Task)
-        .join(TaskList)
-        .join(Space)
+        .join(Task.task_list)
+        .join(TaskList.space)
         .where(Task.id == task_id, Space.workspace_id == workspace_id)
+        .options(selectinload(Task.task_list).selectinload(TaskList.space))
     )
     if not task:
         raise AppError(404, "NOT_FOUND", "Task not found")
+    if user_id is not None and role is not None:
+        await require_list_permission(
+            session, task.task_list, user_id, role, permission
+        )
     return task
 
 
@@ -52,8 +64,11 @@ async def get_task_time_state(
     workspace_id: str,
     user_id: str,
     task_id: str,
+    role: WorkspaceRole | None = None,
 ) -> dict:
-    await _assert_task_in_workspace(session, workspace_id, task_id)
+    await _assert_task_in_workspace(
+        session, workspace_id, task_id, user_id, role, PermissionLevel.VIEW
+    )
     running = await session.scalar(
         select(TaskTimeEntry).where(
             TaskTimeEntry.task_id == task_id,
@@ -93,7 +108,9 @@ async def start_task_timer(
     role: WorkspaceRole,
     task_id: str,
 ) -> dict:
-    await _assert_task_in_workspace(session, workspace_id, task_id)
+    await _assert_task_in_workspace(
+        session, workspace_id, task_id, user_id, role, PermissionLevel.VIEW
+    )
     _, can_track_time = await get_member_time_flags(session, workspace_id, user_id)
     if not can_track_time:
         raise AppError(403, "FORBIDDEN", "Time tracking is disabled for your account")
@@ -132,7 +149,9 @@ async def stop_task_timer(
     role: WorkspaceRole,
     task_id: str,
 ) -> dict:
-    await _assert_task_in_workspace(session, workspace_id, task_id)
+    await _assert_task_in_workspace(
+        session, workspace_id, task_id, user_id, role, PermissionLevel.VIEW
+    )
     _, can_track_time = await get_member_time_flags(session, workspace_id, user_id)
     if not can_track_time:
         raise AppError(403, "FORBIDDEN", "Time tracking is disabled for your account")

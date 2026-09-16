@@ -1,5 +1,6 @@
-import uuid
+from collections.abc import Sequence
 from datetime import datetime, timezone
+import uuid
 
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,7 @@ from app.db.models.enums import (
     InboxItemType,
     MemberStatus,
     PermissionLevel,
+    StatusGroup,
     TaskPriority,
     TaskStatus,
     WorkspaceRole,
@@ -60,6 +62,7 @@ from app.services.folder_list_permissions import (
     require_list_permission,
     resolve_folder_permission,
     resolve_list_permission,
+    user_ids_with_list_access,
 )
 from app.services.workspace_permissions import get_member_time_flags, is_workspace_admin
 from app.db.models.workspace import WorkspaceMember
@@ -190,11 +193,7 @@ def _record_task_activity(
     preview: str,
     title: str | None = None,
 ) -> None:
-    """Append a view-only, append-only entry to Task.activity (JSONB).
-
-    Reassigns the list (rather than task.activity.append(...)) so SQLAlchemy
-    detects the change without needing flag_modified.
-    """
+    """Append a view-only, append-only entry to Task.activity (JSONB)."""
     entry = {
         "id": str(uuid.uuid4()),
         "type": "activity",
@@ -205,7 +204,12 @@ def _record_task_activity(
         "activityKind": activity_kind,
         "actorName": actor_name,
     }
-    task.activity = [*(task.activity or []), entry]
+    current = list(task.activity or [])
+    if len(current) >= 250:
+        current = current[-249:]
+    current.append(entry)
+    task.activity = current
+    flag_modified(task, "activity")
 
 
 _SPACE_LOAD = (
@@ -818,6 +822,49 @@ async def list_tasks_for_list(
     return {"data": [map_task(t, user_id, names) for t in tasks]}
 
 
+async def _dependency_chain_reaches(
+    session: AsyncSession, start_task_id: str, target_task_id: str
+) -> bool:
+    """Returns True if there is an existing directed blocking path from start_task_id to target_task_id."""
+    if start_task_id == target_task_id:
+        return True
+
+    visited = {start_task_id}
+    queue = [start_task_id]
+
+    while queue:
+        current = queue.pop(0)
+        deps = (
+            await session.scalars(
+                select(TaskDependency).where(
+                    or_(
+                        (TaskDependency.task_id == current) & (TaskDependency.dependency_type == "blocking"),
+                        (TaskDependency.related_task_id == current) & (TaskDependency.dependency_type == "blocked_by"),
+                    )
+                )
+            )
+        ).all()
+
+        for d in deps:
+            nxt = d.related_task_id if d.task_id == current else d.task_id
+            if nxt == target_task_id:
+                return True
+            if nxt not in visited:
+                visited.add(nxt)
+                queue.append(nxt)
+    return False
+
+
+async def _validate_checklist_assignee(
+    session: AsyncSession, workspace_id: str, assignee_id: str | None
+) -> None:
+    if not assignee_id:
+        return
+    members = await workspace_service.list_workspace_members(session, workspace_id)
+    if assignee_id not in {m["id"] for m in members}:
+        raise AppError(400, "VALIDATION_ERROR", "Invalid assignee")
+
+
 async def create_task(
     session: AsyncSession,
     workspace_id: str,
@@ -838,16 +885,119 @@ async def create_task(
         session, task_list, user_id, role, PermissionLevel.EDIT
     )
     await ensure_list_statuses(session, list_id)
-    default_status = await default_status_for_list(session, list_id)
+
+    # Status resolution
+    task_status = TaskStatus.TODO
+    task_status_id: str | None = None
+    task_status_color = "#87909e"
+
+    if body.status_id:
+        status_row = await get_list_status(session, list_id, body.status_id)
+        if not status_row:
+            raise AppError(400, "VALIDATION_ERROR", "Invalid status")
+        task_status_id = status_row.id
+        task_status_color = status_row.color
+        if status_row.legacy_key:
+            task_status = TaskStatus(status_row.legacy_key)
+        elif status_row.status_group in (StatusGroup.DONE, StatusGroup.CLOSED):
+            task_status = TaskStatus.DONE
+        elif status_row.status_group == StatusGroup.ACTIVE:
+            task_status = TaskStatus.IN_PROGRESS
+        else:
+            task_status = TaskStatus.TODO
+    elif body.status:
+        task_status = TaskStatus(body.status)
+        task_status_color = STATUS_COLORS.get(task_status, "#87909e")
+        status_row = await session.scalar(
+            select(ListStatus).where(
+                ListStatus.list_id == list_id,
+                ListStatus.legacy_key == task_status.value,
+            )
+        )
+        if status_row:
+            task_status_id = status_row.id
+            task_status_color = status_row.color
+    else:
+        default_status = await default_status_for_list(session, list_id)
+        if default_status:
+            task_status_id = default_status.id
+            task_status_color = default_status.color
+            if default_status.legacy_key:
+                task_status = TaskStatus(default_status.legacy_key)
+            elif default_status.status_group in (StatusGroup.DONE, StatusGroup.CLOSED):
+                task_status = TaskStatus.DONE
+            elif default_status.status_group == StatusGroup.ACTIVE:
+                task_status = TaskStatus.IN_PROGRESS
+            else:
+                task_status = TaskStatus.TODO
+
+    # Dates
+    parsed_due_date: datetime | None = None
+    if body.due_date and body.due_date.strip():
+        raw = body.due_date.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(raw)
+        parsed_due_date = parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+    parsed_start_date: datetime | None = None
+    if body.start_date and body.start_date.strip():
+        raw = body.start_date.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(raw)
+        parsed_start_date = parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+    if parsed_start_date and parsed_due_date:
+        start_cmp = parsed_start_date.replace(tzinfo=None)
+        due_cmp = parsed_due_date.replace(tzinfo=None)
+        if start_cmp > due_cmp:
+            raise AppError(400, "VALIDATION_ERROR", "Start date must be on or before the due date")
+
+    # Time estimate
+    time_estimate_minutes = body.time_estimate_minutes
+    if time_estimate_minutes is not None:
+        can_see_estimate, _ = await get_member_time_flags(session, workspace_id, user_id)
+        if not can_see_estimate:
+            raise AppError(403, "FORBIDDEN", "Time estimates are disabled for your account")
+
+    # Priority
+    priority = TaskPriority(body.priority.upper()) if body.priority else None
+
+    # Assignees & Followers
+    assignee_ids: list[str] = []
+    follower_ids: list[str] = []
+    if body.assignee_ids or body.follower_ids:
+        members = await workspace_service.list_workspace_members(session, workspace_id)
+        allowed = {m["id"] for m in members}
+        if body.assignee_ids:
+            for uid in body.assignee_ids:
+                if uid not in allowed:
+                    raise AppError(400, "VALIDATION_ERROR", "Invalid assignee")
+            assignee_ids = list(dict.fromkeys(body.assignee_ids))
+        if body.follower_ids:
+            for uid in body.follower_ids:
+                if uid not in allowed:
+                    raise AppError(400, "VALIDATION_ERROR", "Invalid follower")
+            follower_ids = list(dict.fromkeys(body.follower_ids))
+
+    if assignee_ids:
+        newly_followed = [uid for uid in assignee_ids if uid not in follower_ids]
+        if newly_followed:
+            follower_ids = [*follower_ids, *newly_followed]
+
     now = datetime.now(timezone.utc)
     task = Task(
         list_id=list_id,
         name=body.name.strip(),
         description=body.description,
-        tags=body.tags or [],
+        tags=list(dict.fromkeys(body.tags or [])),
+        priority=priority,
+        status=task_status,
+        status_id=task_status_id,
+        status_color=task_status_color,
+        due_date=parsed_due_date,
+        start_date=parsed_start_date,
+        time_estimate_minutes=time_estimate_minutes,
+        assignee_ids=assignee_ids,
+        follower_ids=follower_ids,
         updated_at=now,
-        status_id=default_status.id if default_status else None,
-        status_color=default_status.color if default_status else "#87909e",
     )
     actor_name = await _resolve_user_name(session, user_id)
     _record_task_activity(
@@ -857,19 +1007,173 @@ async def create_task(
         preview=f"{actor_name} created this task",
     )
     session.add(task)
+    await session.flush()
+
+    # Subtasks
+    default_subtask_status = await default_status_for_list(session, list_id)
+    if body.subtasks:
+        for sub in body.subtasks:
+            sub_name = sub.name.strip()
+            if not sub_name:
+                continue
+            subtask = Task(
+                list_id=list_id,
+                parent_task_id=task.id,
+                name=sub_name,
+                updated_at=now,
+                status_id=default_subtask_status.id if default_subtask_status else None,
+                status_color=default_subtask_status.color if default_subtask_status else "#87909e",
+            )
+            _record_task_activity(
+                subtask,
+                actor_name=actor_name,
+                activity_kind="task_created",
+                preview=f"{actor_name} created this task",
+            )
+            _record_task_activity(
+                task,
+                actor_name=actor_name,
+                activity_kind="task_subtask_created",
+                preview=f'{actor_name} added subtask "{subtask.name}"',
+            )
+            session.add(subtask)
+
+    # Checklists
+    if body.checklists:
+        for cl_idx, cl in enumerate(body.checklists):
+            checklist = TaskChecklist(
+                task_id=task.id,
+                name=cl.name.strip(),
+                position=cl_idx,
+            )
+            session.add(checklist)
+            await session.flush()
+            _record_task_activity(
+                task,
+                actor_name=actor_name,
+                activity_kind="task_checklist_created",
+                preview=f'{actor_name} added checklist "{checklist.name}"',
+            )
+            for item in cl.items:
+                if item.assignee_id:
+                    await _validate_checklist_assignee(session, workspace_id, item.assignee_id)
+                cl_item = TaskChecklistItem(
+                    checklist_id=checklist.id,
+                    text=item.text.strip(),
+                    assignee_id=item.assignee_id,
+                    is_checked=item.is_checked,
+                )
+                session.add(cl_item)
+
+    # Dependencies
+    if body.dependencies:
+        for dep in body.dependencies:
+            if dep.related_task_id == task.id:
+                raise AppError(400, "VALIDATION_ERROR", "A task cannot depend on itself")
+            related = await session.scalar(
+                select(Task)
+                .join(Task.task_list)
+                .join(TaskList.space)
+                .where(Task.id == dep.related_task_id, Space.workspace_id == workspace_id)
+                .options(
+                    selectinload(Task.task_list).selectinload(TaskList.space),
+                    selectinload(Task.list_status),
+                )
+            )
+            if not related:
+                raise AppError(404, "NOT_FOUND", "Related task not found")
+            await require_list_permission(
+                session, related.task_list, user_id, role, PermissionLevel.VIEW
+            )
+            if dep.type in ("blocking", "blocked_by"):
+                from_task = task.id if dep.type == "blocking" else dep.related_task_id
+                to_task = dep.related_task_id if dep.type == "blocking" else task.id
+                if await _dependency_chain_reaches(session, to_task, from_task):
+                    raise AppError(400, "VALIDATION_ERROR", "Circular dependency detected: adding this dependency creates a cycle")
+            dep_row = TaskDependency(
+                task_id=task.id,
+                related_task_id=dep.related_task_id,
+                dependency_type=dep.type,
+            )
+            session.add(dep_row)
+            rel_label = {
+                "blocking": f"is now blocking \"{related.name}\"",
+                "blocked_by": f"is now waiting on \"{related.name}\"",
+                "linked": f"is now linked to \"{related.name}\"",
+            }[dep.type]
+            _record_task_activity(
+                task,
+                actor_name=actor_name,
+                activity_kind="task_dependency_added",
+                preview=f"{actor_name} added a dependency: this task {rel_label}",
+            )
+
+    assignment_notifications = []
+    if assignee_ids:
+        added = [uid for uid in assignee_ids if uid != user_id]
+        if added:
+            assignment_notifications = await create_task_assignment_notifications(
+                session,
+                workspace_id=workspace_id,
+                actor_user_id=user_id,
+                task_name=task.name,
+                task_id=task.id,
+                assignee_ids=added,
+            )
+
     await session.commit()
+
+    if assignment_notifications:
+        await emit_home_notifications(session, workspace_id, assignment_notifications)
+
     refreshed = await session.scalar(
         select(Task).where(Task.id == task.id).options(*_TASK_LOAD)
     )
-    mapped = map_task(refreshed, user_id)
+    names = await _assignee_name_map(session, refreshed)
+    mapped = map_task(refreshed, user_id, names)
+
+    # Populate subtasks and dependencies on mapped output
+    subtask_rows = (
+        await session.scalars(
+            select(Task)
+            .where(Task.parent_task_id == task.id)
+            .options(*_TASK_LOAD)
+            .order_by(Task.created_at.asc())
+        )
+    ).all()
+    mapped["subtasks"] = [map_subtask_summary(st, user_id) for st in subtask_rows]
+
+    dep_rows = (
+        await session.scalars(
+            select(TaskDependency)
+            .where(TaskDependency.task_id == task.id)
+            .options(selectinload(TaskDependency.related_task).selectinload(Task.list_status))
+            .order_by(TaskDependency.created_at.asc())
+        )
+    ).all()
+    mapped["dependencies"] = [
+        {
+            "id": d.id,
+            "type": d.dependency_type,
+            "task": map_subtask_summary(d.related_task, user_id),
+        }
+        for d in dep_rows
+        if d.related_task
+    ]
+
+    authorized_users = await user_ids_with_list_access(
+        session, workspace_id, refreshed.task_list
+    )
     await broadcast_task_event(
         workspace_id=workspace_id,
         action="created",
         task_id=refreshed.id,
         list_id=refreshed.list_id,
         task=mapped,
+        user_ids=list(authorized_users),
     )
     return mapped
+
 
 
 async def create_subtask(
@@ -925,14 +1229,20 @@ async def create_subtask(
         select(Task).where(Task.id == task.id).options(*_TASK_LOAD)
     )
     mapped = map_subtask_summary(refreshed, user_id)
+    authorized_users = await user_ids_with_list_access(
+        session, workspace_id, refreshed.task_list
+    )
     await broadcast_task_event(
         workspace_id=workspace_id,
         action="created",
         task_id=refreshed.id,
         list_id=refreshed.list_id,
         task=map_task(refreshed, user_id),
+        user_ids=list(authorized_users),
     )
     return mapped
+
+
 
 
 async def add_task_dependency(
@@ -964,6 +1274,40 @@ async def add_task_dependency(
         session, related.task_list, user_id, role, PermissionLevel.VIEW
     )
 
+    existing_dep = await session.scalar(
+        select(TaskDependency).where(
+            TaskDependency.task_id == task_id,
+            TaskDependency.related_task_id == body.related_task_id,
+            TaskDependency.dependency_type == body.type,
+        )
+    )
+    if existing_dep:
+        raise AppError(400, "VALIDATION_ERROR", "This dependency already exists")
+
+    inverse_type = (
+        "blocked_by"
+        if body.type == "blocking"
+        else "blocking"
+        if body.type == "blocked_by"
+        else ""
+    )
+    if inverse_type:
+        inverse_dep = await session.scalar(
+            select(TaskDependency).where(
+                TaskDependency.task_id == body.related_task_id,
+                TaskDependency.related_task_id == task_id,
+                TaskDependency.dependency_type == inverse_type,
+            )
+        )
+        if inverse_dep:
+            raise AppError(400, "VALIDATION_ERROR", "Circular dependency detected")
+
+    if body.type in ("blocking", "blocked_by"):
+        from_task = task_id if body.type == "blocking" else body.related_task_id
+        to_task = body.related_task_id if body.type == "blocking" else task_id
+        if await _dependency_chain_reaches(session, to_task, from_task):
+            raise AppError(400, "VALIDATION_ERROR", "Circular dependency detected: adding this dependency creates a cycle")
+
     dependency = TaskDependency(
         task_id=task_id, related_task_id=body.related_task_id, dependency_type=body.type
     )
@@ -982,6 +1326,23 @@ async def add_task_dependency(
     )
     await session.commit()
 
+    refreshed = await session.scalar(
+        select(Task).where(Task.id == task_id).options(*_TASK_LOAD)
+    )
+    names = await _assignee_name_map(session, refreshed)
+    mapped = map_task(refreshed, user_id, names)
+    authorized_users = await user_ids_with_list_access(
+        session, workspace_id, refreshed.task_list
+    )
+    await broadcast_task_event(
+        workspace_id=workspace_id,
+        action="updated",
+        task_id=task_id,
+        list_id=refreshed.list_id,
+        task=mapped,
+        user_ids=list(authorized_users),
+    )
+
     return {
         "id": dependency.id,
         "type": body.type,
@@ -997,14 +1358,43 @@ async def delete_task_dependency(
     task_id: str,
     dependency_id: str,
 ) -> dict:
+    task = await _get_editable_task(session, workspace_id, user_id, role, task_id)
     dep = await session.scalar(
-        select(TaskDependency).where(
+        select(TaskDependency)
+        .where(
             TaskDependency.id == dependency_id, TaskDependency.task_id == task_id
         )
+        .options(selectinload(TaskDependency.related_task))
     )
-    if dep:
-        await session.delete(dep)
-        await session.commit()
+    if not dep:
+        raise AppError(404, "NOT_FOUND", "Task dependency not found")
+    actor_name = await _resolve_user_name(session, user_id)
+    related_name = dep.related_task.name if dep.related_task else "another task"
+    _record_task_activity(
+        task,
+        actor_name=actor_name,
+        activity_kind="task_dependency_deleted",
+        preview=f'{actor_name} removed dependency with "{related_name}"',
+    )
+    await session.delete(dep)
+    await session.commit()
+
+    refreshed = await session.scalar(
+        select(Task).where(Task.id == task_id).options(*_TASK_LOAD)
+    )
+    names = await _assignee_name_map(session, refreshed)
+    mapped = map_task(refreshed, user_id, names)
+    authorized_users = await user_ids_with_list_access(
+        session, workspace_id, refreshed.task_list
+    )
+    await broadcast_task_event(
+        workspace_id=workspace_id,
+        action="updated",
+        task_id=task_id,
+        list_id=refreshed.list_id,
+        task=mapped,
+        user_ids=list(authorized_users),
+    )
     return {"ok": True}
 
 
@@ -1155,14 +1545,6 @@ async def _get_editable_task(
     return task
 
 
-async def _validate_checklist_assignee(
-    session: AsyncSession, workspace_id: str, assignee_id: str | None
-) -> None:
-    if not assignee_id:
-        return
-    members = await workspace_service.list_workspace_members(session, workspace_id)
-    if assignee_id not in {m["id"] for m in members}:
-        raise AppError(400, "VALIDATION_ERROR", "Invalid assignee")
 
 
 async def add_checklist_item(
@@ -1418,6 +1800,45 @@ async def get_task(
     return payload
 
 
+def _apply_status_to_task(task: Task, matched_status: ListStatus) -> None:
+    task.status_id = matched_status.id
+    task.status_color = matched_status.color
+    if matched_status.legacy_key:
+        task.status = TaskStatus(matched_status.legacy_key)
+    elif matched_status.status_group in (StatusGroup.DONE, StatusGroup.CLOSED):
+        task.status = TaskStatus.DONE
+    elif matched_status.status_group == StatusGroup.ACTIVE:
+        task.status = TaskStatus.IN_PROGRESS
+    else:
+        task.status = TaskStatus.TODO
+
+
+def _match_target_status(
+    current_status: ListStatus | None,
+    target_statuses: Sequence[ListStatus],
+) -> ListStatus | None:
+    if not target_statuses:
+        return None
+    if current_status:
+        curr_name = (current_status.name or "").strip().lower()
+        by_name = next(
+            (s for s in target_statuses if (s.name or "").strip().lower() == curr_name),
+            None,
+        )
+        if by_name:
+            return by_name
+        by_group = next(
+            (s for s in target_statuses if s.status_group == current_status.status_group),
+            None,
+        )
+        if by_group:
+            return by_group
+    return next(
+        (s for s in target_statuses if s.status_group == StatusGroup.NOT_STARTED),
+        target_statuses[0],
+    )
+
+
 async def update_task(
     session: AsyncSession,
     workspace_id: str,
@@ -1473,6 +1894,12 @@ async def update_task(
         task.status_color = status_row.color
         if status_row.legacy_key:
             task.status = TaskStatus(status_row.legacy_key)
+        elif status_row.status_group in (StatusGroup.DONE, StatusGroup.CLOSED):
+            task.status = TaskStatus.DONE
+        elif status_row.status_group == StatusGroup.ACTIVE:
+            task.status = TaskStatus.IN_PROGRESS
+        else:
+            task.status = TaskStatus.TODO
 
     if body.due_date is not None:
         if body.due_date.strip() == "":
@@ -1556,7 +1983,7 @@ async def update_task(
         flag_modified(task, "tags")
 
     moved_to_list_name: str | None = None
-    if body.list_id is not None:
+    if body.list_id is not None and body.list_id != original_list_id:
         target_list = await session.scalar(
             select(TaskList)
             .join(Space)
@@ -1564,15 +1991,55 @@ async def update_task(
                 TaskList.id == body.list_id,
                 Space.workspace_id == workspace_id,
             )
+            .options(selectinload(TaskList.space))
         )
         if not target_list:
             raise AppError(400, "VALIDATION_ERROR", "Invalid list")
+        await require_list_permission(
+            session, target_list, user_id, role, PermissionLevel.EDIT
+        )
+
+        target_statuses = (
+            await session.scalars(
+                select(ListStatus)
+                .where(ListStatus.list_id == target_list.id)
+                .order_by(ListStatus.sort_order.asc())
+            )
+        ).all()
+        if not target_statuses:
+            await ensure_list_statuses(session, target_list.id)
+            target_statuses = (
+                await session.scalars(
+                    select(ListStatus)
+                    .where(ListStatus.list_id == target_list.id)
+                    .order_by(ListStatus.sort_order.asc())
+                )
+            ).all()
+
+        current_status_row = await session.scalar(
+            select(ListStatus).where(ListStatus.id == task.status_id)
+        )
+        matched_status = _match_target_status(current_status_row, target_statuses)
+        if matched_status:
+            _apply_status_to_task(task, matched_status)
+
         task.list_id = target_list.id
         moved_to_list_name = target_list.name
-        # task.task_list was eager-loaded above for the permission check;
-        # SQLAlchemy won't refresh an already-populated relationship on the
-        # later re-select, so map_task's `task.task_list.id` would keep
-        # pointing at the old list unless we expire it here.
+
+        # Migrate all subtasks to target list and remap their statuses to target list statuses
+        subtasks = (
+            await session.scalars(
+                select(Task).where(Task.parent_task_id == task.id)
+            )
+        ).all()
+        for subtask in subtasks:
+            subtask.list_id = target_list.id
+            subtask_curr_status = await session.scalar(
+                select(ListStatus).where(ListStatus.id == subtask.status_id)
+            ) if subtask.status_id else None
+            sub_matched = _match_target_status(subtask_curr_status, target_statuses)
+            if sub_matched:
+                _apply_status_to_task(subtask, sub_matched)
         session.expire(task, ["task_list"])
 
     task.updated_at = datetime.now(timezone.utc)
@@ -1608,6 +2075,15 @@ async def update_task(
         session, task_id=task_id, exclude_user_id=user_id
     )
     field_change_notifications: list = []
+    if moved_to_list_name:
+        _record_task_activity(
+            refreshed,
+            actor_name=actor_name,
+            activity_kind="task_moved_list",
+            preview=f'{actor_name} moved task from "{original_list_name}" to "{moved_to_list_name}"',
+        )
+        logged_activity = True
+
     if task.status_id != original_status_id or task.status != original_status:
         new_status_label = _status_label(refreshed.status, refreshed.list_status)
         status_change_preview = (
@@ -1850,12 +2326,33 @@ async def update_task(
         await emit_home_notifications(
             session, workspace_id, field_change_notifications
         )
+    if original_list_id != refreshed.list_id:
+        old_list = await session.scalar(
+            select(TaskList)
+            .where(TaskList.id == original_list_id)
+            .options(selectinload(TaskList.space))
+        )
+        if old_list:
+            old_authorized = await user_ids_with_list_access(
+                session, workspace_id, old_list
+            )
+            await broadcast_task_event(
+                workspace_id=workspace_id,
+                action="deleted",
+                task_id=task_id,
+                list_id=original_list_id,
+                user_ids=list(old_authorized),
+            )
+    authorized_users = await user_ids_with_list_access(
+        session, workspace_id, refreshed.task_list
+    )
     await broadcast_task_event(
         workspace_id=workspace_id,
         action="updated",
         task_id=task_id,
         list_id=refreshed.list_id,
         task=mapped,
+        user_ids=list(authorized_users),
     )
     from app.services.task_time_service import get_task_time_state
 
@@ -1886,6 +2383,9 @@ async def delete_task(
     )
     task_id = task.id
     list_id = task.list_id
+    authorized_users = await user_ids_with_list_access(
+        session, workspace_id, task.task_list
+    )
     await session.delete(task)
     await session.commit()
     await broadcast_task_event(
@@ -1893,6 +2393,7 @@ async def delete_task(
         action="deleted",
         task_id=task_id,
         list_id=list_id,
+        user_ids=list(authorized_users),
     )
     return {"ok": True}
 
@@ -2362,8 +2863,6 @@ async def follow_task(
         task.follower_ids = [*task.follower_ids, user_id]
         await session.commit()
     return {"ok": True, "following": True}
-
-
 async def unfollow_task(
     session: AsyncSession,
     workspace_id: str,

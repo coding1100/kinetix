@@ -1018,14 +1018,61 @@ async def sync_list_channel_members_for_workspace(
 ) -> None:
     """Workspace-wide membership changes (join/leave/role change) can shift
     who can see every Space, so re-sync every Space's list-primary channels.
-    Thin wrapper around sync_list_channel_members_for_space for the three
-    call sites that only have a workspace_id, not a specific Space.
+    Directly query only the list-primary channels that exist to avoid N+1 scans
+    across all spaces.
     """
-    spaces = (
-        await session.scalars(select(Space).where(Space.workspace_id == workspace_id))
+    rows = (
+        await session.execute(
+            select(ChatChannel, TaskList, Space)
+            .join(TaskList, ChatChannel.list_id == TaskList.id)
+            .join(Space, TaskList.space_id == Space.id)
+            .where(
+                ChatChannel.workspace_id == workspace_id,
+                ChatChannel.is_list_primary.is_(True),
+            )
+        )
     ).all()
-    for space in spaces:
-        await sync_list_channel_members_for_space(session, workspace_id, space)
+    if not rows:
+        return
+
+    for channel, task_list, space in rows:
+        task_list.space = space
+        target_ids = await user_ids_with_list_access(session, workspace_id, task_list)
+        current_ids = set(
+            (
+                await session.scalars(
+                    select(ChatChannelMember.user_id).where(
+                        ChatChannelMember.channel_id == channel.id
+                    )
+                )
+            ).all()
+        )
+        to_add = target_ids - current_ids
+        to_remove = current_ids - target_ids
+        for uid in to_add:
+            session.add(
+                ChatChannelMember(channel_id=channel.id, user_id=uid, starred=False)
+            )
+        if to_remove:
+            await session.execute(
+                delete(ChatChannelMember).where(
+                    ChatChannelMember.channel_id == channel.id,
+                    ChatChannelMember.user_id.in_(to_remove),
+                )
+            )
+        await session.commit()
+
+        if to_add:
+            await _emit_channel_joined(session, workspace_id, channel, list(to_add))
+        for uid in to_remove:
+            fire_and_forget(
+                broadcast_channel_member_updated(
+                    workspace_id=workspace_id,
+                    channel_id=channel.id,
+                    member={"id": uid},
+                    removed=True,
+                )
+            )
 
 
 async def list_channel_messages(

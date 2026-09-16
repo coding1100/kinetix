@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -85,18 +85,54 @@ export function BoardView({
 }: BoardViewProps) {
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [optimisticMoves, setOptimisticMoves] = useState<Record<string, string>>({});
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
 
   const columns = useMemo(() => resolveBoardColumns(statuses), [statuses]);
 
+  // Clean up optimistic moves once the server data catches up
+  useEffect(() => {
+    if (!tasks) return;
+    setOptimisticMoves((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [taskId, colId] of Object.entries(prev)) {
+        const t = tasks.find((item) => item.id === taskId);
+        if (!t || taskColumnId(t, columns) === colId) {
+          delete next[taskId];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [tasks, columns]);
+
+  // Merge optimistic moves into task objects
+  const effectiveTasks = useMemo(() => {
+    if (!tasks) return undefined;
+    return tasks.map((t) => {
+      const targetColId = optimisticMoves[t.id];
+      if (!targetColId) return t;
+      const targetCol = columns.find((c) => c.id === targetColId);
+      if (!targetCol) return t;
+      return {
+        ...t,
+        statusId: isLegacyColumnId(targetColId) ? t.statusId : targetColId,
+        status: targetCol.label,
+        statusKey: targetCol.legacyKey || t.statusKey,
+        statusColor: targetCol.color,
+      };
+    });
+  }, [tasks, optimisticMoves, columns]);
+
   const grouped = useMemo(() => {
     const map = new Map<string, Task[]>();
     for (const col of columns) {
       map.set(col.id, []);
     }
-    for (const task of tasks ?? []) {
+    for (const task of effectiveTasks ?? []) {
       const colId = taskColumnId(task, columns);
       const list = map.get(colId);
       if (list) {
@@ -106,9 +142,9 @@ export function BoardView({
       }
     }
     return map;
-  }, [tasks, columns]);
+  }, [effectiveTasks, columns]);
 
-  const activeTask = tasks?.find((t) => t.id === activeId);
+  const activeTask = effectiveTasks?.find((t) => t.id === activeId);
 
   async function handleDragEnd(event: DragEndEvent) {
     setActiveId(null);
@@ -117,8 +153,12 @@ export function BoardView({
     const taskId = String(active.id);
     const columnId = String(over.id);
     if (!columns.some((c) => c.id === columnId)) return;
-    const task = tasks?.find((t) => t.id === taskId);
+    const task = effectiveTasks?.find((t) => t.id === taskId);
     if (!task || taskColumnId(task, columns) === columnId) return;
+
+    // Apply optimistic move immediately
+    setOptimisticMoves((prev) => ({ ...prev, [taskId]: columnId }));
+
     try {
       if (isLegacyColumnId(columnId)) {
         await patchTask(accessToken, workspaceId, taskId, { status: columnId });
@@ -127,6 +167,12 @@ export function BoardView({
       }
       onTasksChange();
     } catch (e) {
+      // Revert optimistic move on failure
+      setOptimisticMoves((prev) => {
+        const next = { ...prev };
+        delete next[taskId];
+        return next;
+      });
       toast.error(e instanceof Error ? e.message : "Could not move task");
     }
   }

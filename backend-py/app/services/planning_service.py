@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
 from typing import Any
-from sqlalchemy import select, func, delete, update
+
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.enums import MemberStatus, StatusGroup, TaskStatus
 from app.db.models.planning import (
     EntityTemplate,
     Portfolio,
@@ -10,8 +12,9 @@ from app.db.models.planning import (
     TaskAutomationRule,
     Whiteboard,
 )
-from app.db.models.home import Task, TaskList, Space, TaskDependency, ListStatus
+from app.db.models.home import ListStatus, Space, Task, TaskDependency, TaskList
 from app.db.models.user import User
+from app.db.models.workspace import WorkspaceMember
 from app.schemas.planning import (
     CreateAutomationRuleBody,
     CreatePortfolioBody,
@@ -282,12 +285,28 @@ async def get_gantt_data(session: AsyncSession, workspace_id: str, space_id: str
 
 # --- WORKLOAD MANAGEMENT ---
 async def get_workload_summary(session: AsyncSession, workspace_id: str) -> list[dict[str, Any]]:
-    # Gather workspace users & tasks assigned to them
-    members_res = await session.execute(select(User))
+    # Gather workspace active members & active tasks assigned to them
+    members_res = await session.execute(
+        select(User)
+        .join(WorkspaceMember, WorkspaceMember.user_id == User.id)
+        .where(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.status == MemberStatus.ACTIVE,
+        )
+    )
     users = members_res.scalars().all()
 
     tasks_res = await session.execute(
-        select(Task).join(TaskList, Task.list_id == TaskList.id).join(Space, TaskList.space_id == Space.id).where(Space.workspace_id == workspace_id)
+        select(Task)
+        .join(TaskList, Task.list_id == TaskList.id)
+        .join(Space, TaskList.space_id == Space.id)
+        .outerjoin(ListStatus, Task.status_id == ListStatus.id)
+        .where(
+            Space.workspace_id == workspace_id,
+            Task.parent_task_id.is_(None),
+            Task.status != TaskStatus.DONE,
+            or_(ListStatus.status_group.is_(None), ListStatus.status_group != StatusGroup.DONE),
+        )
     )
     tasks = tasks_res.scalars().all()
 
@@ -302,7 +321,6 @@ async def get_workload_summary(session: AsyncSession, workspace_id: str) -> list
             "capacityHours": 40.0,
             "status": "OPTIMAL",
         }
-
 
     for t in tasks:
         est_hrs = (t.time_estimate_minutes or 60) / 60.0
