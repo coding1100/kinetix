@@ -99,6 +99,41 @@ export function markNotificationReadLocal(id: string) {
   }
 }
 
+export function isNotificationForConversation(
+  href: string | undefined,
+  kind: "channel" | "dm",
+  conversationId: string
+): boolean {
+  if (!href) return false;
+  const prefix = kind === "channel" ? "/c/" : "/dm/";
+  const matchIdx = href.indexOf(prefix);
+  if (matchIdx === -1) return false;
+  const afterPrefix = href.slice(matchIdx + prefix.length);
+  const endIdx = afterPrefix.search(/[/?#]/);
+  const extractedId = endIdx === -1 ? afterPrefix : afterPrefix.slice(0, endIdx);
+  return extractedId === conversationId;
+}
+
+export function markConversationNotificationsReadLocal(
+  kind: "channel" | "dm",
+  conversationId: string,
+  apiNotifications: NotificationDto[] = []
+) {
+  for (const item of apiNotifications) {
+    if (isNotificationForConversation(item.href, kind, conversationId)) {
+      readLocallyIds.add(item.id);
+    }
+  }
+  for (const [id, item] of liveById) {
+    if (isNotificationForConversation(item.href, kind, conversationId)) {
+      readLocallyIds.add(id);
+      if (item.unread) {
+        liveById.set(id, { ...item, unread: false });
+      }
+    }
+  }
+}
+
 export function markAllNotificationsReadLocal(knownIds: Iterable<string> = []) {
   bulkClearedAt = Date.now();
   for (const id of knownIds) readLocallyIds.add(id);

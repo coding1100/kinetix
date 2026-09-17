@@ -97,7 +97,8 @@ import {
   getConversationCache,
   setConversationCache,
 } from "@/lib/chat/conversation-cache";
-import { UNREAD_BADGE_HIDE_DELAY_MS } from "@/lib/chat/sidebar-display-unread";
+import { markConversationNotificationsReadLocal } from "@/lib/notifications/live-cache";
+import { bumpNotificationsRefresh } from "@/lib/notifications/realtime";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { PersonProfilePanel } from "@/components/chat/PersonProfilePanel";
 import { MessageQuoteToolbar } from "@/components/chat/MessageQuoteToolbar";
@@ -207,7 +208,6 @@ export function ConversationView({
   const [deletingChannel, setDeletingChannel] = useState(false);
   const loadAbortRef = useRef<AbortController | null>(null);
   const conversationKeyRef = useRef(`${type}:${id}`);
-  const readDelayKeyRef = useRef<string | null>(null);
   const contentReadyRef = useRef(false);
   const markConversationReadRef = useRef<() => Promise<void>>(async () => {});
 
@@ -234,9 +234,11 @@ export function ConversationView({
   useLayoutEffect(() => {
     conversationKeyRef.current = `${type}:${id}`;
     setActiveConversation({ kind: type, id });
+    setConversationUnread(type, id, 0);
+    markConversationNotificationsReadLocal(type, id);
+    bumpNotificationsRefresh();
     setConversationContentReady(false);
     contentReadyRef.current = false;
-    readDelayKeyRef.current = null;
     clearUnreadBadgeHold();
     setHasMoreMessages(false);
     setNextBefore(null);
@@ -275,7 +277,6 @@ export function ConversationView({
         void markConversationReadRef.current();
       }
       setActiveConversation(null);
-      readDelayKeyRef.current = null;
       clearUnreadBadgeHold();
     };
   }, [
@@ -539,8 +540,18 @@ export function ConversationView({
   }, [conversationContentReady]);
 
   useEffect(() => {
+    if (!ready) return;
+    setConversationUnread(type, id, 0);
+    markConversationNotificationsReadLocal(type, id);
+    bumpNotificationsRefresh();
+    void markConversationReadRef.current();
+  }, [ready, type, id, setConversationUnread]);
+
+  useEffect(() => {
     if (!conversationContentReady || error || !ready) return;
     setConversationUnread(type, id, 0);
+    markConversationNotificationsReadLocal(type, id);
+    bumpNotificationsRefresh();
     clearUnreadBadgeHold();
     void markConversationReadRef.current();
   }, [

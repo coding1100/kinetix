@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -16,7 +16,7 @@ from app.db.models.chat import (
     MessageReaction,
 )
 from app.db.models.enums import MemberStatus, WorkspaceRole
-from app.db.models.home import Space, TaskList
+from app.db.models.home import InboxItem, Space, TaskList
 from app.db.models.user import User
 from app.db.models.workspace import WorkspaceMember
 from app.schemas.chat import (
@@ -105,6 +105,7 @@ from app.socket.emit import (
     broadcast_chat_message_edit,
     broadcast_chat_read,
     broadcast_chat_reaction,
+    broadcast_home_inbox_cleared,
     fire_and_forget,
 )
 from app.socket.presence import get_presence
@@ -1131,6 +1132,19 @@ async def mark_channel_read(
     if member.channel.workspace_id != workspace_id:
         raise AppError(404, "NOT_FOUND", "Channel not found")
     member.last_read_at = datetime.now(timezone.utc)
+    inbox_res = await session.execute(
+        update(InboxItem)
+        .where(
+            InboxItem.workspace_id == workspace_id,
+            InboxItem.user_id == user_id,
+            InboxItem.unread.is_(True),
+            or_(
+                InboxItem.href.like(f"/chat/c/{channel_id}%"),
+                InboxItem.href.like(f"/home/c/{channel_id}%"),
+            ),
+        )
+        .values(unread=False)
+    )
     await session.commit()
     channel_member_user_ids = await _channel_member_user_ids(session, channel_id)
     fire_and_forget(
@@ -1143,6 +1157,13 @@ async def mark_channel_read(
             audience_user_ids=channel_member_user_ids,
         )
     )
+    if inbox_res.rowcount:
+        fire_and_forget(
+            broadcast_home_inbox_cleared(
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
+        )
     return {"ok": True, "unread": 0}
 
 
@@ -1674,6 +1695,19 @@ async def mark_dm_read(
     if participant.conversation.workspace_id != workspace_id:
         raise AppError(404, "NOT_FOUND", "Conversation not found")
     participant.last_read_at = datetime.now(timezone.utc)
+    inbox_res = await session.execute(
+        update(InboxItem)
+        .where(
+            InboxItem.workspace_id == workspace_id,
+            InboxItem.user_id == user_id,
+            InboxItem.unread.is_(True),
+            or_(
+                InboxItem.href.like(f"/chat/dm/{conversation_id}%"),
+                InboxItem.href.like(f"/home/dm/{conversation_id}%"),
+            ),
+        )
+        .values(unread=False)
+    )
     await session.commit()
     audience_user_ids = [p.user_id for p in participant.conversation.participants]
     fire_and_forget(
@@ -1686,6 +1720,13 @@ async def mark_dm_read(
             audience_user_ids=audience_user_ids,
         )
     )
+    if inbox_res.rowcount:
+        fire_and_forget(
+            broadcast_home_inbox_cleared(
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
+        )
     return {"ok": True, "unread": 0}
 
 

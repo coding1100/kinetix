@@ -17,28 +17,12 @@ describe("resolveSidebarUnread", () => {
     expect(resolveSidebarUnread("channel", "ch-1", 5, false, hold, now)).toBe(5);
   });
 
-  it("shows unread while active conversation is still loading", () => {
-    expect(resolveSidebarUnread("channel", "ch-1", 1, true, null, now)).toBe(1);
+  it("instantly clears unread when conversation is active", () => {
+    expect(resolveSidebarUnread("channel", "ch-1", 7, true, null, now)).toBe(0);
+    expect(resolveSidebarUnread("channel", "ch-1", 7, true, hold, now)).toBe(0);
   });
 
-  it("keeps hold count visible until expiry", () => {
-    expect(resolveSidebarUnread("channel", "ch-1", 0, true, hold, now)).toBe(3);
-  });
-
-  it("hides badge after hold expires", () => {
-    expect(
-      resolveSidebarUnread(
-        "channel",
-        "ch-1",
-        0,
-        true,
-        hold,
-        now + UNREAD_BADGE_HIDE_DELAY_MS
-      )
-    ).toBe(0);
-  });
-
-  it("ignores hold for a different conversation", () => {
-    expect(resolveSidebarUnread("channel", "ch-2", 2, true, hold, now)).toBe(2);
+  it("returns unread for inactive conversation even if hold is present", () => {
+    expect(resolveSidebarUnread("channel", "ch-2", 4, false, hold, now)).toBe(4);
   });
 });

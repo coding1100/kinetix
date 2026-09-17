@@ -76,4 +76,33 @@ describe("notification live cache", () => {
     ]);
     expect(countUnreadNotifications([], 0)).toBe(0);
   });
+
+  it("identifies notifications belonging to a conversation", async () => {
+    const { isNotificationForConversation } = await import("./live-cache");
+    expect(isNotificationForConversation("/chat/c/ch-123", "channel", "ch-123")).toBe(true);
+    expect(isNotificationForConversation("/chat/c/ch-123?message=msg-1", "channel", "ch-123")).toBe(true);
+    expect(isNotificationForConversation("/home/c/ch-123?thread=t-1", "channel", "ch-123")).toBe(true);
+    expect(isNotificationForConversation("/chat/c/ch-456", "channel", "ch-123")).toBe(false);
+    expect(isNotificationForConversation("/chat/dm/dm-789", "dm", "dm-789")).toBe(true);
+  });
+
+  it("marks notifications for a specific conversation as read locally", async () => {
+    const { markConversationNotificationsReadLocal, countUnreadNotifications, mergeNotifications } =
+      await import("./live-cache");
+
+    const chNotif = {
+      ...notification("n-1", "2026-08-17T10:00:00.000Z"),
+      href: "/chat/c/ch-target?message=m1",
+    };
+    const otherNotif = {
+      ...notification("n-2", "2026-08-17T10:00:00.000Z"),
+      href: "/chat/c/ch-other?message=m2",
+    };
+
+    markConversationNotificationsReadLocal("channel", "ch-target", [chNotif, otherNotif]);
+
+    const merged = mergeNotifications([chNotif, otherNotif]);
+    expect(merged.find((n) => n.id === "n-1")?.unread).toBe(false);
+    expect(merged.find((n) => n.id === "n-2")?.unread).toBe(true);
+  });
 });

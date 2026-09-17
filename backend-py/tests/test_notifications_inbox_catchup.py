@@ -260,3 +260,75 @@ def test_task_deletion_cleans_inbox_items(dedicated_api_server):
     remaining_items = inbox_res.json()["data"]
     for item in remaining_items:
         assert task_id not in (item.get("href") or ""), f"Orphaned inbox item found for deleted task: {item}"
+
+
+def test_mark_channel_read_clears_channel_inbox_notifications(dedicated_api_server):
+    """Verify that opening/marking a channel as read clears corresponding channel InboxItems."""
+    base = dedicated_api_server
+    owner = _login(base, OWNER_EMAIL)
+    alex = _login(base, ALEX_EMAIL)
+    ws_id = owner["workspace_id"]
+
+    # 1. Create a public channel
+    suffix = int(time.time() * 1000)
+    ch_res = httpx.post(
+        f"{base}/api/v1/workspaces/{ws_id}/chat/channels",
+        headers=owner["headers"],
+        json={"name": f"notif-sync-{suffix}", "isPrivate": False},
+        timeout=10,
+    )
+    assert ch_res.status_code == 201, ch_res.text
+    ch_id = ch_res.json()["id"]
+
+    # 2. Add Alex to the channel
+    add_res = httpx.post(
+        f"{base}/api/v1/workspaces/{ws_id}/chat/channels/{ch_id}/members",
+        headers=owner["headers"],
+        json={"userIds": [alex["user_id"]]},
+        timeout=10,
+    )
+    assert add_res.status_code in (200, 201), add_res.text
+
+    # 3. Owner sends a message @mentioning in the channel
+    alex_name = "\xa0".join(alex["full_name"].split())
+    msg_res = httpx.post(
+        f"{base}/api/v1/workspaces/{ws_id}/chat/channels/{ch_id}/messages",
+        headers=owner["headers"],
+        json={"body": f"Hello @{alex_name} please check this update!"},
+        timeout=10,
+    )
+    assert msg_res.status_code == 201, msg_res.text
+
+    # 4. Verify Alex has an unread notification for this channel
+    notif_res = httpx.get(
+        f"{base}/api/v1/workspaces/{ws_id}/home/notifications",
+        headers=alex["headers"],
+        timeout=10,
+    )
+    assert notif_res.status_code == 200, notif_res.text
+    alex_notifs = notif_res.json()["data"]
+    ch_notif = next((n for n in alex_notifs if f"/c/{ch_id}" in (n.get("href") or "")), None)
+    assert ch_notif is not None, "Alex should have an inbox notification for the mention"
+    assert ch_notif["unread"] is True
+
+    # 5. Alex opens the channel (calls mark_channel_read)
+    read_res = httpx.post(
+        f"{base}/api/v1/workspaces/{ws_id}/chat/channels/{ch_id}/read",
+        headers=alex["headers"],
+        timeout=10,
+    )
+    assert read_res.status_code == 200, read_res.text
+    assert read_res.json()["unread"] == 0
+
+    # 6. Verify Alex's notification for this channel is now marked as read
+    after_notif = httpx.get(
+        f"{base}/api/v1/workspaces/{ws_id}/home/notifications",
+        headers=alex["headers"],
+        timeout=10,
+    )
+    assert after_notif.status_code == 200, after_notif.text
+    alex_after = after_notif.json()["data"]
+    ch_notif_after = next((n for n in alex_after if f"/c/{ch_id}" in (n.get("href") or "")), None)
+    assert ch_notif_after is not None
+    assert ch_notif_after["unread"] is False, "Notification must be marked read when channel is marked read"
+
