@@ -31,7 +31,13 @@ import type {
 } from "@/lib/types/realtime";
 import { ingestTaskEvent } from "@/lib/tasks/realtime";
 import { registerChatTypingSocket } from "@/lib/socket/chat-typing";
-import { applyHomeNotification } from "@/lib/notifications/realtime";
+import {
+  applyHomeInboxCleared,
+  applyHomeInboxUpdated,
+  applyHomeNotification,
+  type HomeInboxClearedPayload,
+  type HomeInboxUpdatedPayload,
+} from "@/lib/notifications/realtime";
 import { playNotificationSound } from "@/lib/notifications/sound";
 import {
   showDesktopNotification,
@@ -259,6 +265,12 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
         });
       }
     });
+    socket.on("home:inbox:updated", (payload: HomeInboxUpdatedPayload) => {
+      applyHomeInboxUpdated(payload, userId, workspaceId);
+    });
+    socket.on("home:inbox:cleared", (payload: HomeInboxClearedPayload) => {
+      applyHomeInboxCleared(payload, userId, workspaceId);
+    });
     socket.on(
       "workspace:member:role",
       (payload: WorkspaceMemberRolePayload) => {
@@ -432,6 +444,8 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       socket.off("chat:channel:canvas");
       socket.off("chat:channel:huddle");
       socket.off("home:notification");
+      socket.off("home:inbox:updated");
+      socket.off("home:inbox:cleared");
       socket.off("workspace:member:role");
       socket.off("workspace:suspended");
       socket.off("workspace:deleted");

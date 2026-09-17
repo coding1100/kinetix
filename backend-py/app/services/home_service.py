@@ -92,7 +92,11 @@ from app.services.notification_service import (
     task_notification_recipients,
     task_status_meta,
 )
-from app.socket.emit import broadcast_task_event
+from app.socket.emit import (
+    broadcast_home_inbox_cleared,
+    broadcast_home_inbox_updated,
+    broadcast_task_event,
+)
 from app.services.home_helpers import (
     STATUS_COLORS,
     STATUS_LABELS,
@@ -421,6 +425,13 @@ async def update_inbox_item(
 
     await session.commit()
     await session.refresh(item)
+    await broadcast_home_inbox_updated(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        item_id=item.id,
+        unread=item.unread,
+        bucket=item.bucket.value.lower(),
+    )
     return {
         "id": item.id,
         "unread": item.unread,
@@ -2386,6 +2397,17 @@ async def delete_task(
     authorized_users = await user_ids_with_list_access(
         session, workspace_id, task.task_list
     )
+    # Clean up any orphaned InboxItems pointing to this deleted task
+    await session.execute(
+        delete(InboxItem).where(
+            InboxItem.workspace_id == workspace_id,
+            or_(
+                InboxItem.href == f"/home/tasks/{task_id}",
+                InboxItem.href.like(f"%/tasks/{task_id}%"),
+                InboxItem.href.like(f"%task={task_id}%"),
+            ),
+        )
+    )
     await session.delete(task)
     await session.commit()
     await broadcast_task_event(
@@ -2989,6 +3011,10 @@ async def mark_task_notifications_read(
         .values(unread=False)
     )
     await session.commit()
+    await broadcast_home_inbox_cleared(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
     return {"updated": int(result.rowcount or 0)}
 
 
@@ -3065,6 +3091,10 @@ async def mark_all_notifications_read(
         .values(unread=False)
     )
     await session.commit()
+    await broadcast_home_inbox_cleared(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
     return {"updated": int(result.rowcount or 0)}
 
 
@@ -3078,6 +3108,7 @@ async def get_unread_summary(
             InboxItem.workspace_id == workspace_id,
             InboxItem.user_id == user_id,
             InboxItem.unread.is_(True),
+            InboxItem.bucket == InboxBucket.ALL,
             inbox_visible_clause(),
         )
     )

@@ -41,7 +41,7 @@ async def catch_up(
     )
     result = await catch_up_service.generate_conversation_catch_up(
         session=session,
-        workspace_id=member.id,
+        workspace_id=workspace_id,
         user_id=user.id,
         conversation_type=body.conversationType,
         conversation_id=body.conversationId,
@@ -70,7 +70,7 @@ async def knowledge_query(
     )
     result = await rag_knowledge_service.query_company_knowledge_base(
         session=session,
-        workspace_id=member.id,
+        workspace_id=workspace_id,
         user_id=user.id,
         query=body.query,
         top_k=body.topK,

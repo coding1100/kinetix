@@ -1,11 +1,28 @@
 import type { InboxItemDto, NotificationDto } from "@/lib/api/home";
-import { ingestLiveNotification } from "@/lib/notifications/live-cache";
+import {
+  ingestLiveNotification,
+  markAllNotificationsReadLocal,
+  markNotificationReadLocal,
+} from "@/lib/notifications/live-cache";
 import { toast } from "sonner";
 
 export type HomeNotificationPayload = {
   workspaceId: string;
   userIds: string[];
   notification: NotificationDto & { group?: InboxItemDto["group"] };
+};
+
+export type HomeInboxUpdatedPayload = {
+  workspaceId: string;
+  userId: string;
+  itemId: string;
+  unread?: boolean | null;
+  bucket?: string | null;
+};
+
+export type HomeInboxClearedPayload = {
+  workspaceId: string;
+  userId: string;
 };
 
 const listeners = new Set<() => void>();
@@ -47,3 +64,30 @@ export function applyHomeNotification(
   }
   bumpNotificationsRefresh();
 }
+
+export function applyHomeInboxUpdated(
+  event: HomeInboxUpdatedPayload,
+  currentUserId: string | undefined,
+  currentWorkspaceId?: string | null
+) {
+  if (!currentUserId || event.userId !== currentUserId) return;
+  if (!currentWorkspaceId || event.workspaceId !== currentWorkspaceId) return;
+
+  if (event.unread === false) {
+    markNotificationReadLocal(event.itemId);
+  }
+  bumpNotificationsRefresh();
+}
+
+export function applyHomeInboxCleared(
+  event: HomeInboxClearedPayload,
+  currentUserId: string | undefined,
+  currentWorkspaceId?: string | null
+) {
+  if (!currentUserId || event.userId !== currentUserId) return;
+  if (!currentWorkspaceId || event.workspaceId !== currentWorkspaceId) return;
+
+  markAllNotificationsReadLocal();
+  bumpNotificationsRefresh();
+}
+

@@ -152,6 +152,44 @@ async def broadcast_home_notification(
         )
 
 
+async def broadcast_home_inbox_updated(
+    *,
+    workspace_id: str,
+    user_id: str,
+    item_id: str,
+    unread: bool | None = None,
+    bucket: str | None = None,
+) -> None:
+    sio = get_sio()
+    await sio.emit(
+        "home:inbox:updated",
+        {
+            "workspaceId": workspace_id,
+            "userId": user_id,
+            "itemId": item_id,
+            "unread": unread,
+            "bucket": bucket,
+        },
+        room=f"user:{user_id}",
+    )
+
+
+async def broadcast_home_inbox_cleared(
+    *,
+    workspace_id: str,
+    user_id: str,
+) -> None:
+    sio = get_sio()
+    await sio.emit(
+        "home:inbox:cleared",
+        {
+            "workspaceId": workspace_id,
+            "userId": user_id,
+        },
+        room=f"user:{user_id}",
+    )
+
+
 async def broadcast_channel_member_updated(
     *,
     workspace_id: str,
