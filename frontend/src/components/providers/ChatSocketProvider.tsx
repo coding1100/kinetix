@@ -27,6 +27,9 @@ import type {
   AccountDisabledPayload,
   WorkspaceMemberRolePayload,
   WorkspaceMemberSuspendedPayload,
+  WorkspaceMemberReactivatedPayload,
+  WorkspaceMemberRemovedPayload,
+  WorkspaceMemberJoinedPayload,
   WorkspaceStatusPayload,
 } from "@/lib/types/realtime";
 import { ingestTaskEvent } from "@/lib/tasks/realtime";
@@ -381,6 +384,45 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
         });
       }
     );
+    socket.on(
+      "workspace:member:removed",
+      (payload: WorkspaceMemberRemovedPayload) => {
+        if (payload.workspaceId !== workspaceId) return;
+        bumpWorkspaceMembersRefresh();
+        bumpSidebarRefresh();
+        bumpSpacesRefresh();
+        if (payload.userId === userId) {
+          toast.error("You have been removed from this workspace");
+          void getMe(accessToken).then((me) => {
+            updateSession({
+              accessToken,
+              user: {
+                id: me.id,
+                email: me.email,
+                fullName: me.fullName,
+                avatarUrl: me.avatarUrl,
+              },
+              workspaces: me.workspaces,
+            });
+            const nextWorkspaceId = firstSelectableWorkspaceId(me.workspaces);
+            if (nextWorkspaceId) {
+              router.push("/home/inbox");
+            } else {
+              clearSession();
+              router.push("/auth/login");
+            }
+          });
+        }
+      }
+    );
+    socket.on(
+      "workspace:member:joined",
+      (payload: WorkspaceMemberJoinedPayload) => {
+        if (payload.workspaceId !== workspaceId) return;
+        bumpWorkspaceMembersRefresh();
+        bumpSidebarRefresh();
+      }
+    );
     socket.on("account:disabled", (payload: AccountDisabledPayload) => {
       if (payload.userId !== userId) return;
       toast.error("Your account has been disabled");
@@ -451,6 +493,8 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       socket.off("workspace:deleted");
       socket.off("workspace:member:suspended");
       socket.off("workspace:member:reactivated");
+      socket.off("workspace:member:removed");
+      socket.off("workspace:member:joined");
       socket.off("account:disabled");
       socket.off("space:access:removed");
       socket.off("space:access:granted");

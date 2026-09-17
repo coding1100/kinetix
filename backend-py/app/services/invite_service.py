@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import BackgroundTasks
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -24,8 +24,9 @@ from app.services.notification_service import (
     create_invite_accepted_notification,
     emit_home_notifications,
 )
-from app.services.workspace_permissions import can_assign_role
+from app.services.workspace_permissions import can_assign_role, can_manage_people
 from app.services.auth_service import issue_refresh_for_user
+from app.socket.emit import broadcast_workspace_member_joined
 
 logger = logging.getLogger(__name__)
 
@@ -272,6 +273,7 @@ async def cancel_workspace_invite(
     workspace_id: str,
     actor_role: WorkspaceRole,
     invite_id: str,
+    actor_id: str | None = None,
 ) -> dict:
     if actor_role not in _INVITE_ROLES:
         raise AppError(403, "FORBIDDEN", "You cannot manage invites")
@@ -287,6 +289,9 @@ async def cancel_workspace_invite(
     if invite.accepted_at:
         raise AppError(410, "INVITE_USED", "Invite already accepted")
 
+    if not can_manage_people(actor_role) and (actor_id is None or invite.invited_by_id != actor_id):
+        raise AppError(403, "FORBIDDEN", "You can only cancel invites that you created")
+
     invite.cancelled_at = _utc_now()
     await session.commit()
     return {"ok": True}
@@ -298,6 +303,7 @@ async def resend_workspace_invite(
     actor_role: WorkspaceRole,
     invite_id: str,
     background_tasks: BackgroundTasks,
+    actor_id: str | None = None,
 ) -> dict:
     if actor_role not in _INVITE_ROLES:
         raise AppError(403, "FORBIDDEN", "You cannot manage invites")
@@ -313,6 +319,9 @@ async def resend_workspace_invite(
         raise AppError(410, "INVITE_CANCELLED", "This invite has been canceled")
     if invite.accepted_at:
         raise AppError(410, "INVITE_USED", "Invite already accepted")
+
+    if not can_manage_people(actor_role) and (actor_id is None or invite.invited_by_id != actor_id):
+        raise AppError(403, "FORBIDDEN", "You can only resend invites that you created")
 
     settings = get_settings()
     invite.token = generate_token()
@@ -353,7 +362,9 @@ async def get_invite_by_token(session: AsyncSession, token: str) -> dict:
 async def accept_invite_for_user(
     session: AsyncSession, token: str, user_id: str
 ) -> dict:
-    invite = await session.scalar(select(Invite).where(Invite.token == token))
+    invite = await session.scalar(
+        select(Invite).where(Invite.token == token).with_for_update()
+    )
     if not invite:
         raise AppError(404, "NOT_FOUND", "Invite not found")
     if invite.cancelled_at:
@@ -393,6 +404,18 @@ async def accept_invite_for_user(
     await session.commit()
     await sync_list_channel_members_for_workspace(session, invite.workspace_id)
 
+    await broadcast_workspace_member_joined(
+        workspace_id=invite.workspace_id,
+        user_id=user_id,
+        role=invite.role.value,
+        user_data={
+            "id": user.id,
+            "email": user.email,
+            "fullName": user.full_name,
+            "avatarUrl": user.avatar_url,
+        },
+    )
+
     workspace = await session.get(Workspace, invite.workspace_id)
     if invite.invited_by_id:
         notifications = await create_invite_accepted_notification(
@@ -419,7 +442,9 @@ async def accept_invite_for_user(
 async def accept_invite_with_signup(
     session: AsyncSession, token: str, full_name: str, password: str
 ) -> dict:
-    invite = await session.scalar(select(Invite).where(Invite.token == token))
+    invite = await session.scalar(
+        select(Invite).where(Invite.token == token).with_for_update()
+    )
     if not invite:
         raise AppError(404, "NOT_FOUND", "Invite not found")
     if invite.cancelled_at:
@@ -429,7 +454,9 @@ async def accept_invite_with_signup(
     if _as_utc(invite.expires_at) < _utc_now():
         raise AppError(410, "INVITE_EXPIRED", "Invite expired")
 
-    existing = await session.scalar(select(User).where(User.email == invite.email))
+    existing = await session.scalar(
+        select(User).where(func.lower(User.email) == func.lower(invite.email))
+    )
     if existing:
         raise AppError(
             409, "EMAIL_EXISTS", "Account exists — log in and accept invite"
@@ -455,6 +482,18 @@ async def accept_invite_with_signup(
     await resolve_pending_shares(session, invite.workspace_id, invite.email, user.id)
     await session.commit()
     await sync_list_channel_members_for_workspace(session, invite.workspace_id)
+
+    await broadcast_workspace_member_joined(
+        workspace_id=invite.workspace_id,
+        user_id=user.id,
+        role=invite.role.value,
+        user_data={
+            "id": user.id,
+            "email": user.email,
+            "fullName": user.full_name,
+            "avatarUrl": user.avatar_url,
+        },
+    )
 
     workspace = await session.get(Workspace, invite.workspace_id)
     if invite.invited_by_id:
