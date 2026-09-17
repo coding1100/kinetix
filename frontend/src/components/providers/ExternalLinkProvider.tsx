@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { isExternalHref, openExternalUrl } from "@/lib/text/open-external-url";
+import { downloadFileWithFeedback } from "@/lib/files/download";
 
 export function ExternalLinkProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -9,18 +10,21 @@ export function ExternalLinkProvider({ children }: { children: React.ReactNode }
       const target = e.target as HTMLElement | null;
       if (!target) return;
 
-
       const anchor = target.closest("a") as HTMLAnchorElement | null;
       if (!anchor) return;
 
       const href = anchor.getAttribute("href");
       if (!href) return;
 
-      if (
-        anchor.hasAttribute("download") ||
-        href.startsWith("javascript:") ||
-        href.startsWith("#")
-      ) {
+      if (href.startsWith("javascript:") || href.startsWith("#")) {
+        return;
+      }
+
+      if (anchor.hasAttribute("download")) {
+        e.preventDefault();
+        e.stopPropagation();
+        const fileName = anchor.getAttribute("download") || href.split("/").pop() || "download";
+        void downloadFileWithFeedback(href, fileName);
         return;
       }
 

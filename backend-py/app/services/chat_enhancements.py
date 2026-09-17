@@ -128,19 +128,43 @@ async def list_paginated_root_messages(
         rows = rows[:page_size]
     rows.reverse()
 
+    members_or_participants: list[tuple[str, datetime | None]] = []
+    if channel_id:
+        members_or_participants = [
+            (m.user_id, m.last_read_at)
+            for m in (
+                await session.scalars(
+                    select(ChatChannelMember).where(
+                        ChatChannelMember.channel_id == channel_id
+                    )
+                )
+            ).all()
+        ]
+    elif conversation_id:
+        members_or_participants = [
+            (p.user_id, p.last_read_at)
+            for p in (
+                await session.scalars(
+                    select(DirectParticipant).where(
+                        DirectParticipant.conversation_id == conversation_id
+                    )
+                )
+            ).all()
+        ]
+
     thread_summaries = await _thread_counts_for_messages(session, [m.id for m in rows])
     data = []
     for m in rows:
         payload = map_message(m, user_id, thread_summary=thread_summaries.get(m.id))
         if m.pinned_at:
             payload["pinnedAt"] = as_aware_utc(m.pinned_at).isoformat()
-        read_by = await _read_receipt_user_ids(
-            session,
-            channel_id=channel_id,
-            conversation_id=conversation_id,
-            message=m,
-            exclude_user_id=m.author_id,
-        )
+        read_by = [
+            uid
+            for uid, last_read in members_or_participants
+            if uid != m.author_id
+            and last_read is not None
+            and last_read >= m.created_at
+        ]
         if read_by:
             payload["readByUserIds"] = read_by
         data.append(payload)
