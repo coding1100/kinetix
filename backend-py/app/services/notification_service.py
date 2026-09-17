@@ -866,18 +866,22 @@ def notification_payload(item: InboxItem, status: dict[str, str] | None = None) 
     return payload
 
 
-_TASK_HREF_RE = re.compile(r"^/home/tasks/([^/?]+)")
+_TASK_PATH_RE = re.compile(r"(?:^|/)(?:home/)?tasks/([^/?#]+)")
+_TASK_QUERY_RE = re.compile(r"[?&]task=([^&#]+)")
 
 
 def task_id_from_href(href: str | None) -> str | None:
-    """Pulls the task id out of an Inbox item's href (e.g. /home/tasks/<id>)
+    """Pulls the task id out of an Inbox item's href (e.g. /home/tasks/<id> or ?task=<id>)
     without a stored column - lets the notification icon reflect the task's
     live status color rather than a generic per-type icon, computed at read
     time so it never goes stale."""
     if not href:
         return None
-    match = _TASK_HREF_RE.match(href)
-    return match.group(1) if match else None
+    match = _TASK_PATH_RE.search(href)
+    if match:
+        return match.group(1)
+    q_match = _TASK_QUERY_RE.search(href)
+    return q_match.group(1) if q_match else None
 
 
 async def task_status_meta(
