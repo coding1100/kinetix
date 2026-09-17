@@ -3,7 +3,6 @@ import logging
 import math
 import os
 import re
-from typing import Any
 
 from app.config import get_settings
 
@@ -178,3 +177,49 @@ async def get_llm_completion(
             logger.warning(f"OpenAI API invocation failed: {e}")
 
     return None
+
+
+async def stream_llm_completion(
+    prompt: str,
+    system_instruction: str = "You are an executive AI workspace assistant for Kinetix.",
+):
+    """Streams LLM text completion tokens if an API key is configured."""
+    settings = get_settings()
+    gemini_key = (settings.gemini_api_key or os.getenv("GEMINI_API_KEY") or "").strip()
+    openai_key = (settings.openai_api_key or os.getenv("OPENAI_API_KEY") or "").strip()
+
+    if gemini_key:
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=gemini_key)
+            model = genai.GenerativeModel("gemini-1.5-flash")
+            full_prompt = f"{system_instruction}\n\nIMPORTANT: DO NOT use em dashes (— or –). Use normal hyphens (-) or colons (:).\n\n{prompt}"
+            response = await model.generate_content_async(full_prompt, stream=True)
+            async for chunk in response:
+                if chunk.text:
+                    yield remove_em_dashes(chunk.text)
+            return
+        except Exception as e:
+            logger.warning(f"Gemini streaming failed: {e}")
+
+    if openai_key:
+        try:
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(api_key=openai_key, timeout=LLM_TIMEOUT_SECONDS)
+            stream = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": f"{system_instruction}\nDO NOT use em dashes (— or –)."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.3,
+                stream=True,
+            )
+            async for chunk in stream:
+                delta = chunk.choices[0].delta.content if chunk.choices else ""
+                if delta:
+                    yield remove_em_dashes(delta)
+            return
+        except Exception as e:
+            logger.warning(f"OpenAI streaming failed: {e}")
+

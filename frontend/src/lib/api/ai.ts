@@ -4,13 +4,18 @@ function wsPath(workspaceId: string, path: string) {
   return `/workspaces/${workspaceId}${path}`;
 }
 
+export type CatchUpItem = {
+  text: string;
+  messageId?: string | null;
+};
+
 export type CatchUpResponse = {
   title: string;
   messageCount: number;
   summary: string;
-  keyDecisions: string[];
-  actionItems: string[];
-  mentions: string[];
+  keyDecisions: (string | CatchUpItem)[];
+  actionItems: (string | CatchUpItem)[];
+  mentions: (string | CatchUpItem)[];
 };
 
 export type Citation = {
@@ -76,6 +81,21 @@ export function createCompanyDocument(
       method: "POST",
       token,
       body: JSON.stringify(body),
+    }
+  );
+}
+
+export function uploadCompanyDocument(
+  token: string,
+  workspaceId: string,
+  formData: FormData
+) {
+  return apiFetch<CompanyDocumentDto>(
+    wsPath(workspaceId, "/admin/knowledge-base/upload"),
+    {
+      method: "POST",
+      token,
+      body: formData,
     }
   );
 }

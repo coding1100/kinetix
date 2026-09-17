@@ -111,13 +111,30 @@ def test_ai_catch_up_and_knowledge_query(dedicated_api_server):
     assert "actionItems" in catch_up_data
     assert "keyDecisions" in catch_up_data
     assert "mentions" in catch_up_data
+    if catch_up_data["actionItems"]:
+        first_action = catch_up_data["actionItems"][0]
+        assert isinstance(first_action, dict)
+        assert "text" in first_action
+        assert "messageId" in first_action
 
-    # 3. Call AI Knowledge Query
+    # 3. File upload ingestion into knowledge base
+    upload_res = httpx.post(
+        f"{base}/api/v1/workspaces/{ws_id}/admin/knowledge-base/upload",
+        headers=owner["headers"],
+        files={"file": ("remote_work_policy.txt", b"Employees may work remotely on Mondays and Fridays with manager approval.")},
+        data={"category": "Policy", "title": "Remote Work Policy"},
+        timeout=10,
+    )
+    assert upload_res.status_code == 201, upload_res.text
+    uploaded_doc = upload_res.json()
+    assert uploaded_doc["title"] == "Remote Work Policy"
+
+    # 4. Call AI Knowledge Query (Sync)
     kq_res = httpx.post(
         f"{base}/api/v1/workspaces/{ws_id}/ai/knowledge-query",
         headers=owner["headers"],
         json={
-            "query": "What is the policy on equipment and security?",
+            "query": "Can employees work remotely on Fridays?",
             "topK": 3,
         },
         timeout=15,
@@ -126,6 +143,19 @@ def test_ai_catch_up_and_knowledge_query(dedicated_api_server):
     kq_data = kq_res.json()
     assert "answer" in kq_data
     assert "citations" in kq_data
+
+    # 5. Call AI Knowledge Query (SSE Stream)
+    stream_res = httpx.post(
+        f"{base}/api/v1/workspaces/{ws_id}/ai/knowledge-query/stream",
+        headers=owner["headers"],
+        json={"query": "Can employees work remotely on Fridays?", "topK": 3},
+        timeout=15,
+    )
+    assert stream_res.status_code == 200, stream_res.text
+    stream_text = stream_res.text
+    assert "data:" in stream_text
+    assert '"type": "meta"' in stream_text
+    assert '"type": "done"' in stream_text
 
 
 def test_inbox_and_unread_summary_flows(dedicated_api_server):

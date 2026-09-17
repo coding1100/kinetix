@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   Sheet,
   SheetContent,
@@ -14,8 +15,9 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import { useAiStore } from "@/stores/ai-store";
+import { useChatStore } from "@/stores/chat-store";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
-import { queryKnowledgeBase, type KnowledgeQueryResponse } from "@/lib/api/ai";
+import { queryKnowledgeBase, type KnowledgeQueryResponse, type ActionChip } from "@/lib/api/ai";
 import {
   SparklesIcon,
   SendIcon,
@@ -36,11 +38,13 @@ const SUGGESTED_QUERIES = [
 ];
 
 export function KnowledgeAssistantSheet() {
+  const router = useRouter();
   const { isKnowledgeAssistantOpen, closeKnowledgeAssistant, activeQuery } =
     useAiStore();
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const [queryInput, setQueryInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [streaming, setStreaming] = useState(false);
   const [response, setResponse] = useState<KnowledgeQueryResponse | null>(null);
 
   useEffect(() => {
@@ -52,20 +56,125 @@ export function KnowledgeAssistantSheet() {
     }
   }, [activeQuery, ready, accessToken, workspaceId]);
 
+  const handleActionChipClick = (chip: ActionChip) => {
+    if (chip.action === "open_channel") {
+      const channels = useChatStore.getState().sidebarListsCache?.channels ?? [];
+      const targetLower = (chip.target ?? "").toLowerCase();
+      const matched = channels.find(
+        (c) =>
+          c.name.toLowerCase() === targetLower ||
+          c.name.toLowerCase().includes(targetLower) ||
+          targetLower.includes(c.name.toLowerCase())
+      );
+      if (matched) {
+        router.push(`/chat/c/${matched.id}`);
+        closeKnowledgeAssistant();
+        toast.success(`Navigated to #${matched.name}`);
+        return;
+      } else {
+        router.push("/chat");
+        closeKnowledgeAssistant();
+        toast.info(`Channel #${chip.target} not found. Navigated to Chat.`);
+        return;
+      }
+    }
+
+    if (chip.action === "open_link" && chip.target) {
+      router.push(chip.target);
+      closeKnowledgeAssistant();
+      return;
+    }
+
+    if (chip.action === "open_doc") {
+      router.push("/settings");
+      closeKnowledgeAssistant();
+      toast.info("Navigated to Workspace Settings");
+      return;
+    }
+
+    toast.info(`Action: ${chip.label}`);
+  };
+
   const handleSearch = async (qText?: string) => {
     const q = (qText ?? queryInput).trim();
     if (!q || !ready || !accessToken || !workspaceId) return;
 
     setLoading(true);
-    setResponse(null);
+    setStreaming(true);
+    setResponse({
+      query: q,
+      answer: "",
+      citations: [],
+      actionChips: [],
+    });
 
     try {
-      const res = await queryKnowledgeBase(accessToken, workspaceId, { query: q });
-      setResponse(res);
-    } catch (err) {
-      toast.error(`Knowledge query failed — ${formatRequestError(err)}`);
+      const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
+      const streamUrl = `${apiBase}/workspaces/${workspaceId}/ai/knowledge-query/stream`;
+
+      const res = await fetch(streamUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ query: q }),
+      });
+
+      if (!res.ok || !res.body) {
+        const fallbackRes = await queryKnowledgeBase(accessToken, workspaceId, { query: q });
+        setResponse(fallbackRes);
+        return;
+      }
+
+      setLoading(false);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() ?? "";
+
+        for (const block of lines) {
+          const trimmed = block.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          try {
+            const payload = JSON.parse(trimmed.replace(/^data:\s*/, ""));
+            if (payload.type === "meta") {
+              setResponse((prev) => ({
+                query: prev?.query ?? q,
+                answer: prev?.answer ?? "",
+                citations: payload.citations ?? [],
+                actionChips: payload.actionChips ?? [],
+              }));
+            } else if (payload.type === "token") {
+              setResponse((prev) => ({
+                query: prev?.query ?? q,
+                answer: (prev?.answer ?? "") + (payload.token ?? ""),
+                citations: prev?.citations ?? [],
+                actionChips: prev?.actionChips ?? [],
+              }));
+            }
+          } catch {
+            // Ignore partial stream frames
+          }
+        }
+      }
+    } catch {
+      try {
+        const fallbackRes = await queryKnowledgeBase(accessToken, workspaceId, { query: q });
+        setResponse(fallbackRes);
+      } catch (err) {
+        toast.error(`Knowledge query failed — ${formatRequestError(err)}`);
+      }
     } finally {
       setLoading(false);
+      setStreaming(false);
     }
   };
 
@@ -146,6 +255,9 @@ export function KnowledgeAssistantSheet() {
                 </div>
                 <div className="text-xs leading-relaxed text-foreground whitespace-pre-line">
                   {response.answer}
+                  {streaming && (
+                    <span className="inline-block w-1.5 h-3.5 bg-indigo-600 animate-pulse ml-0.5 align-middle" />
+                  )}
                 </div>
               </div>
 
@@ -161,9 +273,7 @@ export function KnowledgeAssistantSheet() {
                         key={idx}
                         variant="secondary"
                         className="cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/50 py-1 px-3 text-xs text-indigo-700 dark:text-indigo-300 gap-1 border border-indigo-200 dark:border-indigo-800 transition-colors"
-                        onClick={() => {
-                          toast.info(`Action Triggered: ${chip.label}`);
-                        }}
+                        onClick={() => handleActionChipClick(chip)}
                       >
                         {chip.label}
                         <ExternalLinkIcon className="size-3" />

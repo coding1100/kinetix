@@ -36,12 +36,6 @@ export type ChatDmJoinedPayload = {
   conversationId: string;
 };
 
-export type WorkspaceMemberJoinedPayload = {
-  workspaceId: string;
-  member: import("@/lib/api/workspace").WorkspaceMemberRow;
-  inviteEmail: string;
-};
-
 export type ChatChannelRemovedPayload = {
   workspaceId: string;
   userIds: string[];
