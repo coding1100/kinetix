@@ -1,6 +1,3 @@
-import { useEffect, useState } from "react";
-import type { UnreadBadgeHold } from "@/stores/chat-store";
-
 export const UNREAD_BADGE_HIDE_DELAY_MS = 0;
 
 export function resolveSidebarUnread(
@@ -8,7 +5,7 @@ export function resolveSidebarUnread(
   id: string,
   unread: number,
   isActive: boolean,
-  hold: UnreadBadgeHold | null,
+  hold?: unknown,
   now = Date.now()
 ): number {
   if (isActive) return 0;
@@ -20,7 +17,7 @@ export function useSidebarUnread(
   id: string,
   unread: number,
   isActive: boolean,
-  hold: UnreadBadgeHold | null
+  hold?: unknown
 ): number {
   return resolveSidebarUnread(kind, id, unread, isActive, hold);
 }
