@@ -528,3 +528,37 @@ async def broadcast_task_event(
         user_ids=user_ids,
     )
 
+
+async def broadcast_workspace_member_removed(
+    *, workspace_id: str, user_id: str
+) -> None:
+    sio = get_sio()
+    payload = {"workspaceId": workspace_id, "userId": user_id}
+    await sio.emit("workspace:member:removed", payload, room=f"ws:{workspace_id}")
+    await sio.emit("workspace:member:removed", payload, room=f"user:{user_id}")
+
+    try:
+        user_room = f"user:{user_id}"
+        sids = [sid for sid, _ in sio.manager.get_participants("/", user_room)]
+        for sid in sids:
+            try:
+                sio.leave_room(sid, f"ws:{workspace_id}")
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+async def broadcast_workspace_member_joined(
+    *, workspace_id: str, user_id: str, role: str, user_data: dict | None = None
+) -> None:
+    sio = get_sio()
+    payload = {
+        "workspaceId": workspace_id,
+        "userId": user_id,
+        "role": role,
+        "user": user_data or {},
+    }
+    await sio.emit("workspace:member:joined", payload, room=f"ws:{workspace_id}")
+
+

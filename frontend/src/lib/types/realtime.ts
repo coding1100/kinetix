@@ -120,6 +120,7 @@ export type WorkspaceStatusPayload = {
   workspaceId: string;
 };
 
+
 export type WorkspaceMemberSuspendedPayload = {
   workspaceId: string;
   userId: string;
@@ -139,4 +140,21 @@ export type ResourceAccessChangedPayload = {
   userIds: string[];
   resourceType: "space" | "folder" | "list";
   resourceId: string;
+};
+
+export type WorkspaceMemberRemovedPayload = {
+  workspaceId: string;
+  userId: string;
+};
+
+export type WorkspaceMemberJoinedPayload = {
+  workspaceId: string;
+  userId: string;
+  role: string;
+  user?: {
+    id: string;
+    email?: string;
+    fullName?: string;
+    avatarUrl?: string | null;
+  };
 };

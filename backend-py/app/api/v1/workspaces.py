@@ -1,5 +1,6 @@
-from fastapi import APIRouter, BackgroundTasks, status
+from fastapi import APIRouter, BackgroundTasks, Request, status
 
+from app.core.rate_limit import throttle
 from app.deps.auth import CurrentUserDep, DbSession
 from app.deps.workspace import WorkspaceMemberDep
 from app.schemas.workspace import (
@@ -110,6 +111,7 @@ async def list_invites(
 
 @router.post("/{workspace_id}/invites", status_code=status.HTTP_201_CREATED)
 async def create_invite(
+    request: Request,
     body: CreateInviteBody,
     workspace_id: str,
     session: DbSession,
@@ -118,6 +120,14 @@ async def create_invite(
     background_tasks: BackgroundTasks,
 ):
     """Invite a user by email."""
+    await throttle(
+        request,
+        scope="workspace:invite:create",
+        ip_limit=30,
+        account_limit=60,
+        account=workspace_id,
+        window_seconds=300,
+    )
     return await invite_service.create_invite(
         session, workspace_id, user.id, ctx.role, body, background_tasks
     )
@@ -128,25 +138,36 @@ async def delete_invite(
     workspace_id: str,
     invite_id: str,
     session: DbSession,
+    user: CurrentUserDep,
     ctx: WorkspaceMemberDep,
 ):
     """Cancel a pending invite."""
     return await invite_service.cancel_workspace_invite(
-        session, workspace_id, ctx.role, invite_id
+        session, workspace_id, ctx.role, invite_id, actor_id=user.id
     )
 
 
 @router.post("/{workspace_id}/invites/{invite_id}/resend")
 async def resend_invite(
+    request: Request,
     workspace_id: str,
     invite_id: str,
     session: DbSession,
+    user: CurrentUserDep,
     ctx: WorkspaceMemberDep,
     background_tasks: BackgroundTasks,
 ):
     """Refresh invite link and expiry."""
+    await throttle(
+        request,
+        scope="workspace:invite:resend",
+        ip_limit=30,
+        account_limit=60,
+        account=workspace_id,
+        window_seconds=300,
+    )
     return await invite_service.resend_workspace_invite(
-        session, workspace_id, ctx.role, invite_id, background_tasks
+        session, workspace_id, ctx.role, invite_id, background_tasks, actor_id=user.id
     )
 
 

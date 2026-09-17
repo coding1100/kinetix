@@ -7,7 +7,21 @@ from app.core.utils import as_aware_utc, unique_workspace_slug
 from app.db.models.enums import MemberStatus, WorkspaceRole, WorkspaceStatus
 from app.db.models.workspace import Workspace, WorkspaceMember
 from app.socket.presence import get_presence
-from app.socket.emit import broadcast_workspace_member_role_updated
+from app.socket.emit import (
+    broadcast_workspace_member_role_updated,
+    broadcast_workspace_member_removed,
+)
+from app.db.models.team import Team, TeamMember
+from app.db.models.chat import ChatChannel, ChatChannelMember
+from app.db.models.home import (
+    Space,
+    SpaceMember,
+    Folder,
+    FolderMember,
+    TaskList,
+    ListMember,
+    Task,
+)
 from app.services.chat_service import sync_list_channel_members_for_workspace
 from app.services.personal_space_service import ensure_personal_space
 from app.services.workspace_permissions import (
@@ -234,6 +248,13 @@ async def update_workspace_member(
     if not can_assign_role(actor_role, body.role):
         raise AppError(403, "FORBIDDEN", "You cannot assign this role")
 
+    if body.role == WorkspaceRole.OWNER:
+        raise AppError(
+            400,
+            "VALIDATION_ERROR",
+            "Use transfer ownership to change the workspace owner",
+        )
+
     target = await session.scalar(
         select(WorkspaceMember).where(
             WorkspaceMember.workspace_id == workspace_id,
@@ -246,22 +267,19 @@ async def update_workspace_member(
 
     _assert_can_edit_target(actor_role, target.role)
 
-    if target.role == WorkspaceRole.OWNER and body.role != WorkspaceRole.OWNER:
-        owner_count = await session.scalar(
-            select(func.count())
-            .select_from(WorkspaceMember)
-            .where(
-                WorkspaceMember.workspace_id == workspace_id,
-                WorkspaceMember.role == WorkspaceRole.OWNER,
-                WorkspaceMember.status == MemberStatus.ACTIVE,
-            )
+    if target.role == WorkspaceRole.OWNER:
+        raise AppError(
+            400,
+            "VALIDATION_ERROR",
+            "Use transfer ownership to change the workspace owner's role",
         )
-        if (owner_count or 0) <= 1:
-            raise AppError(
-                400,
-                "VALIDATION_ERROR",
-                "Cannot change role of the only workspace owner",
-            )
+
+    if actor_id == target_user_id and body.role != actor_role:
+        raise AppError(
+            400,
+            "VALIDATION_ERROR",
+            "You cannot change your own role; another administrator must do it",
+        )
 
     target.role = body.role
     await session.commit()
@@ -390,9 +408,76 @@ async def remove_workspace_member(
             "Use another admin to remove yourself from the workspace",
         )
 
+    # Cascade cleanups across workspace-scoped models for target_user_id
+    await session.execute(
+        delete(TeamMember).where(
+            TeamMember.user_id == target_user_id,
+            TeamMember.team_id.in_(
+                select(Team.id).where(Team.workspace_id == workspace_id)
+            ),
+        )
+    )
+    await session.execute(
+        delete(SpaceMember).where(
+            SpaceMember.user_id == target_user_id,
+            SpaceMember.space_id.in_(
+                select(Space.id).where(Space.workspace_id == workspace_id)
+            ),
+        )
+    )
+    await session.execute(
+        delete(FolderMember).where(
+            FolderMember.user_id == target_user_id,
+            FolderMember.folder_id.in_(
+                select(Folder.id)
+                .join(Space, Folder.space_id == Space.id)
+                .where(Space.workspace_id == workspace_id)
+            ),
+        )
+    )
+    await session.execute(
+        delete(ListMember).where(
+            ListMember.user_id == target_user_id,
+            ListMember.list_id.in_(
+                select(TaskList.id)
+                .join(Space, TaskList.space_id == Space.id)
+                .where(Space.workspace_id == workspace_id)
+            ),
+        )
+    )
+    await session.execute(
+        delete(ChatChannelMember).where(
+            ChatChannelMember.user_id == target_user_id,
+            ChatChannelMember.channel_id.in_(
+                select(ChatChannel.id).where(ChatChannel.workspace_id == workspace_id)
+            ),
+        )
+    )
+
+    # Unassign target user from any tasks in this workspace
+    tasks_stmt = (
+        select(Task)
+        .join(TaskList, Task.list_id == TaskList.id)
+        .join(Space, TaskList.space_id == Space.id)
+        .where(
+            Space.workspace_id == workspace_id,
+            (Task.assignee_ids.contains([target_user_id]))
+            | (Task.follower_ids.contains([target_user_id])),
+        )
+    )
+    tasks = (await session.scalars(tasks_stmt)).all()
+    for task in tasks:
+        if target_user_id in task.assignee_ids:
+            task.assignee_ids = [uid for uid in task.assignee_ids if uid != target_user_id]
+        if target_user_id in task.follower_ids:
+            task.follower_ids = [uid for uid in task.follower_ids if uid != target_user_id]
+
     await session.delete(target)
     await session.commit()
     await sync_list_channel_members_for_workspace(session, workspace_id)
+    await broadcast_workspace_member_removed(
+        workspace_id=workspace_id, user_id=target_user_id
+    )
     return {"ok": True}
 
 
