@@ -2,12 +2,12 @@ import base64
 import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 import jwt
 from jwt import PyJWKClient
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -37,13 +37,22 @@ def _pkce_challenge(verifier: str) -> str:
 
 
 def safe_next_path(raw: str | None) -> str:
-    if not raw or not raw.startswith("/") or raw.startswith("//"):
+    if not raw or not isinstance(raw, str):
         return "/home/inbox"
-    return raw
-
-
-def _safe_next_path(raw: str | None) -> str:
-    return safe_next_path(raw)
+    cleaned = raw.strip()
+    # Reject scheme-relative bypasses (//evil.com), backslashes (/\evil.com), and control chars
+    if not cleaned.startswith("/") or cleaned.startswith("//") or "\\" in cleaned:
+        return "/home/inbox"
+    if any(ord(c) < 32 or ord(c) == 127 for c in cleaned):
+        return "/home/inbox"
+    try:
+        parts = urlsplit(cleaned)
+        # Any scheme or netloc indicates an external URL
+        if parts.scheme or parts.netloc:
+            return "/home/inbox"
+        return cleaned
+    except Exception:
+        return "/home/inbox"
 
 
 def _require_google_config() -> None:
@@ -58,14 +67,20 @@ def _require_google_config() -> None:
 async def start_google_oauth(session: AsyncSession, next_path: str | None) -> str:
     _require_google_config()
     settings = get_settings()
+    now = datetime.now(timezone.utc)
+    # Housekeeping: purge expired OAuth states
+    await session.execute(
+        delete(OAuthState).where(OAuthState.expires_at < now)
+    )
+
     state = secrets.token_urlsafe(32)
     verifier = secrets.token_urlsafe(64)
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=STATE_TTL_MINUTES)
+    expires_at = now + timedelta(minutes=STATE_TTL_MINUTES)
     session.add(
         OAuthState(
             state=state,
             code_verifier=verifier,
-            next_path=_safe_next_path(next_path),
+            next_path=safe_next_path(next_path),
             expires_at=expires_at,
         )
     )
@@ -279,8 +294,21 @@ async def complete_google_callback(
 
 async def exchange_oauth_code(session: AsyncSession, code: str) -> dict:
     now = datetime.now(timezone.utc)
+    # Atomically claim the single-use code to eliminate concurrent redemption races
+    result = await session.execute(
+        update(OAuthExchange)
+        .where(
+            OAuthExchange.code == code,
+            OAuthExchange.used_at.is_(None),
+            OAuthExchange.expires_at > now,
+        )
+        .values(used_at=now)
+    )
+    if result.rowcount == 0:
+        raise AppError(400, "OAUTH_CODE_INVALID", "Sign-in link expired or already used. Try again.")
+
     row = await session.scalar(select(OAuthExchange).where(OAuthExchange.code == code))
-    if not row or row.used_at or row.expires_at < now:
+    if not row:
         raise AppError(400, "OAUTH_CODE_INVALID", "Sign-in link expired. Try again.")
 
     user = await session.get(User, row.user_id)
@@ -289,7 +317,6 @@ async def exchange_oauth_code(session: AsyncSession, code: str) -> dict:
     if user.is_disabled:
         raise AppError(403, "ACCOUNT_DISABLED", "This account is disabled")
 
-    row.used_at = now
     access_token = sign_access_token(sub=str(user.id), email=user.email)
     refresh_token = await issue_refresh_for_user(session, user.id)
     await session.commit()

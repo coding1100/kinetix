@@ -57,6 +57,9 @@ export function MessageList({
 }) {
   const endRef = useRef<HTMLDivElement>(null);
   const daySectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const isJumpingRef = useRef(false);
+  const prevConversationKey = useRef("");
+  const currentConversationKey = `${conversationType}:${conversationId}`;
 
   const dayGroups = useMemo(() => groupMessagesByDay(messages), [messages]);
   const readReceiptMessageId = useMemo(
@@ -64,18 +67,49 @@ export function MessageList({
     [messages]
   );
 
+  // Auto-scroll to end on initial load or conversation switch, only if not jumping
   useEffect(() => {
-    if (scrollToMessageId) return;
-    endRef.current?.scrollIntoView({ block: "end" });
-  }, [messages, scrollToMessageId]);
+    if (scrollToMessageId || isJumpingRef.current) return;
+    const isNewConversation = currentConversationKey !== prevConversationKey.current;
+    prevConversationKey.current = currentConversationKey;
+    if (isNewConversation) {
+      endRef.current?.scrollIntoView({ block: "end" });
+    }
+  }, [currentConversationKey, scrollToMessageId]);
 
+  // Robust target message scroll with retry & animation stabilization
   useEffect(() => {
     if (!scrollToMessageId) return;
-    const el = document.getElementById(`message-${scrollToMessageId}`);
-    if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    onScrollComplete?.();
-  }, [scrollToMessageId, messages, onScrollComplete]);
+    isJumpingRef.current = true;
+
+    let attempts = 0;
+    let cancelTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const tryScroll = () => {
+      const el = document.getElementById(`message-${scrollToMessageId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        cancelTimer = setTimeout(() => {
+          onScrollComplete?.();
+          setTimeout(() => {
+            isJumpingRef.current = false;
+          }, 1500);
+        }, 500);
+      } else if (attempts < 12) {
+        attempts++;
+        cancelTimer = setTimeout(tryScroll, 60);
+      } else {
+        onScrollComplete?.();
+        isJumpingRef.current = false;
+      }
+    };
+
+    cancelTimer = setTimeout(tryScroll, 40);
+
+    return () => {
+      if (cancelTimer) clearTimeout(cancelTimer);
+    };
+  }, [scrollToMessageId, onScrollComplete]);
 
   const scrollToDayKey = (dayKey: string) => {
     daySectionRefs.current[dayKey]?.scrollIntoView({

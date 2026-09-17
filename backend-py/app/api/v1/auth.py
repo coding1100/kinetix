@@ -166,8 +166,11 @@ async def post_change_password(
     body: ChangePasswordBody,
     session: DbSession,
     user: CurrentUserDep,
+    riseup_refresh: str | None = Cookie(default=None),
 ):
-    return await auth_service.change_password(session, user.id, body)
+    return await auth_service.change_password(
+        session, user.id, body, current_refresh_token=riseup_refresh
+    )
 
 
 @router.post("/forgot-password")
@@ -206,10 +209,16 @@ async def reset_password(body: ResetPasswordBody, request: Request, session: DbS
 
 @router.get("/google/start")
 async def google_start(
+    request: Request,
     session: DbSession,
     next: str | None = Query(default=None),
 ):
     settings = get_settings()
+    await throttle(
+        request,
+        scope="auth.google_start",
+        ip_limit=settings.auth_login_ip_limit,
+    )
     frontend = settings.frontend_url.rstrip("/")
 
     try:
@@ -240,12 +249,18 @@ async def google_start(
 
 @router.get("/google/callback")
 async def google_callback(
+    request: Request,
     session: DbSession,
     code: str | None = Query(default=None),
     state: str | None = Query(default=None),
     error: str | None = Query(default=None),
 ):
     settings = get_settings()
+    await throttle(
+        request,
+        scope="auth.google_callback",
+        ip_limit=settings.auth_login_ip_limit,
+    )
     frontend = settings.frontend_url.rstrip("/")
 
     if error:
@@ -294,9 +309,16 @@ async def google_callback(
 @router.post("/oauth/exchange")
 async def oauth_exchange(
     body: OAuthExchangeBody,
+    request: Request,
     response: Response,
     session: DbSession,
 ):
+    settings = get_settings()
+    await throttle(
+        request,
+        scope="auth.oauth_exchange",
+        ip_limit=settings.auth_login_ip_limit,
+    )
     result = await oauth_service.exchange_oauth_code(session, body.code)
     refresh_token = result.pop("refreshToken")
     set_refresh_cookie(response, refresh_token)

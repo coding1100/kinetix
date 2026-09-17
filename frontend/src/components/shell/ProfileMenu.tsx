@@ -34,6 +34,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { AvatarWithPresence, PresenceDot } from "@/components/shared/AvatarWithPresence";
 import { logout } from "@/lib/api/auth";
+import { broadcastLogout } from "@/lib/api/client";
 import { useAuthStore } from "@/stores/auth-store";
 import { useLoadingStore } from "@/stores/loading-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -174,6 +175,7 @@ export function ProfileMenu() {
     } catch {
       /* clear locally */
     }
+    broadcastLogout();
     clearSession();
     toast.success("Logged out");
     router.push("/auth/login");

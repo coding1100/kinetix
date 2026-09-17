@@ -160,7 +160,7 @@ export function ChatMessageRow({
         "hover:bg-muted/70",
         threadOpen && !actionsActive && "bg-muted/50",
         actionsActive && "bg-muted/70",
-        highlighted && "bg-primary/10 ring-1 ring-primary/30",
+        highlighted && "bg-amber-500/15 dark:bg-amber-400/20 ring-2 ring-amber-500/70 shadow-sm transition-all duration-300",
         editingMessageId === message.id && "bg-primary/10 ring-1 ring-primary/30"
       )}
     >

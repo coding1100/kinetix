@@ -239,7 +239,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // bootstrap(): account disabled, or apiFetch's silent access-token
     // refresh failed because the refresh token is itself expired/invalid.
     setUnauthorizedHandler((code) => {
-      if (code === "ACCOUNT_DISABLED" || code === "INVALID_REFRESH") {
+      if (
+        code === "ACCOUNT_DISABLED" ||
+        code === "INVALID_REFRESH" ||
+        code === "LOGOUT"
+      ) {
         forceLogout();
       }
     });
