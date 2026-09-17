@@ -61,10 +61,23 @@ if (typeof window !== "undefined" && "BroadcastChannel" in window) {
             });
           }
         });
+      } else if (event.data?.type === "LOGOUT") {
+        import("@/stores/auth-store").then(({ useAuthStore }) => {
+          useAuthStore.getState().clearSession();
+        });
+        unauthorizedHandler?.("LOGOUT");
       }
     };
   } catch {
     // Ignore channel creation errors
+  }
+}
+
+export function broadcastLogout() {
+  try {
+    refreshChannel?.postMessage({ type: "LOGOUT" });
+  } catch {
+    // Ignore broadcast errors
   }
 }
 

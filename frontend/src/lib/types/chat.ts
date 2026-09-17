@@ -82,6 +82,7 @@ export interface ChatMessage {
   attachments?: MessageAttachment[];
   pinnedAt?: string;
   readByUserIds?: string[];
+  parentId?: string;
 }
 
 export type OptimisticAttachment = Pick<

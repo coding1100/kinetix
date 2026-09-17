@@ -259,17 +259,51 @@ Respond ONLY with this JSON shape, nothing else, no markdown fences:
 
             clean_summary = cap_sentences(remove_em_dashes(strip_html_tags(data.get("summary", ""))), max_sentences=4)
 
+            valid_message_ids = {msg.id for msg in messages}
+
+            def _find_matching_message_id(item_text: str) -> str | None:
+                if not item_text:
+                    return None
+                t_lower = item_text.lower()
+                best_id = None
+                best_score = 0
+                for m in messages:
+                    m_text = strip_html_tags(m.body).lower()
+                    score = 0
+                    if m.author and m.author.full_name and m.author.full_name.lower() in t_lower:
+                        score += 3
+                    words = set(re.findall(r"\b[a-zA-Z0-9]{3,}\b", t_lower))
+                    score += sum(1 for w in words if w in m_text)
+                    if score > best_score:
+                        best_score = score
+                        best_id = m.id
+                return best_id if best_score >= 2 else (messages[-1].id if messages else None)
+
             def _clean_raw_items(raw_list: list[Any]) -> list[dict[str, Any]]:
                 out = []
                 for it in raw_list:
                     if isinstance(it, dict):
                         t = remove_em_dashes(strip_html_tags(str(it.get("text", ""))))
-                        mid = it.get("messageId")
+                        raw_mid = it.get("messageId")
                     else:
                         t = remove_em_dashes(strip_html_tags(str(it)))
-                        mid = None
+                        raw_mid = None
+
+                    mid = None
+                    if raw_mid:
+                        cleaned_mid = str(raw_mid).strip().strip("[]\"'")
+                        cleaned_mid = re.sub(r"^id:\s*", "", cleaned_mid, flags=re.IGNORECASE)
+                        if cleaned_mid.lower() not in ("null", "none", "msg_id_or_null", ""):
+                            if cleaned_mid in valid_message_ids:
+                                mid = cleaned_mid
+                            else:
+                                mid = next((vid for vid in valid_message_ids if vid in cleaned_mid or cleaned_mid in vid), None)
+
+                    if not mid and t:
+                        mid = _find_matching_message_id(t)
+
                     if t:
-                        out.append({"text": t, "messageId": str(mid) if mid else None})
+                        out.append({"text": t, "messageId": mid})
                 return out
 
             clean_decisions = _paraphrased_only(_clean_raw_items(data.get("keyDecisions", [])), source_texts)

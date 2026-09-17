@@ -25,11 +25,27 @@ const ERROR_MESSAGES: Record<string, string> = {
   missing_code: "Google sign-in did not complete. Try again.",
 };
 
-function safeNextPath(next: string | null) {
-  if (!next || !next.startsWith("/") || next.startsWith("//")) {
+export function safeNextPath(next: string | null) {
+  if (!next || typeof next !== "string") {
     return "/home/inbox";
   }
-  return next;
+  const cleaned = next.trim();
+  if (
+    !cleaned.startsWith("/") ||
+    cleaned.startsWith("//") ||
+    cleaned.includes("\\")
+  ) {
+    return "/home/inbox";
+  }
+  try {
+    const parsed = new URL(cleaned, "https://kinetix.local");
+    if (parsed.origin !== "https://kinetix.local") {
+      return "/home/inbox";
+    }
+    return parsed.pathname + parsed.search + parsed.hash;
+  } catch {
+    return "/home/inbox";
+  }
 }
 
 function OAuthCallbackForm() {

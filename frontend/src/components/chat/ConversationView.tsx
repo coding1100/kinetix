@@ -213,10 +213,17 @@ export function ConversationView({
 
   useEffect(() => {
     if (!messageScrollTarget) return;
-    setScrollToMessageId(messageScrollTarget);
-    setHighlightMessageId(messageScrollTarget);
+    const target = messages.find((m) => m.id === messageScrollTarget);
+    if (target?.parentId) {
+      setActiveThread(target.parentId);
+      setScrollToMessageId(target.parentId);
+      setHighlightMessageId(target.parentId);
+    } else {
+      setScrollToMessageId(messageScrollTarget);
+      setHighlightMessageId(messageScrollTarget);
+    }
     clearMessageScrollTarget();
-  }, [messageScrollTarget, clearMessageScrollTarget]);
+  }, [messageScrollTarget, clearMessageScrollTarget, messages, setActiveThread]);
 
   const resolveCachedMeta = useCallback(() => {
     const cached = getConversationCache(workspaceId, type, id);

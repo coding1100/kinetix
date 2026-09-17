@@ -41,6 +41,7 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 import hashlib
+import hmac
 
 
 def hash_token(token: str) -> str:
@@ -54,7 +55,8 @@ def hash_reset_token(token: str) -> str:
 def verify_token_hash(token: str, token_hash: str) -> bool:
     if token_hash.startswith("$2b$") or token_hash.startswith("$2a$"):
         return bcrypt.checkpw(_bcrypt_input(token), token_hash.encode())
-    return hashlib.sha256(token.encode("utf-8")).hexdigest() == token_hash
+    calculated = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return hmac.compare_digest(calculated, token_hash)
 
 
 

@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import BackgroundTasks
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -339,11 +339,16 @@ async def get_avatar_bytes(session: AsyncSession, user_id: str) -> tuple[bytes, 
 
 
 async def change_password(
-    session: AsyncSession, user_id: str, body: ChangePasswordBody
+    session: AsyncSession,
+    user_id: str,
+    body: ChangePasswordBody,
+    current_refresh_token: str | None = None,
 ) -> dict:
     user = await session.get(User, user_id)
     if not user:
         raise AppError(404, "NOT_FOUND", "User not found")
+    if user.is_disabled:
+        raise AppError(403, "ACCOUNT_DISABLED", "This account is disabled")
     if not user.password_hash:
         raise AppError(
             400,
@@ -355,6 +360,22 @@ async def change_password(
         raise AppError(400, "INVALID_CREDENTIALS", "Current password is incorrect")
 
     user.password_hash = hash_password(body.new_password)
+
+    # Invalidate other active sessions for this user. If current_refresh_token is provided,
+    # keep only this device's token; otherwise revoke all device tokens.
+    if current_refresh_token:
+        curr_hash = hash_reset_token(current_refresh_token)
+        await session.execute(
+            delete(RefreshToken).where(
+                RefreshToken.user_id == user.id,
+                RefreshToken.token_hash != curr_hash,
+            )
+        )
+    else:
+        await session.execute(
+            delete(RefreshToken).where(RefreshToken.user_id == user.id)
+        )
+
     await session.commit()
     return {"message": "Password updated successfully"}
 
@@ -376,7 +397,7 @@ async def request_password_reset(
     background_tasks: BackgroundTasks | None = None,
 ) -> dict:
     user = await session.scalar(select(User).where(User.email == email))
-    if not user:
+    if not user or user.is_disabled:
         return {"message": "If that email exists, a reset link was sent."}
 
     now = datetime.now(timezone.utc)
@@ -449,11 +470,17 @@ async def reset_password(session: AsyncSession, token: str, password: str) -> di
         raise AppError(400, "INVALID_TOKEN", "Reset token is invalid or expired")
 
     user = await session.get(User, matched.user_id)
-    if not user:
+    if not user or user.is_disabled:
         raise AppError(400, "INVALID_TOKEN", "Reset token is invalid or expired")
 
     user.password_hash = hash_password(password)
     matched.used_at = now
+
+    # Revoke all active sessions on password reset (attacker eviction)
+    await session.execute(
+        delete(RefreshToken).where(RefreshToken.user_id == user.id)
+    )
+
     await session.commit()
 
     return {"message": "Password updated successfully"}
