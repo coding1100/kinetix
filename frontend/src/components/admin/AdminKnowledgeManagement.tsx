@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,6 +10,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import {
   createCompanyDocument,
+  uploadCompanyDocument,
   listCompanyDocuments,
   deleteCompanyDocument,
   type CompanyDocumentDto,
@@ -22,6 +23,7 @@ import {
   ShieldCheckIcon,
   BookOpenIcon,
   SearchIcon,
+  UploadCloudIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatRequestError } from "@/lib/api/client";
@@ -52,8 +54,10 @@ export function AdminKnowledgeManagement() {
   const [documents, setDocuments] = useState<CompanyDocumentDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [searchFilter, setSearchFilter] = useState("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("HR");
@@ -75,6 +79,27 @@ export function AdminKnowledgeManagement() {
   useEffect(() => {
     void loadDocs();
   }, [ready, accessToken, workspaceId]);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !ready || !accessToken || !workspaceId) return;
+
+    setUploading(true);
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("category", category || "General");
+
+    try {
+      await uploadCompanyDocument(accessToken, workspaceId, formData);
+      toast.success(`"${file.name}" uploaded and indexed into Knowledge Base!`);
+      void loadDocs();
+    } catch (err) {
+      toast.error(`File upload failed — ${formatRequestError(err)}`);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,7 +153,7 @@ export function AdminKnowledgeManagement() {
 
   return (
     <Card className="w-full max-w-4xl border-border shadow-md">
-      <CardHeader className="flex flex-row items-center justify-between border-b border-border pb-4 bg-gradient-to-r from-indigo-50/50 via-card to-background dark:from-indigo-950/20">
+      <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-border pb-4 bg-gradient-to-r from-indigo-50/50 via-card to-background dark:from-indigo-950/20">
         <div>
           <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
             <ShieldCheckIcon className="size-5 text-indigo-600" />
@@ -138,14 +163,37 @@ export function AdminKnowledgeManagement() {
             Index official company policy documents, HR handbooks, and IT SOPs into the AI RAG engine.
           </CardDescription>
         </div>
-        <Button
-          size="sm"
-          className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-sm"
-          onClick={() => setShowAddForm((v) => !v)}
-        >
-          <PlusIcon className="size-4" />
-          {showAddForm ? "Close Editor" : "Add Policy Document"}
-        </Button>
+        <div className="flex items-center gap-2 self-end sm:self-center">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.txt,.md,.markdown,.csv,.json"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={uploading}
+            className="gap-1.5 font-semibold bg-background hover:bg-accent"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {uploading ? (
+              <Spinner className="size-4" />
+            ) : (
+              <UploadCloudIcon className="size-4 text-indigo-600" />
+            )}
+            <span>{uploading ? "Indexing..." : "Upload Policy File"}</span>
+          </Button>
+          <Button
+            size="sm"
+            className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-sm"
+            onClick={() => setShowAddForm((v) => !v)}
+          >
+            <PlusIcon className="size-4" />
+            {showAddForm ? "Close Editor" : "Add Policy Document"}
+          </Button>
+        </div>
       </CardHeader>
 
       <CardContent className="p-6 space-y-6">

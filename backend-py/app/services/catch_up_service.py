@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 import html
 import json
 import logging
@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.errors import AppError
-from app.db.models.chat import ChatChannel, ChatMessage, DirectConversation
+from app.db.models.chat import ChatMessage
 from app.db.models.user import User
 from app.services.ai_service import cap_sentences, get_llm_completion, remove_em_dashes
 from app.services.chat_service import _assert_channel_member, _assert_dm_participant
@@ -42,11 +42,21 @@ def _is_near_verbatim(item: str, source_texts: list[str]) -> bool:
     return False
 
 
-def _paraphrased_only(items: list[str], source_texts: list[str]) -> list[str]:
+def _paraphrased_only(items: list[Any], source_texts: list[str]) -> list[dict[str, Any]]:
     """Drops any LLM-generated item that still reads as a verbatim/near-
     verbatim copy of a source message, so the UI never shows raw chat text
     even if the model ignores the paraphrasing instructions."""
-    return [item for item in items if item and not _is_near_verbatim(item, source_texts)]
+    filtered: list[dict[str, Any]] = []
+    for it in items:
+        if isinstance(it, dict):
+            t = str(it.get("text", "")).strip()
+            mid = it.get("messageId")
+        else:
+            t = str(it).strip()
+            mid = None
+        if t and not _is_near_verbatim(t, source_texts):
+            filtered.append({"text": t, "messageId": mid})
+    return filtered
 
 
 def strip_html_tags(text: str) -> str:
@@ -70,7 +80,7 @@ async def generate_conversation_catch_up(
     user_id: str,
     conversation_type: str,
     conversation_id: str,
-    limit: int = 50,
+    limit: int | None = None,
 ) -> dict[str, Any]:
     """Generates an executive, humanized Catch Me Up status summary for a Channel or DM."""
     target_user = await session.get(User, user_id)
@@ -89,13 +99,13 @@ async def generate_conversation_catch_up(
         query = (
             select(ChatMessage)
             .options(selectinload(ChatMessage.author))
-            .where(
-                ChatMessage.channel_id == conversation_id,
-                ChatMessage.parent_id.is_(None),
-            )
+            .where(ChatMessage.channel_id == conversation_id)
             .order_by(ChatMessage.created_at.desc())
-            .limit(limit)
         )
+        if limit and limit > 0:
+            query = query.limit(limit)
+        else:
+            query = query.limit(1000)
         res = await session.scalars(query)
         messages = list(reversed(res.all()))
 
@@ -109,13 +119,13 @@ async def generate_conversation_catch_up(
         query = (
             select(ChatMessage)
             .options(selectinload(ChatMessage.author))
-            .where(
-                ChatMessage.conversation_id == conversation_id,
-                ChatMessage.parent_id.is_(None),
-            )
+            .where(ChatMessage.conversation_id == conversation_id)
             .order_by(ChatMessage.created_at.desc())
-            .limit(limit)
         )
+        if limit and limit > 0:
+            query = query.limit(limit)
+        else:
+            query = query.limit(1000)
         res = await session.scalars(query)
         messages = list(reversed(res.all()))
 
@@ -149,7 +159,8 @@ async def generate_conversation_catch_up(
         if not text:
             continue
 
-        entry_line = f"[{time_str}] {author_name}: {text}"
+        thread_tag = " (thread reply)" if msg.parent_id else ""
+        entry_line = f"[ID: {msg.id}] [{time_str}] {author_name}{thread_tag}: {text}"
         log_entries.append(entry_line)
 
         lower_text = text.lower()
@@ -166,7 +177,10 @@ async def generate_conversation_catch_up(
                 "resolved", "conclusion", "confirmed", "moving forward with"
             ]
         ):
-            decisions.append(f"{author_name} flagged a decision: {snippet}")
+            decisions.append({
+                "text": f"{author_name} flagged a decision: {snippet}",
+                "messageId": msg.id,
+            })
 
         # Action item / Issue detection
         if any(
@@ -176,7 +190,10 @@ async def generate_conversation_catch_up(
                 "will do", "assigned", "can you", "need to", "make sure to", "facing this issue"
             ]
         ):
-            actions.append(f"{author_name} raised an action item: {snippet}")
+            actions.append({
+                "text": f"{author_name} raised an action item: {snippet}",
+                "messageId": msg.id,
+            })
 
         # Direct mentions & highlights
         if (
@@ -185,7 +202,10 @@ async def generate_conversation_catch_up(
             or "@everyone" in lower_text
             or "@here" in lower_text
         ):
-            mentions.append(f"{author_name} mentioned you at {time_str}: {snippet}")
+            mentions.append({
+                "text": f"{author_name} mentioned you at {time_str}: {snippet}",
+                "messageId": msg.id,
+            })
 
     raw_log = "\n".join(log_entries)
     source_texts = [strip_html_tags(msg.body).lower() for msg in messages if strip_html_tags(msg.body)]
@@ -207,16 +227,16 @@ STRICT FORMAT RULES:
 1. No em dashes (— or –). Use hyphens (-) or colons (:).
 2. No HTML tags or markdown symbols (no <div>, **, #, etc).
 3. "summary": 2 to 4 sentences. This alone must let the reader understand the whole channel's current state without reading anything else.
-4. "keyDecisions", "actionItems", "mentions": each entry is ONE clean sentence, 12 to 18 words, written by you. Maximum 5 entries each. Combine duplicates/near-duplicates into a single entry.
+4. "keyDecisions", "actionItems", "mentions": each entry is an object with "text" (one clean sentence, 12 to 18 words, written by you) and optional "messageId" (the exact source message ID from [ID: ...] if identifiable, or null). Maximum 5 entries each.
 5. If there is nothing genuinely decided, or no real open issue, or no direct mention, return an empty list for that field instead of forcing a weak entry.
 6. Never invent people, events, or facts not present in the log.
 
 Respond ONLY with this JSON shape, nothing else, no markdown fences:
 {{
   "summary": "2 to 4 sentence plain-English briefing of the whole conversation",
-  "keyDecisions": ["One clean sentence per decision, naming who decided"],
-  "actionItems": ["One clean sentence per open issue/task, naming who is involved"],
-  "mentions": ["One clean sentence per direct mention of {current_user_name}, naming who and why"]
+  "keyDecisions": [{{"text": "One clean sentence per decision, naming who decided", "messageId": "msg_id_or_null"}}],
+  "actionItems": [{{"text": "One clean sentence per open issue/task, naming who is involved", "messageId": "msg_id_or_null"}}],
+  "mentions": [{{"text": "One clean sentence per direct mention of {current_user_name}, naming who and why", "messageId": "msg_id_or_null"}}]
 }}
 """
 
@@ -238,15 +258,23 @@ Respond ONLY with this JSON shape, nothing else, no markdown fences:
             data = json.loads(cleaned_json)
 
             clean_summary = cap_sentences(remove_em_dashes(strip_html_tags(data.get("summary", ""))), max_sentences=4)
-            clean_decisions = _paraphrased_only(
-                [remove_em_dashes(strip_html_tags(d)) for d in data.get("keyDecisions", [])], source_texts
-            )
-            clean_actions = _paraphrased_only(
-                [remove_em_dashes(strip_html_tags(a)) for a in data.get("actionItems", [])], source_texts
-            )
-            clean_mentions = _paraphrased_only(
-                [remove_em_dashes(strip_html_tags(m)) for m in data.get("mentions", [])], source_texts
-            )
+
+            def _clean_raw_items(raw_list: list[Any]) -> list[dict[str, Any]]:
+                out = []
+                for it in raw_list:
+                    if isinstance(it, dict):
+                        t = remove_em_dashes(strip_html_tags(str(it.get("text", ""))))
+                        mid = it.get("messageId")
+                    else:
+                        t = remove_em_dashes(strip_html_tags(str(it)))
+                        mid = None
+                    if t:
+                        out.append({"text": t, "messageId": str(mid) if mid else None})
+                return out
+
+            clean_decisions = _paraphrased_only(_clean_raw_items(data.get("keyDecisions", [])), source_texts)
+            clean_actions = _paraphrased_only(_clean_raw_items(data.get("actionItems", [])), source_texts)
+            clean_mentions = _paraphrased_only(_clean_raw_items(data.get("mentions", [])), source_texts)
 
             if clean_summary:
                 return {
@@ -289,9 +317,18 @@ Respond ONLY with this JSON shape, nothing else, no markdown fences:
 
     fallback_summary = " ".join(summary_parts)
 
-    clean_decisions = [remove_em_dashes(strip_html_tags(d)) for d in decisions]
-    clean_actions = [remove_em_dashes(strip_html_tags(a)) for a in actions]
-    clean_mentions = [remove_em_dashes(strip_html_tags(m)) for m in mentions]
+    clean_decisions = [
+        {"text": remove_em_dashes(strip_html_tags(d["text"])), "messageId": d.get("messageId")}
+        for d in decisions
+    ]
+    clean_actions = [
+        {"text": remove_em_dashes(strip_html_tags(a["text"])), "messageId": a.get("messageId")}
+        for a in actions
+    ]
+    clean_mentions = [
+        {"text": remove_em_dashes(strip_html_tags(m["text"])), "messageId": m.get("messageId")}
+        for m in mentions
+    ]
 
     return {
         "title": remove_em_dashes(title),
@@ -301,3 +338,4 @@ Respond ONLY with this JSON shape, nothing else, no markdown fences:
         "actionItems": clean_actions[:5],
         "mentions": clean_mentions[:5],
     }
+

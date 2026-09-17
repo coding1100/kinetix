@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
@@ -13,7 +14,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/ai", tags=["ai"])
 class CatchUpBody(BaseModel):
     conversationType: str = Field(..., description="'channel' or 'dm'")
     conversationId: str
-    limit: int = Field(default=50, ge=5, le=200)
+    limit: int | None = Field(default=None, ge=1, le=1000)
 
 
 class KnowledgeQueryBody(BaseModel):
@@ -76,3 +77,44 @@ async def knowledge_query(
         top_k=body.topK,
     )
     return result
+
+
+@router.post("/knowledge-query/stream")
+async def knowledge_query_stream(
+    body: KnowledgeQueryBody,
+    workspace_id: str,
+    request: Request,
+    session: DbSession,
+    user: CurrentUserDep,
+    member: WorkspaceMemberDep,
+):
+    settings = get_settings()
+    await throttle(
+        request,
+        scope="ai.knowledge_query",
+        ip_limit=settings.ai_knowledge_query_ip_limit,
+        account_limit=settings.ai_knowledge_query_account_limit,
+        account=user.id,
+        window_seconds=settings.ai_rate_limit_window_seconds,
+    )
+
+    async def stream_generator():
+        async for event in rag_knowledge_service.stream_company_knowledge_query(
+            session=session,
+            workspace_id=workspace_id,
+            user_id=user.id,
+            query=body.query,
+            top_k=body.topK,
+        ):
+            yield event
+
+    return StreamingResponse(
+        stream_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
