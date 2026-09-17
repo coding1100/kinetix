@@ -8,6 +8,7 @@ import { PageLoader } from "@/components/ui/page-loader";
 import { fetchChannel } from "@/lib/api/chat";
 import { fetchListMeta, fetchListTasks } from "@/lib/api/spaces";
 import { useHomeQuery } from "@/hooks/use-home-query";
+import { useChatStore } from "@/stores/chat-store";
 
 export default function ChannelPage({
   params,
@@ -17,14 +18,25 @@ export default function ChannelPage({
   const { channelId } = use(params);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  const cachedChannel = useChatStore((s) =>
+    s.sidebarListsCache?.channels.find((c) => c.id === channelId)
+  );
+
   const channelQuery = useHomeQuery(
     (token, ws) => fetchChannel(token, ws, channelId),
-    [channelId]
+    [channelId],
+    {
+      initialData: cachedChannel ?? undefined,
+    }
   );
 
   const listId = channelQuery.data?.isListPrimary
     ? channelQuery.data.listId
+    : cachedChannel?.isListPrimary
+    ? cachedChannel.listId
     : null;
+
+  const isKnownRegularChannel = Boolean(cachedChannel && !cachedChannel.isListPrimary);
 
   const metaQuery = useHomeQuery(
     (token, ws) => (listId ? fetchListMeta(token, ws, listId) : Promise.resolve(null)),
@@ -42,10 +54,6 @@ export default function ChannelPage({
   const onTasksChange = useCallback(() => {
     setRefreshKey((k) => k + 1);
   }, []);
-
-  if (channelQuery.loading) {
-    return <PageLoader label="Loading..." />;
-  }
 
   if (listId) {
     if (!metaQuery.data) {
@@ -65,6 +73,10 @@ export default function ChannelPage({
         />
       </Suspense>
     );
+  }
+
+  if (!isKnownRegularChannel && channelQuery.loading) {
+    return <PageLoader label="Loading..." />;
   }
 
   return (

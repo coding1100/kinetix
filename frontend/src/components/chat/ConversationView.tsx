@@ -296,6 +296,11 @@ export function ConversationView({
 
     try {
       const viewerId = useAuthStore.getState().user?.id;
+      const channelMetaPromise =
+        type === "channel"
+          ? fetchChannel(accessToken, workspaceId, conversationId, fetchInit)
+          : null;
+
       const msgResult =
         type === "channel"
           ? await fetchChannelMessages(
@@ -334,13 +339,8 @@ export function ConversationView({
       setNextBefore(msgResult.nextBefore ?? null);
       setMessagesLoading(false);
 
-      if (type === "channel") {
-        const channelMeta = await fetchChannel(
-          accessToken,
-          workspaceId,
-          conversationId,
-          fetchInit
-        );
+      if (type === "channel" && channelMetaPromise) {
+        const channelMeta = await channelMetaPromise;
         if (
           signal.aborted ||
           conversationId !== id ||

@@ -535,6 +535,7 @@ async def list_channels(
                 ChatMessage.parent_id.is_(None),
             )
             .order_by(ChatMessage.created_at.desc())
+            .limit(max(len(channel_ids) * 10, 100))
         )
     ).all()
     last_by_channel: dict[str, ChatMessage] = {}
@@ -1484,6 +1485,7 @@ async def list_dms(session: AsyncSession, workspace_id: str, user_id: str) -> di
                 ChatMessage.parent_id.is_(None),
             )
             .order_by(ChatMessage.created_at.desc())
+            .limit(max(len(conversation_ids) * 10, 100))
         )
     ).all()
     last_by_conversation: dict[str, ChatMessage] = {}
