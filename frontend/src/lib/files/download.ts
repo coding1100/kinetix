@@ -1,5 +1,7 @@
 import { toast } from "sonner";
 
+const inFlightDownloads = new Set<string>();
+
 /**
  * Downloads a file with instant in-app feedback via Sonner toasts.
  *
@@ -11,6 +13,12 @@ export async function downloadFileWithFeedback(
   url: string,
   fileName: string
 ): Promise<void> {
+  const downloadKey = `${url}:${fileName}`;
+  if (inFlightDownloads.has(downloadKey)) {
+    return;
+  }
+  inFlightDownloads.add(downloadKey);
+
   const toastId = `download-${Date.now()}`;
   toast.loading(`Downloading ${fileName}…`, { id: toastId });
 
@@ -25,6 +33,7 @@ export async function downloadFileWithFeedback(
     const anchor = document.createElement("a");
     anchor.href = objectUrl;
     anchor.download = fileName;
+    anchor.setAttribute("data-native-download", "true");
     anchor.style.display = "none";
     document.body.appendChild(anchor);
     anchor.click();
@@ -43,6 +52,7 @@ export async function downloadFileWithFeedback(
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = fileName;
+      anchor.setAttribute("data-native-download", "true");
       anchor.target = "_blank";
       anchor.rel = "noreferrer noopener";
       anchor.style.display = "none";
@@ -61,5 +71,8 @@ export async function downloadFileWithFeedback(
         description: "Please check your network connection and try again.",
       });
     }
+  } finally {
+    // Release in-flight lock after download starts
+    setTimeout(() => inFlightDownloads.delete(downloadKey), 1000);
   }
 }
