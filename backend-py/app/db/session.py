@@ -49,15 +49,37 @@ def get_engine():
     return _engine
 
 
+_USER_API_KEY_DDL_TABLE = """
+CREATE TABLE IF NOT EXISTS "UserApiKey" (
+    "id" VARCHAR PRIMARY KEY,
+    "userId" VARCHAR NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+    "workspaceId" VARCHAR REFERENCES "Workspace"("id") ON DELETE CASCADE,
+    "name" VARCHAR NOT NULL,
+    "keyPrefix" VARCHAR NOT NULL,
+    "keyHash" VARCHAR NOT NULL UNIQUE,
+    "expiresAt" TIMESTAMP WITH TIME ZONE,
+    "lastUsedAt" TIMESTAMP WITH TIME ZONE,
+    "revokedAt" TIMESTAMP WITH TIME ZONE,
+    "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+)
+"""
+_USER_API_KEY_DDL_IDX_USER = 'CREATE INDEX IF NOT EXISTS "ix_UserApiKey_userId" ON "UserApiKey" ("userId")'
+_USER_API_KEY_DDL_IDX_HASH = 'CREATE INDEX IF NOT EXISTS "ix_UserApiKey_keyHash" ON "UserApiKey" ("keyHash")'
+
+
 async def warmup_database() -> bool:
     from sqlalchemy import text
 
     engine = get_engine()
     try:
-        async with engine.connect() as conn:
+        async with engine.begin() as conn:
             await conn.execute(text("SELECT 1"))
+            await conn.execute(text(_USER_API_KEY_DDL_TABLE))
+            await conn.execute(text(_USER_API_KEY_DDL_IDX_USER))
+            await conn.execute(text(_USER_API_KEY_DDL_IDX_HASH))
         return True
-    except Exception:
+    except Exception as exc:
+        logger.warning("Database warmup / migration warning: %s", exc)
         return False
 
 

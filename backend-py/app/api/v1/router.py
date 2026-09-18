@@ -4,11 +4,13 @@ from app.api.v1 import (
     admin,
     admin_knowledge,
     ai,
+    api_keys,
     auth,
     chat,
     desktop,
     home,
     invites,
+    mcp_status,
     planning,
     teams,
     workspaces,
@@ -17,6 +19,8 @@ from app.api.v1 import (
 api_router = APIRouter()
 
 api_router.include_router(auth.router)
+api_router.include_router(api_keys.router)
+api_router.include_router(mcp_status.router)
 api_router.include_router(ai.router)
 api_router.include_router(admin_knowledge.router)
 api_router.include_router(admin.router)

@@ -40,13 +40,14 @@ from app.db.models.planning import (
     Whiteboard,
 )
 from app.db.models.team import Team, TeamBookmark, TeamMember
-from app.db.models.user import PasswordResetToken, RefreshToken, User
+from app.db.models.user import PasswordResetToken, RefreshToken, User, UserApiKey
 from app.db.models.workspace import Workspace, WorkspaceMember
 
 __all__ = [
     "User",
     "RefreshToken",
     "PasswordResetToken",
+    "UserApiKey",
     "OAuthAccount",
     "OAuthState",
     "OAuthExchange",

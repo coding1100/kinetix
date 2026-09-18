@@ -27,8 +27,9 @@ def _auth(token: str) -> dict[str, str]:
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_mcp_task_advanced_ops(api_client: AsyncClient):
+async def test_mcp_task_advanced_ops(api_client: AsyncClient, monkeypatch: pytest.MonkeyPatch):
     token = await _login(api_client, *OWNER)
+    monkeypatch.setenv("KINETIX_API_KEY", token)
     headers = _auth(token)
 
     me = await api_client.get("/api/v1/auth/me", headers=headers)
@@ -110,8 +111,9 @@ async def test_mcp_task_advanced_ops(api_client: AsyncClient):
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_mcp_chat_channels_and_personal_dms(api_client: AsyncClient):
+async def test_mcp_chat_channels_and_personal_dms(api_client: AsyncClient, monkeypatch: pytest.MonkeyPatch):
     token = await _login(api_client, *OWNER)
+    monkeypatch.setenv("KINETIX_API_KEY", token)
     headers = _auth(token)
 
     me = await api_client.get("/api/v1/auth/me", headers=headers)
@@ -209,8 +211,9 @@ async def test_mcp_chat_channels_and_personal_dms(api_client: AsyncClient):
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_mcp_search_tool(api_client: AsyncClient):
+async def test_mcp_search_tool(api_client: AsyncClient, monkeypatch: pytest.MonkeyPatch):
     token = await _login(api_client, *OWNER)
+    monkeypatch.setenv("KINETIX_API_KEY", token)
 
     search_res = await mcp.call_tool(
         "kinetix_search",
@@ -220,6 +223,8 @@ async def test_mcp_search_tool(api_client: AsyncClient):
     data = json.loads(search_res.content[0].text)
     assert data["query"] == "Task"
     assert "tasks" in data
+    assert "docs" in data
+    assert data["docs"] is not None
 
 
 @pytest.mark.asyncio(loop_scope="session")

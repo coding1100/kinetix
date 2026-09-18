@@ -1,4 +1,5 @@
 import json
+from contextlib import asynccontextmanager
 from typing import Any, Literal
 
 from fastmcp import FastMCP
@@ -10,7 +11,7 @@ from app.core.errors import AppError
 from app.db.models.chat import ChatChannel, DirectConversation
 from app.db.models.home import Space, Task, TaskList
 from app.db.models.user import User
-from app.db.session import get_session_factory
+from app.db.session import _get_db_semaphore, get_session_factory
 from app.mcp.auth import get_mcp_db_session, resolve_mcp_context
 from app.schemas.home import CreatePostBody, CreateSubtaskBody, CreateTaskBody, UpdateTaskBody
 from app.schemas.spaces import CreateTaskCommentBody
@@ -21,6 +22,14 @@ from app.services import (
     rag_knowledge_service,
     spaces_service,
 )
+
+
+@asynccontextmanager
+async def _db_session():
+    async with _get_db_semaphore():
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            yield session
 
 # Initialize FastMCP Server
 mcp = FastMCP(
@@ -111,9 +120,8 @@ async def kinetix_list_tasks(
         search: Optional search keyword to filter tasks by title.
         limit: Maximum number of tasks to return (default: 50).
     """
-    session_factory = get_session_factory()
     try:
-        async with session_factory() as session:
+        async with _db_session() as session:
             workspace_id_override = None
             if list_id:
                 task_list = await session.scalar(
@@ -180,9 +188,8 @@ async def kinetix_get_task(task_id: str) -> dict[str, Any]:
     Args:
         task_id: The unique UUID of the task.
     """
-    session_factory = get_session_factory()
     try:
-        async with session_factory() as session:
+        async with _db_session() as session:
             task_row = await session.scalar(
                 select(Task)
                 .join(Task.task_list)
@@ -246,7 +253,6 @@ async def kinetix_create_task(
         due_date: Optional ISO 8601 date string (e.g. '2026-10-01T17:00:00Z').
         assignee_ids: Optional list of workspace user IDs to assign.
     """
-    session_factory = get_session_factory()
     try:
         body = CreateTaskBody(
             name=title.strip(),
@@ -255,7 +261,7 @@ async def kinetix_create_task(
             dueDate=due_date,
             assigneeIds=assignee_ids or [],
         )
-        async with session_factory() as session:
+        async with _db_session() as session:
             task_list = await session.scalar(
                 select(TaskList)
                 .join(Space)
@@ -310,9 +316,8 @@ async def kinetix_update_task(
         due_date: Optional updated ISO 8601 date string.
         assignee_ids: Optional updated list of assignee user IDs.
     """
-    session_factory = get_session_factory()
     try:
-        async with session_factory() as session:
+        async with _db_session() as session:
             task_row = await session.scalar(
                 select(Task)
                 .join(Task.task_list)
@@ -365,9 +370,8 @@ async def kinetix_create_subtask(
         parent_task_id: The UUID of the parent task.
         title: The title of the subtask.
     """
-    session_factory = get_session_factory()
     try:
-        async with session_factory() as session:
+        async with _db_session() as session:
             parent = await session.scalar(
                 select(Task)
                 .join(Task.task_list)
@@ -410,9 +414,8 @@ async def kinetix_add_task_comment(
         task_id: The UUID of the task.
         content: The text/markdown content of the comment.
     """
-    session_factory = get_session_factory()
     try:
-        async with session_factory() as session:
+        async with _db_session() as session:
             task = await session.scalar(
                 select(Task)
                 .join(Task.task_list)
@@ -442,6 +445,85 @@ async def kinetix_add_task_comment(
         raise
     except Exception as exc:
         raise ToolError(f"Failed to add comment to task '{task_id}': {exc}") from exc
+
+
+@mcp.tool()
+async def kinetix_delete_task(task_id: str) -> dict[str, Any]:
+    """Permanently deletes a task and its subtasks from the workspace.
+
+    Args:
+        task_id: The UUID of the task to delete.
+    """
+    try:
+        async with _db_session() as session:
+            task_row = await session.scalar(
+                select(Task)
+                .join(Task.task_list)
+                .join(TaskList.space)
+                .where(Task.id == task_id)
+                .options(selectinload(Task.task_list).selectinload(TaskList.space))
+            )
+            if not task_row:
+                raise ToolError(f"[NOT_FOUND] Task '{task_id}' not found")
+
+            workspace_id = task_row.task_list.space.workspace_id
+            ctx = await resolve_mcp_context(session, workspace_id_override=workspace_id)
+
+            await home_service.delete_task(
+                session, ctx.workspace_id, ctx.user_id, ctx.role, task_id
+            )
+            return {
+                "id": task_id,
+                "message": f"Task '{task_row.name}' deleted successfully.",
+            }
+    except AppError as exc:
+        raise ToolError(f"[{exc.code}] {exc.message}") from exc
+    except ToolError:
+        raise
+    except Exception as exc:
+        raise ToolError(f"Failed to delete task '{task_id}': {exc}") from exc
+
+
+@mcp.tool()
+async def kinetix_delete_task_comment(
+    task_id: str,
+    comment_id: str,
+) -> dict[str, Any]:
+    """Deletes a specific comment from a task.
+
+    Args:
+        task_id: The UUID of the task.
+        comment_id: The UUID of the comment to delete.
+    """
+    try:
+        async with _db_session() as session:
+            task = await session.scalar(
+                select(Task)
+                .join(Task.task_list)
+                .join(TaskList.space)
+                .where(Task.id == task_id)
+                .options(selectinload(Task.task_list).selectinload(TaskList.space))
+            )
+            if not task:
+                raise ToolError(f"[NOT_FOUND] Task '{task_id}' not found")
+
+            workspace_id = task.task_list.space.workspace_id
+            ctx = await resolve_mcp_context(session, workspace_id_override=workspace_id)
+
+            await spaces_service.delete_task_comment(
+                session, ctx.workspace_id, ctx.user_id, task_id, comment_id, role=ctx.role
+            )
+            return {
+                "taskId": task_id,
+                "commentId": comment_id,
+                "message": "Task comment deleted successfully.",
+            }
+    except AppError as exc:
+        raise ToolError(f"[{exc.code}] {exc.message}") from exc
+    except ToolError:
+        raise
+    except Exception as exc:
+        raise ToolError(f"Failed to delete comment '{comment_id}': {exc}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -493,9 +575,8 @@ async def kinetix_get_channel_messages(
         channel_id: The UUID of the channel.
         limit: Number of recent messages to return (default: 30, max: 100).
     """
-    session_factory = get_session_factory()
     try:
-        async with session_factory() as session:
+        async with _db_session() as session:
             channel = await session.get(ChatChannel, channel_id)
             if not channel:
                 raise ToolError(f"[NOT_FOUND] Channel '{channel_id}' not found")
@@ -544,35 +625,26 @@ async def kinetix_post_channel_message(
     if not channel_id and not channel_name:
         raise ToolError("Either 'channel_id' or 'channel_name' must be provided.")
 
-    session_factory = get_session_factory()
     try:
-        async with session_factory() as session:
+        async with _db_session() as session:
             channel: ChatChannel | None = None
             if channel_id:
                 channel = await session.get(ChatChannel, channel_id)
+                if not channel:
+                    raise ToolError(f"[NOT_FOUND] Channel '{channel_id}' not found.")
+                ctx = await resolve_mcp_context(session, workspace_id_override=channel.workspace_id)
             else:
                 clean_name = channel_name.lstrip("#").strip()
-                ctx_temp = await resolve_mcp_context(session, workspace_id_override=workspace_id)
-                query = select(ChatChannel).where(ChatChannel.name == clean_name)
-                if workspace_id:
-                    query = query.where(ChatChannel.workspace_id == workspace_id)
-                else:
-                    query = query.where(ChatChannel.workspace_id == ctx_temp.workspace_id)
-
+                ctx = await resolve_mcp_context(session, workspace_id_override=workspace_id)
+                query = select(ChatChannel).where(
+                    ChatChannel.name == clean_name,
+                    ChatChannel.workspace_id == ctx.workspace_id,
+                )
                 channel = await session.scalar(query)
                 if not channel:
-                    # Fallback to any channel with this name that the user is a member of
-                    channel = await session.scalar(
-                        select(ChatChannel)
-                        .where(ChatChannel.name == clean_name)
+                    raise ToolError(
+                        f"[NOT_FOUND] Channel '#{clean_name}' not found in workspace '{ctx.workspace_name}'."
                     )
-
-            if not channel:
-                raise ToolError(
-                    f"[NOT_FOUND] Channel '{channel_id or channel_name}' not found."
-                )
-
-            ctx = await resolve_mcp_context(session, workspace_id_override=channel.workspace_id)
             msg = await chat_service.send_channel_message(
                 session, ctx.workspace_id, ctx.user_id, channel.id, body=content.strip()
             )
@@ -614,9 +686,8 @@ async def kinetix_send_direct_message(
     if not recipient_email_or_id and not conversation_id:
         raise ToolError("Either 'recipient_email_or_id' or 'conversation_id' must be specified.")
 
-    session_factory = get_session_factory()
     try:
-        async with session_factory() as session:
+        async with _db_session() as session:
             target_conv_id = conversation_id
             workspace_override = workspace_id
 
@@ -707,9 +778,8 @@ async def kinetix_get_direct_messages(
         conversation_id: The UUID of the DM conversation.
         limit: Number of recent messages to return (default: 30, max: 100).
     """
-    session_factory = get_session_factory()
     try:
-        async with session_factory() as session:
+        async with _db_session() as session:
             conv = await session.get(DirectConversation, conversation_id)
             if not conv:
                 raise ToolError(f"[NOT_FOUND] Conversation '{conversation_id}' not found.")
@@ -825,15 +895,16 @@ async def kinetix_search(
 
             if scope in ("all", "docs"):
                 try:
-                    doc_res = await rag_knowledge_service.query_rag_context(
-                        session, ctx.workspace_id, query
+                    doc_res = await rag_knowledge_service.query_company_knowledge_base(
+                        session, ctx.workspace_id, ctx.user_id, query
                     )
                     results["docs"] = {
                         "answer": doc_res.get("answer"),
                         "citations": doc_res.get("citations", []),
+                        "actionChips": doc_res.get("actionChips", []),
                     }
-                except Exception:
-                    results["docs"] = None
+                except Exception as exc:
+                    results["docs"] = {"answer": None, "error": str(exc)}
 
             return results
     except AppError as exc:
@@ -966,5 +1037,30 @@ def task_spec_generator(task_title: str) -> str:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # Runs over stdio by default for Claude Desktop / Cursor / Windsurf
-    mcp.run()
+    import argparse
+    import os
+
+    parser = argparse.ArgumentParser(description="Kinetix FastMCP Server")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse"],
+        default=os.getenv("MCP_TRANSPORT", "stdio"),
+        help="Transport type ('stdio' for desktop IDEs, 'sse' for HTTP/browser agents)",
+    )
+    parser.add_argument(
+        "--host",
+        default=os.getenv("MCP_HOST", "0.0.0.0"),
+        help="Host interface for SSE server (default: 0.0.0.0)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("MCP_PORT", "8000")),
+        help="Port for SSE server (default: 8000)",
+    )
+    args, _ = parser.parse_known_args()
+
+    if args.transport == "sse":
+        mcp.run(transport="sse", host=args.host, port=args.port)
+    else:
+        mcp.run(transport="stdio")

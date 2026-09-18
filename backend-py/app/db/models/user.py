@@ -85,3 +85,35 @@ class PasswordResetToken(Base):
     )
 
     user: Mapped["User"] = relationship()
+
+
+class UserApiKey(Base):
+    __tablename__ = "UserApiKey"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        "userId", String, ForeignKey("User.id", ondelete="CASCADE"), nullable=False
+    )
+    workspace_id: Mapped[str | None] = mapped_column(
+        "workspaceId", String, ForeignKey("Workspace.id", ondelete="CASCADE"), nullable=True
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    key_prefix: Mapped[str] = mapped_column("keyPrefix", String, nullable=False)
+    key_hash: Mapped[str] = mapped_column("keyHash", String, unique=True, nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(
+        "expiresAt", DateTime(timezone=True), nullable=True
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        "lastUsedAt", DateTime(timezone=True), nullable=True
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        "revokedAt", DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        "createdAt", DateTime(timezone=True), server_default=func.now()
+    )
+
+    user: Mapped["User"] = relationship()
+

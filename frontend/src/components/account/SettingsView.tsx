@@ -20,7 +20,7 @@ import { ApiError } from "@/lib/api/client";
 import { PasswordStrengthMeter } from "@/components/auth/PasswordStrengthMeter";
 import { isPasswordValid } from "@/lib/password";
 import { useAuthStore, selectActiveWorkspace } from "@/stores/auth-store";
-import { BellIcon, Volume2Icon } from "lucide-react";
+import { BellIcon, BotIcon, LockIcon, SlidersHorizontalIcon, Volume2Icon } from "lucide-react";
 import {
   useSettingsStore,
   type SoundPreset,
@@ -33,6 +33,7 @@ import {
 } from "@/lib/notifications/desktop";
 import { playNotificationSound, SOUND_PRESETS } from "@/lib/notifications/sound";
 import { toast } from "sonner";
+import { McpSettingsCard } from "@/components/settings/McpSettingsCard";
 
 export function SettingsView() {
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -54,6 +55,7 @@ export function SettingsView() {
   const [changingPassword, setChangingPassword] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [hasPassword, setHasPassword] = useState(true);
+  const [activeTab, setActiveTab] = useState<"general" | "mcp" | "security">("general");
 
   useEffect(() => setMounted(true), []);
 
@@ -128,195 +130,244 @@ export function SettingsView() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
       <PageHeader title="Settings" />
+
+      {/* Settings Navigation Tabs */}
+      <div className="border-b border-border bg-card/40 px-6 py-2">
+        <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-2">
+          <button
+            onClick={() => setActiveTab("general")}
+            className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-colors ${
+              activeTab === "general"
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            <SlidersHorizontalIcon className="size-3.5" />
+            General & Preferences
+          </button>
+          <button
+            onClick={() => setActiveTab("mcp")}
+            className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-colors ${
+              activeTab === "mcp"
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            <BotIcon className="size-3.5" />
+            AI & MCP Integrations
+          </button>
+          <button
+            onClick={() => setActiveTab("security")}
+            className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-colors ${
+              activeTab === "security"
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            <LockIcon className="size-3.5" />
+            Password & Security
+          </button>
+        </div>
+      </div>
+
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
-        <div className="mx-auto max-w-lg space-y-6">
-          <section className="space-y-3 rounded-xl border border-border bg-card p-4">
-            <h2 className="text-sm font-semibold">Appearance</h2>
-            <div className="space-y-2">
-              <Label>Theme</Label>
-              <Select
-                value={mounted ? theme : "system"}
-                onValueChange={(v) =>
-                  v && handleThemeChange(v as ThemePreference)
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="light">Light</SelectItem>
-                  <SelectItem value="dark">Dark</SelectItem>
-                  <SelectItem value="system">System</SelectItem>
-                </SelectContent>
-              </Select>
-              {mounted ? (
-                <p className="text-xs text-muted-foreground">
-                  Active: {resolvedTheme ?? theme}
+        {activeTab === "mcp" ? (
+          <div className="mx-auto max-w-4xl">
+            <McpSettingsCard />
+          </div>
+        ) : activeTab === "security" ? (
+          <div className="mx-auto max-w-lg space-y-6">
+            <section className="space-y-3 rounded-xl border border-border bg-card p-4">
+              <h2 className="text-sm font-semibold">Password</h2>
+              {!hasPassword ? (
+                <p className="text-sm text-muted-foreground">
+                  You signed in with Google. Use{" "}
+                  <Link href="/auth/forgot-password" className="text-primary underline">
+                    forgot password
+                  </Link>{" "}
+                  to set a password for email login.
                 </p>
-              ) : null}
-            </div>
-          </section>
-
-          <section className="space-y-4 rounded-xl border border-border bg-card p-4">
-            <h2 className="text-sm font-semibold">Notifications & Sound</h2>
-
-            <div className="flex items-center justify-between gap-3">
-              <Label htmlFor="notification-sound" className="text-sm font-normal">
-                Play sound on new messages
-              </Label>
-              <Switch
-                id="notification-sound"
-                checked={soundEnabled}
-                onCheckedChange={(v) => setSoundEnabled(Boolean(v))}
-              />
-            </div>
-
-            {soundEnabled ? (
-              <div className="space-y-2 pt-1">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="sound-preset" className="text-xs text-muted-foreground">
-                    Notification Sound
-                  </Label>
+              ) : (
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="current-password">Current password</Label>
+                    <Input
+                      id="current-password"
+                      type="password"
+                      autoComplete="current-password"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="new-password">New password</Label>
+                    <Input
+                      id="new-password"
+                      type="password"
+                      autoComplete="new-password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                    />
+                    <PasswordStrengthMeter password={newPassword} />
+                  </div>
                   <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
-                    onClick={() => playNotificationSound(soundPreset, true)}
+                    onClick={handlePasswordChange}
+                    loading={changingPassword}
+                    loadingText="Updating…"
                   >
-                    <Volume2Icon className="size-3.5" />
-                    Test Sound
+                    Update password
                   </Button>
                 </div>
+              )}
+            </section>
+          </div>
+        ) : (
+          <div className="mx-auto max-w-lg space-y-6">
+            <section className="space-y-3 rounded-xl border border-border bg-card p-4">
+              <h2 className="text-sm font-semibold">Appearance</h2>
+              <div className="space-y-2">
+                <Label>Theme</Label>
                 <Select
-                  value={soundPreset}
-                  onValueChange={(v) => v && handleSoundPresetChange(v as SoundPreset)}
+                  value={mounted ? theme : "system"}
+                  onValueChange={(v) =>
+                    v && handleThemeChange(v as ThemePreference)
+                  }
                 >
-                  <SelectTrigger id="sound-preset" className="w-full">
+                  <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {SOUND_PRESETS.map((preset) => (
-                      <SelectItem key={preset.id} value={preset.id}>
-                        <div className="flex flex-col text-left">
-                          <span className="font-medium">{preset.label}</span>
-                          <span className="text-[11px] text-muted-foreground">
-                            {preset.description}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="light">Light</SelectItem>
+                    <SelectItem value="dark">Dark</SelectItem>
+                    <SelectItem value="system">System</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
-            ) : null}
-
-            <div className="border-t border-border pt-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <Label htmlFor="notification-desktop" className="text-sm font-normal">
-                    Desktop notifications
-                  </Label>
+                {mounted ? (
                   <p className="text-xs text-muted-foreground">
-                    Get notified about new messages and mentions when this app or tab isn&apos;t in focus.
+                    Active: {resolvedTheme ?? theme}
                   </p>
-                </div>
+                ) : null}
+              </div>
+            </section>
+
+            <section className="space-y-4 rounded-xl border border-border bg-card p-4">
+              <h2 className="text-sm font-semibold">Notifications & Sound</h2>
+
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="notification-sound" className="text-sm font-normal">
+                  Play sound on new messages
+                </Label>
                 <Switch
-                  id="notification-desktop"
-                  checked={desktopNotifications && mounted && getDesktopPermission() === "granted"}
-                  onCheckedChange={(v) => void handleDesktopNotificationsChange(Boolean(v))}
+                  id="notification-sound"
+                  checked={soundEnabled}
+                  onCheckedChange={(v) => setSoundEnabled(Boolean(v))}
                 />
               </div>
 
-              {desktopNotifications && mounted && getDesktopPermission() === "granted" ? (
-                <div className="mt-2.5 flex justify-end">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 gap-1.5 text-xs"
-                    onClick={() => {
-                      sendTestDesktopNotification();
-                      toast.info("Sent test desktop notification");
-                    }}
+              {soundEnabled ? (
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="sound-preset" className="text-xs text-muted-foreground">
+                      Notification Sound
+                    </Label>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => playNotificationSound(soundPreset, true)}
+                    >
+                      <Volume2Icon className="size-3.5" />
+                      Test Sound
+                    </Button>
+                  </div>
+                  <Select
+                    value={soundPreset}
+                    onValueChange={(v) => v && handleSoundPresetChange(v as SoundPreset)}
                   >
-                    <BellIcon className="size-3.5" />
-                    Send Test Notification
-                  </Button>
+                    <SelectTrigger id="sound-preset" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SOUND_PRESETS.map((preset) => (
+                        <SelectItem key={preset.id} value={preset.id}>
+                          <div className="flex flex-col text-left">
+                            <span className="font-medium">{preset.label}</span>
+                            <span className="text-[11px] text-muted-foreground">
+                              {preset.description}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               ) : null}
-            </div>
-          </section>
 
-          <section className="space-y-3 rounded-xl border border-border bg-card p-4">
-            <h2 className="text-sm font-semibold">Workspace</h2>
-            <p className="text-sm text-muted-foreground">
-              Active: <strong>{workspace?.name ?? "None"}</strong>
-              {workspace?.role ? ` · ${workspace.role}` : ""}
-            </p>
-            <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/people" />}>
-              Manage people
-            </Button>
-          </section>
-
-          <section className="space-y-3 rounded-xl border border-border bg-card p-4">
-            <h2 className="text-sm font-semibold">Password</h2>
-            {!hasPassword ? (
-              <p className="text-sm text-muted-foreground">
-                You signed in with Google. Use{" "}
-                <Link href="/auth/forgot-password" className="text-primary underline">
-                  forgot password
-                </Link>{" "}
-                to set a password for email login.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label htmlFor="current-password">Current password</Label>
-                  <Input
-                    id="current-password"
-                    type="password"
-                    autoComplete="current-password"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
+              <div className="border-t border-border pt-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <Label htmlFor="notification-desktop" className="text-sm font-normal">
+                      Desktop notifications
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Get notified about new messages and mentions when this app or tab isn&apos;t in focus.
+                    </p>
+                  </div>
+                  <Switch
+                    id="notification-desktop"
+                    checked={desktopNotifications && mounted && getDesktopPermission() === "granted"}
+                    onCheckedChange={(v) => void handleDesktopNotificationsChange(Boolean(v))}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="new-password">New password</Label>
-                  <Input
-                    id="new-password"
-                    type="password"
-                    autoComplete="new-password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                  />
-                  <PasswordStrengthMeter password={newPassword} />
-                </div>
-                <Button
-                  onClick={handlePasswordChange}
-                  loading={changingPassword}
-                  loadingText="Updating…"
-                >
-                  Update password
-                </Button>
+
+                {desktopNotifications && mounted && getDesktopPermission() === "granted" ? (
+                  <div className="mt-2.5 flex justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 gap-1.5 text-xs"
+                      onClick={() => {
+                        sendTestDesktopNotification();
+                        toast.info("Sent test desktop notification");
+                      }}
+                    >
+                      <BellIcon className="size-3.5" />
+                      Send Test Notification
+                    </Button>
+                  </div>
+                ) : null}
               </div>
-            )}
-          </section>
+            </section>
 
-          <section className="rounded-xl border border-border bg-card p-4">
-            <h2 className="text-sm font-semibold">Account</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Edit your name and avatar on your profile page.
-            </p>
-            <Button
-              variant="link"
-              className="mt-2 h-auto px-0"
-              nativeButton={false}
-              render={<Link href="/profile" />}
-            >
-              Open profile
-            </Button>
-          </section>
-        </div>
+            <section className="space-y-3 rounded-xl border border-border bg-card p-4">
+              <h2 className="text-sm font-semibold">Workspace</h2>
+              <p className="text-sm text-muted-foreground">
+                Active: <strong>{workspace?.name ?? "None"}</strong>
+                {workspace?.role ? ` · ${workspace.role}` : ""}
+              </p>
+              <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/people" />}>
+                Manage people
+              </Button>
+            </section>
+
+            <section className="rounded-xl border border-border bg-card p-4">
+              <h2 className="text-sm font-semibold">Account</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Edit your name and avatar on your profile page.
+              </p>
+              <Button
+                variant="link"
+                className="mt-2 h-auto px-0"
+                nativeButton={false}
+                render={<Link href="/profile" />}
+              >
+                Open profile
+              </Button>
+            </section>
+          </div>
+        )}
       </div>
     </div>
   );
 }
+
