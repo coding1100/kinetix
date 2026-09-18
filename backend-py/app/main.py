@@ -159,6 +159,15 @@ async def root_redirect():
     return RedirectResponse(url="/docs")
 
 
+# Mount remote MCP server for remote users (SSE transport for Claude, Cursor, and AI agents)
+try:
+    from app.mcp.server import mcp
+
+    fastapi_app.mount("/mcp", mcp.http_app(transport="sse"))
+except Exception as exc:
+    logging.getLogger("kinetix").warning("Failed to mount MCP app: %s", exc)
+
+
 from app.socket import create_asgi_app
 
 app = create_asgi_app(fastapi_app)

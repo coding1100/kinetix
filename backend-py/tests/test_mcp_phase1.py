@@ -38,8 +38,9 @@ async def test_mcp_context_resolution(api_client: AsyncClient):
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_mcp_workspace_structure_tool(api_client: AsyncClient):
+async def test_mcp_workspace_structure_tool(api_client: AsyncClient, monkeypatch: pytest.MonkeyPatch):
     token = await _login(api_client, *OWNER)
+    monkeypatch.setenv("KINETIX_API_KEY", token)
 
     # Call tool via FastMCP
     res = await mcp.call_tool("kinetix_get_workspace_structure", {})
@@ -54,8 +55,9 @@ async def test_mcp_workspace_structure_tool(api_client: AsyncClient):
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_mcp_task_lifecycle_and_resources(api_client: AsyncClient):
+async def test_mcp_task_lifecycle_and_resources(api_client: AsyncClient, monkeypatch: pytest.MonkeyPatch):
     token = await _login(api_client, *OWNER)
+    monkeypatch.setenv("KINETIX_API_KEY", token)
     headers = _auth(token)
 
     # Get workspace ID
