@@ -57,11 +57,17 @@ async def get_mcp_status() -> dict[str, Any]:
         {"name": "task_spec_generator", "description": "Breaks down a feature into technical specs and subtasks"},
     ]
 
+    from app.config import get_settings
+
+    settings = get_settings()
+    public_url = settings.api_public_url.rstrip("/")
+
     return {
         "status": "ready",
         "service": "Kinetix MCP Server",
         "protocolVersion": "2024-11-05",
         "backendDirectory": BACKEND_DIR,
+        "publicUrl": public_url,
         "transports": {
             "stdio": {
                 "command": "uv",
@@ -70,6 +76,7 @@ async def get_mcp_status() -> dict[str, Any]:
             },
             "sse": {
                 "endpoint": "/mcp/sse",
+                "url": f"{public_url}/mcp/sse",
                 "method": "GET",
                 "authHeader": "Authorization: Bearer <knx_pat_...>",
             },
