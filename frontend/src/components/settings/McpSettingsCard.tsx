@@ -10,7 +10,9 @@ import {
   ChevronRightIcon,
   CopyIcon,
   FileTextIcon,
+  GlobeIcon,
   KeyIcon,
+  LaptopIcon,
   PlayCircleIcon,
   PlusIcon,
   RefreshCwIcon,
@@ -230,8 +232,12 @@ export function McpSettingsCard() {
   const [diagResult, setDiagResult] = useState<VerifyMcpResponse | null>(null);
   const [testingDiag, setTestingDiag] = useState(false);
 
+  // Connection mode: remote user vs local host
+  const [connectionMode, setConnectionMode] = useState<"remote" | "local">("remote");
+  const [customServerUrl, setCustomServerUrl] = useState("");
+
   // Active guide tab & OS switcher
-  const [activeTab, setActiveTab] = useState<"claude" | "claude-code" | "cursor" | "windsurf" | "sse">("claude");
+  const [activeTab, setActiveTab] = useState<"claude" | "cursor" | "windsurf" | "claude-code" | "sse">("claude");
   const [clientOs, setClientOs] = useState<"windows" | "mac" | "linux">("windows");
 
   // Selected tool detail dialog
@@ -261,6 +267,9 @@ export function McpSettingsCard() {
     try {
       const meta = await getMcpStatus();
       setServerMeta(meta);
+      if (meta?.publicUrl && !customServerUrl) {
+        setCustomServerUrl(meta.publicUrl);
+      }
     } catch {
       // Graceful fallback
     }
@@ -269,6 +278,9 @@ export function McpSettingsCard() {
   useEffect(() => {
     fetchKeys();
     fetchStatus();
+    if (!customServerUrl && typeof window !== "undefined") {
+      setCustomServerUrl(window.location.origin);
+    }
   }, [accessToken]);
 
   const handleCopy = (text: string, fieldId: string) => {
@@ -349,7 +361,11 @@ export function McpSettingsCard() {
   const tokenToDisplay = createdKey?.token || (keys.length > 0 ? keys[0].keyPrefix : "knx_pat_YOUR_TOKEN_HERE");
   const backendDir = serverMeta?.backendDirectory || "C:\\Users\\hamza\\Desktop\\kinetix\\backend-py";
 
-  const stdioJsonConfig = JSON.stringify(
+  const resolvedOrigin = customServerUrl.trim().replace(/\/+$/, "") || (typeof window !== "undefined" ? window.location.origin : "http://localhost:4001");
+  const sseEndpointUrl = `${resolvedOrigin}/mcp/sse`;
+
+  // Local config: stdio command via uv
+  const localJsonConfig = JSON.stringify(
     {
       mcpServers: {
         kinetix: {
@@ -365,11 +381,47 @@ export function McpSettingsCard() {
     2
   );
 
-  const claudeCodeCommand = `claude mcp add kinetix uv -- --directory "${backendDir}" run python -m app.mcp.server -e KINETIX_API_KEY="${tokenToDisplay}"`;
+  // Remote config: Claude Desktop uses official mcp-remote bridge (zero Python required on remote machine)
+  const remoteClaudeJsonConfig = JSON.stringify(
+    {
+      mcpServers: {
+        kinetix: {
+          command: "npx",
+          args: [
+            "-y",
+            "mcp-remote",
+            sseEndpointUrl,
+            "--header",
+            `Authorization: Bearer ${tokenToDisplay}`,
+          ],
+        },
+      },
+    },
+    null,
+    2
+  );
 
-  const sseUrl = typeof window !== "undefined"
-    ? `${window.location.origin}/mcp/sse`
-    : "http://localhost:4001/mcp/sse";
+  // Remote config for Cursor & Windsurf: native HTTP/SSE URL
+  const remoteCursorJsonConfig = JSON.stringify(
+    {
+      mcpServers: {
+        kinetix: {
+          url: sseEndpointUrl,
+          headers: {
+            Authorization: `Bearer ${tokenToDisplay}`,
+          },
+        },
+      },
+    },
+    null,
+    2
+  );
+
+  const activeJsonConfig = connectionMode === "remote" ? remoteClaudeJsonConfig : localJsonConfig;
+
+  const claudeCodeCommand = connectionMode === "remote"
+    ? `claude mcp add kinetix ${sseEndpointUrl} --header "Authorization: Bearer ${tokenToDisplay}"`
+    : `claude mcp add kinetix uv -- --directory "${backendDir}" run python -m app.mcp.server -e KINETIX_API_KEY="${tokenToDisplay}"`;
 
   const toolsList: ToolItem[] = DEFAULT_TOOLS;
 
@@ -400,12 +452,12 @@ export function McpSettingsCard() {
                   Production Ready (17 Tools)
                 </Badge>
                 <Badge variant="secondary" className="text-[11px] font-mono">
-                  v2024-11-05
+                  Remote & Local Enabled
                 </Badge>
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
-                Connect your AI assistant (Claude Desktop, Cursor, Windsurf, Claude Code CLI, or custom agents) to your Kinetix workspace.
-                Inspect tasks, manage workflows, search company knowledge, and collaborate seamlessly.
+                Connect your AI assistant (Claude Desktop, Cursor, Windsurf, Claude Code CLI, or remote agents) to your Kinetix workspace.
+                Remote team members can connect seamlessly without installing Python or local repositories.
               </p>
             </div>
           </div>
@@ -441,13 +493,66 @@ export function McpSettingsCard() {
         </div>
       </div>
 
-      {/* Non-Technical Step-by-Step Setup Wizard */}
+      {/* Step-by-Step Setup Wizard */}
       <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-foreground">AI Client Setup Wizard</h3>
-            <p className="text-xs text-muted-foreground">Select your tool below for verified 1-click configuration instructions.</p>
+        {/* Wizard Controls Header: Remote Mode vs Local Mode + Client Tabs */}
+        <div className="flex flex-col gap-4 border-b border-border pb-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">AI Client Setup Wizard</h3>
+              <p className="text-xs text-muted-foreground">
+                {connectionMode === "remote"
+                  ? "Configured for Remote Team Members & Laptops (Connects over the network without local Python)."
+                  : "Configured for Local Host (Runs server directly from this machine's repository)."}
+              </p>
+            </div>
+
+            {/* Connection Mode Switcher */}
+            <div className="flex items-center rounded-lg border border-border bg-muted p-1">
+              <button
+                onClick={() => setConnectionMode("remote")}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                  connectionMode === "remote"
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <GlobeIcon className="size-3.5" />
+                Remote Team Member
+              </button>
+              <button
+                onClick={() => setConnectionMode("local")}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                  connectionMode === "local"
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <LaptopIcon className="size-3.5" />
+                This Machine (Local)
+              </button>
+            </div>
           </div>
+
+          {/* Remote Server Domain Input (Only in Remote Mode) */}
+          {connectionMode === "remote" && (
+            <div className="flex flex-col gap-2 rounded-xl border border-primary/20 bg-primary/5 p-3 sm:flex-row sm:items-center sm:justify-between text-xs">
+              <div className="space-y-0.5">
+                <span className="font-semibold text-foreground">Kinetix Server Base URL:</span>
+                <p className="text-muted-foreground">The public address or domain where your Kinetix backend is accessible.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Input
+                  className="h-8 w-64 bg-background font-mono text-xs"
+                  value={customServerUrl}
+                  onChange={(e) => setCustomServerUrl(e.target.value)}
+                  placeholder="https://kinetix.company.com"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Client Tab Switcher */}
           <div className="flex flex-wrap items-center rounded-lg border border-border bg-muted p-1 gap-1">
             <button
               onClick={() => setActiveTab("claude")}
@@ -456,14 +561,6 @@ export function McpSettingsCard() {
               }`}
             >
               Claude Desktop
-            </button>
-            <button
-              onClick={() => setActiveTab("claude-code")}
-              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                activeTab === "claude-code" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Claude Code CLI
             </button>
             <button
               onClick={() => setActiveTab("cursor")}
@@ -482,16 +579,25 @@ export function McpSettingsCard() {
               Windsurf
             </button>
             <button
+              onClick={() => setActiveTab("claude-code")}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                activeTab === "claude-code" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Claude Code CLI
+            </button>
+            <button
               onClick={() => setActiveTab("sse")}
               className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
                 activeTab === "sse" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              Remote / SSE
+              Direct SSE / Web Agents
             </button>
           </div>
         </div>
 
+        {/* Wizard Tab Content */}
         <div className="mt-5 space-y-4">
           {/* Claude Desktop Guide */}
           {activeTab === "claude" && (
@@ -504,7 +610,11 @@ export function McpSettingsCard() {
                   </div>
                   <div className="text-xs">
                     <p className="font-semibold text-foreground">Copy Configuration</p>
-                    <p className="mt-0.5 text-muted-foreground">Click the "Copy Configuration" button below to copy your tailored JSON.</p>
+                    <p className="mt-0.5 text-muted-foreground">
+                      {connectionMode === "remote"
+                        ? "Copies the remote npx bridge configuration. Zero local Python setup required."
+                        : "Copies the local Python uv command configuration."}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3 rounded-xl border border-border bg-background p-3.5">
@@ -513,7 +623,7 @@ export function McpSettingsCard() {
                   </div>
                   <div className="text-xs">
                     <p className="font-semibold text-foreground">Open Config File</p>
-                    <p className="mt-0.5 text-muted-foreground">Use the 1-click open command below to open your Claude config file.</p>
+                    <p className="mt-0.5 text-muted-foreground">Use the 1-click command below. It automatically handles Windows Store & standard paths.</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3 rounded-xl border border-border bg-background p-3.5">
@@ -521,8 +631,8 @@ export function McpSettingsCard() {
                     3
                   </div>
                   <div className="text-xs">
-                    <p className="font-semibold text-foreground">Restart & Enjoy</p>
-                    <p className="mt-0.5 text-muted-foreground">Restart Claude Desktop. The hammer 🔨 icon will show 17 Kinetix tools!</p>
+                    <p className="font-semibold text-foreground">Restart & Look for 🔨</p>
+                    <p className="mt-0.5 text-muted-foreground">Restart Claude Desktop. The hammer 🔨 or tools icon will display all 17 Kinetix tools!</p>
                   </div>
                 </div>
               </div>
@@ -532,7 +642,7 @@ export function McpSettingsCard() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 font-medium text-foreground">
                     <FileTextIcon className="size-4 text-primary" />
-                    <span>How to open config on your operating system:</span>
+                    <span>How to open your Claude Desktop config file:</span>
                   </div>
                   <div className="flex items-center rounded-md border border-border bg-background p-0.5">
                     <button
@@ -565,36 +675,22 @@ export function McpSettingsCard() {
                 <div className="mt-3">
                   {clientOs === "windows" && (
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between rounded-lg border border-border bg-background p-2.5">
-                        <div>
-                          <span className="font-semibold text-foreground">File Path:</span>
-                          <p className="font-mono text-[11px] text-muted-foreground">%APPDATA%\Claude\claude_desktop_config.json</p>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => handleCopy("%APPDATA%\\Claude\\claude_desktop_config.json", "claude-win-path")}
-                        >
-                          {copiedField === "claude-win-path" ? <CheckIcon className="size-3.5 text-emerald-500" /> : <CopyIcon className="size-3.5" />}
-                        </Button>
-                      </div>
-
-                      {/* PowerShell Command */}
+                      {/* Universal PowerShell command that handles both MSIX Store and Standard Installer */}
                       <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2.5">
-                        <div>
+                        <div className="pr-2">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-semibold text-emerald-800 dark:text-emerald-300">PowerShell Terminal Command (Creates folder & opens):</span>
-                            <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-600 dark:text-emerald-400">Recommended</Badge>
+                            <span className="font-semibold text-emerald-800 dark:text-emerald-300">PowerShell 1-Click Opener (Auto-detects Windows Store & standard paths):</span>
+                            <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-600 dark:text-emerald-400">Universal</Badge>
                           </div>
-                          <p className="font-mono text-[11px] text-muted-foreground mt-0.5">
-                            New-Item -ItemType Directory -Force -Path "$env:APPDATA\Claude" | Out-Null; notepad "$env:APPDATA\Claude\claude_desktop_config.json"
+                          <p className="font-mono text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
+                            $pkg = Get-ChildItem -Path "$env:LOCALAPPDATA\Packages" -Filter "Claude_*" -ErrorAction SilentlyContinue | Select-Object -First 1; $dir = if ($pkg) &#123; "$($pkg.FullName)\LocalCache\Roaming\Claude" &#125; else &#123; "$env:APPDATA\Claude" &#125;; New-Item -ItemType Directory -Force -Path $dir | Out-Null; notepad "$dir\claude_desktop_config.json"
                           </p>
                         </div>
                         <Button
                           size="sm"
                           variant="outline"
                           className="h-7 gap-1 text-xs shrink-0"
-                          onClick={() => handleCopy('New-Item -ItemType Directory -Force -Path "$env:APPDATA\\Claude" | Out-Null; notepad "$env:APPDATA\\Claude\\claude_desktop_config.json"', "claude-win-ps")}
+                          onClick={() => handleCopy('$pkg = Get-ChildItem -Path "$env:LOCALAPPDATA\\Packages" -Filter "Claude_*" -ErrorAction SilentlyContinue | Select-Object -First 1; $dir = if ($pkg) { "$($pkg.FullName)\\LocalCache\\Roaming\\Claude" } else { "$env:APPDATA\\Claude" }; New-Item -ItemType Directory -Force -Path $dir | Out-Null; notepad "$dir\\claude_desktop_config.json"', "claude-win-ps")}
                         >
                           {copiedField === "claude-win-ps" ? <CheckIcon className="size-3 text-emerald-500" /> : <CopyIcon className="size-3" />}
                           Copy PowerShell
@@ -604,7 +700,7 @@ export function McpSettingsCard() {
                       {/* Run Dialog (Win + R) Command */}
                       <div className="flex items-center justify-between rounded-lg border border-border bg-background p-2.5">
                         <div>
-                          <span className="font-semibold text-foreground">Run Dialog (Win + R) or CMD:</span>
+                          <span className="font-semibold text-foreground">Standard Installer Path (Win + R):</span>
                           <p className="font-mono text-[11px] text-muted-foreground mt-0.5">
                             cmd /c if not exist "%APPDATA%\Claude" mkdir "%APPDATA%\Claude" &amp;&amp; notepad "%APPDATA%\Claude\claude_desktop_config.json"
                           </p>
@@ -624,23 +720,12 @@ export function McpSettingsCard() {
 
                   {clientOs === "mac" && (
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between rounded-lg border border-border bg-background p-2.5">
-                        <div>
-                          <span className="font-semibold text-foreground">File Path:</span>
-                          <p className="font-mono text-[11px] text-muted-foreground">~/Library/Application Support/Claude/claude_desktop_config.json</p>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => handleCopy("~/Library/Application Support/Claude/claude_desktop_config.json", "claude-mac-path")}
-                        >
-                          {copiedField === "claude-mac-path" ? <CheckIcon className="size-3.5 text-emerald-500" /> : <CopyIcon className="size-3.5" />}
-                        </Button>
-                      </div>
                       <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2.5">
                         <div>
-                          <span className="font-semibold text-emerald-800 dark:text-emerald-300">Quick 1-Click Open Command:</span>
-                          <p className="font-mono text-[11px] text-muted-foreground">mkdir -p ~/Library/Application\ Support/Claude &amp;&amp; touch ~/Library/Application\ Support/Claude/claude_desktop_config.json &amp;&amp; open -a TextEdit ~/Library/Application\ Support/Claude/claude_desktop_config.json</p>
+                          <span className="font-semibold text-emerald-800 dark:text-emerald-300">macOS Terminal 1-Click Command:</span>
+                          <p className="font-mono text-[11px] text-muted-foreground mt-0.5">
+                            mkdir -p ~/Library/Application\ Support/Claude &amp;&amp; touch ~/Library/Application\ Support/Claude/claude_desktop_config.json &amp;&amp; open -a TextEdit ~/Library/Application\ Support/Claude/claude_desktop_config.json
+                          </p>
                         </div>
                         <Button
                           size="sm"
@@ -657,23 +742,12 @@ export function McpSettingsCard() {
 
                   {clientOs === "linux" && (
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between rounded-lg border border-border bg-background p-2.5">
-                        <div>
-                          <span className="font-semibold text-foreground">File Path:</span>
-                          <p className="font-mono text-[11px] text-muted-foreground">~/.config/Claude/claude_desktop_config.json</p>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => handleCopy("~/.config/Claude/claude_desktop_config.json", "claude-linux-path")}
-                        >
-                          {copiedField === "claude-linux-path" ? <CheckIcon className="size-3.5 text-emerald-500" /> : <CopyIcon className="size-3.5" />}
-                        </Button>
-                      </div>
                       <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2.5">
                         <div>
-                          <span className="font-semibold text-emerald-800 dark:text-emerald-300">Quick 1-Click Open Command:</span>
-                          <p className="font-mono text-[11px] text-muted-foreground">mkdir -p ~/.config/Claude &amp;&amp; touch ~/.config/Claude/claude_desktop_config.json &amp;&amp; xdg-open ~/.config/Claude/claude_desktop_config.json</p>
+                          <span className="font-semibold text-emerald-800 dark:text-emerald-300">Linux Terminal 1-Click Command:</span>
+                          <p className="font-mono text-[11px] text-muted-foreground mt-0.5">
+                            mkdir -p ~/.config/Claude &amp;&amp; touch ~/.config/Claude/claude_desktop_config.json &amp;&amp; xdg-open ~/.config/Claude/claude_desktop_config.json
+                          </p>
                         </div>
                         <Button
                           size="sm"
@@ -695,22 +769,15 @@ export function McpSettingsCard() {
                 <div className="flex items-center justify-between rounded-t-lg border-x border-t border-border bg-muted/70 px-4 py-2 text-xs font-medium text-muted-foreground">
                   <div className="flex items-center gap-2">
                     <span>claude_desktop_config.json</span>
-                    {createdKey ? (
-                      <Badge variant="secondary" className="gap-1 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-[10px]">
-                        <CheckCircle2Icon className="size-3" />
-                        Live Token Injected
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-[10px]">
-                        Placeholder Token
-                      </Badge>
-                    )}
+                    <Badge variant="outline" className="text-[10px]">
+                      {connectionMode === "remote" ? "Remote Bridge (npx mcp-remote)" : "Local uv command"}
+                    </Badge>
                   </div>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-6 gap-1 px-2 text-xs text-foreground"
-                    onClick={() => handleCopy(stdioJsonConfig, "claude-config")}
+                    onClick={() => handleCopy(activeJsonConfig, "claude-config")}
                   >
                     {copiedField === "claude-config" ? (
                       <>
@@ -726,7 +793,91 @@ export function McpSettingsCard() {
                   </Button>
                 </div>
                 <pre className="max-h-56 overflow-x-auto rounded-b-lg border border-border bg-zinc-950 p-4 font-mono text-xs text-zinc-100">
-                  {stdioJsonConfig}
+                  {activeJsonConfig}
+                </pre>
+              </div>
+            </div>
+          )}
+
+          {/* Cursor Guide */}
+          {activeTab === "cursor" && (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-border/70 bg-muted/40 p-4 text-xs">
+                <p className="font-semibold text-foreground">How to enable in Cursor:</p>
+                <ol className="mt-2 list-decimal space-y-1.5 pl-4 text-muted-foreground">
+                  <li>Open <strong>Cursor Settings</strong> &rarr; <strong>Features</strong> &rarr; <strong>MCP</strong>.</li>
+                  <li>Click <strong>+ Add New MCP Server</strong> (or create a <code className="rounded bg-background px-1 py-0.5 font-mono">.cursor/mcp.json</code> file in your workspace root).</li>
+                  <li>
+                    {connectionMode === "remote"
+                      ? "Paste the remote SSE configuration below with your authorization header."
+                      : "Paste the local command configuration below."}
+                  </li>
+                </ol>
+              </div>
+
+              <div className="relative">
+                <div className="flex items-center justify-between rounded-t-lg border-x border-t border-border bg-muted/70 px-4 py-2 text-xs font-medium text-muted-foreground">
+                  <span>.cursor/mcp.json snippet</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 gap-1 px-2 text-xs text-foreground"
+                    onClick={() => handleCopy(connectionMode === "remote" ? remoteCursorJsonConfig : localJsonConfig, "cursor-config")}
+                  >
+                    {copiedField === "cursor-config" ? (
+                      <>
+                        <CheckIcon className="size-3 text-emerald-500" />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <CopyIcon className="size-3" />
+                        Copy Configuration
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <pre className="max-h-56 overflow-x-auto rounded-b-lg border border-border bg-zinc-950 p-4 font-mono text-xs text-zinc-100">
+                  {connectionMode === "remote" ? remoteCursorJsonConfig : localJsonConfig}
+                </pre>
+              </div>
+            </div>
+          )}
+
+          {/* Windsurf Guide */}
+          {activeTab === "windsurf" && (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-border/70 bg-muted/40 p-4 text-xs">
+                <p className="font-semibold text-foreground">How to enable in Windsurf (Codeium):</p>
+                <p className="mt-1 text-muted-foreground">
+                  Add the snippet below to <code className="rounded bg-background px-1 py-0.5 font-mono">~/.codeium/windsurf/mcp_config.json</code> and reload the editor window.
+                </p>
+              </div>
+
+              <div className="relative">
+                <div className="flex items-center justify-between rounded-t-lg border-x border-t border-border bg-muted/70 px-4 py-2 text-xs font-medium text-muted-foreground">
+                  <span>mcp_config.json snippet</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 gap-1 px-2 text-xs text-foreground"
+                    onClick={() => handleCopy(connectionMode === "remote" ? remoteCursorJsonConfig : localJsonConfig, "windsurf-config")}
+                  >
+                    {copiedField === "windsurf-config" ? (
+                      <>
+                        <CheckIcon className="size-3 text-emerald-500" />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <CopyIcon className="size-3" />
+                        Copy Configuration
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <pre className="max-h-56 overflow-x-auto rounded-b-lg border border-border bg-zinc-950 p-4 font-mono text-xs text-zinc-100">
+                  {connectionMode === "remote" ? remoteCursorJsonConfig : localJsonConfig}
                 </pre>
               </div>
             </div>
@@ -738,7 +889,9 @@ export function McpSettingsCard() {
               <div className="rounded-xl border border-border/70 bg-muted/40 p-4 text-xs">
                 <p className="font-semibold text-foreground">One-Line Terminal Command for Claude Code CLI:</p>
                 <p className="mt-1 text-muted-foreground">
-                  Run this single command in your terminal. Claude Code will automatically register the Kinetix MCP server and persist your credentials.
+                  {connectionMode === "remote"
+                    ? "Connects your Claude Code CLI to the remote Kinetix server over HTTP/SSE. No local code required."
+                    : "Runs the local Python server via uv."}
                 </p>
               </div>
 
@@ -771,103 +924,33 @@ export function McpSettingsCard() {
             </div>
           )}
 
-          {/* Cursor Guide */}
-          {activeTab === "cursor" && (
-            <div className="space-y-4">
-              <div className="rounded-xl border border-border/70 bg-muted/40 p-4 text-xs">
-                <p className="font-semibold text-foreground">How to enable in Cursor:</p>
-                <ol className="mt-2 list-decimal space-y-1.5 pl-4 text-muted-foreground">
-                  <li>Open <strong>Cursor Settings</strong> &rarr; <strong>Features</strong> &rarr; <strong>MCP</strong>.</li>
-                  <li>Click <strong>+ Add New MCP Server</strong> (or create a <code className="rounded bg-background px-1 py-0.5 font-mono">.cursor/mcp.json</code> file in your workspace root).</li>
-                  <li>Paste the configuration snippet below.</li>
-                </ol>
-              </div>
-
-              <div className="relative">
-                <div className="flex items-center justify-between rounded-t-lg border-x border-t border-border bg-muted/70 px-4 py-2 text-xs font-medium text-muted-foreground">
-                  <span>.cursor/mcp.json snippet</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 gap-1 px-2 text-xs text-foreground"
-                    onClick={() => handleCopy(stdioJsonConfig, "cursor-config")}
-                  >
-                    {copiedField === "cursor-config" ? (
-                      <>
-                        <CheckIcon className="size-3 text-emerald-500" />
-                        Copied!
-                      </>
-                    ) : (
-                      <>
-                        <CopyIcon className="size-3" />
-                        Copy Configuration
-                      </>
-                    )}
-                  </Button>
-                </div>
-                <pre className="max-h-56 overflow-x-auto rounded-b-lg border border-border bg-zinc-950 p-4 font-mono text-xs text-zinc-100">
-                  {stdioJsonConfig}
-                </pre>
-              </div>
-            </div>
-          )}
-
-          {/* Windsurf Guide */}
-          {activeTab === "windsurf" && (
-            <div className="space-y-4">
-              <div className="rounded-xl border border-border/70 bg-muted/40 p-4 text-xs">
-                <p className="font-semibold text-foreground">How to enable in Windsurf (Codeium):</p>
-                <p className="mt-1 text-muted-foreground">
-                  Add the snippet below to <code className="rounded bg-background px-1 py-0.5 font-mono">~/.codeium/windsurf/mcp_config.json</code> and reload the editor window.
-                </p>
-              </div>
-
-              <div className="relative">
-                <div className="flex items-center justify-between rounded-t-lg border-x border-t border-border bg-muted/70 px-4 py-2 text-xs font-medium text-muted-foreground">
-                  <span>mcp_config.json snippet</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 gap-1 px-2 text-xs text-foreground"
-                    onClick={() => handleCopy(stdioJsonConfig, "windsurf-config")}
-                  >
-                    {copiedField === "windsurf-config" ? (
-                      <>
-                        <CheckIcon className="size-3 text-emerald-500" />
-                        Copied!
-                      </>
-                    ) : (
-                      <>
-                        <CopyIcon className="size-3" />
-                        Copy Configuration
-                      </>
-                    )}
-                  </Button>
-                </div>
-                <pre className="max-h-56 overflow-x-auto rounded-b-lg border border-border bg-zinc-950 p-4 font-mono text-xs text-zinc-100">
-                  {stdioJsonConfig}
-                </pre>
-              </div>
-            </div>
-          )}
-
-          {/* Remote / SSE Guide */}
+          {/* Direct SSE / Web Agents */}
           {activeTab === "sse" && (
             <div className="space-y-4">
               <div className="rounded-xl border border-border/70 bg-muted/40 p-4 text-xs">
-                <p className="font-semibold text-foreground">Remote Agent & Server-Sent Events (SSE) Endpoint:</p>
+                <p className="font-semibold text-foreground">Direct Server-Sent Events (SSE) Endpoint:</p>
                 <p className="mt-1 text-muted-foreground">
-                  Connect remote LLM servers, OpenAI Assistants, LangChain, or custom web agents over HTTP using the standardized MCP SSE transport.
+                  Connect remote LLM servers, OpenAI Custom GPTs, LangChain agents, or automated scripts directly to Kinetix over HTTP/HTTPS.
                 </p>
               </div>
 
               <div className="space-y-3">
                 <div>
-                  <Label className="text-xs text-muted-foreground">SSE Connection URL (Supports both Header & ?token= query param)</Label>
+                  <Label className="text-xs text-muted-foreground">SSE Connection URL (Supports Header &amp; ?token= parameter)</Label>
                   <div className="mt-1 flex items-center gap-2">
-                    <Input readOnly value={sseUrl} className="font-mono text-xs" />
-                    <Button variant="outline" size="sm" onClick={() => handleCopy(sseUrl, "sse-url")}>
+                    <Input readOnly value={sseEndpointUrl} className="font-mono text-xs" />
+                    <Button variant="outline" size="sm" onClick={() => handleCopy(sseEndpointUrl, "sse-url")}>
                       {copiedField === "sse-url" ? <CheckIcon className="size-3.5 text-emerald-500" /> : <CopyIcon className="size-3.5" />}
+                    </Button>
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-xs text-muted-foreground">Direct URL with Token (For Browser EventSource / Webhooks)</Label>
+                  <div className="mt-1 flex items-center gap-2">
+                    <Input readOnly value={`${sseEndpointUrl}?token=${tokenToDisplay}`} className="font-mono text-xs" />
+                    <Button variant="outline" size="sm" onClick={() => handleCopy(`${sseEndpointUrl}?token=${tokenToDisplay}`, "sse-url-token")}>
+                      {copiedField === "sse-url-token" ? <CheckIcon className="size-3.5 text-emerald-500" /> : <CopyIcon className="size-3.5" />}
                     </Button>
                   </div>
                 </div>
@@ -891,13 +974,13 @@ export function McpSettingsCard() {
                   <div className="mt-1 flex items-center gap-2">
                     <Input
                       readOnly
-                      value={`curl -N -H "Authorization: Bearer ${tokenToDisplay}" ${sseUrl}`}
+                      value={`curl -N -H "Authorization: Bearer ${tokenToDisplay}" "${sseEndpointUrl}"`}
                       className="font-mono text-xs"
                     />
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleCopy(`curl -N -H "Authorization: Bearer ${tokenToDisplay}" ${sseUrl}`, "sse-curl")}
+                      onClick={() => handleCopy(`curl -N -H "Authorization: Bearer ${tokenToDisplay}" "${sseEndpointUrl}"`, "sse-curl")}
                     >
                       {copiedField === "sse-curl" ? <CheckIcon className="size-3.5 text-emerald-500" /> : <CopyIcon className="size-3.5" />}
                     </Button>

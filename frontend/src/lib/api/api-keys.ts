@@ -57,6 +57,7 @@ export interface McpStatusResponse {
   service: string;
   protocolVersion: string;
   backendDirectory: string;
+  publicUrl?: string;
   transports: {
     stdio: {
       command: string;
@@ -65,6 +66,7 @@ export interface McpStatusResponse {
     };
     sse: {
       endpoint: string;
+      url?: string;
       method: string;
       authHeader: string;
     };
