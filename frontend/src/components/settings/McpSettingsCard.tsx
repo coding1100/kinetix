@@ -578,19 +578,45 @@ export function McpSettingsCard() {
                           {copiedField === "claude-win-path" ? <CheckIcon className="size-3.5 text-emerald-500" /> : <CopyIcon className="size-3.5" />}
                         </Button>
                       </div>
+
+                      {/* PowerShell Command */}
                       <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2.5">
                         <div>
-                          <span className="font-semibold text-emerald-800 dark:text-emerald-300">Quick 1-Click Open Command:</span>
-                          <p className="font-mono text-[11px] text-muted-foreground">notepad %APPDATA%\Claude\claude_desktop_config.json</p>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-emerald-800 dark:text-emerald-300">PowerShell Terminal Command (Creates folder & opens):</span>
+                            <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-600 dark:text-emerald-400">Recommended</Badge>
+                          </div>
+                          <p className="font-mono text-[11px] text-muted-foreground mt-0.5">
+                            New-Item -ItemType Directory -Force -Path "$env:APPDATA\Claude" | Out-Null; notepad "$env:APPDATA\Claude\claude_desktop_config.json"
+                          </p>
                         </div>
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-7 gap-1 text-xs"
-                          onClick={() => handleCopy("notepad %APPDATA%\\Claude\\claude_desktop_config.json", "claude-win-cmd")}
+                          className="h-7 gap-1 text-xs shrink-0"
+                          onClick={() => handleCopy('New-Item -ItemType Directory -Force -Path "$env:APPDATA\\Claude" | Out-Null; notepad "$env:APPDATA\\Claude\\claude_desktop_config.json"', "claude-win-ps")}
+                        >
+                          {copiedField === "claude-win-ps" ? <CheckIcon className="size-3 text-emerald-500" /> : <CopyIcon className="size-3" />}
+                          Copy PowerShell
+                        </Button>
+                      </div>
+
+                      {/* Run Dialog (Win + R) Command */}
+                      <div className="flex items-center justify-between rounded-lg border border-border bg-background p-2.5">
+                        <div>
+                          <span className="font-semibold text-foreground">Run Dialog (Win + R) or CMD:</span>
+                          <p className="font-mono text-[11px] text-muted-foreground mt-0.5">
+                            cmd /c if not exist "%APPDATA%\Claude" mkdir "%APPDATA%\Claude" &amp;&amp; notepad "%APPDATA%\Claude\claude_desktop_config.json"
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 gap-1 text-xs shrink-0"
+                          onClick={() => handleCopy('cmd /c if not exist "%APPDATA%\\Claude" mkdir "%APPDATA%\\Claude" && notepad "%APPDATA%\\Claude\\claude_desktop_config.json"', "claude-win-cmd")}
                         >
                           {copiedField === "claude-win-cmd" ? <CheckIcon className="size-3 text-emerald-500" /> : <CopyIcon className="size-3" />}
-                          Copy Command
+                          Copy Win+R
                         </Button>
                       </div>
                     </div>
@@ -614,13 +640,13 @@ export function McpSettingsCard() {
                       <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2.5">
                         <div>
                           <span className="font-semibold text-emerald-800 dark:text-emerald-300">Quick 1-Click Open Command:</span>
-                          <p className="font-mono text-[11px] text-muted-foreground">open -a TextEdit ~/Library/Application\ Support/Claude/claude_desktop_config.json</p>
+                          <p className="font-mono text-[11px] text-muted-foreground">mkdir -p ~/Library/Application\ Support/Claude &amp;&amp; touch ~/Library/Application\ Support/Claude/claude_desktop_config.json &amp;&amp; open -a TextEdit ~/Library/Application\ Support/Claude/claude_desktop_config.json</p>
                         </div>
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-7 gap-1 text-xs"
-                          onClick={() => handleCopy("open -a TextEdit ~/Library/Application\\ Support/Claude/claude_desktop_config.json", "claude-mac-cmd")}
+                          className="h-7 gap-1 text-xs shrink-0"
+                          onClick={() => handleCopy("mkdir -p ~/Library/Application\\ Support/Claude && touch ~/Library/Application\\ Support/Claude/claude_desktop_config.json && open -a TextEdit ~/Library/Application\\ Support/Claude/claude_desktop_config.json", "claude-mac-cmd")}
                         >
                           {copiedField === "claude-mac-cmd" ? <CheckIcon className="size-3 text-emerald-500" /> : <CopyIcon className="size-3" />}
                           Copy Command
@@ -647,13 +673,13 @@ export function McpSettingsCard() {
                       <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2.5">
                         <div>
                           <span className="font-semibold text-emerald-800 dark:text-emerald-300">Quick 1-Click Open Command:</span>
-                          <p className="font-mono text-[11px] text-muted-foreground">xdg-open ~/.config/Claude/claude_desktop_config.json</p>
+                          <p className="font-mono text-[11px] text-muted-foreground">mkdir -p ~/.config/Claude &amp;&amp; touch ~/.config/Claude/claude_desktop_config.json &amp;&amp; xdg-open ~/.config/Claude/claude_desktop_config.json</p>
                         </div>
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-7 gap-1 text-xs"
-                          onClick={() => handleCopy("xdg-open ~/.config/Claude/claude_desktop_config.json", "claude-linux-cmd")}
+                          className="h-7 gap-1 text-xs shrink-0"
+                          onClick={() => handleCopy("mkdir -p ~/.config/Claude && touch ~/.config/Claude/claude_desktop_config.json && xdg-open ~/.config/Claude/claude_desktop_config.json", "claude-linux-cmd")}
                         >
                           {copiedField === "claude-linux-cmd" ? <CheckIcon className="size-3 text-emerald-500" /> : <CopyIcon className="size-3" />}
                           Copy Command
