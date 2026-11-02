@@ -29,3 +29,11 @@ export function formatShortDate(iso: string | null | undefined): string | null {
     timeZone: PKT_TIME_ZONE,
   });
 }
+
+/** True for a finished `<input type="date">` value. While a year is typed,
+ * Chrome emits each partial year as a real date (0002, 0020, 0202, 2026),
+ * so anything before year 1000 is still mid-typing. */
+export function isCompleteDateInput(value: string): boolean {
+  const match = /^(\d{4})-\d{2}-\d{2}$/.exec(value);
+  return Boolean(match && Number(match[1]) >= 1000);
+}

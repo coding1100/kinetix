@@ -562,6 +562,8 @@ class TaskComment(Base):
         back_populates="parent",
         foreign_keys=[parent_comment_id],
         lazy="select",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
     attachments: Mapped[list["TaskAttachment"]] = relationship(
         "TaskAttachment",

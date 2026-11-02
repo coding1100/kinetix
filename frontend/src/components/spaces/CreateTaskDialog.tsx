@@ -67,6 +67,8 @@ import { fetchChannels, fetchWorkspaceMembers } from "@/lib/api/chat";
 import { getMe } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { firstSelectableWorkspaceId, useAuthStore } from "@/stores/auth-store";
+import { useChatStore } from "@/stores/chat-store";
+import { useSpacesStore } from "@/stores/spaces-store";
 import {
   addChecklist,
   addChecklistItem,
@@ -226,11 +228,15 @@ export function CreateTaskDialog({
   onCreated: (task: Task, options?: { open?: boolean }) => void;
 }) {
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
+  const bumpSpacesRefresh = useSpacesStore((s) => s.bumpRefresh);
+  const bumpChatSidebarRefresh = useChatStore((s) => s.bumpSidebarRefresh);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [listId, setListId] = useState("");
   const [listName, setListName] = useState("");
+  // No list to put the task in yet; one is created on submit, never on open.
+  const [needsDefaultList, setNeedsDefaultList] = useState(false);
   const [statusId, setStatusId] = useState("");
   const [priority, setPriority] = useState<TaskPriority | typeof NO_PRIORITY>(
     NO_PRIORITY
@@ -376,41 +382,9 @@ export function CreateTaskDialog({
       }
 
 
-      let options = flattenListsFromSpaces(tree);
+      const options = flattenListsFromSpaces(tree);
 
-      if (options.length === 0 && tree.length === 0) {
-        try {
-          const newSpace = await createSpace(accessToken, currentWsId, {
-            name: "General",
-            color: "#4F8EF7",
-          });
-          if (newSpace?.id) {
-            await createList(accessToken, currentWsId, newSpace.id, {
-              name: "Tasks",
-            });
-            const refreshed = await fetchSpacesTree(accessToken, currentWsId);
-            tree = Array.isArray(refreshed?.data) ? refreshed.data : [];
-            options = flattenListsFromSpaces(tree);
-          }
-        } catch (err) {
-          console.error("Failed to auto-provision default space and list:", err);
-        }
-      } else if (options.length === 0 && tree.length > 0) {
-        try {
-          const firstSpace = tree[0];
-          if (firstSpace?.id) {
-            await createList(accessToken, currentWsId, firstSpace.id, {
-              name: "Tasks",
-            });
-            const refreshed = await fetchSpacesTree(accessToken, currentWsId);
-            tree = Array.isArray(refreshed?.data) ? refreshed.data : [];
-            options = flattenListsFromSpaces(tree);
-          }
-        } catch (err) {
-          console.error("Failed to auto-create list in existing space:", err);
-        }
-      }
-
+      setNeedsDefaultList(options.length === 0);
       setSpaces(tree);
       setRecents(recentsData);
 
@@ -439,7 +413,7 @@ export function CreateTaskDialog({
     () => [
       { id: "todo", name: "TO DO", legacyKey: "TODO", color: "#6B7280", statusGroup: "active", sortOrder: 0 },
       { id: "in_progress", name: "IN PROGRESS", legacyKey: "IN_PROGRESS", color: "#3B82F6", statusGroup: "active", sortOrder: 1 },
-      { id: "complete", name: "COMPLETE", legacyKey: "COMPLETE", color: "#10B981", statusGroup: "closed", sortOrder: 2 },
+      { id: "complete", name: "COMPLETE", legacyKey: "DONE", color: "#10B981", statusGroup: "closed", sortOrder: 2 },
     ],
     []
   );
@@ -548,8 +522,8 @@ export function CreateTaskDialog({
   }, [members, checklistAssigneeSearch]);
 
   const canCreate = useMemo(
-    () => Boolean(name.trim() && listId && !saving),
-    [name, listId, saving]
+    () => Boolean(name.trim() && (listId || needsDefaultList) && !saving),
+    [name, listId, needsDefaultList, saving]
   );
 
   function resetState() {
@@ -832,12 +806,54 @@ export function CreateTaskDialog({
     setPendingAttachments((prev) => prev.filter((a) => a.id !== id));
   }
 
-  async function createOneTask(): Promise<Task> {
+  /** First task in a workspace without lists: put it in the first Space,
+   * or create a starter Space (the backend gives every new Space a default
+   * list). Runs only when the user actually creates the task. */
+  async function provisionDefaultList(): Promise<string> {
+    const firstSpace = spaces[0];
+    let spaceId = firstSpace?.id;
+    if (spaceId) {
+      await createList(accessToken!, workspaceId!, spaceId, { name: "Tasks" });
+    } else {
+      spaceId = (
+        await createSpace(accessToken!, workspaceId!, {
+          name: "General",
+          color: "#4F8EF7",
+        })
+      ).id;
+    }
+    const refreshed = await fetchSpacesTree(accessToken!, workspaceId!);
+    const space = (refreshed?.data ?? []).find((s) => s.id === spaceId);
+    const list = flattenListsFromSpaces(space ? [space] : [])[0];
+    if (!list) throw new Error("Could not set up a list for this task");
+    bumpSpacesRefresh();
+    bumpChatSidebarRefresh();
+    // Select it, so "create and start another" keeps working.
+    setSpaces(refreshed?.data ?? []);
+    setListId(list.id);
+    setListName(list.label.split(" / ").pop() ?? "");
+    setNeedsDefaultList(false);
+    return list.id;
+  }
+
+  /** The status picker shows FALLBACK_STATUSES (placeholder ids) until a
+   * list exists; map the choice onto the new list's real status. */
+  async function resolveStatusId(targetListId: string): Promise<string | undefined> {
+    const chosen = statuses.find((s) => s.id === statusId);
+    if (!chosen?.legacyKey) return undefined;
+    const meta = await fetchListMeta(accessToken!, workspaceId!, targetListId);
+    return meta.statuses?.find((s) => s.legacyKey === chosen.legacyKey)?.id;
+  }
+
+  async function createOneTask(
+    targetListId: string,
+    targetStatusId: string | undefined
+  ): Promise<Task> {
     const dueDate = toDueDateIso(dueInput);
-    return await createListTask(accessToken!, workspaceId!, listId, {
+    return await createListTask(accessToken!, workspaceId!, targetListId, {
       name: name.trim(),
       description: description.trim() || undefined,
-      ...(statusId ? { statusId } : {}),
+      ...(targetStatusId ? { statusId: targetStatusId } : {}),
       ...(priority !== NO_PRIORITY ? { priority } : {}),
       ...(assigneeIds.length > 0 ? { assigneeIds } : {}),
       ...(followerIds.length > 0 ? { followerIds } : {}),
@@ -886,7 +902,12 @@ export function CreateTaskDialog({
     if (!canCreate || !ready || !accessToken || !workspaceId) return;
     setSaving(true);
     try {
-      const finalTask = await createOneTask();
+      const provisioned = !listId;
+      const targetListId = listId || (await provisionDefaultList());
+      const finalTask = await createOneTask(
+        targetListId,
+        listId ? statusId : await resolveStatusId(targetListId)
+      );
       if (pendingAttachments.length > 0) {
         await attachStagedAttachments(finalTask, accessToken, workspaceId);
       }
@@ -897,9 +918,13 @@ export function CreateTaskDialog({
 
       if (action === "start-another") {
         resetState();
-        const defaultStatus =
-          statuses.find((s) => s.legacyKey === "TODO") ?? statuses[0];
-        setStatusId(defaultStatus?.id ?? "");
+        // A just-provisioned list loads its own default status (listId
+        // effect); `statuses` here are still the placeholder ones.
+        if (!provisioned) {
+          const defaultStatus =
+            statuses.find((s) => s.legacyKey === "TODO") ?? statuses[0];
+          setStatusId(defaultStatus?.id ?? "");
+        }
       } else if (action === "duplicate") {
         // Keep the modal open with its current fields so the same
         // settings carry over to the next task without retyping them -

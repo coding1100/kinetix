@@ -206,24 +206,30 @@ export function markDmRead(
   );
 }
 
+/** Without `messageId` the whole history is marked unread. */
 export function markChannelUnread(
   token: string,
   workspaceId: string,
-  channelId: string
+  channelId: string,
+  messageId?: string
 ) {
+  const query = messageId ? `?messageId=${encodeURIComponent(messageId)}` : "";
   return apiFetch<{ ok: boolean; unread: number }>(
-    wsPath(workspaceId, `/chat/channels/${channelId}/unread`),
+    wsPath(workspaceId, `/chat/channels/${channelId}/unread${query}`),
     { method: "POST", token }
   );
 }
 
+/** Without `messageId` the whole history is marked unread. */
 export function markDmUnread(
   token: string,
   workspaceId: string,
-  conversationId: string
+  conversationId: string,
+  messageId?: string
 ) {
+  const query = messageId ? `?messageId=${encodeURIComponent(messageId)}` : "";
   return apiFetch<{ ok: boolean; unread: number }>(
-    wsPath(workspaceId, `/chat/dms/${conversationId}/unread`),
+    wsPath(workspaceId, `/chat/dms/${conversationId}/unread${query}`),
     { method: "POST", token }
   );
 }
@@ -329,7 +335,7 @@ export function updateChannelHuddle(
   workspaceId: string,
   channelId: string,
   huddleId: string,
-  body: { title?: string; notes?: string; isActive?: boolean }
+  body: { title?: string; notes?: string }
 ) {
   return apiFetch<ChannelHuddle>(
     wsPath(workspaceId, `/chat/channels/${channelId}/huddles/${huddleId}`),

@@ -223,6 +223,11 @@ export function WorkspaceInviteForm({
         </Select>
       </div>
       <Button
+        // Keep focus in the email field: blurring it turns the typed address
+        // into a chip, which grows the field and moves this button out from
+        // under the pointer before mouseup, swallowing the click. handleSend
+        // picks up the typed address itself.
+        onMouseDown={(e) => e.preventDefault()}
         onClick={handleSend}
         loading={loading}
         loadingText="Sending…"

@@ -19,11 +19,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useNavigateWithLoading } from "@/hooks/use-navigate-with-loading";
-import { login, getMe } from "@/lib/api/auth";
+import { login, getMe, logout } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import { playLoginSound } from "@/lib/notifications/sound";
-import { useAuthStore } from "@/stores/auth-store";
+import { firstSelectableWorkspaceId, useAuthStore } from "@/stores/auth-store";
 
 function safeNextPath(next: string | null) {
   if (!next || !next.startsWith("/") || next.startsWith("//")) {
@@ -47,6 +47,19 @@ function LoginForm() {
     try {
       const result = await login(email.trim(), password);
       const me = await getMe(result.accessToken);
+      // AuthGate can't open a workspace without one (it bounces straight back
+      // here, or never finishes loading), so explain why instead - and drop
+      // the refresh cookie login just set, or the next page load would
+      // silently restore this session and bounce again.
+      if (!firstSelectableWorkspaceId(me.workspaces)) {
+        await logout().catch(() => {});
+        toast.error(
+          me.workspaces.length > 0
+            ? "Your access to this workspace has been suspended. Contact your workspace admin."
+            : "Your account isn't part of a workspace yet. Ask your admin for an invite."
+        );
+        return;
+      }
       setSession({
         accessToken: result.accessToken,
         user: result.user,

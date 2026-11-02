@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,7 @@ from app.db.models.chat import (
     DirectParticipant,
     MessageReaction,
 )
-from app.db.models.enums import MemberStatus, WorkspaceRole
+from app.db.models.enums import MemberStatus, PermissionLevel, WorkspaceRole
 from app.db.models.home import InboxItem, Space, TaskList
 from app.db.models.user import User
 from app.db.models.workspace import WorkspaceMember
@@ -90,7 +90,10 @@ from app.services.chat_helpers import (
     map_message_broadcast,
     map_search_message,
 )
-from app.services.folder_list_permissions import user_ids_with_list_access
+from app.services.folder_list_permissions import (
+    require_list_permission,
+    user_ids_with_list_access,
+)
 from app.services.workspace_permissions import (
     get_active_workspace_role,
     is_workspace_admin as _role_is_workspace_admin,
@@ -668,9 +671,20 @@ async def update_channel(
     # channels that merely reference a list are left alone.
     if renamed and member.channel.is_list_primary and member.channel.list_id:
         list_row = await session.scalar(
-            select(TaskList).where(TaskList.id == member.channel.list_id)
+            select(TaskList)
+            .where(TaskList.id == member.channel.list_id)
+            .options(selectinload(TaskList.space))
         )
         if list_row:
+            # Renaming the channel renames the List, so it needs the same
+            # access as spaces_service.update_list's rename path.
+            from app.services.spaces_service import _require_can_edit_structure
+
+            role = await get_active_workspace_role(session, workspace_id, user_id)
+            await require_list_permission(
+                session, list_row, user_id, role, PermissionLevel.EDIT
+            )
+            _require_can_edit_structure(role)
             list_row.name = member.channel.name
 
     await session.commit()
@@ -697,7 +711,11 @@ async def _user_can_delete_channel(
         return True
     if channel.created_by_id == user_id:
         return True
+    if channel.created_by_id is not None:
+        return False
 
+    # Legacy channels with no recorded creator: fall back to the first
+    # poster, then the earliest member.
     first_author_id = await session.scalar(
         select(ChatMessage.author_id)
         .where(
@@ -709,9 +727,6 @@ async def _user_can_delete_channel(
     )
     if first_author_id == user_id:
         return True
-
-    if channel.created_by_id is not None:
-        return False
 
     earliest_user_id = await session.scalar(
         select(ChatChannelMember.user_id)
@@ -796,6 +811,8 @@ async def create_channel(
     body: CreateChannelBody,
 ) -> dict:
     trimmed = body.name.strip()
+    if not trimmed:
+        raise AppError(400, "VALIDATION_ERROR", "Channel name is required")
     existing = await session.scalar(
         select(ChatChannel).where(
             ChatChannel.workspace_id == workspace_id,
@@ -1167,13 +1184,45 @@ async def mark_channel_read(
     return {"ok": True, "unread": 0}
 
 
+async def _unread_marker(
+    session: AsyncSession,
+    message_id: str | None,
+    *,
+    channel_id: str | None = None,
+    conversation_id: str | None = None,
+) -> datetime:
+    """Read marker for "mark unread": just before `message_id`, so it and
+    everything after count as unread; the whole history without one."""
+    if not message_id:
+        return _epoch()
+    created_at = await session.scalar(
+        select(ChatMessage.created_at).where(
+            ChatMessage.id == message_id,
+            (
+                ChatMessage.channel_id == channel_id
+                if channel_id
+                else ChatMessage.conversation_id == conversation_id
+            ),
+        )
+    )
+    if created_at is None:
+        raise AppError(404, "NOT_FOUND", "Message not found")
+    return as_aware_utc(created_at) - timedelta(microseconds=1)
+
+
 async def mark_channel_unread(
-    session: AsyncSession, workspace_id: str, user_id: str, channel_id: str
+    session: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+    channel_id: str,
+    message_id: str | None = None,
 ) -> dict:
     member = await _assert_channel_member(session, channel_id, user_id)
     if member.channel.workspace_id != workspace_id:
         raise AppError(404, "NOT_FOUND", "Channel not found")
-    member.last_read_at = _epoch()
+    member.last_read_at = await _unread_marker(
+        session, message_id, channel_id=channel_id
+    )
     await session.commit()
     unread = await _unread_channel_count(
         session, channel_id, user_id, member.last_read_at
@@ -1313,6 +1362,7 @@ async def send_thread_reply(
     clauses = [
         ChatMessage.id == parent_id,
         ChatMessage.workspace_id == workspace_id,
+        ChatMessage.parent_id.is_(None),
     ]
     if channel_id:
         clauses.append(ChatMessage.channel_id == channel_id)
@@ -1735,11 +1785,14 @@ async def mark_dm_unread(
     workspace_id: str,
     user_id: str,
     conversation_id: str,
+    message_id: str | None = None,
 ) -> dict:
     participant = await _assert_dm_participant(session, conversation_id, user_id)
     if participant.conversation.workspace_id != workspace_id:
         raise AppError(404, "NOT_FOUND", "Conversation not found")
-    participant.last_read_at = _epoch()
+    participant.last_read_at = await _unread_marker(
+        session, message_id, conversation_id=conversation_id
+    )
     await session.commit()
     unread = await _unread_dm_count(
         session, conversation_id, user_id, participant.last_read_at
@@ -1988,8 +2041,26 @@ async def delete_message(
             session, message.channel_id
         )
 
+    from app.db.models.chat import MessageAttachment
+    from app.services.s3_service import delete_objects
+
+    # Thread replies (and their files) are cascaded away with the root.
+    attachment_keys = (
+        await session.scalars(
+            select(MessageAttachment.storage_key)
+            .join(ChatMessage, ChatMessage.id == MessageAttachment.message_id)
+            .where(or_(ChatMessage.id == message_id, ChatMessage.parent_id == message_id))
+        )
+    ).all()
+
     await session.delete(message)
     await session.commit()
+
+    if attachment_keys:
+        try:
+            await asyncio.to_thread(delete_objects, list(attachment_keys))
+        except Exception:
+            pass
 
     if conv_id:
         fire_and_forget(
@@ -2303,7 +2374,7 @@ async def remove_channel_member(
     await session.commit()
 
     if remove_notifs:
-        await emit_home_notifications(remove_notifs)
+        await emit_home_notifications(session, workspace_id, remove_notifs)
 
     fire_and_forget(
         broadcast_channel_removed(

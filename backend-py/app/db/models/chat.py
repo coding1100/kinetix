@@ -194,15 +194,21 @@ class ChatMessage(Base):
         back_populates="replies",
         foreign_keys=[parent_id],
     )
+    # passive_deletes: the FKs are ON DELETE CASCADE, so let Postgres remove
+    # replies/reactions/attachments instead of the ORM nulling their FKs.
     replies: Mapped[list["ChatMessage"]] = relationship(
         "ChatMessage",
         back_populates="parent",
         foreign_keys=[parent_id],
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
     author: Mapped["User"] = relationship(foreign_keys=[author_id])
-    reactions: Mapped[list["MessageReaction"]] = relationship(back_populates="message")
+    reactions: Mapped[list["MessageReaction"]] = relationship(
+        back_populates="message", cascade="all, delete-orphan", passive_deletes=True
+    )
     attachments: Mapped[list["MessageAttachment"]] = relationship(
-        back_populates="message"
+        back_populates="message", cascade="all", passive_deletes=True
     )
 
 

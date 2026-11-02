@@ -7,6 +7,7 @@ import {
 } from "@/lib/task-status";
 import { taskPriorityLabel, TASK_PRIORITIES } from "@/lib/task-priority";
 import { formatShortDateTimeUtc } from "@/lib/utils";
+import { isCompleteDateInput } from "@/lib/tasks/task-time";
 
 describe("task-status", () => {
   it("maps labels to keys and back", () => {
@@ -46,5 +47,14 @@ describe("formatShortDateTimeUtc", () => {
 
   it("returns empty string for invalid input", () => {
     expect(formatShortDateTimeUtc("not-a-date")).toBe("");
+  });
+});
+
+describe("isCompleteDateInput", () => {
+  it("accepts finished dates and rejects partial years or empty input", () => {
+    expect(isCompleteDateInput("2026-11-05")).toBe(true);
+    for (const partial of ["0002-11-05", "0020-11-05", "0202-11-05", "", "2026-11"]) {
+      expect(isCompleteDateInput(partial)).toBe(false);
+    }
   });
 });

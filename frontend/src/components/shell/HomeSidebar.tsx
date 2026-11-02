@@ -59,6 +59,7 @@ import {
 } from "@/stores/home-sidebar-store";
 import { useUiStore } from "@/stores/ui-store";
 import { useSpacesStore } from "@/stores/spaces-store";
+import { subscribeTaskEvents } from "@/lib/tasks/realtime";
 import { useAuthStore, selectActiveWorkspace } from "@/stores/auth-store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -1091,6 +1092,7 @@ export function HomeSidebar() {
   const [expandedSpaces, setExpandedSpaces] = useState<Record<string, boolean>>({});
   const spacesRefreshKey = useSpacesStore((s) => s.refreshKey);
   const bumpSpacesRefresh = useSpacesStore((s) => s.bumpRefresh);
+  const bumpChatSidebarRefresh = useChatStore((s) => s.bumpSidebarRefresh);
   const [shareTarget, setShareTarget] = useState<{
     type: ShareResourceType;
     id: string;
@@ -1103,6 +1105,15 @@ export function HomeSidebar() {
     isPersonal?: boolean;
   } | null>(null);
   const [deletingSpacesItem, setDeletingSpacesItem] = useState(false);
+
+  // Task counts in the tree only change when a task is created or removed.
+  useEffect(
+    () =>
+      subscribeTaskEvents((event) => {
+        if (event.action !== "updated") bumpSpacesRefresh();
+      }),
+    [bumpSpacesRefresh]
+  );
 
   function openRenameDialog(target: SpacesTreeMutationTarget) {
     if (target.type === "space") {
@@ -1157,6 +1168,8 @@ export function HomeSidebar() {
         }
       }
       bumpSpacesRefresh();
+      // Deleting a Space/List also deletes its list channels.
+      bumpChatSidebarRefresh();
       setDeleteTarget(null);
     } catch (err) {
       toast.error(formatRequestError(err));

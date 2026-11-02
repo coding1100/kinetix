@@ -328,6 +328,8 @@ async def transfer_ownership_admin(
     new_owner_user = await session.get(User, new_owner_user_id)
     if not new_owner_user:
         raise AppError(404, "NOT_FOUND", "User not found")
+    if new_owner_user.is_disabled:
+        raise AppError(400, "VALIDATION_ERROR", "That user's account is disabled")
 
     # Resolve the current owner before touching any membership rows - once
     # the new owner is flushed in with role=OWNER below, a role/status
@@ -623,6 +625,10 @@ async def set_member_status_admin(
         raise AppError(
             400, "VALIDATION_ERROR", "Transfer ownership before suspending the owner"
         )
+    if suspended and target.status != MemberStatus.ACTIVE:
+        raise AppError(400, "VALIDATION_ERROR", "Only active members can be suspended")
+    if not suspended and target.status != MemberStatus.SUSPENDED:
+        raise AppError(400, "VALIDATION_ERROR", "Only suspended members can be reactivated")
 
     target_user = await session.get(User, target_user_id)
     target.status = MemberStatus.SUSPENDED if suspended else MemberStatus.ACTIVE
@@ -722,6 +728,10 @@ async def set_user_disabled(
     user = await session.get(User, user_id)
     if not user:
         raise AppError(404, "NOT_FOUND", "User not found")
+    # Only an enabled super admin can reach this, so blocking self-disable
+    # also guarantees at least one super admin always remains.
+    if disabled and user_id == actor_id:
+        raise AppError(400, "VALIDATION_ERROR", "You cannot disable your own account")
 
     user.is_disabled = disabled
     if disabled:

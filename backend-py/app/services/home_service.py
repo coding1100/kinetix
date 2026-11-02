@@ -125,6 +125,17 @@ _TASK_LOAD = (
 )
 
 
+def _parse_iso_datetime(raw: str, label: str) -> datetime:
+    """Client ISO string -> aware UTC datetime; malformed input is a 400."""
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        raise AppError(400, "VALIDATION_ERROR", f"Invalid {label}") from None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 async def _assignee_name_map(
     session: AsyncSession, tasks: Task | list[Task]
 ) -> dict[str, tuple[str, bool]]:
@@ -945,20 +956,14 @@ async def create_task(
     # Dates
     parsed_due_date: datetime | None = None
     if body.due_date and body.due_date.strip():
-        raw = body.due_date.replace("Z", "+00:00")
-        parsed = datetime.fromisoformat(raw)
-        parsed_due_date = parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        parsed_due_date = _parse_iso_datetime(body.due_date, "due date")
 
     parsed_start_date: datetime | None = None
     if body.start_date and body.start_date.strip():
-        raw = body.start_date.replace("Z", "+00:00")
-        parsed = datetime.fromisoformat(raw)
-        parsed_start_date = parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        parsed_start_date = _parse_iso_datetime(body.start_date, "start date")
 
     if parsed_start_date and parsed_due_date:
-        start_cmp = parsed_start_date.replace(tzinfo=None)
-        due_cmp = parsed_due_date.replace(tzinfo=None)
-        if start_cmp > due_cmp:
+        if parsed_start_date > parsed_due_date:
             raise AppError(400, "VALIDATION_ERROR", "Start date must be on or before the due date")
 
     # Time estimate
@@ -1730,7 +1735,19 @@ async def list_tasks(
             .order_by(Task.updated_at.desc())
         )
     ).all()
-    names = await _assignee_name_map(session, list(tasks))
+    # "assigned" deliberately shows every task assigned to the user, even in
+    # Lists they can't open (product decision). Everything else needs list
+    # access: Space visibility alone would leak private Lists/Folders.
+    if filter_name != "assigned":
+        can_view_list: dict[str, bool] = {}
+        for task in tasks:
+            if task.list_id not in can_view_list:
+                level = await resolve_list_permission(
+                    session, task.task_list, user_id, role
+                )
+                can_view_list[task.list_id] = level_at_least(level, PermissionLevel.VIEW)
+        tasks = [t for t in tasks if can_view_list[t.list_id]]
+    names = await _assignee_name_map(session, tasks)
     return {"data": [map_task(t, user_id, names) for t in tasks]}
 
 
@@ -1916,30 +1933,17 @@ async def update_task(
         if body.due_date.strip() == "":
             task.due_date = None
         else:
-            raw = body.due_date.replace("Z", "+00:00")
-            parsed = datetime.fromisoformat(raw)
-            task.due_date = (
-                parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-            )
+            task.due_date = _parse_iso_datetime(body.due_date, "due date")
 
     if body.start_date is not None:
         if body.start_date.strip() == "":
             task.start_date = None
         else:
-            raw = body.start_date.replace("Z", "+00:00")
-            parsed = datetime.fromisoformat(raw)
-            task.start_date = (
-                parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-            )
+            task.start_date = _parse_iso_datetime(body.start_date, "start date")
 
     if task.start_date and task.due_date:
-        # DB-loaded datetimes can come back tz-naive (asyncpg quirk on
-        # timestamptz columns) while freshly-parsed ones above are always
-        # forced aware - both already represent UTC instants, so strip
-        # tzinfo before comparing rather than mixing aware/naive.
-        start_cmp = task.start_date.replace(tzinfo=None)
-        due_cmp = task.due_date.replace(tzinfo=None)
-        if start_cmp > due_cmp:
+        # DB-loaded values come back naive (UTC); parsed ones are aware UTC.
+        if as_aware_utc(task.start_date) > as_aware_utc(task.due_date):
             raise AppError(
                 400, "VALIDATION_ERROR", "Start date must be on or before the due date"
             )
@@ -1995,6 +1999,12 @@ async def update_task(
 
     moved_to_list_name: str | None = None
     if body.list_id is not None and body.list_id != original_list_id:
+        if task.parent_task_id:
+            raise AppError(
+                400,
+                "VALIDATION_ERROR",
+                "Subtasks move with their parent task",
+            )
         target_list = await session.scalar(
             select(TaskList)
             .join(Space)
@@ -2554,9 +2564,7 @@ async def create_reminder(
     due_at = None
     due_label = "Soon"
     if body.due_at:
-        raw = body.due_at.replace("Z", "+00:00")
-        parsed = datetime.fromisoformat(raw)
-        due_at = parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        due_at = _parse_iso_datetime(body.due_at, "reminder date")
         due_label = format_due_date(due_at) or due_label
 
     reminder = HomeReminder(

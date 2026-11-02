@@ -25,6 +25,7 @@ import { useRouter } from "next/navigation";
 import { formatRequestError } from "@/lib/api/client";
 import { toast } from "sonner";
 import { selectActiveWorkspace, useAuthStore } from "@/stores/auth-store";
+import { useChatStore } from "@/stores/chat-store";
 
 export type HierarchyDialogMode =
   | { type: "space" }
@@ -57,6 +58,7 @@ export function SpacesHierarchyDialog({
   const router = useRouter();
   const { accessToken, workspaceId, ready } = useWorkspaceApi();
   const bumpRefresh = useSpacesStore((s) => s.bumpRefresh);
+  const bumpChatSidebarRefresh = useChatStore((s) => s.bumpSidebarRefresh);
   const workspace = useAuthStore(selectActiveWorkspace);
   const isWorkspaceAdmin =
     workspace?.role === "OWNER" ||
@@ -144,6 +146,8 @@ export function SpacesHierarchyDialog({
         toast.success("List renamed");
       }
       bumpRefresh();
+      // Every new List (incl. a new Space's default one) gets its own channel.
+      if (mode.type === "space" || mode.type === "list") bumpChatSidebarRefresh();
       setName("");
       onOpenChange(false);
     } catch (err) {
