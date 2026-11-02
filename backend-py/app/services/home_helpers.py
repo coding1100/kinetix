@@ -259,6 +259,7 @@ def map_list_entry(
     task_count: int,
     can_share: bool = False,
     can_manage_structure: bool = False,
+    can_edit: bool = False,
 ) -> dict:
     return {
         "id": list_row.id,
@@ -266,6 +267,7 @@ def map_list_entry(
         "taskCount": task_count,
         "canShare": can_share,
         "canManageStructure": can_manage_structure,
+        "canEdit": can_edit,
         "isPrivate": bool(getattr(list_row, "is_private", False)),
     }
 

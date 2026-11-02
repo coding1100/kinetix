@@ -61,8 +61,13 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CreateTaskListPicker } from "@/components/spaces/CreateTaskListPicker";
 import { toast } from "sonner";
-import { fetchRecents, fetchSharedWithMe, type SpaceDto } from "@/lib/api/home";
-import { fetchChannels, fetchWorkspaceMembers } from "@/lib/api/chat";
+import {
+  fetchRecents,
+  fetchSharedWithMe,
+  type SharedWithMeEntryDto,
+  type SpaceDto,
+} from "@/lib/api/home";
+import { fetchWorkspaceMembers } from "@/lib/api/chat";
 
 import { getMe } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
@@ -79,7 +84,6 @@ import {
   createSubtask,
   deleteChecklist,
   deleteChecklistItem,
-  fetchListAssignableMembers,
   fetchListMeta,
   fetchSpacesTree,
   flattenListsFromSpaces,
@@ -328,26 +332,40 @@ export function CreateTaskDialog({
       }
 
       let recentsData: any[] = [];
-      let sharedData: any[] = [];
-      let channelsData: any[] = [];
+      let sharedData: SharedWithMeEntryDto[] = [];
 
       try {
-        const [recRes, sharedRes, chanRes] = await Promise.all([
+        const [recRes, sharedRes] = await Promise.all([
           fetchRecents(accessToken, currentWsId).catch(() => ({ data: [] })),
           fetchSharedWithMe(accessToken, currentWsId).catch(() => ({ data: [] })),
-          fetchChannels(accessToken, currentWsId).catch(() => ({ data: [] })),
         ]);
         recentsData = Array.isArray(recRes?.data) ? recRes.data : [];
         sharedData = Array.isArray(sharedRes?.data) ? sharedRes.data : [];
-        channelsData = Array.isArray(chanRes?.data) ? chanRes.data : [];
       } catch {
         // non-fatal
       }
 
       if (cancelled) return;
 
+      // Only Lists the user can add tasks to; view-only ones would fail on submit.
+      const canAddTasks = (list: { canEdit?: boolean }) => list.canEdit !== false;
+      tree = tree.map((space) => ({
+        ...space,
+        folders: (space.folders ?? []).map((folder) => ({
+          ...folder,
+          lists: (folder.lists ?? []).filter(canAddTasks),
+        })),
+        standaloneLists: (space.standaloneLists ?? []).filter(canAddTasks),
+      }));
+
       if (sharedData.length > 0) {
-        const sharedLists = sharedData.flatMap((item) => item.lists ?? []);
+        const sharedLists = sharedData
+          .flatMap((item) =>
+            item.type === "list"
+              ? [{ id: item.id, name: item.name, taskCount: 0, canEdit: item.canEdit }]
+              : item.lists ?? []
+          )
+          .filter(canAddTasks);
         if (sharedLists.length > 0) {
           tree.push({
             id: "shared-with-me-space",
@@ -363,22 +381,6 @@ export function CreateTaskDialog({
             folders: [],
           });
         }
-      }
-
-      if (channelsData.length > 0) {
-        tree.push({
-          id: "channels-space",
-          name: "Channels",
-          color: "#10B981",
-          memberCount: 0,
-          listCount: channelsData.length,
-          standaloneLists: channelsData.map((ch) => ({
-            id: ch.id,
-            name: `# ${ch.name}`,
-            taskCount: 0,
-          })),
-          folders: [],
-        });
       }
 
 
@@ -460,36 +462,22 @@ export function CreateTaskDialog({
       return;
     }
     let cancelled = false;
+    // Any workspace member can be assigned: the backend shares the List
+    // with assignees who don't have access yet.
     const loadMembers = async () => {
       try {
-        if (listId) {
-          const res = await fetchListAssignableMembers(accessToken, workspaceId, listId);
-          if (!cancelled && res.data && res.data.length > 0) {
-            setMembers(res.data);
-            return;
-          }
-        }
         const wsMembers = await fetchWorkspaceMembers(accessToken, workspaceId);
-        if (!cancelled) {
-          setMembers(wsMembers.data ?? []);
-        }
+        if (!cancelled) setMembers(wsMembers.data ?? []);
       } catch (err) {
         console.error("Failed to load assignable members for task creation:", err);
-        if (!cancelled) {
-          try {
-            const wsMembers = await fetchWorkspaceMembers(accessToken, workspaceId);
-            if (!cancelled) setMembers(wsMembers.data ?? []);
-          } catch {
-            if (!cancelled) setMembers([]);
-          }
-        }
+        if (!cancelled) setMembers([]);
       }
     };
     void loadMembers();
     return () => {
       cancelled = true;
     };
-  }, [open, listId, ready, accessToken, workspaceId]);
+  }, [open, ready, accessToken, workspaceId]);
 
 
   const selectedStatus = useMemo(
@@ -810,8 +798,9 @@ export function CreateTaskDialog({
    * or create a starter Space (the backend gives every new Space a default
    * list). Runs only when the user actually creates the task. */
   async function provisionDefaultList(): Promise<string> {
-    const firstSpace = spaces[0];
-    let spaceId = firstSpace?.id;
+    // Only a Space the user can add Lists to (never a view-only Space or the
+    // "Shared with Me" group); otherwise they get their own General Space.
+    let spaceId = spaces.find((s) => s.canManageStructure)?.id;
     if (spaceId) {
       await createList(accessToken!, workspaceId!, spaceId, { name: "Tasks" });
     } else {

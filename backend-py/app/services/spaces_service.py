@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Iterable
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,11 +58,13 @@ from app.services.notification_service import (
 )
 from app.services.space_permissions import (
     get_space_or_403,
+    level_at_least,
     require_space_permission,
 )
 from app.services.folder_list_permissions import (
     require_folder_permission,
     require_list_permission,
+    resolve_list_permission,
     resolve_share_target,
     user_ids_with_list_access,
 )
@@ -728,6 +731,7 @@ async def create_list(
         can_share=is_workspace_admin(role),
         can_manage_structure=role
         not in (WorkspaceRole.GUEST, WorkspaceRole.LIMITED_MEMBER),
+        can_edit=True,
     )
 
 
@@ -819,6 +823,7 @@ async def update_list(
         can_share=is_workspace_admin(role),
         can_manage_structure=role
         not in (WorkspaceRole.GUEST, WorkspaceRole.LIMITED_MEMBER),
+        can_edit=True,
     )
 
 
@@ -945,13 +950,85 @@ async def add_list_member(
             )
         )
     await session.commit()
+    await announce_list_share(
+        session,
+        workspace_id,
+        task_list,
+        user_id,
+        [target_user_id] if target_user_id and status == MemberStatus.ACTIVE else [],
+    )
+    return await list_list_members(session, workspace_id, list_id, user_id, role)
+
+
+async def grant_list_access_to_assignees(
+    session: AsyncSession,
+    workspace_id: str,
+    task_list: TaskList,
+    assignee_ids: Iterable[str],
+) -> list[str]:
+    """Share `task_list` (EDIT) with every assignee who can't already edit
+    it, so a task assigned to someone is always one they can open and work
+    on. Stages the ListMember rows without committing; after the caller
+    commits, pass the returned ids to announce_list_share."""
+    ids = list(dict.fromkeys(assignee_ids))
+    if not ids:
+        return []
+    roles = dict(
+        (
+            await session.execute(
+                select(WorkspaceMember.user_id, WorkspaceMember.role).where(
+                    WorkspaceMember.workspace_id == workspace_id,
+                    WorkspaceMember.user_id.in_(ids),
+                    WorkspaceMember.status == MemberStatus.ACTIVE,
+                )
+            )
+        ).all()
+    )
+    granted: list[str] = []
+    for assignee_id, assignee_role in roles.items():
+        level = await resolve_list_permission(
+            session, task_list, assignee_id, assignee_role
+        )
+        if level_at_least(level, PermissionLevel.EDIT):
+            continue
+        existing = await session.scalar(
+            select(ListMember).where(
+                ListMember.list_id == task_list.id,
+                ListMember.user_id == assignee_id,
+            )
+        )
+        if existing:
+            existing.permission_level = PermissionLevel.EDIT
+            existing.status = MemberStatus.ACTIVE
+        else:
+            session.add(
+                ListMember(
+                    list_id=task_list.id,
+                    user_id=assignee_id,
+                    status=MemberStatus.ACTIVE,
+                    permission_level=PermissionLevel.EDIT,
+                )
+            )
+        granted.append(assignee_id)
+    return granted
+
+
+async def announce_list_share(
+    session: AsyncSession,
+    workspace_id: str,
+    task_list: TaskList,
+    actor_user_id: str,
+    user_ids: list[str],
+) -> None:
+    """Post-commit side effects of sharing a List: resync its chat channel,
+    then notify each newly granted user and push the access change live."""
     await sync_list_channel_members_for_space(session, workspace_id, task_list.space)
-    if target_user_id and status == MemberStatus.ACTIVE:
+    for recipient_id in user_ids:
         notifications = await create_resource_share_notification(
             session,
             workspace_id=workspace_id,
-            recipient_id=target_user_id,
-            actor_user_id=user_id,
+            recipient_id=recipient_id,
+            actor_user_id=actor_user_id,
             resource_type="list",
             resource_name=task_list.name,
             href=f"/home/l/{task_list.id}",
@@ -959,13 +1036,13 @@ async def add_list_member(
         await session.commit()
         if notifications:
             await emit_home_notifications(session, workspace_id, notifications)
+    if user_ids:
         await broadcast_resource_access_granted(
             workspace_id=workspace_id,
-            user_ids=[target_user_id],
+            user_ids=user_ids,
             resource_type="list",
             resource_id=task_list.id,
         )
-    return await list_list_members(session, workspace_id, list_id, user_id, role)
 
 
 async def remove_list_member(

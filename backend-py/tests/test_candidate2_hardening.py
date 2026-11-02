@@ -245,7 +245,7 @@ async def test_member_removal_cascades_and_task_unassignment(api_client: AsyncCl
     )
     assert add_team_mem.status_code in (200, 201)
 
-    # In DB directly: add SpaceMember, ListMember, and ChatChannelMember for target_user_id
+    # In DB directly: add SpaceMember and ChatChannelMember for target_user_id
     factory = get_session_factory()
     async with factory() as session:
         # Chat channel
@@ -270,14 +270,7 @@ async def test_member_removal_cascades_and_task_unassignment(api_client: AsyncCl
                 permission_level="EDIT",
             )
         )
-        # ListMember
-        session.add(
-            ListMember(
-                list_id=list_id,
-                user_id=target_user_id,
-                permission_level="EDIT",
-            )
-        )
+        # ListMember: assigning the task above already shared the List.
         await session.commit()
 
     # Verify rows exist before removal

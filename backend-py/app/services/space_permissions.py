@@ -2,11 +2,13 @@
 
 Workspace roles (workspace_permissions.py) govern people/workspace/team
 management. This module governs access to *content* — Spaces and everything
-under them (Folders, Lists, Tasks). There is no ambient default: a Space,
-public or private, grants access to nobody except through an explicit
-SpaceMember row. "Public" currently has no functional effect on access (no
-browse/join feature exists yet) — it only means the name-uniqueness and
-future-discoverability rules apply to it the same as private Spaces.
+under them (Folders, Lists, Tasks). Workspace admins (Owner, Super Admin,
+Admin) have EDIT on all content in their workspace. For everyone else there
+is no ambient default: a Space, public or private, grants access to nobody
+except its creator and an explicit SpaceMember row. "Public" currently has
+no functional effect on access (no browse/join feature exists yet) — it
+only means the name-uniqueness and future-discoverability rules apply to it
+the same as private Spaces.
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from app.core.errors import AppError
 from app.db.models.enums import MemberStatus, PermissionLevel, WorkspaceRole
 from app.db.models.home import Space, SpaceMember
 from app.db.models.workspace import WorkspaceMember
+from app.services.workspace_permissions import is_workspace_admin
 
 _LEVEL_RANK = {
     PermissionLevel.VIEW: 1,
@@ -50,12 +53,12 @@ async def resolve_space_permission(
 ) -> PermissionLevel | None:
     """The effective permission level `user_id` (with `role`) has on `space`.
 
-    The creator always has EDIT, unconditionally. Otherwise, no ambient
-    default for any role, public or private - an explicit SpaceMember row
-    (a "Share") is the only other source of access. `role` is accepted for
-    signature-compatibility with callers/tests but no longer affects the
-    result.
+    Workspace admins and the creator always have EDIT. Otherwise there is no
+    ambient default, public or private - an explicit SpaceMember row (a
+    "Share") is the only other source of access.
     """
+    if is_workspace_admin(role):
+        return PermissionLevel.EDIT
     if space.created_by_id and space.created_by_id == user_id:
         return PermissionLevel.EDIT
     return await _space_member_override(session, space.id, user_id)

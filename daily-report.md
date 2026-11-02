@@ -6141,3 +6141,18 @@ DESC: Frontend-only fixes, each re-tested live in headless Chrome on a fresh thr
 Gates: frontend tsc clean; vitest 105 passed / 6 failed (the same 6 as main; +1 new test); eslint findings per changed file identical to main. No backend changes in this round.
 
 DATE_END: 2026-10-30
+
+DATE_START: 2026-11-02
+
+TAG: [CHORE]
+TITLE: Moved production to a single Lightsail instance
+DESC: The old production EC2 server (3.140.5.67, another AWS account) was deleted and its IP reassigned, so production was rebuilt in account 894952804064: Lightsail 2 GB Ubuntu 24.04 (static IP 34.197.174.103, firewall 22/80/443 only), 4 GB swap, Docker + Compose, nginx 1.30 from nginx.org (Ubuntu's 1.24 rejects `http2 on;` in deploy/nginx/host.conf), Let's Encrypt via webroot, repo cloned with a read-only deploy key, env files written from Parameter Store /kinetix/prod/*. deploy.sh and deploy-admin.sh both pass; containers listen on 127.0.0.1 only. Web image build peaked at 1730 MB RAM plus 1251 MB swap. GitHub secrets EC2_HOST/USER/SSH_KEY/APP_PATH now point at the new server. Backups stay manual; deploy/backup-postgres.sh must be run with BIND_ADDR="127.0.0.1:" or it recreates postgres on all interfaces. Seeded workspace "Mindrind" (Mohsin OWNER, Umair SUPER_ADMIN, both platform SUPER_ADMIN; Inam MEMBER).
+
+TAG: [BUG]
+TITLE: Assigned tasks could not be opened by their assignee
+DESC: Production logs showed repeated 403s on GET /tasks/{id}: a Member created a task in their own Space and assigned someone else, the task appeared under "Assigned to me" but opening it showed a blank panel, because access came only from creating or an explicit share and roles granted nothing (even the Owner could not see a Member's Space). Product decisions: assigning someone shares the List with them, and Owner/Super Admin/Admin see everything in their workspace.
+Backend: resolve_space/folder/list_permission give workspace admins EDIT; new spaces_service.grant_list_access_to_assignees (stages an EDIT ListMember, raising lower grants) plus announce_list_share (channel sync, share notification, live access event), extracted from add_list_member and reused by create_task, update_task (assignee changes and moves, including subtask assignees moving with the parent) and checklist item assignment; list_tasks now returns only tasks in Lists the user can open (the "assigned" exception is gone, so nothing listed is unopenable), resolving permissions only for Lists that hold a matching task; list payloads carry canEdit.
+Frontend: the create-task assignee picker offers every workspace member; the dialog offers only Lists the user can add tasks to (view-only Lists and the fake "Channels" group made submit fail), includes directly shared Lists, and only provisions a default List in a Space the user can add Lists to; the task panel says "You don't have access to this task." instead of staying blank.
+Tests: tests/test_task_access_assignment.py (10 cases; 9 fail on the base branch, the guard case passes on both). Live in headless Chrome: Member creates a task assigning another Member, who opens it (200, full panel); Owner opens a Member's unshared task (200); the same opens return 403 and a blank panel on the base branch.
+
+DATE_END: 2026-11-02

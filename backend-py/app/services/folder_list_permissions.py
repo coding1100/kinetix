@@ -35,6 +35,7 @@ from app.services.space_permissions import (
     level_at_least,
     resolve_space_permission,
 )
+from app.services.workspace_permissions import is_workspace_admin
 
 
 async def resolve_share_target(
@@ -133,13 +134,14 @@ async def resolve_folder_permission(
 ) -> PermissionLevel | None:
     """The effective permission level `user_id` (with `role`) has on `folder`.
 
-    The creator always has EDIT, unconditionally. Otherwise an explicit
+    Workspace admins and the creator always have EDIT. Otherwise an explicit
     FolderMember override wins; a private Folder blocks inheritance from
     the Space even for someone shared on the Space; a non-private Folder
     inherits whatever the Space grants (so sharing a Space cascades down to
-    its Folders/Lists automatically). No role-based bypass - see
-    resolve_space_permission's docstring.
+    its Folders/Lists automatically).
     """
+    if is_workspace_admin(role):
+        return PermissionLevel.EDIT
     if folder.created_by_id and folder.created_by_id == user_id:
         return PermissionLevel.EDIT
     override = await _folder_member_override(session, folder.id, user_id)
@@ -158,13 +160,15 @@ async def resolve_list_permission(
 ) -> PermissionLevel | None:
     """The effective permission level `user_id` (with `role`) has on `task_list`.
 
-    The creator always has EDIT, unconditionally. Otherwise an explicit
+    Workspace admins and the creator always have EDIT. Otherwise an explicit
     ListMember override always wins. Otherwise, if the List itself is
     private, no ambient access. Otherwise inherit from its parent Folder
     (recursing into resolve_folder_permission, so a private parent Folder's
     restriction applies too) or, if it has no Folder, straight from its
-    Space. No role-based bypass - see resolve_space_permission's docstring.
+    Space.
     """
+    if is_workspace_admin(role):
+        return PermissionLevel.EDIT
     if task_list.created_by_id and task_list.created_by_id == user_id:
         return PermissionLevel.EDIT
     override = await _list_member_override(session, task_list.id, user_id)
