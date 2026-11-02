@@ -312,6 +312,7 @@ async def _build_space_payload(
                     len(lst.tasks),
                     can_manage,
                     _can_manage_structure(lst_level, role),
+                    level_at_least(lst_level, PermissionLevel.EDIT),
                 )
             )
         if not folder_visible:
@@ -345,6 +346,7 @@ async def _build_space_payload(
                 len(lst.tasks),
                 can_manage,
                 _can_manage_structure(lst_level, role),
+                level_at_least(lst_level, PermissionLevel.EDIT),
             )
         )
     last_activity_at = await _last_activity_for_space(session, space)
@@ -684,7 +686,13 @@ async def list_shared_with_me(
             lst_level = await resolve_list_permission(session, lst, user_id, role)
             if not level_at_least(lst_level, PermissionLevel.VIEW):
                 continue
-            lists.append(map_list_entry(lst, len(lst.tasks)))
+            lists.append(
+                map_list_entry(
+                    lst,
+                    len(lst.tasks),
+                    can_edit=level_at_least(lst_level, PermissionLevel.EDIT),
+                )
+            )
             nested_list_ids.add(lst.id)
         data.append(
             {
@@ -700,6 +708,7 @@ async def list_shared_with_me(
         task_list = row.task_list
         if task_list.space_id in visible or task_list.id in nested_list_ids:
             continue
+        lst_level = await resolve_list_permission(session, task_list, user_id, role)
         data.append(
             {
                 "type": "list",
@@ -707,6 +716,7 @@ async def list_shared_with_me(
                 "name": task_list.name,
                 "spaceId": task_list.space_id,
                 "spaceName": task_list.space.name,
+                "canEdit": level_at_least(lst_level, PermissionLevel.EDIT),
             }
         )
     return {"data": data}
@@ -1137,10 +1147,27 @@ async def create_task(
                 assignee_ids=added,
             )
 
+    from app.services.spaces_service import (
+        announce_list_share,
+        grant_list_access_to_assignees,
+    )
+
+    checklist_assignee_ids = [
+        item.assignee_id
+        for cl in body.checklists or []
+        for item in cl.items
+        if item.assignee_id
+    ]
+    granted = await grant_list_access_to_assignees(
+        session, workspace_id, task_list, [*assignee_ids, *checklist_assignee_ids]
+    )
+
     await session.commit()
 
     if assignment_notifications:
         await emit_home_notifications(session, workspace_id, assignment_notifications)
+    if granted:
+        await announce_list_share(session, workspace_id, task_list, user_id, granted)
 
     refreshed = await session.scalar(
         select(Task).where(Task.id == task.id).options(*_TASK_LOAD)
@@ -1581,6 +1608,14 @@ async def add_checklist_item(
     if not checklist:
         raise AppError(404, "NOT_FOUND", "Checklist not found")
     await _validate_checklist_assignee(session, workspace_id, body.assignee_id)
+    from app.services.spaces_service import (
+        announce_list_share,
+        grant_list_access_to_assignees,
+    )
+
+    granted = await grant_list_access_to_assignees(
+        session, workspace_id, task.task_list, [body.assignee_id] if body.assignee_id else []
+    )
 
     item = TaskChecklistItem(
         checklist_id=checklist_id,
@@ -1597,6 +1632,8 @@ async def add_checklist_item(
         preview=f"{actor_name} added \"{item.text}\" to checklist \"{checklist.name}\"",
     )
     await session.commit()
+    if granted:
+        await announce_list_share(session, workspace_id, task.task_list, user_id, granted)
     refreshed = await session.scalar(
         select(TaskChecklistItem)
         .where(TaskChecklistItem.id == item.id)
@@ -1660,11 +1697,22 @@ async def update_checklist_item(
                     else f"{actor_name} unchecked \"{item.text}\""
                 ),
             )
+    granted: list[str] = []
     if "assignee_id" in body.model_fields_set:
         await _validate_checklist_assignee(session, workspace_id, body.assignee_id)
         item.assignee_id = body.assignee_id
+        if body.assignee_id:
+            from app.services.spaces_service import grant_list_access_to_assignees
+
+            granted = await grant_list_access_to_assignees(
+                session, workspace_id, task.task_list, [body.assignee_id]
+            )
 
     await session.commit()
+    if granted:
+        from app.services.spaces_service import announce_list_share
+
+        await announce_list_share(session, workspace_id, task.task_list, user_id, granted)
     refreshed = await session.scalar(
         select(TaskChecklistItem)
         .where(TaskChecklistItem.id == item.id)
@@ -1721,32 +1769,44 @@ async def list_tasks(
     if filter_name == "personal":
         await ensure_personal_space(session, workspace_id)
         await session.commit()
-    visible = await visible_space_ids(session, workspace_id, user_id, role)
+    # Only tasks the user can open. List-level, not Space-level: a List can
+    # be shared on its own (assigning someone shares it), and a private
+    # List/Folder must not leak through Space visibility. Permissions are
+    # resolved only for Lists that hold a matching task, before loading
+    # the (heavy) task rows.
     filters = _task_filters(workspace_id, user_id, filter_name, search)
-    if visible is not None and filter_name != "assigned":
-        filters.append(Space.id.in_(visible))
+    candidate_lists = (
+        await session.scalars(
+            select(TaskList)
+            .where(
+                TaskList.id.in_(
+                    select(Task.list_id)
+                    .join(Task.task_list)
+                    .join(TaskList.space)
+                    .where(*filters)
+                )
+            )
+            .options(selectinload(TaskList.space))
+        )
+    ).all()
+    readable_list_ids = [
+        lst.id
+        for lst in candidate_lists
+        if level_at_least(
+            await resolve_list_permission(session, lst, user_id, role),
+            PermissionLevel.VIEW,
+        )
+    ]
     tasks = (
         await session.scalars(
             select(Task)
             .join(Task.task_list)
             .join(TaskList.space)
-            .where(*filters)
+            .where(*filters, Task.list_id.in_(readable_list_ids))
             .options(*_TASK_LOAD)
             .order_by(Task.updated_at.desc())
         )
     ).all()
-    # "assigned" deliberately shows every task assigned to the user, even in
-    # Lists they can't open (product decision). Everything else needs list
-    # access: Space visibility alone would leak private Lists/Folders.
-    if filter_name != "assigned":
-        can_view_list: dict[str, bool] = {}
-        for task in tasks:
-            if task.list_id not in can_view_list:
-                level = await resolve_list_permission(
-                    session, task.task_list, user_id, role
-                )
-                can_view_list[task.list_id] = level_at_least(level, PermissionLevel.VIEW)
-        tasks = [t for t in tasks if can_view_list[t.list_id]]
     names = await _assignee_name_map(session, tasks)
     return {"data": [map_task(t, user_id, names) for t in tasks]}
 
@@ -1998,6 +2058,7 @@ async def update_task(
         flag_modified(task, "tags")
 
     moved_to_list_name: str | None = None
+    moved_assignee_ids: list[str] = []
     if body.list_id is not None and body.list_id != original_list_id:
         if task.parent_task_id:
             raise AppError(
@@ -2055,6 +2116,7 @@ async def update_task(
         ).all()
         for subtask in subtasks:
             subtask.list_id = target_list.id
+            moved_assignee_ids.extend(subtask.assignee_ids)
             subtask_curr_status = await session.scalar(
                 select(ListStatus).where(ListStatus.id == subtask.status_id)
             ) if subtask.status_id else None
@@ -2078,7 +2140,23 @@ async def update_task(
                 assignee_ids=list(added),
             )
 
+    # A move re-checks every assignee (subtasks included, they move too)
+    # against the new List; otherwise only the assignee field changed.
+    # Either way, nobody assigned is left unable to open the task.
+    granted: list[str] = []
+    if moved_to_list_name is not None or body.assignee_ids is not None:
+        from app.services.spaces_service import grant_list_access_to_assignees
+
+        access_list = target_list if moved_to_list_name is not None else task.task_list
+        granted = await grant_list_access_to_assignees(
+            session, workspace_id, access_list, [*task.assignee_ids, *moved_assignee_ids]
+        )
+
     await session.commit()
+    if granted:
+        from app.services.spaces_service import announce_list_share
+
+        await announce_list_share(session, workspace_id, access_list, user_id, granted)
     refreshed = await session.scalar(
         select(Task)
         .where(Task.id == task_id)

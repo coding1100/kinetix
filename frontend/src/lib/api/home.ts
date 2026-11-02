@@ -60,6 +60,7 @@ export interface SpaceDto {
       taskCount: number;
       canShare?: boolean;
       canManageStructure?: boolean;
+      canEdit?: boolean;
       isPrivate?: boolean;
       statusConfig?: StatusConfigItem[];
     }[];
@@ -73,6 +74,7 @@ export interface SpaceDto {
     taskCount: number;
     canShare?: boolean;
     canManageStructure?: boolean;
+    canEdit?: boolean;
     isPrivate?: boolean;
     statusConfig?: StatusConfigItem[];
   }[];
@@ -85,11 +87,13 @@ export interface SharedWithMeEntryDto {
   name: string;
   spaceId: string;
   spaceName: string;
+  canEdit?: boolean;
   lists?: {
     id: string;
     name: string;
     taskCount: number;
     canShare?: boolean;
+    canEdit?: boolean;
     isPrivate?: boolean;
   }[];
 }

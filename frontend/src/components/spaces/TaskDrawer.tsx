@@ -72,6 +72,7 @@ import { TaskDatesField } from "@/components/tasks/TaskDatesField";
 import { TaskTimeEstimateField } from "@/components/tasks/TaskTimeEstimateField";
 import { TaskTagsManager } from "@/components/tasks/TaskTagsManager";
 import { fetchWorkspaceMembers } from "@/lib/api/chat";
+import { ApiError } from "@/lib/api/client";
 import { useWorkspaceApi } from "@/hooks/use-workspace-api";
 import { useAuthStore } from "@/stores/auth-store";
 import { UserAvatarWithPresence } from "@/components/shared/AvatarWithPresence";
@@ -266,6 +267,7 @@ export function TaskDrawer({
     { id: string; name: string; href: string; space: string }[]
   >([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -445,6 +447,7 @@ export function TaskDrawer({
     }
     let cancelled = false;
     setLoading(true);
+    setLoadError(null);
     Promise.all([
       fetchTask(accessToken, workspaceId, taskId),
       fetchWorkspaceMembers(accessToken, workspaceId),
@@ -494,8 +497,16 @@ export function TaskDrawer({
         }
         void recordTaskRecent(accessToken, workspaceId, t).catch(() => {});
       })
-      .catch(() => {
-        if (!cancelled) toast.error("Could not load task");
+      .catch((e) => {
+        if (cancelled) return;
+        setTask(null);
+        setLoadError(
+          e instanceof ApiError && e.status === 403
+            ? "You don't have access to this task."
+            : e instanceof ApiError && e.status === 404
+              ? "This task no longer exists."
+              : "Could not load this task. Try again."
+        );
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -2801,6 +2812,10 @@ export function TaskDrawer({
                   />
                 </div>
               </div>
+            </div>
+          ) : loadError ? (
+            <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+              {loadError}
             </div>
           ) : null}
         </DialogContent>
