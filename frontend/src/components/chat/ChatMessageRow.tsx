@@ -90,7 +90,7 @@ export function ChatMessageRow({
   ) => Promise<void>;
   onDeleteMessage?: (messageId: string) => Promise<void>;
   onPinMessage?: (messageId: string, pinned: boolean) => void | Promise<void>;
-  onMarkUnread?: () => void | Promise<void>;
+  onMarkUnread?: (messageId: string) => void | Promise<void>;
   highlighted?: boolean;
   showReadReceipt?: boolean;
   readReceiptMembersById?: Record<string, ReadReceiptMember>;
@@ -258,7 +258,7 @@ export function ChatMessageRow({
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={() => {
-                  if (onMarkUnread) void onMarkUnread();
+                  if (onMarkUnread) void onMarkUnread(message.id);
                   else toast.success("Marked as unread");
                 }}
               >

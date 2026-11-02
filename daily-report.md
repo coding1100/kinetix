@@ -6082,3 +6082,62 @@ Testing: added jsdom (~30.0.1) as a new devDependency - this repo's vitest.confi
 Verified: `npx tsc --noEmit` clean throughout every round of fixes, full vitest suite 100/103 passing (same pre-existing 3 unrelated sidebar-display-unread.test.ts failures noted in every prior session - net +13 new passing tests from this feature, 87->100). Committed (06eb704) and pushed to origin/main after explicit user confirmation the visual bugs were fixed.
 
 DATE_END: 2026-09-14
+
+DATE_START: 2026-10-30
+========================================
+
+TAG: [BUG]
+TITLE: Audit fixes across admin portal, chat/channels and task management
+DESC: Static audit of the admin, chat, channel and task modules (on main), then fixes on local branch fix/audit-bug-fixes-main (from origin/main; develop turned out to be 101 commits BEHIND main, so main is the live line). Uncommitted, not pushed, no PR.
+Backend fixes:
+- chat_service.remove_channel_member called emit_home_notifications(remove_notifs) with 1 of 3 args, so removing another member returned 500 after the delete committed.
+- ChatMessage.replies/reactions/attachments relationships had no cascade, so the ORM tried to NULL child FKs on delete: deleting a reacted-to message failed with NotNullViolation on MessageReaction.messageId; replies would have become top-level. Added passive_deletes (FKs are already ON DELETE CASCADE). delete_message now also removes S3 objects for the message and its replies, same pattern as delete_channel.
+- Same ORM issue on TaskComment.replies: deleting a root comment left its replies behind as top-level comments.
+- send_thread_reply accepted a reply as a parent (nested replies never shown). Now requires a root message.
+- _user_can_delete_channel let whoever posted the first message delete any channel; the first-author/earliest-member fallback now only applies to legacy channels with no created_by_id.
+- Renaming a list-primary channel renamed the List without list permission checks; now requires list EDIT plus not Guest/Limited Member, same as spaces_service.update_list.
+- create_channel accepted a whitespace-only name.
+- Huddle PATCH {isActive:false} let any member end a huddle, bypassing /end's starter/admin check. Removed isActive from UpdateHuddleBody and the frontend type (UI never sent it).
+- "Mark unread" on a message reset the read marker to 1970 (whole history). Unread endpoints now take an optional messageId query param; the read marker is set just before that message. Frontend message menu passes the message id; sidebar/settings callers unchanged (whole conversation).
+- GET /tasks only filtered by visible Space, so tasks in private Lists/Folders inside a shared Space leaked. Now filters by list-level permission. The "assigned" filter intentionally still shows assigned tasks regardless of access (an existing test asserts that); flagged to the user as a product question.
+- stop_task_timer required can_track_time, so a timer running when tracking was disabled could never be stopped.
+- Malformed task/reminder dates raised ValueError (500); start/due comparison stripped tz offsets. New _parse_iso_datetime helper (400 on bad input, converts to UTC), used at all 5 parse sites.
+- Moving a subtask to another list on its own is now rejected.
+- Invites: suspended members could be re-invited and accepting reactivated them (undoing a platform suspension); OWNER invites could create a second owner (now checked at create and both accept paths via _assert_owner_slot_free); expired invites blocked re-inviting (now reused like cancelled ones).
+- Admin: super admin could disable their own account (only lockout path, since the endpoint is super-admin only); reactivate/suspend applied to any membership status; transfer-ownership by user id skipped the disabled-account check.
+Admin frontend: after a reload the session cookie outlived the in-memory token, so /login was 307'd back to /workspaces and the portal sat on an empty shell (reproduced in headless Chrome via CDP); now clears the cookie before redirecting. redirectToLogin ignored NEXT_PUBLIC_BASE_PATH, sending expired sessions to the main app's /login with a doubled next path.
+Verification: new backend/tests/test_audit_regressions.py (22 tests), all failing on unfixed main with the expected symptom and passing with the fixes. Full backend suite on a throwaway Postgres: unfixed main 151 passed/25 failed, fixed 173 passed/25 failed, identical failure set (pre-existing: mixed seed passwords and event-loop issues). Frontend tsc clean, vitest failure set identical to main (6 pre-existing). Live A/B in headless Chrome for the admin reload, the admin expired-session redirect under /admin-portal, and per-message mark unread in the chat UI. ruff: no new findings.
+Not fixed, flagged: group DM participant removal has no permission check; assignees not checked for list access; staged-then-abandoned comment attachments show as task attachments (needs a DB column, so needs approval); chat store keeps one slot per realtime event type (likely lost events, not reproduced); ChatMessageRow shows a fake "Marked as unread" toast when no handler is wired; timer lookup is not workspace-scoped.
+
+TAG: [TASK]
+PARENT: Audit fixes across admin portal, chat/channels and task management
+TITLE: Confirmed assigned-task filter behaviour
+DESC: User confirmed GET /tasks?filter=assigned should keep showing every task assigned to the user, even in Lists they can't open. No behaviour change; the comment in home_service.list_tasks now records this as a product decision.
+
+TAG: [TASK]
+PARENT: Audit fixes across admin portal, chat/channels and task management
+TITLE: Live first-use walkthrough of the app as real users
+DESC: Ran backend, main frontend and admin portal locally against an empty throwaway Postgres (no SMTP/S3 configured, frontend API pinned to localhost, production host blocked in the browser) and drove headless Chrome over CDP as three users: platform staff, a new workspace owner, and an invited teammate. Every console error, uncaught exception and failed API call was logged per browser.
+Flow covered and working: staff login, create workspace, invite owner, copy invite link; owner joins via invite (weak-password validation shown), creates space/list/tasks, sets status, priority, assignee, description, comment (all logged in Activity); owner invites teammate in-app; teammate joins; list share with live sidebar update and inbox notification; channel messages, reactions, thread replies, DMs, edit and delete, all live in both browsers; blank channel name rejected; global search and Assigned to me; mark task done; wrong-password message; staff suspends teammate (kicked live) and re-enables.
+Bugs found (not fixed yet):
+1. Opening the Create task dialog in a workspace with no Spaces auto-creates a "General" Space plus a "Tasks" list even if the user cancels; the backend already adds a default "List", so General ends up with two lists and two channels (CreateTaskDialog.tsx ~380-410).
+2. Sidebar doesn't refresh after that auto-provisioning or after creating a Space (new list channel and task counts missing until reload).
+3. Due date typed with the keyboard saves on every keystroke: 8 PATCHes for one date, including clears, final value year 0006 while the UI shows "May 1" with no year; also floods Activity (TaskDatesField saves on each onChange of a controlled date input).
+4. Invite people panel: first click on "Invite people" right after typing an email only turns it into a chip; no request, no feedback.
+5. Uncaught AbortError from ConversationView: channelMetaPromise is started early and never awaited when the load aborts (both browsers).
+6. A user whose only workspace membership is suspended logs in, sees "Welcome back!", and is silently bounced back to the login page with no explanation (AuthGate).
+Not bugs / by design: self-signup is feature-flagged off (onboarding is staff-provisioned); admin portal requires login on every full page load; spaces are invisible to members until shared; "Y" avatar is the backend's "You" label.
+
+TAG: [TASK]
+PARENT: Audit fixes across admin portal, chat/channels and task management
+TITLE: Fixed the 6 bugs found in the live first-use walkthrough
+DESC: Frontend-only fixes, each re-tested live in headless Chrome on a fresh throwaway DB against the before-evidence from the walkthrough:
+1. Due date typed with keyboard: TaskDatesField now uses a CommittedDateInput (local draft, saves only complete dates via new isCompleteDateInput helper in lib/tasks/task-time.ts, commits clears on blur, remounted per saved value). Before: 8 PATCHes ending in year 0006; after: 1 PATCH with the right date. Clear button and single-shot picks still save. A ref guard against a blur double-save was tried and removed: A/B showed one PATCH either way because the parent updates optimistically.
+2. CreateTaskDialog no longer creates anything on open; provisioning moved to submit (first Space gets a "Tasks" list, else a "General" Space whose backend default list is used; no second list). Placeholder statuses are mapped to the new list's real status by legacyKey (fallback COMPLETE key aligned to the backend's DONE). The provisioned list is selected so "Create and start another" works, and that path no longer resets the status from stale placeholder statuses (found a 400 here during re-test and fixed it).
+3. Stale sidebar: SpacesHierarchyDialog refreshes the chat sidebar after creating a Space/List, HomeSidebar does the same after deleting one, and HomeSidebar refreshes the Spaces tree on realtime task created/deleted events. Verified: new list channel and task count update without reload.
+4. Invite panel: the Invite button prevents mousedown focus-steal, so blurring the email field no longer adds a chip that moves the button away mid-click. Verified one click sends one invite.
+5. ConversationView: the early channel-meta promise is marked handled when created. Could not reproduce the original AbortError on demand (A/B showed 0 with and without, under switching, entering and 800ms latency), so this one is fixed by root cause analysis only, not A/B verified.
+6. Login page: when no workspace is usable, shows "access suspended" or "not part of a workspace yet", logs out the just-issued refresh cookie, and stays on login. Verified for a suspended user and a user with no workspace; normal login unaffected.
+Gates: frontend tsc clean; vitest 105 passed / 6 failed (the same 6 as main; +1 new test); eslint findings per changed file identical to main. No backend changes in this round.
+
+DATE_END: 2026-10-30

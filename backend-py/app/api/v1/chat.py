@@ -485,9 +485,10 @@ async def post_channel_unread(
     session: DbSession,
     user: CurrentUserDep,
     _member: WorkspaceMemberDep,
+    messageId: str | None = Query(default=None),
 ):
     return await chat_service.mark_channel_unread(
-        session, workspace_id, user.id, channel_id
+        session, workspace_id, user.id, channel_id, messageId
     )
 
 
@@ -728,9 +729,10 @@ async def post_dm_unread(
     session: DbSession,
     user: CurrentUserDep,
     _member: WorkspaceMemberDep,
+    messageId: str | None = Query(default=None),
 ):
     return await chat_service.mark_dm_unread(
-        session, workspace_id, user.id, conversation_id
+        session, workspace_id, user.id, conversation_id, messageId
     )
 
 

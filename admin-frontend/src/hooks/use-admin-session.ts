@@ -22,6 +22,9 @@ export function useAdminSession() {
 
   useEffect(() => {
     if (!accessToken) {
+      // The session cookie outlives the in-memory token (e.g. after a
+      // reload); clear it or proxy.ts bounces /login straight back here.
+      clearSession();
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

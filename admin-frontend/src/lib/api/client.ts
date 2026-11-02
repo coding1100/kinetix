@@ -4,6 +4,9 @@ import type { AdminUser } from "@/lib/api/admin";
 /** Same-origin path in dev (proxied by Next.js); absolute URL also supported. */
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
 
+/** Next's basePath (e.g. /admin-portal); window.location ignores it. */
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH?.trim() ?? "";
+
 /** Paths that must never trigger refresh-on-401 (they ARE the auth flow). */
 const AUTH_PATH_PREFIX = "/admin/auth/";
 
@@ -37,8 +40,10 @@ async function doRefresh(): Promise<boolean> {
 function redirectToLogin() {
   useAdminAuthStore.getState().clearSession();
   if (typeof window !== "undefined") {
-    const next = encodeURIComponent(window.location.pathname);
-    window.location.href = `/login?next=${next}`;
+    const path = window.location.pathname;
+    const appPath =
+      BASE_PATH && path.startsWith(BASE_PATH) ? path.slice(BASE_PATH.length) || "/" : path;
+    window.location.href = `${BASE_PATH}/login?next=${encodeURIComponent(appPath)}`;
   }
 }
 

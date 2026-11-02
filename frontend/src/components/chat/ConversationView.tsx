@@ -308,6 +308,10 @@ export function ConversationView({
         type === "channel"
           ? fetchChannel(accessToken, workspaceId, conversationId, fetchInit)
           : null;
+      // Started early to overlap with the messages fetch, but only awaited
+      // after it: if that throws or the load is aborted first, this promise
+      // would reject unobserved. The await below still sees its errors.
+      channelMetaPromise?.catch(() => {});
 
       const msgResult =
         type === "channel"
@@ -508,13 +512,13 @@ export function ConversationView({
 
   markConversationReadRef.current = markConversationRead;
 
-  const markConversationUnread = useCallback(async () => {
+  const markConversationUnread = useCallback(async (messageId?: string) => {
     if (!ready) return;
     try {
       const res =
         type === "channel"
-          ? await markChannelUnread(accessToken, workspaceId, id)
-          : await markDmUnread(accessToken, workspaceId, id);
+          ? await markChannelUnread(accessToken, workspaceId, id, messageId)
+          : await markDmUnread(accessToken, workspaceId, id, messageId);
       setConversationUnread(type, id, res.unread);
       toast.success("Marked as unread");
     } catch (err) {

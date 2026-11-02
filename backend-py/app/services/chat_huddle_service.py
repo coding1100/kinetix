@@ -179,11 +179,6 @@ async def update_huddle(
         huddle.title = body.title.strip()
     if body.notes is not None:
         huddle.notes = body.notes
-    if body.isActive is not None:
-        huddle.is_active = body.isActive
-        if not body.isActive and huddle.ended_at is None:
-            huddle.ended_at = datetime.now(timezone.utc)
-            huddle.ended_by_id = user_id
     huddle.updated_at = datetime.now(timezone.utc)
     await session.commit()
     await session.refresh(huddle)

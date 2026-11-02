@@ -149,12 +149,11 @@ async def stop_task_timer(
     role: WorkspaceRole,
     task_id: str,
 ) -> dict:
+    # Deliberately no can_track_time check: disabling tracking blocks new
+    # timers, but a timer already running must still be stoppable.
     await _assert_task_in_workspace(
         session, workspace_id, task_id, user_id, role, PermissionLevel.VIEW
     )
-    _, can_track_time = await get_member_time_flags(session, workspace_id, user_id)
-    if not can_track_time:
-        raise AppError(403, "FORBIDDEN", "Time tracking is disabled for your account")
     running = await session.scalar(
         select(TaskTimeEntry).where(
             TaskTimeEntry.task_id == task_id,

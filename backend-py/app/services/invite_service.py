@@ -48,6 +48,27 @@ def _as_utc(dt: datetime) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
+async def _assert_owner_slot_free(
+    session: AsyncSession, workspace_id: str, role: WorkspaceRole
+) -> None:
+    """A workspace has exactly one owner; ownership changes go through
+    transfer-ownership, never through an invite."""
+    if role != WorkspaceRole.OWNER:
+        return
+    if await session.scalar(
+        select(WorkspaceMember.id).where(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.role == WorkspaceRole.OWNER,
+            WorkspaceMember.status == MemberStatus.ACTIVE,
+        )
+    ):
+        raise AppError(
+            409,
+            "OWNER_EXISTS",
+            "This workspace already has an owner; transfer ownership instead",
+        )
+
+
 async def create_invite(
     session: AsyncSession,
     workspace_id: str,
@@ -67,19 +88,26 @@ async def create_invite(
         select(User).where(User.email == email)
     )
     if existing_user:
-        active = await session.scalar(
-            select(WorkspaceMember).where(
+        membership_status = await session.scalar(
+            select(WorkspaceMember.status).where(
                 WorkspaceMember.workspace_id == workspace_id,
                 WorkspaceMember.user_id == existing_user.id,
-                WorkspaceMember.status == MemberStatus.ACTIVE,
             )
         )
-        if active:
+        if membership_status == MemberStatus.ACTIVE:
             raise AppError(409, "ALREADY_MEMBER", "User is already in this workspace")
+        if membership_status == MemberStatus.SUSPENDED:
+            # Accepting an invite reactivates the membership, which would
+            # undo a platform-staff suspension.
+            raise AppError(
+                409, "MEMBER_SUSPENDED", "This person is suspended from this workspace"
+            )
+
+    await _assert_owner_slot_free(session, workspace_id, body.role)
 
     # Most recent invite for this email in this workspace, if any - a
-    # canceled one doesn't block a new invite (see below), only a still-
-    # pending one does.
+    # canceled or expired one doesn't block a new invite (see below), only
+    # a still-pending one does.
     existing_invite = await session.scalar(
         select(Invite)
         .where(Invite.workspace_id == workspace_id, Invite.email == email)
@@ -89,6 +117,7 @@ async def create_invite(
         existing_invite
         and existing_invite.accepted_at is None
         and existing_invite.cancelled_at is None
+        and _as_utc(existing_invite.expires_at) >= _utc_now()
     ):
         raise AppError(
             409, "ALREADY_INVITED", "This person has already been invited"
@@ -99,9 +128,9 @@ async def create_invite(
     expires_at = now + timedelta(days=settings.invite_token_expires_days)
     token = generate_token()
 
-    if existing_invite and existing_invite.cancelled_at is not None:
-        # Re-inviting someone whose invite was canceled - reuse that row
-        # instead of accumulating a duplicate.
+    if existing_invite and existing_invite.accepted_at is None:
+        # Re-inviting someone whose invite was canceled or expired - reuse
+        # that row instead of accumulating a duplicate.
         invite = existing_invite
         invite.role = body.role
         invite.token = token
@@ -379,6 +408,7 @@ async def accept_invite_for_user(
         raise AppError(404, "NOT_FOUND", "User not found")
     if user.email.lower() != invite.email.lower():
         raise AppError(403, "EMAIL_MISMATCH", "Log in with the invited email address")
+    await _assert_owner_slot_free(session, invite.workspace_id, invite.role)
 
     membership = await session.scalar(
         select(WorkspaceMember).where(
@@ -387,6 +417,10 @@ async def accept_invite_for_user(
         )
     )
     if membership:
+        if membership.status == MemberStatus.SUSPENDED:
+            raise AppError(
+                403, "MEMBER_SUSPENDED", "You are suspended from this workspace"
+            )
         membership.role = invite.role
         membership.status = MemberStatus.ACTIVE
     else:
@@ -461,6 +495,7 @@ async def accept_invite_with_signup(
         raise AppError(
             409, "EMAIL_EXISTS", "Account exists — log in and accept invite"
         )
+    await _assert_owner_slot_free(session, invite.workspace_id, invite.role)
 
     user = User(
         email=invite.email,

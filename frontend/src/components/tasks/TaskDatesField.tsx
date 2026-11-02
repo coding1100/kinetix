@@ -5,7 +5,7 @@ import { CalendarIcon, ArrowRightIcon } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { formatShortDate } from "@/lib/tasks/task-time";
+import { formatShortDate, isCompleteDateInput } from "@/lib/tasks/task-time";
 import { cn } from "@/lib/utils";
 
 type TaskDatesFieldProps = {
@@ -17,6 +17,42 @@ type TaskDatesFieldProps = {
 
 function toInputDate(iso?: string | null) {
   return iso ? iso.slice(0, 10) : "";
+}
+
+/** Saves only finished dates: saving every keystroke re-rendered the input
+ * from the server mid-typing and stored partial years. Remounted per saved
+ * value (see `key` below), so the draft always starts from it. */
+function CommittedDateInput({
+  value,
+  min,
+  max,
+  onCommit,
+}: {
+  value: string;
+  min?: string;
+  max?: string;
+  onCommit: (value: string) => void | Promise<void>;
+}) {
+  const [draft, setDraft] = useState(value);
+  const commit = (next: string) => {
+    if (next !== value) void onCommit(next);
+  };
+  return (
+    <Input
+      type="date"
+      value={draft}
+      min={min}
+      max={max}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        if (isCompleteDateInput(e.target.value)) commit(e.target.value);
+      }}
+      onBlur={() => {
+        if (draft === "" || isCompleteDateInput(draft)) commit(draft);
+        else setDraft(value);
+      }}
+    />
+  );
 }
 
 export function TaskDatesField({
@@ -56,11 +92,11 @@ export function TaskDatesField({
       <PopoverContent align="start" className="w-72 space-y-3 p-3">
         <div>
           <p className="mb-1.5 text-xs font-medium text-muted-foreground">Start date</p>
-          <Input
-            type="date"
+          <CommittedDateInput
+            key={toInputDate(startDateIso)}
             value={toInputDate(startDateIso)}
             max={toInputDate(dueDateIso) || undefined}
-            onChange={(e) => void onStartChange(e.target.value)}
+            onCommit={onStartChange}
           />
           {startDateIso ? (
             <Button
@@ -76,11 +112,11 @@ export function TaskDatesField({
         </div>
         <div>
           <p className="mb-1.5 text-xs font-medium text-muted-foreground">Due date</p>
-          <Input
-            type="date"
+          <CommittedDateInput
+            key={toInputDate(dueDateIso)}
             value={toInputDate(dueDateIso)}
             min={toInputDate(startDateIso) || undefined}
-            onChange={(e) => void onDueChange(e.target.value)}
+            onCommit={onDueChange}
           />
           {dueDateIso ? (
             <Button

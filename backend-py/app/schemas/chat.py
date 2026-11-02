@@ -133,7 +133,6 @@ class StartHuddleBody(BaseModel):
 class UpdateHuddleBody(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=120)
     notes: str | None = Field(default=None, max_length=20000)
-    isActive: bool | None = None
 
 
 class ToggleHuddleParticipantBody(BaseModel):

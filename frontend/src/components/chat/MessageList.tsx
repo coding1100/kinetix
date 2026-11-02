@@ -46,7 +46,7 @@ export function MessageList({
   ) => Promise<void>;
   onDeleteMessage?: (messageId: string) => Promise<void>;
   onPinMessage?: (messageId: string, pinned: boolean) => void | Promise<void>;
-  onMarkUnread?: () => void | Promise<void>;
+  onMarkUnread?: (messageId: string) => void | Promise<void>;
   hasMoreOlder?: boolean;
   loadingOlder?: boolean;
   onLoadOlder?: () => void;
