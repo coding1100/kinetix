@@ -137,10 +137,13 @@ git reset --hard origin/main
 # touches a running container's image, the just-tagged `-rollback` images,
 # or any other tagged image, so this cannot break the rollback safety net
 # below. Runs before the build so a near-full disk doesn't already block
-# building the new api/web images this run needs.
-log "Prune dangling images and build cache (keeps rollback images and anything running)"
+# building the new api/web images this run needs. Build cache is pruned
+# after a successful deploy instead, see deploy/build-cache.sh.
+log "Prune dangling images (keeps rollback images and anything running)"
 docker image prune -f >/dev/null 2>&1 || true
-docker builder prune -f --filter "until=72h" >/dev/null 2>&1 || true
+
+. "$APP_ROOT/deploy/build-cache.sh"
+mark_deploy_start
 
 log "Disable legacy systemd services (superseded by Docker - avoids two prod builds silently coexisting)"
 sudo systemctl stop kinetix-api kinetix-web 2>/dev/null || true
@@ -294,5 +297,7 @@ if ! curl -fsS http://127.0.0.1/auth/login >/dev/null 2>&1; then
   echo "ERROR: deploy failed, rolled back api and web to previous versions."
   exit 1
 fi
+
+prune_build_cache
 
 log "Deploy complete — API and web are healthy (Docker)"

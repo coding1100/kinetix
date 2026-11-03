@@ -106,10 +106,13 @@ git reset --hard origin/main
 # deploy can be starved by images the app deploy left behind (and vice
 # versa). `docker image prune -f` (no -a) only removes genuinely dangling
 # images, never a running container's image or the just-tagged -rollback
-# image, so this cannot affect the rollback safety net below.
-log "Prune dangling images and build cache (keeps rollback images and anything running)"
+# image, so this cannot affect the rollback safety net below. Build cache is
+# pruned after a successful deploy instead, see deploy/build-cache.sh.
+log "Prune dangling images (keeps rollback images and anything running)"
 docker image prune -f >/dev/null 2>&1 || true
-docker builder prune -f --filter "until=72h" >/dev/null 2>&1 || true
+
+. "$APP_ROOT/deploy/build-cache.sh"
+mark_deploy_start
 
 if [ -f "$APP_ROOT/docker-compose.env" ]; then
   cp "$APP_ROOT/docker-compose.env" "$APP_ROOT/.env"
@@ -176,5 +179,7 @@ if ! curl -fsS http://127.0.0.1/admin-portal/login >/dev/null 2>&1; then
   echo "ERROR: deploy failed, rolled back admin to previous version."
   exit 1
 fi
+
+prune_build_cache
 
 log "Deploy complete — admin portal is healthy"
