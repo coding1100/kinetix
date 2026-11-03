@@ -32,3 +32,4 @@ docker-compose.env
 .cursor/
 assets/
 .playwright-mcp/
+.deploy-run

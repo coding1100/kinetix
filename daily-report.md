@@ -6156,3 +6156,11 @@ Frontend: the create-task assignee picker offers every workspace member; the dia
 Tests: tests/test_task_access_assignment.py (10 cases; 9 fail on the base branch, the guard case passes on both). Live in headless Chrome: Member creates a task assigning another Member, who opens it (200, full panel); Owner opens a Member's unshared task (200); the same opens return 403 and a blank panel on the base branch.
 
 DATE_END: 2026-11-02
+
+DATE_START: 2026-11-03
+
+TAG: [CHORE]
+TITLE: Build cache kept per deploy instead of per 72 hours
+DESC: On the 2 GB Lightsail server the Docker build cache reached 6.45 GB (5.43 GB reclaimable) after a few deploys, because deploy.sh and deploy-admin.sh ran `docker builder prune -f --filter until=72h` (no -a, so only dangling records, and only those older than 3 days). New deploy/build-cache.sh, sourced by both scripts: mark_deploy_start records "<HEAD commit> <epoch>" in $APP_ROOT/.deploy-run (gitignored), reused when the commit matches so deploy.sh and deploy-admin.sh in the same run share one start time; prune_build_cache runs after a successful health check and does `docker builder prune -af --filter until=<seconds since start + 1>s`, keeping only cache used by this deploy (reused layers included). Failed or rolled-back deploys do not prune. Dangling image pruning before the build is unchanged. Verified with real Docker builds: after two simulated deploys only the latest app layer and the reused admin layer remain; the old rule kept every layer. Side effect: an app-only deploy drops admin cache and an admin-only deploy drops app cache, so the next deploy of the other side builds without cache. deploy-staging.sh still uses the 72h rule (no staging server exists).
+
+DATE_END: 2026-11-03
