@@ -179,8 +179,8 @@ export function InboxView() {
     <HomePageShell
       title="Inbox"
       toolbar={
-        <div className="flex shrink-0 flex-col gap-2 border-b border-border px-6 py-2">
-          <div className="flex items-center justify-between gap-3">
+        <div className="flex shrink-0 flex-col gap-2 border-b border-border px-3 py-2 sm:px-6">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
             <Tabs
               value={inboxTab}
               onValueChange={(v) => {

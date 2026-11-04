@@ -1225,7 +1225,9 @@ export function HomeSidebar() {
     [sidebarRefreshKey]
   );
 
-  const isHomeRoot = pathname === "/home" || pathname === "/home/inbox";
+  // Below md, /home is the Home menu itself; every other /home/* route
+  // (Inbox included) shows its page full width instead of the menu.
+  const isHomeRoot = pathname === "/home";
 
   if (!secondaryPanelOpen) {
     // On desktop, GlobalNav's "Open sidebar" chevron (hidden md:flex) is the

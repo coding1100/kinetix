@@ -6188,4 +6188,8 @@ DESC: Follow-up to "Space list and channel screens broken on phones" (PR #39 had
 2. Navbar search: the magnifier icon was layered over the input and swallowed taps, so tapping it focused nothing (all widths), and the bar is only 44 to 105px wide on phones. GlobalSearch icon is pointer-events-none; while open on screens below sm the search spans the top bar (fixed, inset-x-2, opaque background). Verified: icon tap focuses, results panel spans the bar, tapping a result navigates and closes, tapping outside restores it; desktop unchanged (520px).
 Gates: tsc clean, eslint no new warnings, vitest 105 passed / 6 failed (same as main).
 
+TAG: [BUG]
+TITLE: Inbox not visible on phones
+DESC: On phones /home/inbox showed only the Home menu: HomeSidebar treated both /home and /home/inbox as the mobile Home root (full-width menu), so the Inbox page was pushed off screen (measured starting at x=390 on a 390px screen) and tapping Inbox in the menu stayed on the menu. The bottom nav's Home also pointed at /home/inbox. Now only /home is the mobile Home menu: isHomeRoot is pathname === "/home", HomeMobileBackBar shows its "Home" back bar on /home/inbox, and the bottom nav Home links to /home (active on any /home/* route). Desktop unchanged (both routes keep the 260px sidebar). Inbox toolbar uses px-3 below sm and wraps Filter/Clear all under the tabs when there is no room (only at 320px; one row at 390px and desktop). Verified in headless Chrome with touch: bottom Home opens the menu, menu Inbox opens the Inbox, back bar returns to the menu, tapping a notification opens its list, no horizontal overflow at 320 or 390. Gates: tsc clean, eslint same 4 existing warnings, vitest 105 passed / 6 failed (same as main).
+
 DATE_END: 2026-11-04

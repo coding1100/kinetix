@@ -33,7 +33,7 @@ export function MobileBottomNav() {
 
   const items = useMemo<MobileNavItem[]>(() => {
     const list: MobileNavItem[] = [
-      { label: "Home", href: "/home/inbox", icon: HomeIcon, badge: homeUnread },
+      { label: "Home", href: "/home", icon: HomeIcon, badge: homeUnread },
       { label: "Chat", href: "/chat", icon: MessageSquareIcon, badge: chatHasUnread ? "dot" : undefined },
       { label: "Teams", href: "/teams", icon: UsersRoundIcon, hidden: !FEATURE_FLAGS.teams },
       { label: "People", href: "/people", icon: UsersIcon },
@@ -42,7 +42,7 @@ export function MobileBottomNav() {
   }, [homeUnread, chatHasUnread]);
 
   const isActive = (href: string) => {
-    if (href === "/home/inbox") return pathname.startsWith("/home");
+    if (href === "/home") return pathname.startsWith("/home");
     if (href === "/chat") return pathname.startsWith("/chat");
     if (href === "/teams") return pathname.startsWith("/teams");
     if (href === "/people") return pathname.startsWith("/people");
