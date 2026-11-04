@@ -33,7 +33,7 @@ export function MessageAttachmentList({
             <button
               key={att.id}
               type="button"
-              className="group relative overflow-hidden rounded-lg text-left"
+              className="group relative max-w-full overflow-hidden rounded-lg text-left"
               onClick={() => setSelected(att)}
               aria-label={`Preview ${att.fileName}`}
             >
@@ -41,7 +41,7 @@ export function MessageAttachmentList({
               <img
                 src={att.downloadUrl!}
                 alt={att.fileName}
-                className="max-h-72 max-w-xs rounded-lg object-cover"
+                className="max-h-72 max-w-[min(20rem,100%)] rounded-lg object-cover"
               />
               <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/20">
                 <ZoomInIcon className="size-6 text-white opacity-0 drop-shadow transition-opacity group-hover:opacity-100" />
