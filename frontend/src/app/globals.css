@@ -142,9 +142,19 @@ body {
   }
 }
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #c4c9d4 transparent;
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #c4c9d4 transparent;
+  }
+}
+
+/* Scrollable but without a visible scrollbar (tab strips, sidebar). */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 @keyframes loader-breathe {

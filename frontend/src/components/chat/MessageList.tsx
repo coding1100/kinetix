@@ -124,7 +124,7 @@ export function MessageList({
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-34" data-quote-scope="main">
+    <div className="min-h-0 flex-1 overflow-y-auto px-3 md:px-34" data-quote-scope="main">
       <div className="py-4">
         {hasMoreOlder ? (
           <div className="mb-3 flex justify-center">

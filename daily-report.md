@@ -6163,4 +6163,22 @@ TAG: [CHORE]
 TITLE: Build cache kept per deploy instead of per 72 hours
 DESC: On the 2 GB Lightsail server the Docker build cache reached 6.45 GB (5.43 GB reclaimable) after a few deploys, because deploy.sh and deploy-admin.sh ran `docker builder prune -f --filter until=72h` (no -a, so only dangling records, and only those older than 3 days). New deploy/build-cache.sh, sourced by both scripts: mark_deploy_start records "<HEAD commit> <epoch>" in $APP_ROOT/.deploy-run (gitignored), reused when the commit matches so deploy.sh and deploy-admin.sh in the same run share one start time; prune_build_cache runs after a successful health check and does `docker builder prune -af --filter until=<seconds since start + 1>s`, keeping only cache used by this deploy (reused layers included). Failed or rolled-back deploys do not prune. Dangling image pruning before the build is unchanged. Verified with real Docker builds: after two simulated deploys only the latest app layer and the reused admin layer remain; the old rule kept every layer. Side effect: an app-only deploy drops admin cache and an admin-only deploy drops app cache, so the next deploy of the other side builds without cache. deploy-staging.sh still uses the 72h rule (no staging server exists).
 
+TAG: [SUBTASK]
+PARENT: Build cache kept per deploy instead of per 72 hours
+TITLE: Merged PR #38 and checked production disk
+DESC: PR #38 merged as 3b36b35; deploy run 41640018493 succeeded (admin job skipped, no admin changes) and logged "Prune build cache not used by this deploy". Production disk went from 16 GB used (27%) to 11 GB (18%); build cache from 6.45 GB (81 records) to 856 MB (31 records, all from this deploy). Images unchanged apart from dangling ones: api, web, admin plus their -rollback tags and postgres. All four containers healthy, /auth/login, /admin-portal/login and /health return 200.
+
 DATE_END: 2026-11-03
+
+DATE_START: 2026-11-04
+
+TAG: [BUG]
+TITLE: Space list and channel screens broken on phones
+DESC: User screenshots (about 390px wide) showed a Space's List and Channel views broken on mobile. Reproduced locally in headless Chrome at 390x844 with touch emulation, then fixed:
+1. Channel messages wrapped one word per line: MessageList's scroller had px-34 (136px each side) at every width, leaving 0 to 69px for message text. Now px-3 on phones, px-34 from md up (desktop unchanged, measured 136px).
+2. Light vertical bar beside the view tabs: the SpacesListToolbar tab strip (overflow-x-auto) overflowed vertically by 1px because tabs use -mb-px, so a vertical scrollbar in the global #c4c9d4 colour showed. Added overflow-y-hidden. Its `no-scrollbar` class had no definition: added `@utility no-scrollbar` in globals.css, and moved the global `* { scrollbar-width; scrollbar-color }` rule into @layer base, because unlayered CSS beat every utility (this also makes TeamDetailHeader's existing [scrollbar-width:none] work).
+3. Tabs squeezed to 175px of 751px: "Add task" and "Share" are icon-only below sm (aria-labels kept), giving the strip 286px; List, Board and Calendar now fit and the rest scroll.
+4. Message action bar (reply, react, more) was forced visible on touch screens (pointer-coarse:opacity-100 from e7f2702) and covered author names and text. ChatMessageRow and ThreadMessageRow articles are now focusable (tabIndex -1); on coarse pointers the bar shows only for the tapped message (group-focus-within) and cannot be tapped while hidden (pointer-events none until focused). Verified with CDP touch events: hidden and untappable initially, revealed on the tapped message only, moves to the next tapped message, tapping Reply opens the thread. Desktop at 1440px unchanged (hover only, full labels).
+Gates: tsc clean; eslint on changed files shows only the existing unused ZapIcon warning; vitest 105 passed / 6 failed, identical on main (sidebar store tests). Not verified on a physical phone or the Android/iOS shell.
+
+DATE_END: 2026-11-04
