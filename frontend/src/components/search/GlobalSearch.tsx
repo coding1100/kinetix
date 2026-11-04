@@ -135,8 +135,15 @@ export function GlobalSearch() {
   };
 
   return (
-    <div ref={rootRef} className="relative w-full max-w-[520px]">
-      <SearchIcon className="absolute top-1/2 left-3 z-10 size-3.5 -translate-y-1/2 text-muted-foreground" />
+    <div
+      ref={rootRef}
+      className={cn(
+        "relative w-full max-w-[520px]",
+        // Phones leave the bar only a few pixels wide: span the top bar while searching.
+        open && "max-sm:fixed max-sm:inset-x-2 max-sm:top-1.5 max-sm:z-50 max-sm:w-auto max-sm:max-w-none max-sm:rounded-full max-sm:bg-background"
+      )}
+    >
+      <SearchIcon className="pointer-events-none absolute top-1/2 left-3 z-10 size-3.5 -translate-y-1/2 text-muted-foreground" />
       <Input
         className="h-8 rounded-full bg-background pl-8 text-sm"
         placeholder="Search Kinetix"
