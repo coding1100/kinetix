@@ -131,7 +131,7 @@ export function SpacesListToolbar({
       ) : null}
 
       <div className="flex items-center justify-between gap-2 border-b border-border px-3">
-        <div className="min-w-0 overflow-x-auto no-scrollbar">
+        <div className="min-w-0 overflow-x-auto overflow-y-hidden no-scrollbar">
         <UnderlineTabBar
           className="border-b-0 px-0"
           size="default"
@@ -187,22 +187,24 @@ export function SpacesListToolbar({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 gap-1.5 px-3 text-xs"
+              className="h-7 gap-1.5 px-2 text-xs sm:px-3"
               onClick={onCreateTask}
+              aria-label="Add task"
             >
               <PlusIcon className="size-3.5" />
-              Add task
+              <span className="hidden sm:inline">Add task</span>
             </Button>
           ) : null}
           {canShare ? (
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 gap-1.5 border-neutral-200 bg-white px-3 text-xs text-black hover:bg-neutral-100 hover:text-black dark:bg-white dark:text-black dark:hover:bg-neutral-100 dark:hover:text-black"
+              className="h-7 gap-1.5 border-neutral-200 bg-white px-2 text-xs sm:px-3 text-black hover:bg-neutral-100 hover:text-black dark:bg-white dark:text-black dark:hover:bg-neutral-100 dark:hover:text-black"
               onClick={() => setShareOpen(true)}
+              aria-label="Share"
             >
               <Share2Icon className="size-3.5 text-black" />
-              Share
+              <span className="hidden sm:inline">Share</span>
             </Button>
           ) : null}
         </div>

@@ -116,8 +116,10 @@ export function ThreadMessageRow({
 
   return (
     <article
+      // Focusable so a tap on touch screens can reveal the message actions.
+      tabIndex={-1}
       className={cn(
-        "group relative -mx-2 rounded-md px-2 transition-colors hover:bg-muted/70",
+        "group relative -mx-2 rounded-md px-2 transition-colors outline-none hover:bg-muted/70",
         actionsActive && "bg-muted/70",
         showHeader ? "py-0.1" : "py-0.1",
         editingMessageId === message.id && "bg-primary/10 ring-1 ring-primary/30"
@@ -129,10 +131,10 @@ export function ThreadMessageRow({
             "pointer-events-none absolute right-1 top-1 z-10 transition-opacity",
             actionsActive
               ? "opacity-100"
-              : "opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100"
+              : "opacity-0 group-hover:opacity-100 pointer-coarse:group-focus-within:opacity-100"
           )}
         >
-          <div className="pointer-events-auto flex items-center gap-1 rounded-md border border-border bg-card px-1 py-0.5 shadow-sm">
+          <div className="pointer-events-auto flex items-center gap-1 rounded-md border border-border bg-card px-1 py-0.5 shadow-sm pointer-coarse:pointer-events-none pointer-coarse:group-focus-within:pointer-events-auto">
             <EmojiPickerPopover
               onSelectEmoji={(emoji) => void onToggleReaction(message.id, emoji)}
               onOpenChange={setEmojiMenuOpen}

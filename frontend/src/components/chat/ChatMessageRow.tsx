@@ -154,8 +154,10 @@ export function ChatMessageRow({
   return (
     <article
       id={`message-${message.id}`}
+      // Focusable so a tap on touch screens can reveal the message actions.
+      tabIndex={-1}
       className={cn(
-        "group relative -mx-3 rounded-md px-3 transition-colors",
+        "group relative -mx-3 rounded-md px-3 transition-colors outline-none",
         showHeader ? "pt-2.5 pb-1" : "py-0.5",
         "hover:bg-muted/70",
         threadOpen && !actionsActive && "bg-muted/50",
@@ -179,10 +181,10 @@ export function ChatMessageRow({
           "pointer-events-none absolute right-2 top-1 z-10 transition-opacity",
           actionsActive
             ? "opacity-100"
-            : "opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100"
+            : "opacity-0 group-hover:opacity-100 pointer-coarse:group-focus-within:opacity-100"
         )}
       >
-        <div className="pointer-events-auto flex items-center gap-1 rounded-md border border-border bg-card px-1.5 py-0.5 shadow-sm">
+        <div className="pointer-events-auto flex items-center gap-1 rounded-md border border-border bg-card px-1.5 py-0.5 shadow-sm pointer-coarse:pointer-events-none pointer-coarse:group-focus-within:pointer-events-auto">
           <Button
             variant="ghost"
             size="icon-xs"
